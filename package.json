@@ -1,0 +1,14 @@
+{
+  "name": "agent-grounding",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Verification framework for AI agents — runtime checks, claim validation, hypothesis tracking",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}
