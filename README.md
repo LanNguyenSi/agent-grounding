@@ -1,41 +1,35 @@
 # Agent Grounding
 
-Verification framework for AI agents. Prevents agents from acting on stale assumptions, making unsupported claims, or silently switching hypotheses.
+Verification and debugging framework for AI agents. Prevents agents from acting on stale assumptions, making unsupported claims, or silently switching hypotheses.
 
 ## Packages
 
+### Verification
 | Package | Description |
 |---------|-------------|
-| [runtime-reality-checker](packages/runtime-reality-checker) | Compares actual runtime state against documentation. Surfaces drift between what's documented and what's running. |
-| [claim-gate](packages/claim-gate) | Policy engine that blocks strong claims without verified evidence. Evaluates diagnostic claims against prerequisite checks. |
-| [hypothesis-tracker](packages/hypothesis-tracker) | Tracks competing hypotheses during debugging. Requires explicit evidence before switching or discarding theories. |
+| [runtime-reality-checker](packages/runtime-reality-checker) | Compares actual runtime state against documentation |
+| [claim-gate](packages/claim-gate) | Blocks strong claims without verified evidence |
+| [hypothesis-tracker](packages/hypothesis-tracker) | Tracks competing hypotheses, requires evidence to switch |
+
+### Debugging
+| Package | Description |
+|---------|-------------|
+| [debug-playbook-engine](packages/debug-playbook-engine) | Guides agents through domain-specific diagnostic sequences |
+| [evidence-ledger](packages/evidence-ledger) | Structured evidence tracking during debugging |
+| [grounding-wrapper](packages/grounding-wrapper) | Orchestrates the grounding stack — enforces correct tool order |
+| [readme-first-resolver](packages/readme-first-resolver) | Forces agents to read primary docs before any analysis |
+| [domain-router](packages/domain-router) | Routes keywords to correct repos, components and docs scope |
 
 ## Why this exists
 
-AI agents are good at generating plausible explanations. They're bad at verifying them. This framework enforces verification discipline:
+AI agents are good at generating plausible explanations. They're bad at verifying them. This framework enforces discipline:
 
 - **Don't assume** — check runtime state before diagnosing
 - **Don't claim** — gate strong assertions behind evidence
 - **Don't forget** — track all hypotheses, don't silently drop them
-
-## Setup
-
-```bash
-npm install
-npm test --workspaces
-```
-
-## Structure
-
-```
-agent-grounding/
-├── packages/
-│   ├── runtime-reality-checker/   # Runtime state vs documentation
-│   ├── claim-gate/                # Evidence-gated claims
-│   └── hypothesis-tracker/        # Competing hypothesis management
-└── package.json                   # Workspace root
-```
+- **Don't skip steps** — follow diagnostic playbooks in order
+- **Don't guess scope** — route to correct domain first
 
 ## Status
 
-Experimental — these tools are functional and tested but APIs may evolve.
+Experimental — functional tools with tests, APIs may evolve.

@@ -1,0 +1,26 @@
+{
+  "name": "grounding-wrapper",
+  "version": "1.0.0",
+  "description": "Orchestrates the lan-tools grounding stack — enforces correct agent entry path",
+  "main": "dist/index.js",
+  "bin": {
+    "grounding-wrapper": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "test": "jest",
+    "test:ci": "jest --ci --coverage"
+  },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "commander": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^20.0.0",
+    "jest": "^30.3.0",
+    "ts-jest": "^29.4.9",
+    "typescript": "^5.0.0"
+  }
+}
