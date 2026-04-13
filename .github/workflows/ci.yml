@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+# Cancel superseded runs on the same branch so rapid pushes don't queue.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        # Runs per workspace only if the script is defined — packages that
+        # don't have a typecheck entry are silently skipped.
+        run: npm run typecheck --workspaces --if-present
+
+      - name: Build
+        run: npm run build --workspaces --if-present
+
+      - name: Test
+        run: npm run test --workspaces --if-present
