@@ -33,3 +33,12 @@ AI agents are good at generating plausible explanations. They're bad at verifyin
 ## Status
 
 Experimental — functional tools with tests, APIs may evolve.
+
+## Where this fits
+
+`agent-grounding` is the **Validate** stage of the [Project OS](https://github.com/LanNguyenSi/project-os) Human-Agent Dev Lifecycle:
+
+- [agent-planforge](https://github.com/LanNguyenSi/agent-planforge) plans
+- [agent-tasks](https://github.com/LanNguyenSi/agent-tasks) coordinates
+- **agent-grounding** verifies
+- [agent-preflight](https://github.com/LanNguyenSi/agent-preflight) gates pushes
