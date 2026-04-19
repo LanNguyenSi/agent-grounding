@@ -2,7 +2,15 @@
   "name": "grounding-wrapper",
   "version": "1.0.0",
   "description": "Orchestrates the lan-tools grounding stack — enforces correct agent entry path",
-  "main": "dist/index.js",
+  "main": "dist/lib.js",
+  "types": "dist/lib.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/lib.d.ts",
+      "default": "./dist/lib.js"
+    },
+    "./cli": "./dist/index.js"
+  },
   "bin": {
     "grounding-wrapper": "./dist/index.js"
   },

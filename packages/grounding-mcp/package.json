@@ -1,0 +1,31 @@
+{
+  "name": "grounding-mcp",
+  "version": "0.1.0",
+  "description": "MCP server exposing the agent-grounding stack (grounding-wrapper, evidence-ledger, claim-gate) to long-running Claude Code sessions",
+  "type": "module",
+  "bin": {
+    "grounding-mcp": "./dist/server.js"
+  },
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/server.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "claim-gate": "1.0.0",
+    "evidence-ledger": "1.0.0",
+    "grounding-wrapper": "1.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3",
+    "vitest": "^4.1.4"
+  }
+}
