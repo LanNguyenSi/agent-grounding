@@ -32,7 +32,12 @@ jobs:
         run: npm run typecheck --workspaces --if-present
 
       - name: Build
-        run: npm run build --workspaces --if-present
+        # Uses the root `build` script (which topo-orders the wrapped libs
+        # before everything else). A bare `npm run build --workspaces`
+        # walks alphabetically and fails when a package depends on a
+        # workspace sibling that hasn't been built yet (e.g. grounding-mcp
+        # depends on grounding-wrapper but sorts before it).
+        run: npm run build
 
       - name: Test
         run: npm run test --workspaces --if-present
