@@ -107,6 +107,14 @@ Implementation notes:
   `exists:false` with a clear summary). Absolute values pass through
   unchanged — use that when the caller legitimately wants to check
   something outside the repo.
+- **Symlink cycles are safe.** The walker uses `lstat` to classify
+  directory symlinks out of the descent and canonicalises each
+  visited directory via `realpath` so hard-link/loop fixtures cannot
+  run the walker forever.
+- **No-extension files** (`Makefile`, `Dockerfile`, `LICENSE`, etc.)
+  are **off by default**. Opt in via `VerifyOptions.includeNoExtension: true`
+  to scan them all, or pass `VerifyOptions.extraNoExtensionNames: ['Makefile']`
+  to opt in by name only.
 
 Exposed via MCP as the `verify_memory_reference` tool in
 [`grounding-mcp`](../grounding-mcp). Agents should call it whenever a

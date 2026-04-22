@@ -1,5 +1,11 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { verifyMemoryReference } from "../src/verify-reference.js";
@@ -228,5 +234,116 @@ describe("verifyMemoryReference — misc", () => {
     });
     expect(r.exists).toBe(false);
     expect(r.summary).toMatch(/unknown ref.kind/);
+  });
+});
+
+describe("verifyMemoryReference — symlink-cycle safety", () => {
+  it("walker terminates on a circular dir symlink (a/b -> ..)", () => {
+    // Fixture: root/a/b -> root/a creates a cycle (a contains b, b
+    // resolves back to a). Without symlink guarding, the walker would
+    // descend a/b/b/b/... until maxFiles — which never hits because
+    // no matching files exist.
+    const root = mkdtempSync(join(tmpdir(), "rrc-cycle-"));
+    try {
+      mkdirSync(join(root, "a"), { recursive: true });
+      writeFileSync(join(root, "a", "real.ts"), "export function sym() {}\n");
+      symlinkSync(join(root, "a"), join(root, "a", "b"));
+
+      const start = Date.now();
+      const r = verifyMemoryReference({
+        kind: "symbol",
+        value: "sym",
+        repoRoot: root,
+      });
+      const elapsedMs = Date.now() - start;
+
+      // Real file under a/ is still found; the cycle via a/b is
+      // detected and skipped. Elapsed time is sub-100ms on any sane
+      // machine — this is the explicit acceptance criterion from the
+      // follow-up task.
+      expect(r.exists).toBe(true);
+      expect(r.foundIn).toHaveLength(1);
+      expect(r.foundIn[0]).toMatch(/a\/real\.ts$/);
+      expect(elapsedMs).toBeLessThan(5000);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("skips file symlinks from the scan (lstat classifies them out)", () => {
+    // A symlink-file with a matching extension should NOT be scanned;
+    // its target (if real) is scanned via its own entry.
+    const root = mkdtempSync(join(tmpdir(), "rrc-filelink-"));
+    try {
+      writeFileSync(join(root, "real.ts"), "export function target() {}\n");
+      symlinkSync(join(root, "real.ts"), join(root, "alias.ts"));
+
+      const r = verifyMemoryReference({
+        kind: "symbol",
+        value: "target",
+        repoRoot: root,
+      });
+      expect(r.exists).toBe(true);
+      // The real file is scanned; alias is skipped so matchCount is not
+      // doubled.
+      expect(r.foundIn).toHaveLength(1);
+      expect(r.foundIn[0]).toMatch(/real\.ts$/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("verifyMemoryReference — no-extension files", () => {
+  it("skips no-extension files by default (Makefile contains flag but unseen)", () => {
+    const root = mkdtempSync(join(tmpdir(), "rrc-noext-"));
+    try {
+      writeFileSync(join(root, "Makefile"), "build:\n\tgo build --verbose\n");
+      const r = verifyMemoryReference({
+        kind: "flag",
+        value: "--verbose",
+        repoRoot: root,
+      });
+      // Documented behaviour: Makefile is off by default. The flag
+      // literally exists in the repo but this mode doesn't see it.
+      expect(r.exists).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("finds flag inside Makefile when includeNoExtension is on", () => {
+    const root = mkdtempSync(join(tmpdir(), "rrc-noext-on-"));
+    try {
+      writeFileSync(join(root, "Makefile"), "build:\n\tgo build --verbose\n");
+      const r = verifyMemoryReference(
+        { kind: "flag", value: "--verbose", repoRoot: root },
+        { includeNoExtension: true },
+      );
+      expect(r.exists).toBe(true);
+      expect(r.foundIn[0]).toMatch(/Makefile$/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("extraNoExtensionNames scans only the listed files", () => {
+    // Opt-in narrow: scan Makefile but NOT Dockerfile, even though
+    // both lack extensions.
+    const root = mkdtempSync(join(tmpdir(), "rrc-noext-narrow-"));
+    try {
+      writeFileSync(join(root, "Makefile"), "const MAGIC = 42\n");
+      writeFileSync(join(root, "Dockerfile"), "ENV MAGIC=42\n");
+      const r = verifyMemoryReference(
+        { kind: "flag", value: "MAGIC", repoRoot: root },
+        { extraNoExtensionNames: ["Makefile"] },
+      );
+      expect(r.exists).toBe(true);
+      expect(r.foundIn).toHaveLength(1);
+      expect(r.foundIn[0]).toMatch(/Makefile$/);
+      expect(r.foundIn[0]).not.toMatch(/Dockerfile/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

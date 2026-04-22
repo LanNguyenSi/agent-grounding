@@ -15,8 +15,10 @@
 
 import {
   statSync,
+  lstatSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   type Stats,
 } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
@@ -59,6 +61,20 @@ export interface VerifyOptions {
    * Prevents runaway on a misconfigured repoRoot.
    */
   maxFiles?: number;
+  /**
+   * When true, also search no-extension files like `Makefile`,
+   * `Dockerfile`, `Procfile`, `LICENSE`. Default: false — those files
+   * are usually not where a memory references a symbol or flag, and
+   * including them blindly grows the walk set significantly.
+   */
+  includeNoExtension?: boolean;
+  /**
+   * Extra filenames (no extension) to scan even when
+   * `includeNoExtension` is false. Useful for "always scan Makefile
+   * but nothing else that lacks a dot". Case-sensitive.
+   * Default: [].
+   */
+  extraNoExtensionNames?: readonly string[];
 }
 
 const DEFAULT_EXTENSIONS = [
@@ -119,18 +135,35 @@ interface WalkResult {
   truncated: boolean;
 }
 
-function walk(
-  root: string,
-  extensions: ReadonlySet<string>,
-  ignoreDirs: ReadonlySet<string>,
-  maxFiles: number,
-): WalkResult {
+interface WalkConfig {
+  extensions: ReadonlySet<string>;
+  ignoreDirs: ReadonlySet<string>;
+  maxFiles: number;
+  includeNoExtension: boolean;
+  extraNoExtensionNames: ReadonlySet<string>;
+}
+
+function resolveReal(path: string): string | null {
+  try {
+    return realpathSync(path);
+  } catch {
+    return null;
+  }
+}
+
+function walk(root: string, cfg: WalkConfig): WalkResult {
   const files: string[] = [];
   let truncated = false;
   const stack: string[] = [root];
+  // Track directories we've already descended into (by canonical path)
+  // so a symlink cycle like `a/b -> ..` can't loop forever. Seeds with
+  // the root's realpath if available.
+  const visited = new Set<string>();
+  const rootReal = resolveReal(root);
+  if (rootReal) visited.add(rootReal);
 
   while (stack.length > 0) {
-    if (files.length >= maxFiles) {
+    if (files.length >= cfg.maxFiles) {
       truncated = true;
       break;
     }
@@ -142,25 +175,52 @@ function walk(
       continue;
     }
     for (const entry of entries) {
-      if (ignoreDirs.has(entry)) continue;
+      if (cfg.ignoreDirs.has(entry)) continue;
       const full = join(dir, entry);
-      let stat: Stats;
+      // Use lstat first so symlinks are classified without being
+      // followed. Directory symlinks are skipped outright — we never
+      // descend through them, which makes cycles impossible by
+      // construction. File symlinks still resolve through the regular
+      // readFileSync call downstream, so refs into a linked file still
+      // work when explicitly named.
+      let lstat: Stats;
       try {
-        stat = statSync(full);
+        lstat = lstatSync(full);
       } catch {
         continue;
       }
-      if (stat.isDirectory()) {
+      if (lstat.isSymbolicLink()) continue;
+
+      if (lstat.isDirectory()) {
+        // Belt-and-suspenders: even without symlinks, realpath-canonicalize
+        // each directory and skip duplicates. Catches hard-link-based
+        // cycles and readdir returning "." / ".." in exotic fs drivers.
+        const real = resolveReal(full);
+        if (real && visited.has(real)) continue;
+        if (real) visited.add(real);
         stack.push(full);
         continue;
       }
-      if (!stat.isFile()) continue;
+      if (!lstat.isFile()) continue;
+
       const dotIdx = entry.lastIndexOf(".");
-      if (dotIdx < 0) continue;
-      const ext = entry.slice(dotIdx + 1);
-      if (!extensions.has(ext)) continue;
-      files.push(full);
-      if (files.length >= maxFiles) {
+      if (dotIdx < 0) {
+        // No-extension file (Makefile, Dockerfile, Procfile, LICENSE).
+        // Off by default because scanning those grows the walk set
+        // noticeably without matching most memory refs. Opt in via
+        // `includeNoExtension` or name the file in
+        // `extraNoExtensionNames` when a specific one matters.
+        if (!cfg.includeNoExtension && !cfg.extraNoExtensionNames.has(entry)) {
+          continue;
+        }
+        files.push(full);
+      } else {
+        const ext = entry.slice(dotIdx + 1);
+        if (!cfg.extensions.has(ext)) continue;
+        files.push(full);
+      }
+
+      if (files.length >= cfg.maxFiles) {
         truncated = true;
         break;
       }
@@ -241,14 +301,13 @@ function verifyGrepLike(
   pattern: RegExp,
   label: string,
 ): VerifyMemoryReferenceResult {
-  const extensions = new Set(opts.extensions);
-  const ignoreDirs = new Set(opts.ignoreDirs);
-  const { files, truncated } = walk(
-    root,
-    extensions,
-    ignoreDirs,
-    opts.maxFiles,
-  );
+  const { files, truncated } = walk(root, {
+    extensions: new Set(opts.extensions),
+    ignoreDirs: new Set(opts.ignoreDirs),
+    maxFiles: opts.maxFiles,
+    includeNoExtension: opts.includeNoExtension,
+    extraNoExtensionNames: new Set(opts.extraNoExtensionNames),
+  });
 
   const foundIn: string[] = [];
   let matchCount = 0;
@@ -298,6 +357,8 @@ export function verifyMemoryReference(
     extensions: options.extensions ?? DEFAULT_EXTENSIONS,
     ignoreDirs: options.ignoreDirs ?? DEFAULT_IGNORE_DIRS,
     maxFiles: options.maxFiles ?? DEFAULT_MAX_FILES,
+    includeNoExtension: options.includeNoExtension ?? false,
+    extraNoExtensionNames: options.extraNoExtensionNames ?? [],
   };
 
   switch (ref.kind) {
