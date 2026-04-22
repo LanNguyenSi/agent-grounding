@@ -20,6 +20,11 @@ Verification and debugging framework for AI agents. Prevents agents from acting 
 | [readme-first-resolver](packages/readme-first-resolver) | Forces agents to read primary docs before any analysis |
 | [domain-router](packages/domain-router) | Routes keywords to correct repos, components and docs scope |
 
+### SDK
+| Package | Description |
+|---------|-------------|
+| [grounding-sdk](packages/grounding-sdk) | `verify`/`track`/`validate` — ergonomic in-process facade over the stack |
+
 ## Why this exists
 
 AI agents are good at generating plausible explanations. They're bad at verifying them. This framework enforces discipline:
