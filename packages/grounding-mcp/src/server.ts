@@ -20,6 +20,10 @@ import {
   type ClaimContext,
   type ClaimType,
 } from 'claim-gate';
+import {
+  verifyMemoryReference,
+  type MemoryReference,
+} from 'runtime-reality-checker';
 
 import { saveSession, loadSession } from './session-store.js';
 import { ledgerDb } from './ledger-bridge.js';
@@ -214,6 +218,21 @@ server.tool(
     const context = deriveContext(session, summary);
     const result = evaluateClaim(claim, context, type as ClaimType | undefined);
     return jsonResponse({ ...result, derivedContext: context });
+  },
+);
+
+server.tool(
+  'verify_memory_reference',
+  'Check whether a memory-referenced path/symbol/flag still exists in the current repo state. Use before recommending anything from a memory that names a concrete file, function, or CLI flag — a fast sanity-check against rename/delete/never-merged drift.',
+  {
+    kind: z.enum(['path', 'symbol', 'flag']),
+    value: z.string().min(1),
+    repoRoot: z.string().optional(),
+  },
+  async ({ kind, value, repoRoot }) => {
+    const ref: MemoryReference = { kind, value, ...(repoRoot ? { repoRoot } : {}) };
+    const result = verifyMemoryReference(ref);
+    return jsonResponse(result);
   },
 );
 

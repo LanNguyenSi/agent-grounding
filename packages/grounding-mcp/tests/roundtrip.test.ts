@@ -19,6 +19,7 @@ import { join } from 'node:path';
 import { initSession, advancePhase } from 'grounding-wrapper';
 import { addEntry, getSummary } from 'evidence-ledger';
 import { evaluateClaim } from 'claim-gate';
+import { verifyMemoryReference } from 'runtime-reality-checker';
 
 import { saveSession, loadSession, sessionExists } from '../src/session-store.js';
 import { ledgerDb, resetLedgerDb } from '../src/ledger-bridge.js';
@@ -122,6 +123,32 @@ describe('grounding-mcp round trip', () => {
 
     expect(final.allowed).toBe(true);
     expect(final.score).toBe(100);
+  });
+
+  it('verify_memory_reference round-trip — positive and negative case for kind:path', () => {
+    // Drop a file inside our temp root and verify a ref that points at
+    // it, then at a sibling that does not exist. The MCP tool handler
+    // just forwards its args into this same function, so exercising it
+    // here catches any signature/shape drift before it hits the SDK.
+    const { writeFileSync } = require('node:fs') as typeof import('node:fs');
+    writeFileSync(join(tmpRoot, 'real.md'), '# hi\n');
+
+    const hit = verifyMemoryReference({
+      kind: 'path',
+      value: 'real.md',
+      repoRoot: tmpRoot,
+    });
+    expect(hit.exists).toBe(true);
+    expect(hit.foundIn).toHaveLength(1);
+    expect(hit.summary).toMatch(/exists/);
+
+    const miss = verifyMemoryReference({
+      kind: 'path',
+      value: 'ghost.md',
+      repoRoot: tmpRoot,
+    });
+    expect(miss.exists).toBe(false);
+    expect(miss.foundIn).toEqual([]);
   });
 
   it('round-trips a complete advance chain to "complete" phase', () => {
