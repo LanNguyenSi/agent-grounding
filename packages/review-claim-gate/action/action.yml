@@ -163,12 +163,31 @@ runs:
           const report = JSON.parse(
             fs.readFileSync(process.env.GATE_REPORT, 'utf8'),
           );
-          const { result, taskId, evidenceEntries } = report;
+          const {
+            result,
+            taskId,
+            evidenceEntries,
+            evidenceSource,
+            evidenceFilePath,
+          } = report;
+
+          // Show which source decided the evidence count so a reviewer
+          // inspecting a red gate knows whether the number came from a
+          // committed file (high integrity) or the ephemeral CI ledger
+          // (always zero on a fresh runner).
+          const sourceLabel =
+            evidenceSource === 'file'
+              ? ` (file: \`${evidenceFilePath}\`)`
+              : evidenceSource === 'ledger'
+                ? ' (ledger fallback)'
+                : evidenceSource === 'forced'
+                  ? ' (forced via `evidence-logged` input)'
+                  : '';
 
           const lines = [
             `**Verdict:** ${result.allowed ? '✅ ALLOWED' : '❌ BLOCKED'} (score ${result.score}/100)`,
             `**Task:** \`${taskId}\``,
-            `**Evidence entries:** ${evidenceEntries}`,
+            `**Evidence entries:** ${evidenceEntries}${sourceLabel}`,
             '',
             '| Prerequisite | |',
             '|---|---|',
