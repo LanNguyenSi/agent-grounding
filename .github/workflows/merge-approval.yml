@@ -1,0 +1,56 @@
+name: merge-approval
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - labeled
+      - unlabeled
+      - ready_for_review
+
+permissions:
+  checks: write
+  pull-requests: read
+  contents: read
+
+# Serialise runs per PR head — stale runs would post outdated Check-Runs.
+concurrency:
+  group: merge-approval-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract prereq flags from PR labels
+        id: labels
+        uses: actions/github-script@v7
+        with:
+          # eslint-disable-next-line no-eval
+          script: |
+            const labels = (context.payload.pull_request?.labels ?? [])
+              .map((l) => l.name);
+            const has = (name) => labels.includes(name);
+            core.setOutput('tests_pass',                has('review:tests-pass').toString());
+            core.setOutput('checklist_complete',        has('review:checklist-complete').toString());
+            core.setOutput('comments_resolved',         has('review:comments-resolved').toString());
+            core.setOutput('scope_matches_task',        has('review:scope-matches-task').toString());
+            core.setOutput('evidence_logged',           has('review:evidence-logged').toString());
+
+      - name: Run merge-approval gate
+        uses: LanNguyenSi/agent-grounding/packages/review-claim-gate/action@master
+        with:
+          task-id: ${{ github.event.pull_request.head.ref }}
+          pr-number: ${{ github.event.pull_request.number }}
+          tests-pass: ${{ steps.labels.outputs.tests_pass }}
+          review-checklist-complete: ${{ steps.labels.outputs.checklist_complete }}
+          comments-resolved: ${{ steps.labels.outputs.comments_resolved }}
+          scope-matches-task: ${{ steps.labels.outputs.scope_matches_task }}
+          evidence-logged: ${{ steps.labels.outputs.evidence_logged }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
