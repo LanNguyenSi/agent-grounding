@@ -37,7 +37,11 @@ export function resetDb(): void {
     try {
       _db.close();
     } catch {
-      // Already closed or corrupted — either way, drop the reference.
+      // better-sqlite3 double-close is a silent noop; close() only
+      // throws when a statement is mid-execution or the handle is in
+      // a similarly transient busy state. resetDb is a reset — callers
+      // want forward progress, not a failure — so swallow and drop
+      // the reference either way.
     }
   }
   _db = null;
