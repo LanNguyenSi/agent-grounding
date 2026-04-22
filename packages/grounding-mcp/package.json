@@ -20,6 +20,7 @@
     "claim-gate": "1.0.0",
     "evidence-ledger": "1.0.0",
     "grounding-wrapper": "1.0.0",
+    "runtime-reality-checker": "1.0.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

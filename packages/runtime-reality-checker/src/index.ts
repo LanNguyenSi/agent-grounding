@@ -14,3 +14,10 @@ export {
   hasCriticalDrift,
   getCriticalDrift,
 } from "./lib.js";
+export type {
+  MemoryReference,
+  MemoryReferenceKind,
+  VerifyMemoryReferenceResult,
+  VerifyOptions,
+} from "./verify-reference.js";
+export { verifyMemoryReference } from "./verify-reference.js";

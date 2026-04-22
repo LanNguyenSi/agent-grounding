@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "build": "npm run build:deps && npm run build --workspaces --if-present",
-    "build:deps": "npm run build -w grounding-wrapper -w evidence-ledger -w claim-gate -w hypothesis-tracker",
+    "build:deps": "npm run build -w grounding-wrapper -w evidence-ledger -w claim-gate -w hypothesis-tracker -w runtime-reality-checker",
     "test": "npm run test --workspaces",
     "typecheck": "npm run typecheck --workspaces --if-present"
   }

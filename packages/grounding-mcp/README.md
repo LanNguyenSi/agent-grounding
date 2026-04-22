@@ -1,6 +1,6 @@
 # grounding-mcp
 
-MCP server that exposes the [agent-grounding](../../) stack — `grounding-wrapper`, `evidence-ledger`, `claim-gate` — as tools a long-running Claude Code session can call directly. Sits between the agent and the framework so a debug task can be framed, tracked, and gated without subprocess plumbing.
+MCP server that exposes the [agent-grounding](../../) stack — `grounding-wrapper`, `evidence-ledger`, `claim-gate`, `runtime-reality-checker` — as tools a long-running Claude Code session can call directly. Sits between the agent and the framework so a debug task can be framed, tracked, and gated without subprocess plumbing.
 
 ## Why
 
@@ -17,6 +17,7 @@ The other packages in this repo are CLI-first. That works fine for scripted invo
 | `ledger_summary` | `evidence-ledger.getSummary` | Return all entries for a session, grouped by type, with counts. |
 | `claim_evaluate` | `claim-gate.evaluateClaim` | Run a claim through the gate with caller-supplied context. |
 | `claim_evaluate_from_session` | claim-gate + grounding-wrapper + evidence-ledger | Same, but auto-derive the context from the session's phase status + ledger entries. The default path. |
+| `verify_memory_reference` | `runtime-reality-checker.verifyMemoryReference` | Check whether a memory-referenced path / symbol / flag still exists in the repo. Call before recommending anything from a memory that cites a concrete file, function, or flag. |
 
 ## Storage
 
