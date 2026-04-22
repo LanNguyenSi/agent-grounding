@@ -1,0 +1,24 @@
+{
+  "name": "grounding-sdk",
+  "version": "1.0.0",
+  "description": "Ergonomic facade over agent-grounding: verify claims, track hypotheses, validate sessions",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "claim-gate": "*",
+    "evidence-ledger": "*",
+    "grounding-wrapper": "*",
+    "hypothesis-tracker": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "typescript": "^5.3.3",
+    "vitest": "^4.1.4"
+  }
+}
