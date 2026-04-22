@@ -79,9 +79,12 @@ describe("verify", () => {
     expect(result.score).toBeGreaterThan(0);
   });
 
-  it("defaults evidence to {} when omitted", () => {
+  it("defaults evidence to {} when omitted — strong claim rejected", () => {
+    // With no evidence flags set, even the fall-through 'generic' policy
+    // (which only requires `has_evidence`) should deny a hard claim.
     const result = verify("any strong claim");
-    expect(result).toMatchObject({ allowed: expect.any(Boolean) });
+    expect(result.allowed).toBe(false);
+    expect(result.score).toBeLessThan(100);
   });
 });
 

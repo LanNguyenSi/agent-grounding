@@ -11,7 +11,7 @@ import {
   type ClaimResult,
   type ClaimType,
 } from "claim-gate";
-import type { GroundingSession } from "grounding-wrapper";
+import type { GroundingPhase, GroundingSession } from "grounding-wrapper";
 import {
   addHypothesis,
   createStore,
@@ -25,6 +25,7 @@ export type {
   ClaimContext,
   ClaimResult,
   ClaimType,
+  GroundingPhase,
   GroundingSession,
   Hypothesis,
   HypothesisStore,
@@ -142,8 +143,15 @@ export function validate(input: ValidateInput): ValidateResult {
 // it as a prereq would be a deadlock. Mirrors the identical logic in
 // grounding-mcp/src/derive-context.ts; kept in sync manually to avoid
 // an SDK-layer dep on the MCP server package.
-function phaseSatisfied(session: GroundingSession, phase: string): boolean {
-  const status = (session.phase_status as Record<string, string>)[phase];
+//
+// `phase: GroundingPhase` (not `string`) so a typo in a phase name is
+// caught at compile time — precisely the class of silent-wrong-answer
+// bug this SDK exists to prevent.
+function phaseSatisfied(
+  session: GroundingSession,
+  phase: GroundingPhase,
+): boolean {
+  const status = session.phase_status[phase];
   return status === "done" || status === "skipped";
 }
 
