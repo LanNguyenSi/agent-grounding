@@ -59,12 +59,20 @@ runs:
 
     - name: Install + build review-claim-gate
       shell: bash
+      # All user-controlled inputs are routed through `env:` and read as
+      # shell variables. Substituting them directly into the script via
+      # `${{ inputs.* }}` would let a malicious input (e.g. a branch
+      # name used as task-id) inject shell commands with the workflow
+      # token's scope. See:
+      # https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-an-intermediate-environment-variable
+      env:
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
-        # The action checks out of the agent-grounding repo at the ref the
-        # caller pinned. Install workspaces from the monorepo root and
-        # build the leaf deps + review-claim-gate.
-        cd "${{ github.action_path }}/../../.."
+        # The action checks out of the agent-grounding repo at the ref
+        # the caller pinned. Install workspaces from the monorepo root
+        # and build the leaf deps + review-claim-gate.
+        cd "$ACTION_PATH/../../.."
         npm ci --no-audit --no-fund
         npm run build:deps
         npm run build -w review-claim-gate
@@ -72,22 +80,32 @@ runs:
     - name: Evaluate merge_approval gate
       id: gate
       shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        TASK_ID: ${{ inputs.task-id }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        EVIDENCE_LEDGER_PATH: ${{ inputs.evidence-ledger-path }}
+        TESTS_PASS: ${{ inputs.tests-pass }}
+        REVIEW_CHECKLIST_COMPLETE: ${{ inputs.review-checklist-complete }}
+        COMMENTS_RESOLVED: ${{ inputs.comments-resolved }}
+        SCOPE_MATCHES_TASK: ${{ inputs.scope-matches-task }}
+        EVIDENCE_LOGGED: ${{ inputs.evidence-logged }}
       run: |
         set -euo pipefail
-        CLI="${{ github.action_path }}/../dist/cli.js"
+        CLI="$ACTION_PATH/../dist/cli.js"
         REPORT="$RUNNER_TEMP/merge-approval.json"
 
-        ARGS=( check --task-id "${{ inputs.task-id }}" --json )
-        ARGS+=( --ledger-db "${{ inputs.evidence-ledger-path }}" )
+        ARGS=( check --task-id "$TASK_ID" --json )
+        ARGS+=( --ledger-db "$EVIDENCE_LEDGER_PATH" )
 
-        if [ -n "${{ inputs.pr-number }}" ]; then
-          ARGS+=( --pr "${{ inputs.pr-number }}" )
+        if [ -n "$PR_NUMBER" ]; then
+          ARGS+=( --pr "$PR_NUMBER" )
         fi
-        [ "${{ inputs.tests-pass }}"                 = "true" ] && ARGS+=( --tests-pass )                 || true
-        [ "${{ inputs.review-checklist-complete }}"  = "true" ] && ARGS+=( --review-checklist-complete )  || true
-        [ "${{ inputs.comments-resolved }}"          = "true" ] && ARGS+=( --comments-resolved )          || true
-        [ "${{ inputs.scope-matches-task }}"         = "true" ] && ARGS+=( --scope-matches-task )         || true
-        [ "${{ inputs.evidence-logged }}"            = "true" ] && ARGS+=( --evidence-logged )            || true
+        [ "$TESTS_PASS"                = "true" ] && ARGS+=( --tests-pass )                 || true
+        [ "$REVIEW_CHECKLIST_COMPLETE" = "true" ] && ARGS+=( --review-checklist-complete )  || true
+        [ "$COMMENTS_RESOLVED"         = "true" ] && ARGS+=( --comments-resolved )          || true
+        [ "$SCOPE_MATCHES_TASK"        = "true" ] && ARGS+=( --scope-matches-task )         || true
+        [ "$EVIDENCE_LOGGED"           = "true" ] && ARGS+=( --evidence-logged )            || true
 
         # Run the CLI, capturing JSON regardless of exit code (exit 1 is
         # the normal BLOCKED signal; we want the report either way).
@@ -98,8 +116,14 @@ runs:
         # Echo the report back to the log for debugging.
         cat "$REPORT"
 
-        ALLOWED=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$REPORT','utf8')).result.allowed)")
-        SCORE=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$REPORT','utf8')).result.score)")
+        # Export REPORT so the node -e one-liners below see it via
+        # process.env — avoids shell-interpolating the path into the JS
+        # source, which would be a second injection vector if REPORT ever
+        # contained quotes (it can't, since we built the path ourselves,
+        # but defence in depth).
+        export REPORT
+        ALLOWED=$(node -e "const fs=require('node:fs'); console.log(JSON.parse(fs.readFileSync(process.env.REPORT,'utf8')).result.allowed)")
+        SCORE=$(node -e "const fs=require('node:fs'); console.log(JSON.parse(fs.readFileSync(process.env.REPORT,'utf8')).result.score)")
 
         if [ "$ALLOWED" = "true" ]; then
           echo "verdict=ALLOWED" >> "$GITHUB_OUTPUT"

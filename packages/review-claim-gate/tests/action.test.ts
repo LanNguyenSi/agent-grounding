@@ -89,6 +89,55 @@ describe("action.yml — shape", () => {
     expect(gateStep.run).toContain("--ledger-db");
   });
 
+  it("the gate step forwards every prereq flag to the CLI", () => {
+    // Catches the class of drift where a new prereq lands in lib.ts but
+    // the action.yml bash never grows a corresponding `ARGS+=(--…)`
+    // line. The previous test only checks that inputs are declared, not
+    // that they are forwarded.
+    const gateStep = action.runs.steps.find(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (s: any) => s.id === "gate",
+    );
+    const expectedFlags: string[] = [];
+    for (const key of MERGE_APPROVAL_PREREQS) {
+      if (key === "no_unresolved_review_comments") {
+        expectedFlags.push("--comments-resolved");
+      } else {
+        expectedFlags.push(`--${key.replace(/_/g, "-")}`);
+      }
+    }
+    for (const flag of expectedFlags) {
+      expect(gateStep.run).toContain(flag);
+    }
+  });
+
+  it("inputs are routed through env: not interpolated directly into bash", () => {
+    // Security-hardening guardrail: `${{ inputs.* }}` inside `run:` is
+    // shell-injection prone (a task-id like `"; rm -rf …` would break
+    // out). Every user-controlled input must appear in the step's
+    // `env:` block and be read as a shell variable.
+    const sensitiveSteps = action.runs.steps.filter(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (s: any) => typeof s.run === "string",
+    );
+    for (const step of sensitiveSteps) {
+      // If the step references any user input (any `${{ inputs.* }}`
+      // expression) it MUST be inside the `env:` block, not inside
+      // `run:`.
+      expect(step.run).not.toMatch(/\$\{\{\s*inputs\./);
+    }
+    // And the gate step must declare the expected env vars.
+    const gateStep = sensitiveSteps.find(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (s: any) => s.id === "gate",
+    );
+    expect(gateStep.env).toMatchObject({
+      TASK_ID: expect.stringContaining("inputs.task-id"),
+      PR_NUMBER: expect.stringContaining("inputs.pr-number"),
+      EVIDENCE_LEDGER_PATH: expect.stringContaining("inputs.evidence-ledger-path"),
+    });
+  });
+
   it("posts a Check-Run named 'merge-approval'", () => {
     const checkStep = action.runs.steps.find(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
