@@ -24,6 +24,7 @@ Verification and debugging framework for AI agents. Prevents agents from acting 
 | Package | Description |
 |---------|-------------|
 | [grounding-sdk](packages/grounding-sdk) | `verify`/`track`/`validate` — ergonomic in-process facade over the stack |
+| [review-claim-gate](packages/review-claim-gate) | `merge_approval` gate for PR-review subagents — fails closed unless tests pass, the checklist is complete, and ≥1 evidence-ledger entry exists |
 
 ## Why this exists
 
