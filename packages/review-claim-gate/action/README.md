@@ -87,6 +87,35 @@ GitHub UI — even with an approving review.
 | `score`       | Readiness score 0–100                                           |
 | `report-path` | Path to the full JSON report in `$RUNNER_TEMP`                  |
 
+## Evidence sources — committed file vs. local ledger
+
+`evidence_logged` can come from three places, in this priority order:
+
+1. **`--evidence-logged` input is `'true'`** — forces the flag. Documented in the label table. Honor-system.
+2. **Committed evidence file** at `./.agent-grounding/evidence/<task-id>.jsonl` in the checked-out workspace. The CLI auto-detects this path relative to `$GITHUB_WORKSPACE` and counts valid JSON lines as the evidence count. This is the **high-integrity path** — reviewer exports their local ledger into the PR branch.
+3. **Local evidence-ledger DB** at `$EVIDENCE_LEDGER_PATH` (default `.evidence-ledger/db.sqlite`). On a fresh CI runner this is always empty; only useful for local `act` runs.
+
+### Reviewer workflow for committed evidence
+
+```bash
+# During review, log findings to your local evidence-ledger with
+# session = <branch-name-or-task-id>:
+ledger add --session feat/foo --type fact --content "CI green, all 94 tests pass"
+ledger add --session feat/foo --type fact --content "Reviewed security/scope dimensions"
+
+# When finishing the review, export to the convention path:
+mkdir -p .agent-grounding/evidence
+review-claim-gate export --task-id feat/foo \
+  --out .agent-grounding/evidence/feat/foo.jsonl
+
+# Commit it with the PR:
+git add .agent-grounding/evidence/feat/foo.jsonl
+git commit -m "evidence: attach ledger for merge_approval gate"
+git push
+```
+
+On the next workflow run, the action finds the file, counts entries, and the Check-Run summary shows `evidence entries: N (file: /path/to/…)` instead of `(ledger)` or `(none)`. A committed `evidence_logged` signal is tamper-evident in git history in a way a PR label is not.
+
 ## Local dry-run with `act`
 
 ```bash

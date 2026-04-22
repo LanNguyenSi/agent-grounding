@@ -50,15 +50,28 @@ review-claim-gate check --task-id <id> [--pr <url>]
   [--review-checklist-complete]
   [--comments-resolved]               # → no_unresolved_review_comments
   [--scope-matches-task]
-  [--evidence-logged]                 # forces true; default derives from ledger
+  [--evidence-logged]                 # forces true (highest precedence)
+  [--evidence-file <path>]            # committed JSONL file; overrides auto-detect
   [--ledger-db <path>]                # default $EVIDENCE_LEDGER_DB or ~/.evidence-ledger/ledger.db
   [--json]                            # machine-readable output
   [--claim <text>]                    # custom claim string
 
+review-claim-gate export --task-id <id>
+  [--ledger-db <path>]
+  [--out <path>]                      # default: write to stdout; auto-mkdirs parent
+
 review-claim-gate describe            # print prereq keys + descriptions
 ```
 
-Exit code: `0` if `allowed:true`, `1` otherwise.
+Exit code for `check`: `0` if `allowed:true`, `1` otherwise.
+
+### Evidence source precedence (used by `check`)
+
+1. `--evidence-logged` forces `evidence_logged=true` regardless of any other signal.
+2. **Committed evidence file.** If `--evidence-file <path>` is given (and exists), count non-empty JSON lines there. Otherwise auto-detect `./.agent-grounding/evidence/<task-id>.jsonl` relative to `process.cwd()`.
+3. Local evidence-ledger DB (`session = <task-id>`) as fallback.
+
+Explicit `--evidence-file <path>` with a non-existent path throws — silent fallback would be misleading. The auto-detect path is also the convention `export` writes to, so the reviewer round-trip is export → commit → check.
 
 ### JSON shape
 
@@ -67,6 +80,8 @@ Exit code: `0` if `allowed:true`, `1` otherwise.
   "taskId": "t-abc",
   "pr": "https://github.com/org/repo/pull/42",
   "evidenceEntries": 3,
+  "evidenceSource": "file",
+  "evidenceFilePath": ".agent-grounding/evidence/t-abc.jsonl",
   "result": {
     "claim": "PR for task t-abc is safe to merge",
     "type": "merge_approval",
@@ -84,6 +99,8 @@ Exit code: `0` if `allowed:true`, `1` otherwise.
   }
 }
 ```
+
+`evidenceSource` is one of `"file" | "ledger" | "forced" | "none"`. `evidenceFilePath` is set only when `evidenceSource === "file"`.
 
 ## Programmatic
 
