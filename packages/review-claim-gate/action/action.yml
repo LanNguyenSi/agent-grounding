@@ -99,6 +99,12 @@ runs:
         CLI="$ACTION_PATH/../dist/cli.js"
         REPORT="$RUNNER_TEMP/merge-approval.json"
 
+        # better-sqlite3 auto-creates the DB file but not intermediate
+        # directories. The default --ledger-db path is `.evidence-ledger/
+        # db.sqlite` which needs the parent dir to exist. Silently create
+        # it so the CLI never crashes on a fresh workspace.
+        mkdir -p "$(dirname "$EVIDENCE_LEDGER_PATH")"
+
         ARGS=( check --task-id "$TASK_ID" --json )
         ARGS+=( --ledger-db "$EVIDENCE_LEDGER_PATH" )
 
@@ -115,10 +121,20 @@ runs:
         # the normal BLOCKED signal; we want the report either way).
         set +e
         node "$CLI" "${ARGS[@]}" > "$REPORT"
+        CLI_EXIT=$?
         set -e
 
         # Echo the report back to the log for debugging.
-        cat "$REPORT"
+        cat "$REPORT" || true
+
+        # If the CLI crashed before it could emit any JSON (e.g. an
+        # unexpected error inside evidence-ledger), fail loudly with the
+        # real reason instead of letting the downstream JSON parser
+        # throw an opaque SyntaxError.
+        if [ ! -s "$REPORT" ]; then
+          echo "::error::review-claim-gate CLI produced no output (exit $CLI_EXIT); see preceding logs for the underlying error"
+          exit 1
+        fi
 
         # Export REPORT so the node -e one-liners below see it via
         # process.env — avoids shell-interpolating the path into the JS
