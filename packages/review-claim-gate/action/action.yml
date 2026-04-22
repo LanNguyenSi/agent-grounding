@@ -1,0 +1,167 @@
+name: merge-approval
+description: >-
+  Evaluate the merge_approval claim-gate and post a Check-Run on the PR.
+  Fails closed when the gate is blocked so branch-protection can require it.
+author: LanNguyenSi
+
+inputs:
+  task-id:
+    description: agent-tasks task id (used as the evidence-ledger session key)
+    required: true
+  pr-number:
+    description: PR number for Check-Run context (defaults to the triggering PR)
+    required: false
+  evidence-ledger-path:
+    description: Path to the evidence-ledger SQLite DB inside the workspace
+    default: .evidence-ledger/db.sqlite
+  fail-on-block:
+    description: When 'true', the action exits non-zero if the gate blocks the merge
+    default: 'true'
+  tests-pass:
+    description: Pass 'true' when the test suite is green for this PR
+    default: 'false'
+  review-checklist-complete:
+    description: Pass 'true' when every rubric item has been walked
+    default: 'false'
+  comments-resolved:
+    description: Pass 'true' when every review comment is resolved or replied to
+    default: 'false'
+  scope-matches-task:
+    description: Pass 'true' when the PR diff stays inside the task scope
+    default: 'false'
+  evidence-logged:
+    description: Force evidence_logged=true even when the ledger is empty (rare)
+    default: 'false'
+  github-token:
+    description: GITHUB_TOKEN (or a PAT) with checks:write permission
+    required: true
+
+outputs:
+  verdict:
+    description: Either 'ALLOWED' or 'BLOCKED'
+    value: ${{ steps.gate.outputs.verdict }}
+  score:
+    description: Readiness score 0–100
+    value: ${{ steps.gate.outputs.score }}
+  report-path:
+    description: Path to the full JSON report written to $RUNNER_TEMP
+    value: ${{ steps.gate.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: npm
+        cache-dependency-path: ${{ github.action_path }}/../../../package-lock.json
+
+    - name: Install + build review-claim-gate
+      shell: bash
+      run: |
+        set -euo pipefail
+        # The action checks out of the agent-grounding repo at the ref the
+        # caller pinned. Install workspaces from the monorepo root and
+        # build the leaf deps + review-claim-gate.
+        cd "${{ github.action_path }}/../../.."
+        npm ci --no-audit --no-fund
+        npm run build:deps
+        npm run build -w review-claim-gate
+
+    - name: Evaluate merge_approval gate
+      id: gate
+      shell: bash
+      run: |
+        set -euo pipefail
+        CLI="${{ github.action_path }}/../dist/cli.js"
+        REPORT="$RUNNER_TEMP/merge-approval.json"
+
+        ARGS=( check --task-id "${{ inputs.task-id }}" --json )
+        ARGS+=( --ledger-db "${{ inputs.evidence-ledger-path }}" )
+
+        if [ -n "${{ inputs.pr-number }}" ]; then
+          ARGS+=( --pr "${{ inputs.pr-number }}" )
+        fi
+        [ "${{ inputs.tests-pass }}"                 = "true" ] && ARGS+=( --tests-pass )                 || true
+        [ "${{ inputs.review-checklist-complete }}"  = "true" ] && ARGS+=( --review-checklist-complete )  || true
+        [ "${{ inputs.comments-resolved }}"          = "true" ] && ARGS+=( --comments-resolved )          || true
+        [ "${{ inputs.scope-matches-task }}"         = "true" ] && ARGS+=( --scope-matches-task )         || true
+        [ "${{ inputs.evidence-logged }}"            = "true" ] && ARGS+=( --evidence-logged )            || true
+
+        # Run the CLI, capturing JSON regardless of exit code (exit 1 is
+        # the normal BLOCKED signal; we want the report either way).
+        set +e
+        node "$CLI" "${ARGS[@]}" > "$REPORT"
+        set -e
+
+        # Echo the report back to the log for debugging.
+        cat "$REPORT"
+
+        ALLOWED=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$REPORT','utf8')).result.allowed)")
+        SCORE=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$REPORT','utf8')).result.score)")
+
+        if [ "$ALLOWED" = "true" ]; then
+          echo "verdict=ALLOWED" >> "$GITHUB_OUTPUT"
+        else
+          echo "verdict=BLOCKED" >> "$GITHUB_OUTPUT"
+        fi
+        echo "score=$SCORE" >> "$GITHUB_OUTPUT"
+        echo "report=$REPORT" >> "$GITHUB_OUTPUT"
+
+    - name: Post Check-Run
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('node:fs');
+          const report = JSON.parse(
+            fs.readFileSync(process.env.GATE_REPORT, 'utf8'),
+          );
+          const { result, taskId, evidenceEntries } = report;
+
+          const lines = [
+            `**Verdict:** ${result.allowed ? '✅ ALLOWED' : '❌ BLOCKED'} (score ${result.score}/100)`,
+            `**Task:** \`${taskId}\``,
+            `**Evidence entries:** ${evidenceEntries}`,
+            '',
+            '| Prerequisite | |',
+            '|---|---|',
+          ];
+          for (const [k, v] of Object.entries(result.prerequisites)) {
+            lines.push(`| \`${k}\` | ${v ? '✓' : '✗'} |`);
+          }
+          if (result.next_steps && result.next_steps.length > 0) {
+            lines.push('', '**Next steps:**');
+            for (const s of result.next_steps) lines.push(`- ${s}`);
+          }
+
+          // When the workflow runs on `pull_request`, use the PR's head SHA
+          // — github.sha on that event is the merge commit, which is not
+          // what reviewers want attached to the Check-Run.
+          const headSha =
+            context.payload.pull_request?.head?.sha ?? context.sha;
+
+          await github.rest.checks.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            name: 'merge-approval',
+            head_sha: headSha,
+            status: 'completed',
+            conclusion: result.allowed ? 'success' : 'failure',
+            output: {
+              title: `merge_approval: ${
+                result.allowed ? 'ALLOWED' : 'BLOCKED'
+              } (score ${result.score}/100)`,
+              summary: lines.join('\n'),
+            },
+          });
+      env:
+        GATE_REPORT: ${{ steps.gate.outputs.report }}
+
+    - name: Fail if blocked
+      if: ${{ inputs.fail-on-block == 'true' && steps.gate.outputs.verdict == 'BLOCKED' }}
+      shell: bash
+      run: |
+        echo "::error::merge_approval gate blocked — see the 'merge-approval' Check-Run for details"
+        exit 1
