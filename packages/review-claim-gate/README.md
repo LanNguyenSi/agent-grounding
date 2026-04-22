@@ -150,6 +150,15 @@ the JSON and refuse to proceed to `task_finish(approve)` when the gate
 fails.
 ```
 
+## GitHub Action
+
+A ready-to-use composite action that runs this CLI on a PR and posts
+the verdict as a Check-Run lives in [`action/`](./action/). Required
+branch-protection on the `merge-approval` check turns the gate into a
+hard merge blocker — a reviewer cannot click "Merge" when the JSON
+verdict says `allowed: false`. See [`action/README.md`](./action/README.md)
+for the consumer workflow snippet and local `act` instructions.
+
 ## Out of scope
 
 - Wiring into `mcp__agent-tasks__task_finish(approve)` server-side — separately tracked.
