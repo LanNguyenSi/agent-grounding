@@ -98,6 +98,15 @@ Implementation notes:
 - Cap via `VerifyOptions.maxFiles` (default 5000) — the `summary` flags
   truncation so the caller can raise the cap on a larger repo.
 - Never throws: unreadable `repoRoot` returns `{ exists: false }`.
+- `kind:'flag'` uses a word-boundary guard: `-v` does **not** match
+  inside `--verbose`, and `--force` does **not** match inside
+  `--force-with-lease`. The guard treats dash-or-word as the token
+  boundary, so flag tokens are matched in isolation.
+- `kind:'path'` on a *relative* value refuses to check paths that
+  resolve outside `repoRoot` (traversal like `../../etc/passwd` →
+  `exists:false` with a clear summary). Absolute values pass through
+  unchanged — use that when the caller legitimately wants to check
+  something outside the repo.
 
 Exposed via MCP as the `verify_memory_reference` tool in
 [`grounding-mcp`](../grounding-mcp). Agents should call it whenever a

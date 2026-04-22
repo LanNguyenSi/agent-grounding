@@ -56,6 +56,20 @@ describe("verifyMemoryReference — kind: path", () => {
     const r = verifyMemoryReference({ kind: "path", value: full, repoRoot: "/tmp" });
     expect(r.exists).toBe(true);
   });
+
+  it("refuses relative paths that escape repoRoot via traversal", () => {
+    // An adversarial or accidental `../../etc/passwd` joins against
+    // repoRoot and resolves outside it. statSync would happily
+    // disclose existence; we'd rather return exists:false with a
+    // summary that names the escape.
+    const r = verifyMemoryReference({
+      kind: "path",
+      value: "../../../../etc/passwd",
+      repoRoot: root,
+    });
+    expect(r.exists).toBe(false);
+    expect(r.summary).toMatch(/escapes repoRoot/);
+  });
 });
 
 describe("verifyMemoryReference — kind: symbol", () => {
@@ -147,6 +161,33 @@ describe("verifyMemoryReference — kind: flag", () => {
     );
     expect(r.exists).toBe(true);
     expect(r.matchCount).toBe(2);
+  });
+
+  it("does NOT over-count when a shorter flag is a substring of a longer one", () => {
+    // `-v` must not match inside `--verbose`; `--force` must not match
+    // inside `--force-with-lease`. Without the non-dash lookaround the
+    // literal substring would pass and silently flag a removed option
+    // as still present.
+    seed(
+      root,
+      "src/cli.ts",
+      "if (arg === '--verbose') {}\nif (arg === '--force-with-lease') {}\n",
+    );
+    const shortFlag = verifyMemoryReference(
+      { kind: "flag", value: "-v", repoRoot: root },
+    );
+    expect(shortFlag.exists).toBe(false);
+
+    const longerSuperset = verifyMemoryReference(
+      { kind: "flag", value: "--force", repoRoot: root },
+    );
+    expect(longerSuperset.exists).toBe(false);
+
+    // Sanity: the real flag still matches.
+    const real = verifyMemoryReference(
+      { kind: "flag", value: "--verbose", repoRoot: root },
+    );
+    expect(real.exists).toBe(true);
   });
 });
 

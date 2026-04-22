@@ -19,7 +19,7 @@ import {
   readFileSync,
   type Stats,
 } from "node:fs";
-import { join, sep } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 export type MemoryReferenceKind = "path" | "symbol" | "flag";
 
@@ -106,10 +106,12 @@ function buildSymbolPattern(value: string): RegExp {
 }
 
 function buildFlagPattern(value: string): RegExp {
-  // Literal match. Anchor on word-boundary only when the value looks
-  // like an identifier; pure flags like "--force" should match
-  // verbatim (word boundaries don't handle leading dashes).
-  return new RegExp(escapeRegex(value));
+  // Literal match, but guard against substring overlap so `-v` does
+  // not spuriously match inside `--verbose` (and `--force` doesn't
+  // match inside `--force-with-lease`). Standard `\b` fails on leading
+  // dashes, so we use explicit negative lookarounds over
+  // "word-or-dash" to treat the full flag token as the unit.
+  return new RegExp(`(?<![-\\w])${escapeRegex(value)}(?![-\\w])`);
 }
 
 interface WalkResult {
@@ -182,7 +184,35 @@ function verifyPath(
   ref: MemoryReference,
   root: string,
 ): VerifyMemoryReferenceResult {
-  const full = ref.value.startsWith(sep) ? ref.value : join(root, ref.value);
+  // Relative values join to root. Absolute values are passed through
+  // (caller may legitimately want to check a shared tool outside the
+  // repo). `isAbsolute` is platform-aware so Windows drive letters and
+  // POSIX `/foo` both behave.
+  const full = isAbsolute(ref.value) ? ref.value : join(root, ref.value);
+
+  // Containment check: when the value is *relative*, the resolved path
+  // must stay inside repoRoot. A traversal like `../../etc/passwd`
+  // would disclose existence of files outside the repo — not a
+  // high-impact leak (statSync only surfaces exists + mtime, not
+  // contents) but a surprising silent escape vs. the tool's contract.
+  if (!isAbsolute(ref.value)) {
+    const resolvedRoot = resolve(root);
+    const resolvedFull = resolve(full);
+    if (
+      resolvedFull !== resolvedRoot &&
+      !resolvedFull.startsWith(resolvedRoot + "/") &&
+      !resolvedFull.startsWith(resolvedRoot + "\\")
+    ) {
+      return {
+        ref,
+        exists: false,
+        foundIn: [],
+        matchCount: 0,
+        summary: `path '${ref.value}' escapes repoRoot (resolved to ${resolvedFull}) — refusing to check`,
+      };
+    }
+  }
+
   try {
     const stat = statSync(full);
     return {
