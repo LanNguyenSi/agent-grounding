@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { LedgerEntry, EntryType, ConfidenceLevel } from "./types.js";
 
 function getDbPath(): string {
@@ -14,12 +14,36 @@ let _db: Database.Database | null = null;
 
 export function getDb(dbPath?: string): Database.Database {
   if (_db) return _db;
-  _db = new Database(dbPath ?? getDbPath());
+  const resolved = dbPath ?? getDbPath();
+  // better-sqlite3 creates the DB file itself but refuses to create
+  // intermediate directories. When a caller passes a custom path (e.g.
+  // `.evidence-ledger/db.sqlite` relative to a fresh CI workspace),
+  // ensure the parent dir exists so the constructor doesn't throw
+  // `directory does not exist`. getDbPath() already mkdirs the default.
+  const parent = dirname(resolved);
+  if (parent && !existsSync(parent)) mkdirSync(parent, { recursive: true });
+  _db = new Database(resolved);
   migrate(_db);
   return _db;
 }
 
 export function resetDb(): void {
+  // Close the prior handle before dropping the reference. Without this
+  // callers that re-point the singleton to a new path (tests, CLI tools
+  // with --ledger-db) silently leak the old SQLite connection, which
+  // holds its journal file open and can trigger SQLITE_BUSY on
+  // subsequent writes from other processes.
+  if (_db) {
+    try {
+      _db.close();
+    } catch {
+      // better-sqlite3 double-close is a silent noop; close() only
+      // throws when a statement is mid-execution or the handle is in
+      // a similarly transient busy state. resetDb is a reset — callers
+      // want forward progress, not a failure — so swallow and drop
+      // the reference either way.
+    }
+  }
   _db = null;
 }
 
