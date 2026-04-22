@@ -85,6 +85,27 @@ describe("runCheck — evidence-ledger integration", () => {
     expect(report.result.prerequisites.evidence_logged).toBe(true);
   });
 
+  it("--comments-resolved maps to no_unresolved_review_comments (not any other key)", () => {
+    // The CLI flag was deliberately renamed from --no-unresolved-review-comments
+    // to --comments-resolved because commander auto-negates --no-<thing> flags.
+    // This test isolates the mapping so a future refactor that swaps two flag
+    // names cannot fail open.
+    const report = runCheck({
+      taskId: "t-map",
+      ledgerDb: dbPath,
+      commentsResolved: true,
+    });
+    expect(report.result.prerequisites.no_unresolved_review_comments).toBe(true);
+    expect(report.result.prerequisites.review_checklist_complete).toBe(false);
+    expect(report.result.prerequisites.tests_pass).toBe(false);
+    expect(report.result.prerequisites.scope_matches_task).toBe(false);
+  });
+
+  it("falls back to the default claim text when --claim is omitted", () => {
+    const report = runCheck({ taskId: "t-claim", ledgerDb: dbPath });
+    expect(report.result.claim).toMatch(/PR for task t-claim.*safe to merge/);
+  });
+
   it("filters by session — entries for a different task do not count", () => {
     const db = getDb(dbPath);
     addEntry(db, {
