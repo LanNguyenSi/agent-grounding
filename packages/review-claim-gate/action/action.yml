@@ -54,8 +54,12 @@ runs:
       uses: actions/setup-node@v4
       with:
         node-version: '22'
-        cache: npm
-        cache-dependency-path: ${{ github.action_path }}/../../../package-lock.json
+      # npm cache intentionally disabled: actions/setup-node@v4 rejects
+      # `..` segments in cache-dependency-path, and the action's own
+      # checkout sits at $_actions/…/packages/review-claim-gate/action/
+      # with no clean way to name the monorepo root's lockfile from that
+      # context. The install step below runs ~30 s; the cache would save
+      # ~10 s — not worth the path-handling complexity.
 
     - name: Install + build review-claim-gate
       shell: bash
