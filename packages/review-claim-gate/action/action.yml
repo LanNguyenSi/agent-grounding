@@ -99,11 +99,12 @@ runs:
         CLI="$ACTION_PATH/../dist/cli.js"
         REPORT="$RUNNER_TEMP/merge-approval.json"
 
-        # better-sqlite3 auto-creates the DB file but not intermediate
-        # directories. The default --ledger-db path is `.evidence-ledger/
-        # db.sqlite` which needs the parent dir to exist. Silently create
-        # it so the CLI never crashes on a fresh workspace.
-        mkdir -p "$(dirname "$EVIDENCE_LEDGER_PATH")"
+        # evidence-ledger's getDb now auto-creates the DB parent dir,
+        # so no mkdir needed here. The CLI also auto-detects a
+        # committed evidence file at
+        # $GITHUB_WORKSPACE/.agent-grounding/evidence/<task-id>.jsonl —
+        # nothing to wire up in the action; it Just Works when the
+        # reviewer commits via `review-claim-gate export`.
 
         ARGS=( check --task-id "$TASK_ID" --json )
         ARGS+=( --ledger-db "$EVIDENCE_LEDGER_PATH" )
