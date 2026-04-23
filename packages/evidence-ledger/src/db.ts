@@ -205,6 +205,17 @@ export function pruneEntries(
   db: Database.Database,
   opts: { olderThanMs: number; dryRun?: boolean },
 ): PruneResult {
+  // Defensive guard for library consumers. The CLI's parseDuration
+  // already rejects these, but a direct caller passing NaN / Infinity
+  // would otherwise hit a RangeError deep in `new Date(...)`, and a
+  // negative number would push the cutoff into the future and silently
+  // delete everything.
+  if (!Number.isFinite(opts.olderThanMs) || opts.olderThanMs < 0) {
+    throw new Error(
+      `pruneEntries: olderThanMs must be a non-negative finite number, got ${opts.olderThanMs}`,
+    );
+  }
+
   // SQLite's `datetime('now')` writes `YYYY-MM-DD HH:MM:SS` in UTC.
   // Build a cutoff in the same shape so lexicographic comparison in
   // SQL is correct. (ISO's `T` and trailing `Z` would otherwise sort

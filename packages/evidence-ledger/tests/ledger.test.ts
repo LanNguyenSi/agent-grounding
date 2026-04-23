@@ -314,4 +314,12 @@ describe("pruneEntries", () => {
     // YYYY-MM-DD HH:MM:SS — no 'T', no 'Z', no fractional seconds
     expect(result.cutoff).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
   });
+
+  it("rejects invalid olderThanMs values", () => {
+    expect(() => pruneEntries(db, { olderThanMs: Number.NaN })).toThrow(/non-negative finite/);
+    expect(() => pruneEntries(db, { olderThanMs: Number.POSITIVE_INFINITY })).toThrow(
+      /non-negative finite/,
+    );
+    expect(() => pruneEntries(db, { olderThanMs: -1 })).toThrow(/non-negative finite/);
+  });
 });

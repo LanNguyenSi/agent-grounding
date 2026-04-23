@@ -158,7 +158,6 @@ console.log(summary.facts, summary.hypotheses);
 
 ```bash
 npm test
-# 23 tests passing
 ```
 
 ## License

@@ -215,9 +215,7 @@ program
     const verb = result.dryRun ? "would delete" : "deleted";
     console.log();
     console.log(
-      chalk.cyan(
-        `🧹 Prune ${result.dryRun ? "(dry-run) " : ""}— cutoff ${result.cutoff} UTC`,
-      ),
+      chalk.cyan(`Prune ${result.dryRun ? "(dry-run) " : ""}— cutoff ${result.cutoff} UTC`),
     );
     console.log(chalk.dim(`   scanned ${result.scanned} entries, ${verb} ${result.deleted}`));
     console.log();
