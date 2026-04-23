@@ -90,6 +90,41 @@ ledger clear --session "nginx-debug-2026-04-02"
 }
 ```
 
+## Retention
+
+The ledger grows monotonically — `ledger fact` / `hypothesis` / `unknown` only ever append. Long-running dogfood machines will accumulate stale sessions that slow queries and dilute summaries. Use `prune` to bound the database by age:
+
+```bash
+# Inspect what would go, don't touch the DB yet
+ledger prune --older-than 30d --dry-run
+
+# Actually delete entries whose created_at is older than 30 days
+ledger prune --older-than 30d
+
+# Machine-readable output for scheduled runs
+ledger prune --older-than 30d --json
+# → {"deleted":42,"scanned":1337,"cutoff":"2026-03-24 09:07:00","dryRun":false}
+```
+
+Accepted units for `--older-than`: `s`, `m`, `h`, `d`. Deletion runs inside an `IMMEDIATE` transaction so concurrent readers never observe a partial sweep.
+
+Typical cron usage:
+
+```cron
+# Prune weekly, keep the last 30 days
+0 3 * * 0  ledger prune --older-than 30d --json >> ~/.evidence-ledger/prune.log 2>&1
+```
+
+`prune` does not `VACUUM` automatically — `VACUUM` takes an exclusive lock on the database and would stall every other CLI invocation. After a large purge, reclaim disk manually:
+
+```bash
+sqlite3 ~/.evidence-ledger/ledger.db 'VACUUM;'
+```
+
+### Scope today
+
+Only age-based pruning is implemented. Tag-based and task-id-based keep-lists (`--keep-tagged`, `--keep-task-id`) would require schema changes and are intentionally deferred until a concrete use case appears.
+
 ## Programmatic API
 
 ```typescript

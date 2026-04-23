@@ -8,6 +8,8 @@ import {
   getSummary,
   clearSession,
   listSessions,
+  parseDuration,
+  pruneEntries,
 } from "../src/db.js";
 
 let db: Database.Database;
@@ -226,5 +228,90 @@ describe("listSessions", () => {
 
   it("returns empty array when no entries", () => {
     expect(listSessions(db)).toHaveLength(0);
+  });
+});
+
+describe("parseDuration", () => {
+  it("parses seconds, minutes, hours, days", () => {
+    expect(parseDuration("30s")).toBe(30_000);
+    expect(parseDuration("5m")).toBe(300_000);
+    expect(parseDuration("2h")).toBe(7_200_000);
+    expect(parseDuration("7d")).toBe(604_800_000);
+  });
+
+  it("tolerates surrounding whitespace", () => {
+    expect(parseDuration("  14d  ")).toBe(14 * 86_400_000);
+  });
+
+  it("rejects malformed input", () => {
+    expect(() => parseDuration("")).toThrow(/Invalid duration/);
+    expect(() => parseDuration("30")).toThrow(/Invalid duration/);
+    expect(() => parseDuration("d30")).toThrow(/Invalid duration/);
+    expect(() => parseDuration("30D")).toThrow(/Invalid duration/); // uppercase not allowed
+    expect(() => parseDuration("30w")).toThrow(/Invalid duration/);
+    expect(() => parseDuration("-5d")).toThrow(/Invalid duration/);
+  });
+});
+
+describe("pruneEntries", () => {
+  function insertWithDate(session: string, content: string, createdAt: string): void {
+    db.prepare(
+      `INSERT INTO entries (type, content, session, created_at, updated_at)
+       VALUES ('fact', @content, @session, @createdAt, @createdAt)`,
+    ).run({ content, session, createdAt });
+  }
+
+  function daysAgo(n: number): string {
+    return new Date(Date.now() - n * 86_400_000)
+      .toISOString()
+      .slice(0, 19)
+      .replace("T", " ");
+  }
+
+  it("deletes entries older than the cutoff and keeps younger ones", () => {
+    insertWithDate("old", "40d old", daysAgo(40));
+    insertWithDate("old", "31d old", daysAgo(31));
+    insertWithDate("fresh", "1d old", daysAgo(1));
+    addEntry(db, { type: "fact", content: "just now", session: "fresh" });
+
+    const result = pruneEntries(db, { olderThanMs: 30 * 86_400_000 });
+
+    expect(result.deleted).toBe(2);
+    expect(result.scanned).toBe(4);
+    expect(result.dryRun).toBe(false);
+
+    const remaining = listEntries(db);
+    expect(remaining).toHaveLength(2);
+    expect(remaining.map((e) => e.content).sort()).toEqual(["1d old", "just now"]);
+  });
+
+  it("dry-run returns counts without mutating the DB", () => {
+    insertWithDate("old", "40d old A", daysAgo(40));
+    insertWithDate("old", "40d old B", daysAgo(40));
+    addEntry(db, { type: "fact", content: "today", session: "fresh" });
+
+    const before = listEntries(db);
+    const result = pruneEntries(db, { olderThanMs: 30 * 86_400_000, dryRun: true });
+    const after = listEntries(db);
+
+    expect(result.deleted).toBe(2);
+    expect(result.scanned).toBe(3);
+    expect(result.dryRun).toBe(true);
+    expect(after).toHaveLength(before.length);
+  });
+
+  it("returns zero when nothing is old enough", () => {
+    addEntry(db, { type: "fact", content: "a" });
+    addEntry(db, { type: "fact", content: "b" });
+
+    const result = pruneEntries(db, { olderThanMs: 30 * 86_400_000 });
+    expect(result.deleted).toBe(0);
+    expect(result.scanned).toBe(2);
+  });
+
+  it("exposes the cutoff timestamp in SQLite's datetime format", () => {
+    const result = pruneEntries(db, { olderThanMs: 1_000 });
+    // YYYY-MM-DD HH:MM:SS — no 'T', no 'Z', no fractional seconds
+    expect(result.cutoff).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
   });
 });

@@ -180,3 +180,60 @@ export function listSessions(db: Database.Database): string[] {
     .all() as { session: string }[];
   return rows.map((r) => r.session);
 }
+
+export function parseDuration(input: string): number {
+  const match = /^(\d+)(s|m|h|d)$/.exec(input.trim());
+  if (!match) {
+    throw new Error(
+      `Invalid duration "${input}". Expected <number><unit> where unit is s/m/h/d (e.g. 30d, 24h, 15m, 3600s).`,
+    );
+  }
+  const n = Number.parseInt(match[1], 10);
+  const unit = match[2];
+  const unitMs = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }[unit]!;
+  return n * unitMs;
+}
+
+export interface PruneResult {
+  deleted: number;
+  scanned: number;
+  cutoff: string;
+  dryRun: boolean;
+}
+
+export function pruneEntries(
+  db: Database.Database,
+  opts: { olderThanMs: number; dryRun?: boolean },
+): PruneResult {
+  // SQLite's `datetime('now')` writes `YYYY-MM-DD HH:MM:SS` in UTC.
+  // Build a cutoff in the same shape so lexicographic comparison in
+  // SQL is correct. (ISO's `T` and trailing `Z` would otherwise sort
+  // adjacent to but not equal to SQLite's space-separated form.)
+  const cutoff = new Date(Date.now() - opts.olderThanMs).toISOString().slice(0, 19).replace("T", " ");
+
+  // Run both statements inside an IMMEDIATE transaction so a concurrent
+  // reader sees either the pre- or post-state, never a torn read where
+  // some entries survived and an equally-old sibling didn't.
+  const run = db.transaction(() => {
+    const scanned = (
+      db.prepare("SELECT COUNT(*) AS n FROM entries").get() as { n: number }
+    ).n;
+    let deleted = 0;
+    if (opts.dryRun) {
+      deleted = (
+        db
+          .prepare("SELECT COUNT(*) AS n FROM entries WHERE created_at < @cutoff")
+          .get({ cutoff }) as { n: number }
+      ).n;
+    } else {
+      const result = db
+        .prepare("DELETE FROM entries WHERE created_at < @cutoff")
+        .run({ cutoff });
+      deleted = result.changes;
+    }
+    return { deleted, scanned };
+  });
+
+  const { deleted, scanned } = run.immediate();
+  return { deleted, scanned, cutoff, dryRun: opts.dryRun ?? false };
+}
