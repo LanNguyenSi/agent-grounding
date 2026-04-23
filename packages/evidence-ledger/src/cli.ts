@@ -1,7 +1,17 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import chalk from "chalk";
-import { getDb, addEntry, rejectHypothesis, listEntries, getSummary, clearSession, listSessions } from "./db.js";
+import {
+  getDb,
+  addEntry,
+  rejectHypothesis,
+  listEntries,
+  getSummary,
+  clearSession,
+  listSessions,
+  parseDuration,
+  pruneEntries,
+} from "./db.js";
 import { printSummary, printEntry, formatEntry } from "./display.js";
 import type { EntryType, ConfidenceLevel } from "./types.js";
 import { buildHandoffMarkdown, buildHandoffJson } from "./handoff.js";
@@ -170,6 +180,45 @@ program
       unknowns: summary.unknowns.map((e) => ({ content: e.content, source: e.source })),
     };
     console.log(JSON.stringify(output, null, 2));
+  });
+
+// ── prune ────────────────────────────────────────────────────────────────────
+
+program
+  .command("prune")
+  .description("Delete ledger entries older than a given age")
+  .requiredOption("--older-than <duration>", "age cutoff, e.g. 30d, 24h, 15m, 3600s")
+  .option("--dry-run", "count what would be deleted, leave the DB untouched")
+  .option("--json", "emit a structured JSON result on stdout")
+  .action((opts: { olderThan: string; dryRun?: boolean; json?: boolean }) => {
+    let olderThanMs: number;
+    try {
+      olderThanMs = parseDuration(opts.olderThan);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (opts.json) {
+        console.log(JSON.stringify({ error: msg }));
+      } else {
+        console.error(chalk.red(msg));
+      }
+      process.exit(1);
+    }
+
+    const db = getDb();
+    const result = pruneEntries(db, { olderThanMs, dryRun: opts.dryRun });
+
+    if (opts.json) {
+      console.log(JSON.stringify(result));
+      return;
+    }
+
+    const verb = result.dryRun ? "would delete" : "deleted";
+    console.log();
+    console.log(
+      chalk.cyan(`Prune ${result.dryRun ? "(dry-run) " : ""}— cutoff ${result.cutoff} UTC`),
+    );
+    console.log(chalk.dim(`   scanned ${result.scanned} entries, ${verb} ${result.deleted}`));
+    console.log();
   });
 
 // ── handoff ─────────────────────────────────────────────────────────────────
