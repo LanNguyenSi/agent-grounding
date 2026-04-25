@@ -57,6 +57,7 @@ review-claim-gate check --task-id <id> [--pr <url>]
   [--claim <text>]                    # custom claim string
 
 review-claim-gate export --task-id <id>
+  [--from-session <session-id>]       # export from grounding session into a task/branch-named file
   [--ledger-db <path>]
   [--out <path>]                      # default: write to stdout; auto-mkdirs parent
 
@@ -70,6 +71,11 @@ Exit code for `check`: `0` if `allowed:true`, `1` otherwise.
 1. `--evidence-logged` forces `evidence_logged=true` regardless of any other signal.
 2. **Committed evidence file.** If `--evidence-file <path>` is given (and exists), count non-empty JSON lines there. Otherwise auto-detect `./.agent-grounding/evidence/<task-id>.jsonl` relative to `process.cwd()`.
 3. Local evidence-ledger DB (`session = <task-id>`) as fallback.
+
+When the reviewer used a grounding session id instead of the branch/task id,
+use `review-claim-gate export --task-id <branch-name> --from-session <gs-id>`
+to write the evidence file under the branch/task naming convention without
+having to re-log the findings.
 
 Explicit `--evidence-file <path>` with a non-existent path throws — silent fallback would be misleading. The auto-detect path is also the convention `export` writes to, so the reviewer round-trip is export → commit → check.
 
@@ -150,7 +156,9 @@ Walk the standard review checklist:
 
 For every finding you surface, call `ledger add --session <TASK-ID>
 --type <fact|rejected|unknown> --content "<one line>"` so the parent
-session can audit the review.
+session can audit the review. If you already started a dedicated grounding
+session (for example `gs-agent-grounding-...`), either keep `session = <TASK-ID>`
+as the default convention or export later via `review-claim-gate export --task-id <TASK-ID> --from-session <GROUNDING-SESSION-ID>`.
 
 When you finish the checklist, call:
 
