@@ -191,12 +191,13 @@ export function runCheck(opts: CheckOptions): CheckReport {
 
 export interface ExportOptions {
   taskId: string;
+  fromSession?: string;
   ledgerDb?: string;
   out?: string;
 }
 
 /**
- * Dump all ledger entries for `session = <taskId>` as JSONL. When `out`
+ * Dump all ledger entries for `session = <fromSession ?? taskId>` as JSONL. When `out`
  * is omitted, returns the JSONL string (callers write to stdout). When
  * `out` is provided, parent directory is auto-created and the file is
  * written.
@@ -211,7 +212,8 @@ export function runExport(opts: ExportOptions): {
   }
   resetDb();
   const db = getDb(opts.ledgerDb);
-  const entries = listEntries(db, { session: opts.taskId });
+  const sourceSession = opts.fromSession ?? opts.taskId;
+  const entries = listEntries(db, { session: sourceSession });
   const body = entries.map((e) => JSON.stringify(e)).join("\n") + (entries.length > 0 ? "\n" : "");
 
   if (opts.out) {
@@ -283,6 +285,10 @@ function main(argv: string[]): void {
       "Dump evidence-ledger entries for one task as JSONL. Commit the output to .agent-grounding/evidence/<task-id>.jsonl so the merge-approval Action can see it on CI.",
     )
     .requiredOption("--task-id <id>", "agent-tasks task id (ledger session key)")
+    .option(
+      "--from-session <id>",
+      "read ledger entries from this session but still write/export under --task-id",
+    )
     .option(
       "--ledger-db <path>",
       "evidence-ledger DB path (default: $EVIDENCE_LEDGER_DB or ~/.evidence-ledger/ledger.db)",

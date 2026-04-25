@@ -63,6 +63,29 @@ describe("export subcommand", () => {
     expect(readFileSync(out, "utf8")).toMatch(/"content":"one"/);
   });
 
+  it("can export from a grounding session into a task-named evidence file", () => {
+    const db = getDb(dbPath);
+    addEntry(db, { type: "fact", content: "session-bound", session: "gs-agent-grounding-123" });
+    addEntry(db, { type: "fact", content: "other", session: "t-export" });
+    resetDb();
+
+    const out = join(tmp, ".agent-grounding", "evidence", "feat", "export-from-session.jsonl");
+    const result = runExport({
+      taskId: "feat/export-from-session",
+      fromSession: "gs-agent-grounding-123",
+      ledgerDb: dbPath,
+      out,
+    });
+
+    expect(result.count).toBe(1);
+    expect(result.path).toBe(out);
+    const lines = readFileSync(out, "utf8").trim().split("\n");
+    expect(lines).toHaveLength(1);
+    const parsed = JSON.parse(lines[0]);
+    expect(parsed.session).toBe("gs-agent-grounding-123");
+    expect(parsed.content).toBe("session-bound");
+  });
+
   it("zero entries yields an empty body, zero count, no trailing newline", () => {
     resetDb();
     const out = join(tmp, "empty.jsonl");
@@ -197,6 +220,33 @@ describe("CLI export — black-box via spawnSync", () => {
     expect(result.status).toBe(0);
     expect(existsSync(out)).toBe(true);
     expect(readFileSync(out, "utf8")).toMatch(/"content":"black-box"/);
+  });
+
+  it("supports --from-session in the CLI", () => {
+    const db = getDb(dbPath);
+    addEntry(db, { type: "fact", content: "via-cli", session: "gs-bridge" });
+    resetDb();
+    const out = join(tmp, "cli-from-session.jsonl");
+
+    const result = spawnSync(
+      process.execPath,
+      [
+        CLI,
+        "export",
+        "--task-id",
+        "feat/export-from-session",
+        "--from-session",
+        "gs-bridge",
+        "--ledger-db",
+        dbPath,
+        "--out",
+        out,
+      ],
+      { encoding: "utf8" },
+    );
+    expect(result.status).toBe(0);
+    expect(readFileSync(out, "utf8")).toMatch(/"session":"gs-bridge"/);
+    expect(readFileSync(out, "utf8")).toMatch(/"content":"via-cli"/);
   });
 
   it("without --out streams JSONL to stdout", () => {
