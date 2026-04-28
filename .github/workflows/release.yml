@@ -29,6 +29,10 @@ jobs:
         id: changelog
         run: |
           awk '/^## \[${{ steps.version.outputs.version }}\]/{found=1; next} /^## \[/{found=0} found' CHANGELOG.md > release_notes.md
+          if [ ! -s release_notes.md ]; then
+            echo "::error::No CHANGELOG.md entry for v${{ steps.version.outputs.version }}. Add a `## [${{ steps.version.outputs.version }}] - YYYY-MM-DD` section before tagging." >&2
+            exit 1
+          fi
           echo "Release notes extracted for v${{ steps.version.outputs.version }}"
 
       - name: Create GitHub Release
