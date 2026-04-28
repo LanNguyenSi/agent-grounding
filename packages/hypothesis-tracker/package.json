@@ -1,7 +1,20 @@
 {
-  "name": "hypothesis-tracker",
+  "name": "@lannguyensi/hypothesis-tracker",
   "version": "1.0.0",
-  "description": "Track competing hypotheses during debugging — no silent replacements",
+  "description": "Track competing hypotheses during debugging, no silent replacements",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LanNguyenSi/agent-grounding.git",
+    "directory": "packages/hypothesis-tracker"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "type": "module",
   "bin": {
     "hyp": "./dist/cli.js"

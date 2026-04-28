@@ -16,9 +16,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { initSession, advancePhase } from 'grounding-wrapper';
-import { addEntry, getSummary } from 'evidence-ledger';
-import { evaluateClaim } from 'claim-gate';
+import { initSession, advancePhase } from '@lannguyensi/grounding-wrapper';
+import { addEntry, getSummary } from '@lannguyensi/evidence-ledger';
+import { evaluateClaim } from '@lannguyensi/claim-gate';
 import { verifyMemoryReference } from 'runtime-reality-checker';
 
 import { saveSession, loadSession, sessionExists } from '../src/session-store.js';

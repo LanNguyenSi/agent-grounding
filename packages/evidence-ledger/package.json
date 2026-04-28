@@ -1,7 +1,20 @@
 {
-  "name": "evidence-ledger",
+  "name": "@lannguyensi/evidence-ledger",
   "version": "1.0.0",
   "description": "Structured evidence tracking for agent debugging sessions",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LanNguyenSi/agent-grounding.git",
+    "directory": "packages/evidence-ledger"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "type": "module",
   "bin": {
     "ledger": "./dist/cli.js"

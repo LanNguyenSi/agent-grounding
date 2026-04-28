@@ -13,13 +13,13 @@ import {
   isGuardrailActive,
   type GroundingSession,
   type GuardrailId,
-} from 'grounding-wrapper';
-import { addEntry, getSummary, type EntryType, type ConfidenceLevel } from 'evidence-ledger';
+} from '@lannguyensi/grounding-wrapper';
+import { addEntry, getSummary, type EntryType, type ConfidenceLevel } from '@lannguyensi/evidence-ledger';
 import {
   evaluateClaim,
   type ClaimContext,
   type ClaimType,
-} from 'claim-gate';
+} from '@lannguyensi/claim-gate';
 import {
   verifyMemoryReference,
   type MemoryReference,

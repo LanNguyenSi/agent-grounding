@@ -1,7 +1,20 @@
 {
-  "name": "claim-gate",
+  "name": "@lannguyensi/claim-gate",
   "version": "1.0.0",
   "description": "Policy engine that prevents agents from making strong claims without evidence",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LanNguyenSi/agent-grounding.git",
+    "directory": "packages/claim-gate"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "type": "module",
   "bin": {
     "claim-gate": "./dist/cli.js"

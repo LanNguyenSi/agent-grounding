@@ -14,9 +14,9 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "claim-gate": "1.0.0",
-    "commander": "^12.0.0",
-    "evidence-ledger": "1.0.0"
+    "@lannguyensi/claim-gate": "1.0.0",
+    "@lannguyensi/evidence-ledger": "1.0.0",
+    "commander": "^12.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",

@@ -7,9 +7,9 @@
 // reality-checker). The agent literally has nothing to do for that phase,
 // so requiring it as a prerequisite would be a deadlock.
 
-import type { GroundingSession } from 'grounding-wrapper';
-import type { getSummary } from 'evidence-ledger';
-import type { ClaimContext } from 'claim-gate';
+import type { GroundingSession } from '@lannguyensi/grounding-wrapper';
+import type { getSummary } from '@lannguyensi/evidence-ledger';
+import type { ClaimContext } from '@lannguyensi/claim-gate';
 
 type LedgerSummary = ReturnType<typeof getSummary>;
 

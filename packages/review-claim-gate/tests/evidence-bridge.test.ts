@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { getDb, resetDb, addEntry } from "evidence-ledger";
+import { getDb, resetDb, addEntry } from "@lannguyensi/evidence-ledger";
 import { runCheck, runExport, defaultEvidenceFilePath } from "../src/cli.js";
 
 const CLI = fileURLToPath(new URL("../dist/cli.js", import.meta.url));

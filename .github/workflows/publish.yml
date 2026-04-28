@@ -1,0 +1,85 @@
+name: Publish
+
+# Triggers on a tag matching `<package>-v<version>` (e.g.
+# `grounding-wrapper-v1.0.1`) — the workflow parses the package out of the
+# tag, builds, runs the package's own tests, and publishes the matching
+# scoped library to npm.
+#
+# Manual dispatch is also supported for one-off pushes.
+
+on:
+  push:
+    tags:
+      - "grounding-wrapper-v*"
+      - "evidence-ledger-v*"
+      - "claim-gate-v*"
+      - "hypothesis-tracker-v*"
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Package to publish"
+        required: true
+        type: choice
+        options:
+          - grounding-wrapper
+          - evidence-ledger
+          - claim-gate
+          - hypothesis-tracker
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Resolve package name
+        id: pkg
+        run: |
+          if [ -n "${{ github.event.inputs.package }}" ]; then
+            NAME="${{ github.event.inputs.package }}"
+          else
+            # Tag format: <package>-v<version>
+            NAME="${GITHUB_REF_NAME%-v*}"
+          fi
+          case "$NAME" in
+            grounding-wrapper|evidence-ledger|claim-gate|hypothesis-tracker)
+              echo "name=$NAME" >> "$GITHUB_OUTPUT"
+              echo "scoped=@lannguyensi/$NAME" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unknown package: $NAME" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Install
+        run: npm ci
+
+      - name: Verify native store deps load
+        # better-sqlite3 (and prebuild-install) silently fall back to source
+        # compile on ABI mismatch. Run a tiny require + call before tests so
+        # CI fails loudly at the install boundary, not deep in the suite.
+        if: steps.pkg.outputs.name == 'evidence-ledger'
+        run: |
+          node -e "const D=require('better-sqlite3');const db=new D(':memory:');console.log('better-sqlite3 ok:', db.prepare('SELECT 1 AS r').get());db.close();"
+
+      - name: Build (topo-ordered libs)
+        run: npm run build:deps
+
+      - name: Test the package being published
+        run: npm test --workspace=${{ steps.pkg.outputs.scoped }}
+
+      - name: Publish
+        run: npm publish --workspace=${{ steps.pkg.outputs.scoped }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -6,7 +6,7 @@
 // on first connect and provide a `reset` for tests.
 
 import Database from 'better-sqlite3';
-import { getDb, resetDb } from 'evidence-ledger';
+import { getDb, resetDb } from '@lannguyensi/evidence-ledger';
 
 export function ledgerDb(): Database.Database {
   // EVIDENCE_LEDGER_DB lets tests (and ad-hoc invocations) point at a temp

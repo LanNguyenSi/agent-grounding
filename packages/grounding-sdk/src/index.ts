@@ -10,15 +10,15 @@ import {
   type ClaimContext,
   type ClaimResult,
   type ClaimType,
-} from "claim-gate";
-import type { GroundingPhase, GroundingSession } from "grounding-wrapper";
+} from "@lannguyensi/claim-gate";
+import type { GroundingPhase, GroundingSession } from "@lannguyensi/grounding-wrapper";
 import {
   addHypothesis,
   createStore,
   type Hypothesis,
   type HypothesisStore,
-} from "hypothesis-tracker";
-import type { LedgerSummary } from "evidence-ledger";
+} from "@lannguyensi/hypothesis-tracker";
+import type { LedgerSummary } from "@lannguyensi/evidence-ledger";
 
 // Public types — re-exported so consumers only import from this SDK.
 export type {
