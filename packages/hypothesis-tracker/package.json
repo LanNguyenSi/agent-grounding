@@ -1,6 +1,6 @@
 {
   "name": "@lannguyensi/hypothesis-tracker",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Track competing hypotheses during debugging, no silent replacements",
   "license": "MIT",
   "repository": {
@@ -16,9 +16,6 @@
     "README.md"
   ],
   "type": "module",
-  "bin": {
-    "hyp": "./dist/cli.js"
-  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {

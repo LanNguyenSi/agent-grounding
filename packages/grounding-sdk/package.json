@@ -11,10 +11,10 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@lannguyensi/claim-gate": "1.0.0",
-    "@lannguyensi/evidence-ledger": "1.0.0",
-    "@lannguyensi/grounding-wrapper": "1.0.0",
-    "@lannguyensi/hypothesis-tracker": "1.0.0"
+    "@lannguyensi/claim-gate": "0.1.0",
+    "@lannguyensi/evidence-ledger": "0.1.0",
+    "@lannguyensi/grounding-wrapper": "0.1.0",
+    "@lannguyensi/hypothesis-tracker": "0.1.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",

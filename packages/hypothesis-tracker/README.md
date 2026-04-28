@@ -13,7 +13,7 @@ import {
   rejectHypothesis,
   supportHypothesis,
   getSummary,
-} from "hypothesis-tracker";
+} from "@lannguyensi/hypothesis-tracker";
 
 // Create a session store
 const store = createStore("debug-session-1");

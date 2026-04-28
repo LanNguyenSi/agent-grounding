@@ -75,7 +75,7 @@ grounding-wrapper start -k clawd-monitor -p "agent not visible" --json
 ## API
 
 ```typescript
-import { initSession, getCurrentTools, advancePhase, isGuardrailActive } from 'grounding-wrapper';
+import { initSession, getCurrentTools, advancePhase, isGuardrailActive } from '@lannguyensi/grounding-wrapper';
 
 const session = initSession({ keyword: 'clawd-monitor', problem: 'agent not visible' });
 
@@ -91,7 +91,7 @@ if (isGuardrailActive(session, 'no-root-cause-before-readme')) {
 }
 
 // Handle scope change mid-session
-import { handleScopeChange } from 'grounding-wrapper';
+import { handleScopeChange } from '@lannguyensi/grounding-wrapper';
 const updated = handleScopeChange(session, 'new-keyword');
 ```
 
