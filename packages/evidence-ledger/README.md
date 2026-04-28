@@ -21,7 +21,7 @@ Based on [lan-tools/04-evidence-ledger.md](https://github.com/LanNguyenSi/lava-i
 ## Install
 
 ```bash
-npm install -g evidence-ledger
+npm install -g @lannguyensi/evidence-ledger
 ```
 
 ## Usage
@@ -128,7 +128,7 @@ Only age-based pruning is implemented. Tag-based and task-id-based keep-lists (`
 ## Programmatic API
 
 ```typescript
-import { getDb, addEntry, rejectHypothesis, getSummary } from 'evidence-ledger';
+import { getDb, addEntry, rejectHypothesis, getSummary } from '@lannguyensi/evidence-ledger';
 
 const db = getDb(); // persists to ~/.evidence-ledger/ledger.db
 

@@ -26,7 +26,7 @@ import {
   type MergeApprovalResult,
   type ReviewContext,
 } from "./lib.js";
-import { getDb, resetDb, listEntries } from "evidence-ledger";
+import { getDb, resetDb, listEntries } from "@lannguyensi/evidence-ledger";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 

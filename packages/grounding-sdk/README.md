@@ -23,8 +23,8 @@ import {
   verify,
   validate,
 } from "grounding-sdk";
-import { initSession, advancePhase } from "grounding-wrapper";
-import { getDb, addEntry, getSummary } from "evidence-ledger";
+import { initSession, advancePhase } from "@lannguyensi/grounding-wrapper";
+import { getDb, addEntry, getSummary } from "@lannguyensi/evidence-ledger";
 
 // 1. Track a hypothesis. The store is in-memory; snapshot it yourself
 //    via hypothesis-tracker's exportStore/importStore when you need

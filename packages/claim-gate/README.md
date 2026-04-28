@@ -48,7 +48,7 @@ claim-gate policies
 ## Library Usage
 
 ```typescript
-import { evaluateClaim, isAllowed } from "claim-gate";
+import { evaluateClaim, isAllowed } from "@lannguyensi/claim-gate";
 
 const result = evaluateClaim("The root cause is a DNS issue", {
   readme_read: true,

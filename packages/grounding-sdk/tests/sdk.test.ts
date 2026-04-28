@@ -9,7 +9,7 @@ import {
   type Hypothesis,
   type LedgerSummary,
 } from "../src/index.js";
-import { initSession, advancePhase } from "grounding-wrapper";
+import { initSession, advancePhase } from "@lannguyensi/grounding-wrapper";
 
 function mkSession(): GroundingSession {
   return initSession({ keyword: "crash", problem: "server throws 500 on /health" });

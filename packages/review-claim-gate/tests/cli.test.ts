@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { getDb, resetDb, addEntry } from "evidence-ledger";
+import { getDb, resetDb, addEntry } from "@lannguyensi/evidence-ledger";
 import { runCheck } from "../src/cli.js";
 
 // The compiled CLI binary. Tests use this for black-box exit-code /

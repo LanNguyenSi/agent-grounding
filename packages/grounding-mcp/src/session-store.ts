@@ -12,7 +12,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { GroundingSession } from 'grounding-wrapper';
+import type { GroundingSession } from '@lannguyensi/grounding-wrapper';
 
 function defaultRoot(): string {
   return join(homedir(), '.grounding-mcp', 'sessions');

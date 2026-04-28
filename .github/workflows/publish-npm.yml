@@ -1,0 +1,69 @@
+name: Publish to npm
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - grounding-wrapper
+          - evidence-ledger
+          - claim-gate
+          - hypothesis-tracker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Preflight, verify NPM_TOKEN secret is set
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NPM_TOKEN}" ]; then
+            echo "::error::NPM_TOKEN secret is not configured. Add it under Settings -> Secrets and variables -> Actions before tagging a release." >&2
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify package version matches tag
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          pkg_version=$(node -p "require('./packages/${{ matrix.package }}/package.json').version")
+          if [ "$pkg_version" != "$tag_version" ]; then
+            echo "Tag version ($tag_version) does not match packages/${{ matrix.package }}/package.json ($pkg_version)" >&2
+            exit 1
+          fi
+
+      - name: Verify native store deps load
+        # better-sqlite3 (and prebuild-install) silently fall back to source
+        # compile on ABI mismatch. Run a tiny require + call before tests so
+        # CI fails loudly at the install boundary, not deep in the suite.
+        if: matrix.package == 'evidence-ledger'
+        run: |
+          node -e "const D=require('better-sqlite3');const db=new D(':memory:');console.log('better-sqlite3 ok:', db.prepare('SELECT 1 AS r').get());db.close();"
+
+      - name: Build (topo-ordered libs)
+        run: npm run build:deps
+
+      - name: Test the package being published
+        run: npm test --workspace=@lannguyensi/${{ matrix.package }}
+
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --workspace=@lannguyensi/${{ matrix.package }} --access public --provenance

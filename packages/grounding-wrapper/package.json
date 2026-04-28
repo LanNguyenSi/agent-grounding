@@ -1,7 +1,20 @@
 {
-  "name": "grounding-wrapper",
-  "version": "1.0.0",
-  "description": "Orchestrates the lan-tools grounding stack — enforces correct agent entry path",
+  "name": "@lannguyensi/grounding-wrapper",
+  "version": "0.1.0",
+  "description": "Orchestrates the lan-tools grounding stack, enforces correct agent entry path",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LanNguyenSi/agent-grounding.git",
+    "directory": "packages/grounding-wrapper"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "main": "dist/lib.js",
   "types": "dist/lib.d.ts",
   "exports": {

@@ -11,14 +11,15 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "claim-gate": "1.0.0",
-    "evidence-ledger": "1.0.0",
-    "grounding-wrapper": "1.0.0",
-    "hypothesis-tracker": "1.0.0"
+    "@lannguyensi/claim-gate": "0.1.0",
+    "@lannguyensi/evidence-ledger": "0.1.0",
+    "@lannguyensi/grounding-wrapper": "0.1.0",
+    "@lannguyensi/hypothesis-tracker": "0.1.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",
     "typescript": "^5.3.3",
     "vitest": "^4.1.4"
-  }
+  },
+  "private": true
 }

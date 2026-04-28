@@ -1,7 +1,7 @@
 {
   "name": "review-claim-gate",
   "version": "1.0.0",
-  "description": "Claim-gate consumer for PR-review subagents — enforces a merge_approval policy backed by evidence-ledger evidence",
+  "description": "Claim-gate consumer for PR-review subagents \u2014 enforces a merge_approval policy backed by evidence-ledger evidence",
   "type": "module",
   "bin": {
     "review-claim-gate": "./dist/cli.js"
@@ -14,14 +14,15 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "claim-gate": "1.0.0",
-    "commander": "^12.0.0",
-    "evidence-ledger": "1.0.0"
+    "@lannguyensi/claim-gate": "0.1.0",
+    "@lannguyensi/evidence-ledger": "0.1.0",
+    "commander": "^12.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",
     "typescript": "^5.3.3",
     "vitest": "^4.1.4",
     "yaml": "^2.6.1"
-  }
+  },
+  "private": true
 }

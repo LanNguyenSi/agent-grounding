@@ -17,9 +17,9 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "claim-gate": "1.0.0",
-    "evidence-ledger": "1.0.0",
-    "grounding-wrapper": "1.0.0",
+    "@lannguyensi/claim-gate": "0.1.0",
+    "@lannguyensi/evidence-ledger": "0.1.0",
+    "@lannguyensi/grounding-wrapper": "0.1.0",
     "runtime-reality-checker": "1.0.0",
     "zod": "^3.23.8"
   },
@@ -28,5 +28,6 @@
     "tsx": "^4.7.0",
     "typescript": "^5.3.3",
     "vitest": "^4.1.4"
-  }
+  },
+  "private": true
 }
