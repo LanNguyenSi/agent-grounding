@@ -8,7 +8,10 @@ export interface ModeEnv {
   UNDERSTANDING_GATE_MODE?: string;
 }
 
-const MARKER_PATTERN = /(^|[^a-z])(\/?grill[\s\-_]?me|\/grill)\b/i;
+// Bare form requires a separator (`grill me`, `grill-me`, `grill_me`); the
+// slash form `/grill` is allowed alone and may optionally carry `-me`/`_me`.
+// Without the required separator on the bare form, "grillme" would over-fire.
+const MARKER_PATTERN = /(^|[^a-z])(grill[\s\-_]me|\/grill([\s\-_]?me)?)\b/i;
 
 export function pickMode(prompt: string, env: ModeEnv = {}): Mode {
   const envMode = env.UNDERSTANDING_GATE_MODE?.trim().toLowerCase();

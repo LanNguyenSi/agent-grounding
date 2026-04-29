@@ -52,6 +52,18 @@ describe("pickMode", () => {
       expect(pickMode("/grill-me", {})).toBe("grill_me");
     });
 
+    it("returns grill_me for slash command /grill_me (underscore variant)", () => {
+      expect(pickMode("/grill_me", {})).toBe("grill_me");
+    });
+
+    it("returns grill_me for bare 'grill_me' with underscore separator", () => {
+      expect(pickMode("grill_me on auth", {})).toBe("grill_me");
+    });
+
+    it("does NOT match the no-separator form 'grillme'", () => {
+      expect(pickMode("describe grillme behavior", {})).toBe("fast_confirm");
+    });
+
     it("matches case-insensitively", () => {
       expect(pickMode("GRILL ME on the design", {})).toBe("grill_me");
       expect(pickMode("Please /Grill the doc", {})).toBe("grill_me");

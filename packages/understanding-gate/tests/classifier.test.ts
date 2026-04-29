@@ -1,20 +1,73 @@
 import { describe, it, expect } from "vitest";
 import { isTaskLike } from "../src/classifier.js";
 
+const EN_VERBS = [
+  "add",
+  "fix",
+  "implement",
+  "build",
+  "create",
+  "refactor",
+  "remove",
+  "change",
+  "update",
+  "migrate",
+] as const;
+
+const DE_VERBS = [
+  "ändern",
+  "hinzufügen",
+  "bauen",
+  "umbauen",
+  "löschen",
+  "ersetzen",
+] as const;
+
 describe("isTaskLike", () => {
-  describe("positive (task-like)", () => {
-    it.each([
-      ["EN verb + file path", "add a logout button to src/Header.tsx"],
-      ["EN verb + file ext", "fix the bug in auth.ts"],
-      ["EN verb + module hint", "refactor the auth module"],
-      ["DE verb + file path", "Logout-Button in src/Header.tsx hinzufügen"],
-      ["DE verb + class hint", "die Klasse User ändern"],
-      [
-        "EN verb + long prompt no file hint",
-        "implement the new flow that handles every conceivable case the support team has reported across the last quarter so we can stop manually triaging tickets and start letting the system route them to the correct queue based on signals it already collects",
-      ],
-    ])("returns true for %s", (_label, prompt) => {
+  describe("positive: every EN verb with a file hint matches", () => {
+    it.each(EN_VERBS)("verb '%s' + .ts file → true", (verb) => {
+      expect(isTaskLike(`please ${verb} the helper in src/foo.ts`)).toBe(true);
+    });
+  });
+
+  describe("positive: every DE verb with a file hint matches", () => {
+    it.each(DE_VERBS)("verb '%s' + DE keyword 'klasse' → true", (verb) => {
+      expect(isTaskLike(`die Klasse User ${verb}`)).toBe(true);
+    });
+  });
+
+  describe("positive: long-prompt fallthrough without file hint", () => {
+    it("verb + length>200 → true even without file hint", () => {
+      const prompt =
+        "implement the new flow that handles every conceivable case the support team has reported across the last quarter so we can stop manually triaging tickets and start letting the system route them to the correct queue";
+      expect(prompt.length).toBeGreaterThan(200);
       expect(isTaskLike(prompt)).toBe(true);
+    });
+  });
+
+  describe("boundary: 200-char threshold", () => {
+    it("length === 200 with verb but no file hint → false (strict >, not >=)", () => {
+      const prefix = "fix this thing ";
+      const padding = "x".repeat(200 - prefix.length);
+      const prompt = `${prefix}${padding}`;
+      expect(prompt.length).toBe(200);
+      expect(isTaskLike(prompt)).toBe(false);
+    });
+
+    it("length === 201 with verb but no file hint → true", () => {
+      const prefix = "fix this thing ";
+      const padding = "x".repeat(201 - prefix.length);
+      const prompt = `${prefix}${padding}`;
+      expect(prompt.length).toBe(201);
+      expect(isTaskLike(prompt)).toBe(true);
+    });
+  });
+
+  describe("substring guard: DE lookaround must not over-fire", () => {
+    it("rejects 'verändern' (substring of 'ändern')", () => {
+      expect(
+        isTaskLike("die App soll sich nicht verändern in Klasse X"),
+      ).toBe(false);
     });
   });
 
@@ -41,7 +94,7 @@ describe("isTaskLike", () => {
       expect(isTaskLike(123)).toBe(false);
     });
 
-    it("is case-insensitive on verbs", () => {
+    it("is case-insensitive on verbs and file hints", () => {
       expect(isTaskLike("ADD a button to App.tsx")).toBe(true);
       expect(isTaskLike("REFACTOR auth.ts")).toBe(true);
     });

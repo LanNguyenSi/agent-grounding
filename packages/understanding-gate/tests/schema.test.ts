@@ -56,6 +56,16 @@ describe("UNDERSTANDING_REPORT_SCHEMA", () => {
     expect(validate({ ...validReport, mode: "wrong_mode" })).toBe(false);
   });
 
+  it("rejects an out-of-enum riskLevel value", () => {
+    const validate = makeValidator();
+    expect(validate({ ...validReport, riskLevel: "extreme" })).toBe(false);
+  });
+
+  it("rejects an out-of-enum approvalStatus value", () => {
+    const validate = makeValidator();
+    expect(validate({ ...validReport, approvalStatus: "maybe" })).toBe(false);
+  });
+
   it("accepts optional createdAt/approvedAt as ISO date-times", () => {
     const validate = makeValidator();
     expect(
