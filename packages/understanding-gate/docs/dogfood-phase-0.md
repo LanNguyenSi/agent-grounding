@@ -112,7 +112,7 @@ Pass: classifier rejected the prompt, no injection.
 ### Case 3: Manual grill escalation
 
 ```
-$ echo '{"prompt":"grill me: refactor the auth module"}' | understanding-gate-claude-hook | jq -c '.hookSpecificOutput | {mode: ..., endsWith: (.additionalContext[-80:])}'
+$ echo '{"prompt":"grill me: refactor the auth module"}' | understanding-gate-claude-hook | jq -c '.hookSpecificOutput | {mode: (.additionalContext | match("mode=\"([^\"]+)\"") | .captures[0].string), endsWith: (.additionalContext[-80:])}'
 {"mode":"grill_me","endsWith":"g, too vague, too broad, or risky in this interpretation?\"\n</understanding-gate>"}
 ```
 
