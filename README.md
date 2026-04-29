@@ -4,6 +4,11 @@ Verification and debugging framework for AI agents. Prevents agents from acting 
 
 ## Packages
 
+### Pre-execution
+| Package | Description |
+|---------|-------------|
+| [understanding-gate](packages/understanding-gate) | Asks agents to produce an Understanding Report before acting (Phase -1 docs, Phase 0 in progress) |
+
 ### Verification
 | Package | Description |
 |---------|-------------|

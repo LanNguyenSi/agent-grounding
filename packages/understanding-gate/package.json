@@ -1,0 +1,37 @@
+{
+  "name": "@lannguyensi/understanding-gate",
+  "version": "0.1.0",
+  "description": "Pre-execution gate that asks AI agents to produce an Understanding Report before acting",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LanNguyenSi/agent-grounding.git",
+    "directory": "packages/understanding-gate"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "ROADMAP.md"
+  ],
+  "type": "module",
+  "bin": {
+    "understanding-gate": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3",
+    "vitest": "^4.1.4"
+  }
+}
