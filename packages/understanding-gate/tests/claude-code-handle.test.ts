@@ -119,5 +119,30 @@ describe("handleUserPromptSubmit", () => {
     it("returns empty for JSON array (not an object)", () => {
       expect(handleUserPromptSubmit("[1,2,3]")).toBe("");
     });
+
+    it("returns empty for JSON literal null (must not throw on .prompt access)", () => {
+      expect(handleUserPromptSubmit("null")).toBe("");
+    });
+
+    it("returns empty for JSON literal true/number/string (no .prompt)", () => {
+      expect(handleUserPromptSubmit("true")).toBe("");
+      expect(handleUserPromptSubmit("123")).toBe("");
+      expect(handleUserPromptSubmit('"just a string"')).toBe("");
+    });
+
+    it("ignores extra fields like cwd/session_id without crashing", () => {
+      const out = handleUserPromptSubmit(
+        JSON.stringify({
+          prompt: "add a logout button to src/Header.tsx",
+          cwd: "/tmp/repo",
+          session_id: "abc123",
+          transcript_path: "/tmp/transcript.jsonl",
+          permission_mode: "default",
+        }),
+      );
+      expect(out).not.toBe("");
+      const parsed = parseOutput(out);
+      expect(parsed.hookSpecificOutput.hookEventName).toBe("UserPromptSubmit");
+    });
   });
 });

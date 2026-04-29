@@ -30,14 +30,21 @@ export function handleUserPromptSubmit(
 ): string {
   if (isTruthyEnv(env.UNDERSTANDING_GATE_DISABLE)) return "";
 
-  let parsed: HookInput;
+  let parsed: unknown;
   try {
-    parsed = rawStdin ? (JSON.parse(rawStdin) as HookInput) : {};
+    parsed = rawStdin ? (JSON.parse(rawStdin) as unknown) : {};
   } catch {
     return "";
   }
+  // JSON.parse can return null, primitives, or arrays, none of which carry
+  // a `.prompt` property. Guard so property access never throws (a TypeError
+  // here would surface on stderr and pollute the harness diagnostic stream).
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return "";
+  }
 
-  const prompt = typeof parsed.prompt === "string" ? parsed.prompt : "";
+  const promptValue = (parsed as HookInput).prompt;
+  const prompt = typeof promptValue === "string" ? promptValue : "";
   if (!prompt) return "";
   if (!isTaskLike(prompt)) return "";
 
