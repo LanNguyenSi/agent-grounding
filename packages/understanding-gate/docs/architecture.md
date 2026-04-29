@@ -1,6 +1,10 @@
 # understanding-gate Architecture
 
+Phase -1 produced this document. It anchors the implementation work in Phases 0 onward.
+
 Three-layer split: harness-agnostic Core, per-harness Adapters, the harnesses themselves. Core is pure. Adapters do I/O. Harnesses are external.
+
+> Note: The harness-specific names below (Claude Code's `UserPromptSubmit`, opencode's `tool.execute.before`, etc.) are the implementation-side translation of the design log's neutral "prompt hook" / "pre-tool hook" concepts. The two design docs in `lava-ice-logs/2026-04-29/` do not name specific harness APIs; that mapping was made during the conversation that produced this package plan.
 
 ## Layered view
 
@@ -66,6 +70,8 @@ evidence-ledger        ← evidence is recorded and queryable
 review-claim-gate      ← merge gate, fails closed unless tests + checklist + evidence
 ```
 
+Ordering rationale: the report comes first because hypotheses are extracted from its `assumptions` and `openQuestions` fields. `readme-first-resolver` runs after the agent has named what it is doing, so the forced primary-doc read is targeted rather than blanket. Claims, evidence, and the review gate then build on the established context.
+
 `grounding-wrapper` orchestrates this chain. A future Phase-3 PR will register `understanding-gate` with the wrapper so the chain enforces the order.
 
 ## Lifecycle states (relevant for Phase 3)
@@ -97,6 +103,8 @@ In Phase 0/0.5, these states are implicit (agent and user share a session). Phas
 | ENV `UNDERSTANDING_GATE_TASK_ID` | 1 | bind reports to a logical task identifier |
 | ENV `UNDERSTANDING_GATE_FORCE` + `_FORCE_REASON` | 2 | bypass enforcement, requires reason ≥ 10 chars, audit-logged |
 | ENV `AGENT_TASKS_TASK_ID` | 3 | sync reports to `agent-tasks` backend |
+
+Open question for Phase 3: `UNDERSTANDING_GATE_TASK_ID` (Phase 1, package-internal) and `AGENT_TASKS_TASK_ID` (Phase 3, cross-package) describe the same logical concept. Phase 3 will need to reconcile them, either by collapsing into one variable or by documenting precedence.
 
 ## Failure modes and defaults
 
