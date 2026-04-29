@@ -1,0 +1,51 @@
+// opencode adapter (Phase 0.5).
+//
+// opencode has no UserPromptSubmit-equivalent event before model inference,
+// so we install two static artifacts instead of a runtime hook:
+//
+// - a rules file (.opencode/rules/understanding-gate.md): always-on
+//   instruction containing the fast-confirm snippet, framed as a house rule.
+// - a custom command (.opencode/command/grill.md): user invokes `/grill` to
+//   escalate into grill-me mode for the next prompt.
+//
+// Trade-off vs the claude-code adapter: no per-prompt classifier (opencode
+// applies the rule unconditionally, the user opts in to /grill). This is
+// the accepted v0.5 compromise; revisit if opencode adds a pre-inference
+// hook event upstream.
+
+import { FAST_CONFIRM_PROMPT, GRILL_ME_PROMPT } from "../../prompts.js";
+
+export const RULES_FILENAME = "understanding-gate.md";
+export const COMMAND_FILENAME = "grill.md";
+
+export function renderRules(): string {
+  return `# understanding-gate (always-on house rule)
+
+Source: @lannguyensi/understanding-gate, Phase 0.5 opencode adapter.
+
+This rule asks you to make your interpretation of a task explicit before you act, so a human can confirm or correct before execution begins.
+
+When the user submits a task that involves editing files, running destructive commands, opening PRs, or making non-trivial changes, follow the rule below. For pure questions, status checks, or read-only analysis, you may answer directly.
+
+---
+
+${FAST_CONFIRM_PROMPT}
+
+---
+
+For ambiguous, risky, or broad tasks: when the user types \`/grill\`, switch to the deeper grill-me report defined in \`.opencode/command/grill.md\`.
+`;
+}
+
+export function renderGrillCommand(): string {
+  return `# /grill: Understanding Gate, grill-me mode
+
+Source: @lannguyensi/understanding-gate, Phase 0.5 opencode adapter.
+
+Use this command when the next task is ambiguous, risky, or broad. The agent should produce a detailed Understanding Report instead of the short fast-confirm summary.
+
+---
+
+${GRILL_ME_PROMPT}
+`;
+}

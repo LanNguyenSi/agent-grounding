@@ -2,7 +2,7 @@
 
 Pre-execution gate for AI agent harnesses. Before an agent edits files, runs destructive commands, or opens PRs, this tool asks it to emit a structured Understanding Report so a human can confirm, correct, or "grill me" before execution begins.
 
-> **Status:** Phase 0 in progress. Claude Code adapter + CLI ship in this phase; opencode adapter (v0.5) is the next phase. See [ROADMAP.md](./ROADMAP.md).
+> **Status:** Phase 0.5 in progress. Phase 0 (Claude Code adapter, CLI, dogfood) is shipped; this phase adds the opencode adapter. Phase 1 (structured report) is next. See [ROADMAP.md](./ROADMAP.md).
 
 ## What it does
 
@@ -58,7 +58,7 @@ UNDERSTANDING_GATE_DISABLE=1 claude
 
 ## Roadmap
 
-See [ROADMAP.md](./ROADMAP.md). Current phase: -1 (Foundation). Phase 0 ships the Claude Code adapter; Phase 0.5 ships the opencode adapter; Phase 1 parses and persists the report; Phase 2 adds tool-blocking enforcement; Phase 3 integrates with `agent-tasks` lifecycle states.
+See [ROADMAP.md](./ROADMAP.md). Phase 0 (Claude Code adapter + CLI) shipped. Phase 0.5 ships the opencode adapter. Phase 1 parses and persists the report; Phase 2 adds tool-blocking enforcement; Phase 3 integrates with `agent-tasks` lifecycle states.
 
 ## Design docs
 

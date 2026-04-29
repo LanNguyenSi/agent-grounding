@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { runInit, runUninstall } from "./cli/init.js";
+import { runOpencodeInit, runOpencodeUninstall } from "./cli/opencode.js";
 import { getPromptSnippet, FULL_PROMPT } from "./prompts.js";
 import type { Mode } from "./mode.js";
 import type { Scope } from "./cli/paths.js";
+
+type Target = "claude-code" | "opencode";
 
 const program = new Command();
 program
@@ -21,53 +24,93 @@ function resolveScope(value: string | undefined): Scope {
   return "project";
 }
 
-function resolveTarget(value: string | undefined): "claude-code" {
+function resolveTarget(value: string | undefined): Target {
   if (value === undefined || value === "claude-code") return "claude-code";
+  if (value === "opencode") return "opencode";
   throw new Error(
-    `unknown --target value: ${value} (only claude-code is supported in Phase 0)`,
+    `unknown --target value: ${value} (expected claude-code|opencode)`,
   );
 }
 
 program
   .command("init")
-  .description("Wire the hook binary into a Claude Code installation")
+  .description("Install the gate into a Claude Code or opencode setup")
   .option("--target <target>", "harness target", "claude-code")
   .option("--scope <scope>", "user or project", "project")
   .action((opts: { target?: string; scope?: string }) => {
-    resolveTarget(opts.target);
+    const target = resolveTarget(opts.target);
     const scope = resolveScope(opts.scope);
-    const result = runInit({ scope });
-    if (result.changed) {
-      process.stdout.write(
-        `understanding-gate: wrote hook entry to ${result.path}\n` +
-          `next: try a prompt like "add a logout button to src/Header.tsx"\n` +
-          `disable temporarily with: UNDERSTANDING_GATE_DISABLE=1 claude\n`,
+    if (target === "claude-code") {
+      const result = runInit({ scope });
+      if (result.changed) {
+        process.stdout.write(
+          `understanding-gate: wrote hook entry to ${result.path}\n` +
+            `next: try a prompt like "add a logout button to src/Header.tsx"\n` +
+            `disable temporarily with: UNDERSTANDING_GATE_DISABLE=1 claude\n`,
+        );
+      } else {
+        process.stdout.write(
+          `understanding-gate: ${result.path} already has the hook entry; nothing to do.\n`,
+        );
+      }
+      return;
+    }
+    // opencode
+    const result = runOpencodeInit({ scope });
+    const lines: string[] = [];
+    if (result.rulesChanged) {
+      lines.push(`understanding-gate: wrote rules file to ${result.paths.rules}`);
+    } else {
+      lines.push(`understanding-gate: ${result.paths.rules} unchanged.`);
+    }
+    if (result.commandChanged) {
+      lines.push(
+        `understanding-gate: wrote /grill command to ${result.paths.command}`,
       );
     } else {
-      process.stdout.write(
-        `understanding-gate: ${result.path} already has the hook entry; nothing to do.\n`,
-      );
+      lines.push(`understanding-gate: ${result.paths.command} unchanged.`);
     }
+    lines.push(
+      "note: opencode v0.5 has no per-prompt trigger; the rule applies always, type /grill for grill-me mode.",
+    );
+    process.stdout.write(`${lines.join("\n")}\n`);
   });
 
 program
   .command("uninstall")
-  .description("Remove the hook entry from settings.json")
+  .description("Remove the gate from a Claude Code or opencode setup")
   .option("--target <target>", "harness target", "claude-code")
   .option("--scope <scope>", "user or project", "project")
   .action((opts: { target?: string; scope?: string }) => {
-    resolveTarget(opts.target);
+    const target = resolveTarget(opts.target);
     const scope = resolveScope(opts.scope);
-    const result = runUninstall({ scope });
-    if (result.changed) {
-      process.stdout.write(
-        `understanding-gate: removed hook entry from ${result.path}\n`,
-      );
-    } else {
-      process.stdout.write(
-        `understanding-gate: no hook entry found in ${result.path}; nothing to do.\n`,
-      );
+    if (target === "claude-code") {
+      const result = runUninstall({ scope });
+      if (result.changed) {
+        process.stdout.write(
+          `understanding-gate: removed hook entry from ${result.path}\n`,
+        );
+      } else {
+        process.stdout.write(
+          `understanding-gate: no hook entry found in ${result.path}; nothing to do.\n`,
+        );
+      }
+      return;
     }
+    // opencode
+    const result = runOpencodeUninstall({ scope });
+    const lines: string[] = [];
+    lines.push(
+      result.rulesRemoved
+        ? `understanding-gate: removed rules file ${result.paths.rules}`
+        : `understanding-gate: no rules file at ${result.paths.rules}; nothing to do.`,
+    );
+    lines.push(
+      result.commandRemoved
+        ? `understanding-gate: removed command file ${result.paths.command}`
+        : `understanding-gate: no command file at ${result.paths.command}; nothing to do.`,
+    );
+    process.stdout.write(`${lines.join("\n")}\n`);
   });
 
 program
