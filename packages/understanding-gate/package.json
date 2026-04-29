@@ -18,7 +18,8 @@
   ],
   "type": "module",
   "bin": {
-    "understanding-gate": "./dist/cli.js"
+    "understanding-gate": "./dist/cli.js",
+    "understanding-gate-claude-hook": "./dist/adapters/claude-code/user-prompt-submit.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
