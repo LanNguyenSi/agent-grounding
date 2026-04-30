@@ -1,16 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  handleStop,
-  type StopHookDeps,
-  type StopHookInput,
-} from "../src/adapters/claude-code/handle-stop.js";
+  handlePersistReport,
+  type PersistReportDeps,
+  type PersistReportInput,
+} from "../src/adapters/opencode/persist-report.js";
 import type { UnderstandingReport } from "../src/schema/types.js";
 import type { ParseResult } from "../src/core/parser.js";
 
 const FIXED_NOW = new Date("2026-04-30T12:34:56.789Z");
 
 const validReport: UnderstandingReport = {
-  taskId: "task-1",
+  taskId: "oc-task-1",
   mode: "fast_confirm",
   riskLevel: "low",
   currentUnderstanding: "x",
@@ -27,74 +27,50 @@ const validReport: UnderstandingReport = {
   createdAt: FIXED_NOW.toISOString(),
 };
 
-function makeDeps(overrides: Partial<StopHookDeps> = {}): StopHookDeps {
+function makeDeps(over: Partial<PersistReportDeps> = {}): PersistReportDeps {
   return {
     parseReport: vi.fn(
       (): ParseResult => ({ ok: true, report: validReport }),
     ),
     saveReport: vi.fn(() => ({
-      path: "/tmp/reports/2026-04-30T12-34-56-789Z-task-1.json",
+      path: "/tmp/reports/2026-04-30T12-34-56-789Z-oc-task-1.json",
       written: true,
     })),
     writeParseErrorLog: vi.fn(() => "/tmp/parse-errors/log.log"),
     now: () => FIXED_NOW,
-    ...overrides,
+    ...over,
   };
 }
 
-function makeInput(over: Partial<StopHookInput> = {}): StopHookInput {
+function makeInput(over: Partial<PersistReportInput> = {}): PersistReportInput {
   return {
     lastAssistantText:
       "# Understanding Report\n\n### 1. My current understanding\n...",
     cwd: "/tmp/work",
-    sessionId: "session-xyz",
+    sessionId: "oc-session-xyz",
     parseErrorDir: "/tmp/work/.understanding-gate/parse-errors",
     env: {},
     ...over,
   };
 }
 
-describe("handleStop: kill switch", () => {
+describe("handlePersistReport: kill switch", () => {
   it("returns disabled when UNDERSTANDING_GATE_DISABLE is set", () => {
     const deps = makeDeps();
-    const out = handleStop(
+    const out = handlePersistReport(
       makeInput({ env: { UNDERSTANDING_GATE_DISABLE: "1" } }),
       deps,
     );
     expect(out.kind).toBe("disabled");
     expect(deps.parseReport).not.toHaveBeenCalled();
-    expect(deps.saveReport).not.toHaveBeenCalled();
   });
-
-  it.each(["1", "true", "TRUE", "yes", "on"])(
-    "treats env value %s as disabled",
-    (value) => {
-      const out = handleStop(
-        makeInput({ env: { UNDERSTANDING_GATE_DISABLE: value } }),
-        makeDeps(),
-      );
-      expect(out.kind).toBe("disabled");
-    },
-  );
-
-  it.each(["", "0", "false", "no", " off "])(
-    "treats env value %j as enabled",
-    (value) => {
-      const out = handleStop(
-        makeInput({ env: { UNDERSTANDING_GATE_DISABLE: value } }),
-        makeDeps(),
-      );
-      // marker matches in the input, so enabled path -> saved
-      expect(out.kind).not.toBe("disabled");
-    },
-  );
 });
 
-describe("handleStop: marker gating", () => {
-  it("returns no_report when text lacks the 'Understanding Report' marker", () => {
+describe("handlePersistReport: marker gating", () => {
+  it("returns no_report when text lacks a heading-prefixed marker", () => {
     const deps = makeDeps();
-    const out = handleStop(
-      makeInput({ lastAssistantText: "Just some random reply, no report here." }),
+    const out = handlePersistReport(
+      makeInput({ lastAssistantText: "Just some random reply." }),
       deps,
     );
     expect(out.kind).toBe("no_report");
@@ -102,100 +78,94 @@ describe("handleStop: marker gating", () => {
   });
 
   it("returns no_report on empty text", () => {
-    const out = handleStop(
+    const out = handlePersistReport(
       makeInput({ lastAssistantText: "" }),
       makeDeps(),
     );
     expect(out.kind).toBe("no_report");
   });
 
-  it("matches the marker case-insensitively when on a heading line", () => {
+  it("does not match casual prose mentions without a heading prefix", () => {
     const deps = makeDeps();
-    handleStop(
-      makeInput({ lastAssistantText: "## understanding REPORT\n\nbody..." }),
-      deps,
-    );
-    expect(deps.parseReport).toHaveBeenCalled();
-  });
-
-  it("does NOT match a casual prose mention without a heading prefix", () => {
-    const deps = makeDeps();
-    const out = handleStop(
+    const out = handlePersistReport(
       makeInput({
         lastAssistantText:
-          "I'll write an Understanding Report once I've checked the schema.",
+          "I'll write an Understanding Report once I know more.",
       }),
       deps,
     );
     expect(out.kind).toBe("no_report");
     expect(deps.parseReport).not.toHaveBeenCalled();
   });
+
+  it("matches a heading-prefixed marker case-insensitively", () => {
+    const deps = makeDeps();
+    handlePersistReport(
+      makeInput({ lastAssistantText: "## understanding REPORT\n\nbody" }),
+      deps,
+    );
+    expect(deps.parseReport).toHaveBeenCalled();
+  });
 });
 
-describe("handleStop: save path", () => {
-  it("calls parseReport with sessionId as taskId default when env is empty", () => {
+describe("handlePersistReport: save path", () => {
+  it("forwards sessionId as taskId default", () => {
     const deps = makeDeps();
-    handleStop(makeInput({ sessionId: "session-zzz" }), deps);
-    expect(deps.parseReport).toHaveBeenCalledTimes(1);
+    handlePersistReport(makeInput({ sessionId: "oc-zzz" }), deps);
     const [, defaults] = (deps.parseReport as ReturnType<typeof vi.fn>).mock
       .calls[0];
     expect(defaults).toMatchObject({
-      taskId: "session-zzz",
+      taskId: "oc-zzz",
       createdAt: FIXED_NOW.toISOString(),
     });
   });
 
-  it("prefers UNDERSTANDING_GATE_TASK_ID over sessionId", () => {
+  it("UNDERSTANDING_GATE_TASK_ID overrides sessionId", () => {
     const deps = makeDeps();
-    handleStop(
+    handlePersistReport(
       makeInput({
-        sessionId: "session-zzz",
-        env: { UNDERSTANDING_GATE_TASK_ID: "explicit-task-1" },
+        sessionId: "oc-zzz",
+        env: { UNDERSTANDING_GATE_TASK_ID: "explicit" },
       }),
       deps,
     );
     const [, defaults] = (deps.parseReport as ReturnType<typeof vi.fn>).mock
       .calls[0];
-    expect(defaults.taskId).toBe("explicit-task-1");
+    expect(defaults.taskId).toBe("explicit");
   });
 
-  it("forwards UNDERSTANDING_GATE_MODE when valid", () => {
+  it("UNDERSTANDING_GATE_MODE forwards only when in-enum", () => {
     const deps = makeDeps();
-    handleStop(
+    handlePersistReport(
       makeInput({ env: { UNDERSTANDING_GATE_MODE: "grill_me" } }),
       deps,
     );
-    const [, defaults] = (deps.parseReport as ReturnType<typeof vi.fn>).mock
-      .calls[0];
-    expect(defaults.mode).toBe("grill_me");
+    const [, d1] = (deps.parseReport as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(d1.mode).toBe("grill_me");
   });
 
-  it("falls back to the fast_confirm baseline when the env mode is out-of-enum", () => {
+  it("falls back to fast_confirm baseline when env mode is out-of-enum", () => {
     const deps = makeDeps();
-    handleStop(
-      makeInput({ env: { UNDERSTANDING_GATE_MODE: "something-bogus" } }),
+    handlePersistReport(
+      makeInput({ env: { UNDERSTANDING_GATE_MODE: "nonsense" } }),
       deps,
     );
-    const [, defaults] = (deps.parseReport as ReturnType<typeof vi.fn>).mock
-      .calls[0];
-    expect(defaults.mode).toBe("fast_confirm");
+    const [, d] = (deps.parseReport as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(d.mode).toBe("fast_confirm");
   });
 
-  it("returns saved with the saveReport result on parse success", () => {
+  it("returns saved with the saveReport result", () => {
     const deps = makeDeps();
-    const out = handleStop(makeInput(), deps);
+    const out = handlePersistReport(makeInput(), deps);
     expect(out.kind).toBe("saved");
-    if (out.kind !== "saved") return;
-    expect(out.path).toMatch(/task-1\.json$/);
-    expect(out.written).toBe(true);
     expect(deps.saveReport).toHaveBeenCalledWith(validReport, {
       cwd: "/tmp/work",
     });
   });
 
-  it("passes an empty SaveOptions when UNDERSTANDING_GATE_REPORT_DIR is set (lets persistence read env)", () => {
+  it("passes empty SaveOptions when UNDERSTANDING_GATE_REPORT_DIR is set", () => {
     const deps = makeDeps();
-    handleStop(
+    handlePersistReport(
       makeInput({ env: { UNDERSTANDING_GATE_REPORT_DIR: "/anywhere" } }),
       deps,
     );
@@ -203,8 +173,8 @@ describe("handleStop: save path", () => {
   });
 });
 
-describe("handleStop: parse_error path", () => {
-  it("writes a parse-error log and returns parse_error on parser failure", () => {
+describe("handlePersistReport: parse_error path", () => {
+  it("writes a parse-error log on parse failure", () => {
     const deps = makeDeps({
       parseReport: vi.fn(
         (): ParseResult => ({
@@ -218,22 +188,18 @@ describe("handleStop: parse_error path", () => {
         }),
       ),
     });
-    const out = handleStop(makeInput(), deps);
+    const out = handlePersistReport(makeInput(), deps);
     expect(out.kind).toBe("parse_error");
-    if (out.kind !== "parse_error") return;
     expect(deps.saveReport).not.toHaveBeenCalled();
-    expect(deps.writeParseErrorLog).toHaveBeenCalledTimes(1);
     const [dir, payload] = (
       deps.writeParseErrorLog as ReturnType<typeof vi.fn>
     ).mock.calls[0];
     expect(dir).toBe("/tmp/work/.understanding-gate/parse-errors");
-    expect(payload).toContain("missing_sections");
+    expect(payload).toMatch(/"adapter": "opencode"/);
     expect(payload).toContain("--- raw ---");
-    expect(payload).toContain("Understanding Report");
-    expect(out.error.reason).toBe("missing_sections");
   });
 
-  it("still returns parse_error when the log writer itself throws", () => {
+  it("still returns parse_error when log writer throws", () => {
     const deps = makeDeps({
       parseReport: vi.fn(
         (): ParseResult => ({
@@ -250,7 +216,7 @@ describe("handleStop: parse_error path", () => {
         throw new Error("disk full");
       }),
     });
-    const out = handleStop(makeInput(), deps);
+    const out = handlePersistReport(makeInput(), deps);
     expect(out.kind).toBe("parse_error");
     if (out.kind !== "parse_error") return;
     expect(out.logPath).toBe("");

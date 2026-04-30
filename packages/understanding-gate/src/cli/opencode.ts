@@ -14,32 +14,37 @@ import { homedir } from "node:os";
 import {
   renderRules,
   renderGrillCommand,
+  renderPluginShim,
   RULES_FILENAME,
   COMMAND_FILENAME,
+  PLUGIN_SHIM_FILENAME,
 } from "../adapters/opencode/index.js";
 
 export type OpencodeScope = "user" | "project";
 
-interface PathPair {
+interface PathTriple {
   rules: string;
   command: string;
+  plugin: string;
 }
 
 export function opencodePaths(
   scope: OpencodeScope,
   cwd: string = process.cwd(),
-): PathPair {
+): PathTriple {
   if (scope === "user") {
     const base = resolve(homedir(), ".config", "opencode");
     return {
       rules: resolve(base, "rules", RULES_FILENAME),
       command: resolve(base, "command", COMMAND_FILENAME),
+      plugin: resolve(base, "plugin", PLUGIN_SHIM_FILENAME),
     };
   }
   const base = resolve(cwd, ".opencode");
   return {
     rules: resolve(base, "rules", RULES_FILENAME),
     command: resolve(base, "command", COMMAND_FILENAME),
+    plugin: resolve(base, "plugin", PLUGIN_SHIM_FILENAME),
   };
 }
 
@@ -54,9 +59,10 @@ function writeIfChanged(path: string, content: string): boolean {
 }
 
 export interface OpencodeInitResult {
-  paths: PathPair;
+  paths: PathTriple;
   rulesChanged: boolean;
   commandChanged: boolean;
+  pluginChanged: boolean;
 }
 
 export function runOpencodeInit(opts: {
@@ -66,13 +72,15 @@ export function runOpencodeInit(opts: {
   const paths = opencodePaths(opts.scope, opts.cwd);
   const rulesChanged = writeIfChanged(paths.rules, renderRules());
   const commandChanged = writeIfChanged(paths.command, renderGrillCommand());
-  return { paths, rulesChanged, commandChanged };
+  const pluginChanged = writeIfChanged(paths.plugin, renderPluginShim());
+  return { paths, rulesChanged, commandChanged, pluginChanged };
 }
 
 export interface OpencodeUninstallResult {
-  paths: PathPair;
+  paths: PathTriple;
   rulesRemoved: boolean;
   commandRemoved: boolean;
+  pluginRemoved: boolean;
 }
 
 export function runOpencodeUninstall(opts: {
@@ -82,6 +90,7 @@ export function runOpencodeUninstall(opts: {
   const paths = opencodePaths(opts.scope, opts.cwd);
   let rulesRemoved = false;
   let commandRemoved = false;
+  let pluginRemoved = false;
   if (existsSync(paths.rules)) {
     unlinkSync(paths.rules);
     rulesRemoved = true;
@@ -90,5 +99,9 @@ export function runOpencodeUninstall(opts: {
     unlinkSync(paths.command);
     commandRemoved = true;
   }
-  return { paths, rulesRemoved, commandRemoved };
+  if (existsSync(paths.plugin)) {
+    unlinkSync(paths.plugin);
+    pluginRemoved = true;
+  }
+  return { paths, rulesRemoved, commandRemoved, pluginRemoved };
 }
