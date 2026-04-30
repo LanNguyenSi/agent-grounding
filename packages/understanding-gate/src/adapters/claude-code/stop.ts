@@ -9,6 +9,7 @@ import { randomBytes } from "node:crypto";
 import { readStdin } from "../io.js";
 import { parseReport } from "../../core/parser.js";
 import { saveReport } from "../../core/persistence.js";
+import { syncHypothesesFromReport } from "../../core/hypothesis-sync.js";
 import {
   PARSE_ERRORS_SUBDIR,
   handleStop,
@@ -51,7 +52,7 @@ async function main(): Promise<void> {
 
   const parseErrorDir = resolveParseErrorDir(cwd, env);
 
-  handleStop(
+  const outcome = handleStop(
     {
       lastAssistantText,
       cwd,
@@ -66,6 +67,16 @@ async function main(): Promise<void> {
       now: () => new Date(),
     },
   );
+
+  // Phase 1.5: register the report's assumptions + open questions in
+  // the hypothesis-tracker store. Best-effort; failure does not affect
+  // the saved report file.
+  if (outcome.kind === "saved") {
+    syncHypothesesFromReport(outcome.report, {
+      reportDir: dirname(outcome.path),
+      sessionId,
+    });
+  }
 }
 
 function parsePayload(raw: string): StopHookPayload | null {

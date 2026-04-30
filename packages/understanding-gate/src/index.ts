@@ -39,3 +39,12 @@ export {
   persistReportPlugin,
   default as opencodePersistReportPlugin,
 } from "./adapters/opencode/persist-report-plugin.js";
+export {
+  registerReportHypotheses,
+  findHypothesesForReport,
+  PREFIX_RE as HYPOTHESIS_BRIDGE_PREFIX_RE,
+} from "./core/hypothesis-bridge.js";
+export type {
+  RegisterResult,
+  HypothesisKind,
+} from "./core/hypothesis-bridge.js";
