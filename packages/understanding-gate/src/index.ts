@@ -19,3 +19,19 @@ export type {
   ParseError,
   ParseDefaults,
 } from "./core/parser.js";
+export {
+  saveReport,
+  listReports,
+  loadReport,
+  resolveReportDir,
+  DEFAULT_REPORT_DIR,
+  REPORT_DIR_ENV,
+} from "./core/persistence.js";
+export type {
+  SaveOptions,
+  SaveResult,
+  ReportEntry,
+  ListOptions,
+  LoadResult,
+  LoadError,
+} from "./core/persistence.js";
