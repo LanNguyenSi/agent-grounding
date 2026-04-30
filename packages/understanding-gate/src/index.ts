@@ -35,3 +35,7 @@ export type {
   LoadResult,
   LoadError,
 } from "./core/persistence.js";
+export {
+  persistReportPlugin,
+  default as opencodePersistReportPlugin,
+} from "./adapters/opencode/persist-report-plugin.js";

@@ -71,8 +71,21 @@ program
     } else {
       lines.push(`understanding-gate: ${result.paths.command} unchanged.`);
     }
+    if (result.pluginChanged) {
+      lines.push(
+        `understanding-gate: wrote persist-report plugin shim to ${result.paths.plugin}`,
+      );
+    } else {
+      lines.push(`understanding-gate: ${result.paths.plugin} unchanged.`);
+    }
     lines.push(
       "note: opencode v0.5 has no per-prompt trigger; the rule applies always, type /grill for grill-me mode.",
+    );
+    lines.push(
+      "note: opencode auto-loads .opencode/plugins/*.ts at startup; the shim resolves @lannguyensi/understanding-gate at import time.",
+    );
+    lines.push(
+      "note: install the package via `npm install --save-dev @lannguyensi/understanding-gate` in your project (or pin a local path / tarball in .opencode/package.json) so opencode's Bun runtime can resolve it.",
     );
     process.stdout.write(`${lines.join("\n")}\n`);
   });
@@ -110,6 +123,11 @@ program
       result.commandRemoved
         ? `understanding-gate: removed command file ${result.paths.command}`
         : `understanding-gate: no command file at ${result.paths.command}; nothing to do.`,
+    );
+    lines.push(
+      result.pluginRemoved
+        ? `understanding-gate: removed plugin shim ${result.paths.plugin}`
+        : `understanding-gate: no plugin shim at ${result.paths.plugin}; nothing to do.`,
     );
     process.stdout.write(`${lines.join("\n")}\n`);
   });

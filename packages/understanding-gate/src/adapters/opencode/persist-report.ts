@@ -1,18 +1,17 @@
-// Pure handler for the Claude Code `Stop` hook.
+// Pure handler for the opencode `message.updated` event.
 //
-// The binary at stop.ts reads the JSONL transcript, extracts the most
-// recent assistant message text, and passes it here. This module:
-//   1. Bails fast if the text doesn't look like a Report (no marker).
-//   2. Runs parseReport with caller-supplied defaults (taskId from env,
-//      mode from env if set).
-//   3. On parse success, calls saveReport.
-//   4. On parse failure, writes a side-channel parse-error log under
-//      <reportDir>/../parse-errors/ so dogfood evidence is never lost.
+// The plugin entrypoint (persist-report-plugin.ts) fetches the assistant
+// message's text parts via the opencode client and hands them here. This
+// module:
+//   1. Bails fast on missing report marker.
+//   2. Runs parseReport with caller-supplied defaults.
+//   3. On success, saveReport.
+//   4. On parse failure, side-channel parse-error log so dogfood evidence
+//      is never lost.
 //
-// All filesystem effects go through deps so tests can stub them. Returns
-// a structured outcome; never throws (the binary's last-resort guard
-// degrades to "exit 0 silent" anyway, but the typed outcome makes the
-// behaviour explicit at the source level).
+// Shape mirrors handle-stop.ts exactly, on purpose — opencode and
+// claude-code disagree on transport (in-process plugin vs binary) but
+// agree on every step after "we extracted the assistant text".
 
 import type { UnderstandingReport } from "../../schema/types.js";
 import type {
@@ -25,56 +24,48 @@ import type {
   SaveResult,
 } from "../../core/persistence.js";
 
-// Anchor at line start with a heading prefix so casual mentions like
-// "I'll write an Understanding Report next" don't trigger the parser.
-// The full / fast_confirm / grill_me prompts all instruct the agent to
-// emit "# Understanding Report" or similar as the report's top-level
-// heading.
 export const REPORT_MARKER_RE = /^\s*#+\s*understanding\s+report\b/im;
 export const PARSE_ERRORS_SUBDIR = "parse-errors";
 
-export interface StopHookDeps {
+export interface PersistReportDeps {
   parseReport: (markdown: string, defaults?: ParseDefaults) => ParseResult;
   saveReport: (report: UnderstandingReport, opts?: SaveOptions) => SaveResult;
   /** Atomic write side-channel. Returns the path written. */
-  writeParseErrorLog: (
-    dir: string,
-    payload: string,
-  ) => string;
+  writeParseErrorLog: (dir: string, payload: string) => string;
   /** "now" injection for parse-error filename + report.createdAt fallback. */
   now: () => Date;
 }
 
-export interface StopHookEnv {
+export interface PersistReportEnv {
   UNDERSTANDING_GATE_DISABLE?: string;
   UNDERSTANDING_GATE_TASK_ID?: string;
   UNDERSTANDING_GATE_MODE?: string;
   UNDERSTANDING_GATE_REPORT_DIR?: string;
 }
 
-export interface StopHookInput {
+export interface PersistReportInput {
   /** Concatenated text content of the most recent assistant message. */
   lastAssistantText: string;
-  /** Working directory of the claude-code session (from hook payload). */
+  /** Working directory of the opencode session (from PluginInput.directory). */
   cwd: string;
-  /** Session id from the hook payload, used as taskId fallback. */
+  /** opencode session id, used as taskId fallback. */
   sessionId: string;
-  /** Directory where parse-error logs go; binary computes from cwd/env. */
+  /** Directory where parse-error logs go; plugin shim computes from cwd/env. */
   parseErrorDir: string;
   /** Hook env (process.env subset). */
-  env: StopHookEnv;
+  env: PersistReportEnv;
 }
 
-export type StopHookOutcome =
+export type PersistReportOutcome =
   | { kind: "disabled" }
   | { kind: "no_report" }
   | { kind: "saved"; path: string; written: boolean }
   | { kind: "parse_error"; logPath: string; error: ParseError };
 
-export function handleStop(
-  input: StopHookInput,
-  deps: StopHookDeps,
-): StopHookOutcome {
+export function handlePersistReport(
+  input: PersistReportInput,
+  deps: PersistReportDeps,
+): PersistReportOutcome {
   if (isTruthyEnv(input.env.UNDERSTANDING_GATE_DISABLE)) {
     return { kind: "disabled" };
   }
@@ -103,9 +94,6 @@ export function handleStop(
     return { kind: "saved", path: saved.path, written: saved.written };
   }
 
-  // Parse failure: keep the raw text + error in a side-channel log so we
-  // can debug why a Report was rejected. Best-effort.
-  const errorDir = input.parseErrorDir;
   const stamp = deps.now().toISOString().replace(/[:.]/g, "-");
   const payload = `${JSON.stringify(
     {
@@ -115,15 +103,16 @@ export function handleStop(
       message: result.error.message,
       stamp,
       sessionId: input.sessionId,
+      adapter: "opencode",
     },
     null,
     2,
   )}\n\n--- raw ---\n${text}\n`;
   let logPath = "";
   try {
-    logPath = deps.writeParseErrorLog(errorDir, payload);
+    logPath = deps.writeParseErrorLog(input.parseErrorDir, payload);
   } catch {
-    // even the log write failed; swallow per "never block the harness".
+    // Even the log write failed; swallow per "never block the harness".
   }
   return { kind: "parse_error", logPath, error: result.error };
 }
@@ -145,7 +134,7 @@ function normaliseMode(
   return null;
 }
 
-function saveOptionsFromInput(input: StopHookInput): SaveOptions {
+function saveOptionsFromInput(input: PersistReportInput): SaveOptions {
   if (input.env.UNDERSTANDING_GATE_REPORT_DIR) return {};
   return { cwd: input.cwd };
 }
