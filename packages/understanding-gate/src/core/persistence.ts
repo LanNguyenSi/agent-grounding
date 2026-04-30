@@ -111,7 +111,7 @@ export function listReports(opts: ListOptions = {}): ReportEntry[] {
       createdAt: parsed.createdAt ?? "",
     });
   }
-  entries.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return entries;
 }
 
@@ -248,7 +248,9 @@ function writeAtomic(finalPath: string, contents: string): void {
 }
 
 function resolveLoadPath(idOrPath: string, opts: ListOptions): string | null {
-  if (isAbsolute(idOrPath) && existsSync(idOrPath)) return idOrPath;
+  if (isAbsolute(idOrPath)) {
+    return existsSync(idOrPath) ? idOrPath : null;
+  }
 
   const dir = resolveReportDir(opts);
   if (!existsSync(dir)) return null;

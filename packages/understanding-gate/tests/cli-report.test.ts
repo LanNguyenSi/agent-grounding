@@ -91,8 +91,8 @@ describe("runReportShow", () => {
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toBe("");
     expect(result.stderr).toMatch(/no-such-thing/);
-    // No raw stack trace should leak.
-    expect(result.stderr).not.toMatch(/at \w+/);
+    // No raw multi-line Node stack frame should leak.
+    expect(result.stderr).not.toMatch(/\n\s+at /);
   });
 
   it("exits 1 with parse_error for a corrupted file", () => {

@@ -10,7 +10,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { UNDERSTANDING_REPORT_SCHEMA } from "../src/schema/report-schema.js";
 import {
   DEFAULT_REPORT_DIR,
   REPORT_DIR_ENV,
@@ -219,9 +220,19 @@ describe("loadReport", () => {
 
   it("loads by basename", () => {
     const saved = saveReport(baseReport, { dir: tmpDir });
-    const filename = saved.path.split("/").pop()!;
+    const filename = basename(saved.path);
     const result = loadReport(filename, { dir: tmpDir });
     expect(result.ok).toBe(true);
+  });
+
+  it("returns not_found for an absolute path that does not exist (no fall-through to dir lookup)", () => {
+    saveReport(baseReport, { dir: tmpDir });
+    const result = loadReport("/definitely/not/a/real/path.json", {
+      dir: tmpDir,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.reason).toBe("not_found");
   });
 
   it("returns ok:false with reason=not_found for a bogus id", () => {
@@ -239,6 +250,34 @@ describe("loadReport", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.reason).toBe("parse_error");
+  });
+});
+
+describe("saveReport: schema/canonical-order coverage", () => {
+  // Drift guard: canonicalJSON in persistence.ts iterates a hardcoded
+  // KEY_ORDER list. If the schema gains a property and KEY_ORDER is not
+  // updated, the new property would be silently dropped from disk. This
+  // test asserts a round-trip preserves every schema-declared property,
+  // failing fast on drift.
+  it("round-trips every property declared in UNDERSTANDING_REPORT_SCHEMA", () => {
+    const schemaProps = Object.keys(
+      UNDERSTANDING_REPORT_SCHEMA.properties,
+    ) as (keyof UnderstandingReport)[];
+    const fullReport: UnderstandingReport = {
+      ...baseReport,
+      approvedAt: "2026-04-30T10:30:00.000Z",
+      approvedBy: "lan@example.com",
+    };
+    const saved = saveReport(fullReport, { dir: tmpDir });
+    const persisted = JSON.parse(
+      readFileSync(saved.path, "utf8"),
+    ) as Record<string, unknown>;
+    for (const key of schemaProps) {
+      const value = (fullReport as unknown as Record<string, unknown>)[key];
+      if (value === undefined) continue;
+      expect(persisted, `schema property "${key}" missing from canonicalJSON`)
+        .toHaveProperty(key);
+    }
   });
 });
 
