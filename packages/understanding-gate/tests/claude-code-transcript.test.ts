@@ -95,6 +95,60 @@ describe("parseTrailingAssistantText", () => {
     expect(parseTrailingAssistantText(jsonl)).toBe("ok");
   });
 
+  it("walks past tool-result user entries within the same turn", () => {
+    // Real Claude Code shape: type:"user" + toolUseResult means a tool
+    // roundtrip, NOT a human turn boundary. The walk must continue.
+    const jsonl = makeJSONL([
+      { type: "user", message: { role: "user", content: [{ type: "text", text: "real prompt" }] } },
+      {
+        type: "assistant",
+        message: { role: "assistant", content: [{ type: "text", text: "first half of report" }] },
+      },
+      {
+        type: "assistant",
+        message: { role: "assistant", content: [{ type: "tool_use", name: "Read", input: {} }] },
+      },
+      {
+        type: "user",
+        toolUseResult: { stdout: "..." },
+        sourceToolAssistantUUID: "abc",
+        message: { role: "user", content: [{ type: "tool_result", content: "ok" }] },
+      },
+      {
+        type: "assistant",
+        message: { role: "assistant", content: [{ type: "text", text: "second half of report" }] },
+      },
+    ]);
+    expect(parseTrailingAssistantText(jsonl)).toBe(
+      "first half of report\nsecond half of report",
+    );
+  });
+
+  it("recognises a human turn that immediately follows tool-result without text content", () => {
+    const jsonl = makeJSONL([
+      {
+        type: "assistant",
+        message: { role: "assistant", content: [{ type: "text", text: "old reply" }] },
+      },
+      // tool-result with no toolUseResult field, but content is exclusively tool_result
+      // blocks: still treated as non-human boundary.
+      {
+        type: "user",
+        message: { role: "user", content: [{ type: "tool_result", content: "x" }] },
+      },
+      // real human prompt with text content
+      {
+        type: "user",
+        message: { role: "user", content: [{ type: "text", text: "new prompt" }] },
+      },
+      {
+        type: "assistant",
+        message: { role: "assistant", content: [{ type: "text", text: "current reply" }] },
+      },
+    ]);
+    expect(parseTrailingAssistantText(jsonl)).toBe("current reply");
+  });
+
   it("handles CRLF line endings", () => {
     const jsonl = makeJSONL([
       {

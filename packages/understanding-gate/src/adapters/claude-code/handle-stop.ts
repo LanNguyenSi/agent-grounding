@@ -25,7 +25,12 @@ import type {
   SaveResult,
 } from "../../core/persistence.js";
 
-export const REPORT_MARKER_RE = /understanding\s+report/i;
+// Anchor at line start with a heading prefix so casual mentions like
+// "I'll write an Understanding Report next" don't trigger the parser.
+// The full / fast_confirm / grill_me prompts all instruct the agent to
+// emit "# Understanding Report" or similar as the report's top-level
+// heading.
+export const REPORT_MARKER_RE = /^\s*#+\s*understanding\s+report\b/im;
 export const PARSE_ERRORS_SUBDIR = "parse-errors";
 
 export interface StopHookDeps {

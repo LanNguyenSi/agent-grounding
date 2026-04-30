@@ -45,7 +45,7 @@ function makeDeps(overrides: Partial<StopHookDeps> = {}): StopHookDeps {
 function makeInput(over: Partial<StopHookInput> = {}): StopHookInput {
   return {
     lastAssistantText:
-      "Here is my Understanding Report:\n\n### 1. My current understanding\n...",
+      "# Understanding Report\n\n### 1. My current understanding\n...",
     cwd: "/tmp/work",
     sessionId: "session-xyz",
     parseErrorDir: "/tmp/work/.understanding-gate/parse-errors",
@@ -109,13 +109,26 @@ describe("handleStop: marker gating", () => {
     expect(out.kind).toBe("no_report");
   });
 
-  it("matches the marker case-insensitively", () => {
+  it("matches the marker case-insensitively when on a heading line", () => {
     const deps = makeDeps();
     handleStop(
-      makeInput({ lastAssistantText: "## understanding REPORT goes here..." }),
+      makeInput({ lastAssistantText: "## understanding REPORT\n\nbody..." }),
       deps,
     );
     expect(deps.parseReport).toHaveBeenCalled();
+  });
+
+  it("does NOT match a casual prose mention without a heading prefix", () => {
+    const deps = makeDeps();
+    const out = handleStop(
+      makeInput({
+        lastAssistantText:
+          "I'll write an Understanding Report once I've checked the schema.",
+      }),
+      deps,
+    );
+    expect(out.kind).toBe("no_report");
+    expect(deps.parseReport).not.toHaveBeenCalled();
   });
 });
 
