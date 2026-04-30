@@ -27,18 +27,21 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Typecheck
-        # Runs per workspace only if the script is defined — packages that
-        # don't have a typecheck entry are silently skipped.
-        run: npm run typecheck --workspaces --if-present
-
       - name: Build
         # Uses the root `build` script (which topo-orders the wrapped libs
         # before everything else). A bare `npm run build --workspaces`
         # walks alphabetically and fails when a package depends on a
         # workspace sibling that hasn't been built yet (e.g. grounding-mcp
         # depends on grounding-wrapper but sorts before it).
+        # Build runs BEFORE typecheck so that any package whose typecheck
+        # imports a workspace-sibling dist (e.g. understanding-gate ->
+        # hypothesis-tracker) can resolve it.
         run: npm run build
+
+      - name: Typecheck
+        # Runs per workspace only if the script is defined — packages that
+        # don't have a typecheck entry are silently skipped.
+        run: npm run typecheck --workspaces --if-present
 
       - name: Test
         run: npm run test --workspaces --if-present

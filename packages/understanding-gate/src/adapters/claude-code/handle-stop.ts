@@ -68,7 +68,12 @@ export interface StopHookInput {
 export type StopHookOutcome =
   | { kind: "disabled" }
   | { kind: "no_report" }
-  | { kind: "saved"; path: string; written: boolean }
+  | {
+      kind: "saved";
+      path: string;
+      written: boolean;
+      report: UnderstandingReport;
+    }
   | { kind: "parse_error"; logPath: string; error: ParseError };
 
 export function handleStop(
@@ -100,7 +105,12 @@ export function handleStop(
   if (result.ok) {
     const saveOpts = saveOptionsFromInput(input);
     const saved = deps.saveReport(result.report, saveOpts);
-    return { kind: "saved", path: saved.path, written: saved.written };
+    return {
+      kind: "saved",
+      path: saved.path,
+      written: saved.written,
+      report: result.report,
+    };
   }
 
   // Parse failure: keep the raw text + error in a side-channel log so we

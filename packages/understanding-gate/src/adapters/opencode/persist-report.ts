@@ -59,7 +59,12 @@ export interface PersistReportInput {
 export type PersistReportOutcome =
   | { kind: "disabled" }
   | { kind: "no_report" }
-  | { kind: "saved"; path: string; written: boolean }
+  | {
+      kind: "saved";
+      path: string;
+      written: boolean;
+      report: UnderstandingReport;
+    }
   | { kind: "parse_error"; logPath: string; error: ParseError };
 
 export function handlePersistReport(
@@ -91,7 +96,12 @@ export function handlePersistReport(
   if (result.ok) {
     const saveOpts = saveOptionsFromInput(input);
     const saved = deps.saveReport(result.report, saveOpts);
-    return { kind: "saved", path: saved.path, written: saved.written };
+    return {
+      kind: "saved",
+      path: saved.path,
+      written: saved.written,
+      report: result.report,
+    };
   }
 
   const stamp = deps.now().toISOString().replace(/[:.]/g, "-");

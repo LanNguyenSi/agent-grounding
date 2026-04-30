@@ -16,6 +16,7 @@ import { dirname, join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { parseReport } from "../../core/parser.js";
 import { saveReport } from "../../core/persistence.js";
+import { syncHypothesesFromReport } from "../../core/hypothesis-sync.js";
 import {
   PARSE_ERRORS_SUBDIR,
   handlePersistReport,
@@ -70,7 +71,7 @@ export const persistReportPlugin: OpencodePlugin = async (
       const cwd = ctx.directory;
       const parseErrorDir = resolveParseErrorDir(cwd, env);
 
-      handlePersistReport(
+      const outcome = handlePersistReport(
         {
           lastAssistantText: text,
           cwd,
@@ -85,6 +86,16 @@ export const persistReportPlugin: OpencodePlugin = async (
           now: () => new Date(),
         },
       );
+
+      // Phase 1.5: register assumptions + open questions in the
+      // hypothesis-tracker store. Best-effort and never throws — same
+      // "don't crash the harness" stance as the rest of the plugin.
+      if (outcome.kind === "saved") {
+        syncHypothesesFromReport(outcome.report, {
+          reportDir: dirname(outcome.path),
+          sessionId: info.sessionID,
+        });
+      }
     },
   };
 };
