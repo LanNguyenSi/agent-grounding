@@ -2,6 +2,7 @@
 import { Command } from "commander";
 import { runInit, runUninstall } from "./cli/init.js";
 import { runOpencodeInit, runOpencodeUninstall } from "./cli/opencode.js";
+import { runReportList, runReportShow } from "./cli/report.js";
 import { getPromptSnippet, FULL_PROMPT } from "./prompts.js";
 import type { Mode } from "./mode.js";
 import type { Scope } from "./cli/paths.js";
@@ -134,6 +135,33 @@ program
       process.exit(1);
     }
     process.stdout.write(`${getPromptSnippet(mode as Mode)}\n`);
+  });
+
+const report = program
+  .command("report")
+  .description("Inspect persisted Understanding Reports");
+
+report
+  .command("list")
+  .description("List persisted reports")
+  .option("--dir <path>", "override report directory")
+  .option("--json", "emit JSON instead of a table")
+  .action((opts: { dir?: string; json?: boolean }) => {
+    const result = runReportList({ dir: opts.dir, json: opts.json });
+    if (result.stdout) process.stdout.write(result.stdout);
+    if (result.stderr) process.stderr.write(result.stderr);
+    process.exit(result.exitCode);
+  });
+
+report
+  .command("show <id>")
+  .description("Print a single report by taskId, filename, or absolute path")
+  .option("--dir <path>", "override report directory")
+  .action((id: string, opts: { dir?: string }) => {
+    const result = runReportShow({ id, dir: opts.dir });
+    if (result.stdout) process.stdout.write(result.stdout);
+    if (result.stderr) process.stderr.write(result.stderr);
+    process.exit(result.exitCode);
   });
 
 program.parseAsync(process.argv).catch((err: unknown) => {
