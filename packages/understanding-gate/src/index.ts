@@ -13,3 +13,9 @@ export type {
   RiskLevel,
   ApprovalStatus,
 } from "./schema/types.js";
+export { parseReport } from "./core/parser.js";
+export type {
+  ParseResult,
+  ParseError,
+  ParseDefaults,
+} from "./core/parser.js";
