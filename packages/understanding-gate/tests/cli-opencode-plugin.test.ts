@@ -24,10 +24,10 @@ afterEach(() => {
 });
 
 describe("runOpencodeInit (plugin shim)", () => {
-  it("writes the plugin shim under .opencode/plugin/", () => {
+  it("writes the plugin shim under .opencode/plugins/", () => {
     const result = runOpencodeInit({ scope: "project", cwd: tmp });
     expect(result.pluginChanged).toBe(true);
-    const path = join(tmp, ".opencode", "plugin", PLUGIN_SHIM_FILENAME);
+    const path = join(tmp, ".opencode", "plugins", PLUGIN_SHIM_FILENAME);
     expect(existsSync(path)).toBe(true);
     const contents = readFileSync(path, "utf8");
     expect(contents).toMatch(/persistReportPlugin as default/);
@@ -42,7 +42,7 @@ describe("runOpencodeInit (plugin shim)", () => {
 
   it("rewrites the shim if its content drifts", () => {
     runOpencodeInit({ scope: "project", cwd: tmp });
-    const path = join(tmp, ".opencode", "plugin", PLUGIN_SHIM_FILENAME);
+    const path = join(tmp, ".opencode", "plugins", PLUGIN_SHIM_FILENAME);
     writeFileSync(path, "// stale", "utf8");
     const result = runOpencodeInit({ scope: "project", cwd: tmp });
     expect(result.pluginChanged).toBe(true);
@@ -56,14 +56,14 @@ describe("runOpencodeUninstall (plugin shim)", () => {
     const result = runOpencodeUninstall({ scope: "project", cwd: tmp });
     expect(result.pluginRemoved).toBe(true);
     expect(
-      existsSync(join(tmp, ".opencode", "plugin", PLUGIN_SHIM_FILENAME)),
+      existsSync(join(tmp, ".opencode", "plugins", PLUGIN_SHIM_FILENAME)),
     ).toBe(false);
   });
 
-  it("preserves sibling plugin files in .opencode/plugin/", () => {
+  it("preserves sibling plugin files in .opencode/plugins/", () => {
     runOpencodeInit({ scope: "project", cwd: tmp });
-    mkdirSync(join(tmp, ".opencode", "plugin"), { recursive: true });
-    const sibling = join(tmp, ".opencode", "plugin", "third-party.ts");
+    mkdirSync(join(tmp, ".opencode", "plugins"), { recursive: true });
+    const sibling = join(tmp, ".opencode", "plugins", "third-party.ts");
     writeFileSync(sibling, "// other plugin", "utf8");
     runOpencodeUninstall({ scope: "project", cwd: tmp });
     expect(existsSync(sibling)).toBe(true);
@@ -78,11 +78,11 @@ describe("runOpencodeUninstall (plugin shim)", () => {
 describe("round-trip init -> uninstall (with plugin)", () => {
   it("removes all three artifacts but leaves siblings intact", () => {
     runOpencodeInit({ scope: "project", cwd: tmp });
-    const sibPlugin = join(tmp, ".opencode", "plugin", "other.ts");
+    const sibPlugin = join(tmp, ".opencode", "plugins", "other.ts");
     writeFileSync(sibPlugin, "// other", "utf8");
     runOpencodeUninstall({ scope: "project", cwd: tmp });
     expect(
-      existsSync(join(tmp, ".opencode", "plugin", PLUGIN_SHIM_FILENAME)),
+      existsSync(join(tmp, ".opencode", "plugins", PLUGIN_SHIM_FILENAME)),
     ).toBe(false);
     expect(existsSync(sibPlugin)).toBe(true);
   });

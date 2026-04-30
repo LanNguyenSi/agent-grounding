@@ -82,7 +82,10 @@ program
       "note: opencode v0.5 has no per-prompt trigger; the rule applies always, type /grill for grill-me mode.",
     );
     lines.push(
-      `note: register the plugin in opencode.json: { "plugin": ["./.opencode/plugin/understanding-gate-persist-report.ts"] }`,
+      "note: opencode auto-loads .opencode/plugins/*.ts at startup; the shim resolves @lannguyensi/understanding-gate at import time.",
+    );
+    lines.push(
+      "note: install the package via `npm install --save-dev @lannguyensi/understanding-gate` in your project (or pin a local path / tarball in .opencode/package.json) so opencode's Bun runtime can resolve it.",
     );
     process.stdout.write(`${lines.join("\n")}\n`);
   });

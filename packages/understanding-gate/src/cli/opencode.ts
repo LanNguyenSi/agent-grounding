@@ -37,14 +37,14 @@ export function opencodePaths(
     return {
       rules: resolve(base, "rules", RULES_FILENAME),
       command: resolve(base, "command", COMMAND_FILENAME),
-      plugin: resolve(base, "plugin", PLUGIN_SHIM_FILENAME),
+      plugin: resolve(base, "plugins", PLUGIN_SHIM_FILENAME),
     };
   }
   const base = resolve(cwd, ".opencode");
   return {
     rules: resolve(base, "rules", RULES_FILENAME),
     command: resolve(base, "command", COMMAND_FILENAME),
-    plugin: resolve(base, "plugin", PLUGIN_SHIM_FILENAME),
+    plugin: resolve(base, "plugins", PLUGIN_SHIM_FILENAME),
   };
 }
 
