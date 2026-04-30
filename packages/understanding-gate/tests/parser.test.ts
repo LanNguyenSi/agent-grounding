@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import { parseReport } from "../src/core/parser.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PARSER_SOURCE = readFileSync(
+  resolve(__dirname, "../src/core/parser.ts"),
+  "utf8",
+);
 
 const FULL_MARKDOWN = `# Understanding Report
 
@@ -207,10 +216,17 @@ describe("parseReport: heading-level tolerance", () => {
 
 describe("parseReport: list parsing", () => {
   function withList(items: string): string {
-    return FULL_MARKDOWN.replace(
+    const SENTINEL = "__LIST_PLACEHOLDER__";
+    const replaced = FULL_MARKDOWN.replace(
       /### 3\. Derived todos \/ specs[\s\S]*?(?=### 4\.)/,
-      `### 3. Derived todos / specs\n${items}\n`,
+      `### 3. Derived todos / specs\n${SENTINEL}\n`,
     );
+    if (!replaced.includes(SENTINEL)) {
+      throw new Error(
+        "withList: section heading text drifted; update the regex above",
+      );
+    }
+    return replaced.replace(SENTINEL, items);
   }
 
   it("accepts unordered lists with - and * markers", () => {
@@ -227,7 +243,7 @@ describe("parseReport: list parsing", () => {
     expect(r.report.derivedTodos).toEqual(["a", "b", "c"]);
   });
 
-  it("joins continuation lines into the previous item", () => {
+  it("joins indented continuation lines into the previous item", () => {
     const r = parseReport(withList("- first item\n  with continuation\n- second"));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -236,19 +252,132 @@ describe("parseReport: list parsing", () => {
       "second",
     ]);
   });
+
+  it("does NOT silently absorb non-indented prose between bullets", () => {
+    const r = parseReport(
+      withList("- alpha\nthis is stray prose, not indented\n- beta"),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.report.derivedTodos).toEqual(["alpha", "beta"]);
+  });
+
+  it("attaches an indented continuation that follows a blank line", () => {
+    const r = parseReport(withList("- alpha\n\n  with continuation\n- beta"));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.report.derivedTodos).toEqual([
+      "alpha with continuation",
+      "beta",
+    ]);
+  });
 });
 
-describe("parseReport: purity", () => {
-  it("performs no fs operations (smoke check via fs.statSync mock)", async () => {
-    // If parseReport touches the fs, this test would surface it via the
-    // module graph. We assert the contract by re-importing fresh and
-    // checking that a parse call does not require any imports beyond
-    // ajv / ajv-formats / our schema. Simpler check: parse 1000x and
-    // ensure no exceptions, no env-dependent behavior.
-    for (let i = 0; i < 1000; i++) {
-      const r = parseReport(FULL_MARKDOWN);
-      expect(r.ok).toBe(true);
+describe("parseReport: purity (no fs / network)", () => {
+  // Static check: parser.ts must not import any I/O module. Spying on
+  // node:fs under ESM is unreliable (TypeError: Cannot redefine property),
+  // so we lock the contract at the source level instead.
+  it("does not import any node I/O modules", () => {
+    const forbidden = [
+      /from\s+["']node:fs["']/,
+      /from\s+["']fs["']/,
+      /from\s+["']node:net["']/,
+      /from\s+["']node:http["']/,
+      /from\s+["']node:https["']/,
+      /from\s+["']node:dns["']/,
+      /from\s+["']node:child_process["']/,
+      /\bfetch\s*\(/,
+      /require\(["']fs["']\)/,
+    ];
+    for (const re of forbidden) {
+      expect(re.test(PARSER_SOURCE), `parser.ts must not match ${re}`).toBe(false);
     }
+  });
+});
+
+describe("parseReport: fenced code blocks", () => {
+  it("ignores section headings that appear inside ``` fences", () => {
+    const md = [
+      "Here is the template I will follow:",
+      "",
+      "```",
+      "### 1. My current understanding",
+      "PLACEHOLDER from the prompt",
+      "### 8. Risks",
+      "- placeholder risk",
+      "```",
+      "",
+      FULL_MARKDOWN,
+    ].join("\n");
+    const r = parseReport(md);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.report.currentUnderstanding).toContain(
+      "wants a parser",
+    );
+    expect(r.report.risks).toEqual([
+      "false negatives on heading variants",
+    ]);
+  });
+
+  it("ignores section headings inside ~~~ fences too", () => {
+    const md = [
+      "~~~",
+      "### 9. Verification plan",
+      "- placeholder",
+      "~~~",
+      FULL_MARKDOWN,
+    ].join("\n");
+    const r = parseReport(md);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.report.verificationPlan).toEqual([
+      "unit tests",
+      "dogfood once 1.3 lands",
+    ]);
+  });
+});
+
+describe("parseReport: input encoding", () => {
+  it("strips a leading UTF-8 BOM", () => {
+    const r = parseReport("﻿" + FULL_MARKDOWN);
+    expect(r.ok).toBe(true);
+  });
+
+  it("accepts CRLF line endings", () => {
+    const r = parseReport(FULL_MARKDOWN.replace(/\n/g, "\r\n"));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.report.derivedTodos).toEqual([
+      "write the parser",
+      "add ajv validation",
+      "ship under @lannguyensi/understanding-gate",
+    ]);
+  });
+});
+
+describe("parseReport: structural edge cases", () => {
+  it("handles a metadata block placed BEFORE the section headings", () => {
+    const sectionsOnly = FULL_MARKDOWN.split("## Metadata")[0];
+    const metaBlock = "## Metadata\ntaskId: ug-meta-first\nmode: fast_confirm\nriskLevel: low\n";
+    const md = `# Understanding Report\n\n${metaBlock}\n${sectionsOnly}`;
+    const r = parseReport(md);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.report.taskId).toBe("ug-meta-first");
+    expect(r.report.mode).toBe("fast_confirm");
+    expect(r.report.riskLevel).toBe("low");
+  });
+
+  it("on duplicate section headings, takes the first occurrence", () => {
+    const dup = FULL_MARKDOWN.replace(
+      "### 8. Risks",
+      "### 8. Risks\n- first occurrence wins\n\n### 8. Risks",
+    );
+    const r = parseReport(dup);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.report.risks).toEqual(["first occurrence wins"]);
   });
 });
 

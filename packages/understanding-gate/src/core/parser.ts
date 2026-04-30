@@ -34,6 +34,11 @@ export type ParseDefaults = {
   createdAt?: string;
 };
 
+// `missing` semantics by `reason`:
+//   no_report_found  -> all required section keys
+//   missing_sections -> the section keys that could not be located/parsed
+//   schema_violation -> required-property names from the ajv errors
+//   invalid_metadata -> empty
 export type ParseError = {
   reason:
     | "no_report_found"
@@ -174,6 +179,13 @@ export function parseReport(
     metadataFromMarkdown = parsed.value;
   }
 
+  // Merge order (lowest -> highest precedence):
+  //   1. baseline (requiresHumanApproval=true, approvalStatus=pending)
+  //   2. caller-supplied defaults
+  //   3. inline `## Metadata` block from the markdown
+  //   4. parsed section bodies
+  // Section keys (collected) and metadata keys never overlap thanks to the
+  // SectionKey type-level Exclude<>, so the order is unambiguous.
   const merged: Record<string, unknown> = {
     requiresHumanApproval: true,
     approvalStatus: "pending",
@@ -215,13 +227,37 @@ export function parseReport(
 type Section = { title: string; titleKey: string; body: string };
 
 const HEADING_RE = /^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/;
+// Match an opening or closing fence: ``` or ~~~ (CommonMark allows 3+).
+const FENCE_RE = /^\s{0,3}(`{3,}|~{3,})/;
 
 function splitIntoSections(markdown: string): Section[] {
-  const lines = markdown.split(/\r?\n/);
+  // Strip a UTF-8 BOM if present so the first heading isn't shadowed.
+  const stripped =
+    markdown.charCodeAt(0) === 0xfeff ? markdown.slice(1) : markdown;
+  const lines = stripped.split(/\r?\n/);
   const sections: Section[] = [];
   let current: { title: string; titleKey: string; body: string[] } | null =
     null;
+  // CommonMark fenced-code-block tracker. Headings inside a fence are
+  // verbatim content (e.g. the agent quoting the prompt template) and must
+  // not be promoted to real sections.
+  let fenceMarker: string | null = null;
   for (const line of lines) {
+    const fenceMatch = line.match(FENCE_RE);
+    if (fenceMatch) {
+      const marker = fenceMatch[1][0]; // ` or ~
+      if (fenceMarker == null) {
+        fenceMarker = marker;
+      } else if (fenceMarker === marker) {
+        fenceMarker = null;
+      }
+      if (current) current.body.push(line);
+      continue;
+    }
+    if (fenceMarker != null) {
+      if (current) current.body.push(line);
+      continue;
+    }
     const m = line.match(HEADING_RE);
     if (m) {
       if (current) {
@@ -257,10 +293,14 @@ function normalizeTitle(raw: string): string {
     .trim();
 }
 
+// First-match wins. With the closed alias set in SECTIONS, duplicate
+// section headings in a single report are unusual and almost always
+// indicate the agent retried mid-stream; the earlier draft is dropped on
+// purpose by taking the first.
 function pickSection(sections: Section[], aliases: string[]): string | null {
   for (const s of sections) {
     for (const alias of aliases) {
-      if (s.titleKey === alias || s.titleKey.startsWith(alias + " ")) {
+      if (s.titleKey === alias) {
         return s.body;
       }
     }
@@ -269,26 +309,37 @@ function pickSection(sections: Section[], aliases: string[]): string | null {
 }
 
 const LIST_ITEM_RE = /^\s*(?:[-*+]|\d+[.)])\s+(.*)$/;
+const INDENTED_RE = /^\s+\S/;
 
 function parseList(body: string): string[] {
   const items: string[] = [];
   let current: string | null = null;
   for (const rawLine of body.split(/\r?\n/)) {
     const line = rawLine.replace(/\s+$/, "");
-    const m = line.match(LIST_ITEM_RE);
-    if (m) {
+    const itemMatch = line.match(LIST_ITEM_RE);
+    if (itemMatch) {
       if (current != null) items.push(current.trim());
-      current = m[1];
-    } else if (line.trim().length === 0) {
-      if (current != null) {
-        items.push(current.trim());
-        current = null;
-      }
-    } else if (current != null) {
-      // continuation line: indented or wrapped text under the previous item.
-      current += " " + line.trim();
+      current = itemMatch[1];
+      continue;
     }
-    // non-list, non-blank lines outside a list item are ignored.
+    if (line.trim().length === 0) {
+      // Blank lines between items are tolerated; we keep `current` open
+      // so that an indented continuation after the blank line still
+      // attaches to the previous item.
+      continue;
+    }
+    if (current != null && INDENTED_RE.test(line)) {
+      // Indented wrap of the previous item.
+      current += " " + line.trim();
+      continue;
+    }
+    // A non-blank, non-indented line that isn't a new list item ends the
+    // current item and is dropped (stray prose between bullets is not
+    // silently absorbed).
+    if (current != null) {
+      items.push(current.trim());
+      current = null;
+    }
   }
   if (current != null) items.push(current.trim());
   return items.filter((s) => s.length > 0);
