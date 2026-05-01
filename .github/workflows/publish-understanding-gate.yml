@@ -1,0 +1,70 @@
+name: Publish understanding-gate to npm
+
+on:
+  push:
+    tags: ["understanding-gate-v*"]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Preflight, verify NPM_TOKEN secret is set
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NPM_TOKEN}" ]; then
+            echo "::error::NPM_TOKEN secret is not configured." >&2
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify package.json version matches tag
+        run: |
+          tag_version="${GITHUB_REF_NAME#understanding-gate-v}"
+          pkg_version=$(node -p "require('./packages/understanding-gate/package.json').version")
+          if [ "$pkg_version" != "$tag_version" ]; then
+            echo "Tag version ($tag_version) does not match packages/understanding-gate/package.json ($pkg_version)" >&2
+            exit 1
+          fi
+
+      - name: Build (deps first, then understanding-gate)
+        run: |
+          npm run build:deps
+          npm run build --workspace=@lannguyensi/understanding-gate
+
+      - name: Verify bin targets are executable
+        # Phase 5 follow-up — 0.1.0 shipped without +x because tsc
+        # doesn't preserve executable mode. The build script now
+        # chmods them; this check makes sure a future package.json
+        # edit can't silently regress the contract.
+        run: |
+          for f in packages/understanding-gate/dist/cli.js \
+                   packages/understanding-gate/dist/adapters/claude-code/user-prompt-submit.js \
+                   packages/understanding-gate/dist/adapters/claude-code/stop.js; do
+            if [ ! -x "$f" ]; then
+              echo "::error::$f is not executable. Did the build script's chmod run?" >&2
+              exit 1
+            fi
+          done
+
+      - name: Test
+        run: npm test --workspace=@lannguyensi/understanding-gate
+
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --workspace=@lannguyensi/understanding-gate --access public --provenance

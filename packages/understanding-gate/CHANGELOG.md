@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.1 — 2026-05-01
+
+### Fixed
+
+- **`bin` targets now ship executable**. 0.1.0 packed `dist/cli.js`,
+  `dist/adapters/claude-code/user-prompt-submit.js`, and
+  `dist/adapters/claude-code/stop.js` without the `+x` bit because
+  `tsc` doesn't preserve executable mode on output. Result: a fresh
+  `npm i -g @lannguyensi/understanding-gate` produced bin symlinks
+  pointing to non-executable files, and Claude Code's `UserPromptSubmit`
+  hook fired
+  `/bin/sh: 1: understanding-gate-claude-hook: Permission denied`
+  on every prompt. The shebangs were always there; the modes weren't.
+- `build` now `chmod +x`'s the three bin targets so the pack tarball
+  carries the correct mode and `npm i` lands them executable. Added
+  `prepublishOnly: npm run build` so a publish without a fresh build
+  still gets the chmod.
+
+Reported via the agent-tasks board (`754798c6`); reproduced live during
+a Claude Code session against `0.1.0`.
+
 ## 0.1.0 — 2026-05-01
 
 First public release. Implements Phases -1 through 1 of the
