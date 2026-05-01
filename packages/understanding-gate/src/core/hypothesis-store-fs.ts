@@ -7,12 +7,12 @@
 // `<reportRoot>/../hypotheses.json` so dogfood inspection is
 // `cat .understanding-gate/hypotheses.json`.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import {
   createStore,
   type HypothesisStore,
 } from "@lannguyensi/hypothesis-tracker";
+import { writeAtomicJSON } from "./fs.js";
 
 export const HYPOTHESES_STORE_FILENAME = "hypotheses.json";
 
@@ -39,6 +39,5 @@ export function loadOrCreateStore(
 }
 
 export function saveStore(path: string, store: HypothesisStore): void {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(store, null, 2)}\n`, "utf8");
+  writeAtomicJSON(path, store);
 }

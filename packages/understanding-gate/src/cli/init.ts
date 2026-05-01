@@ -1,5 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { dirname } from "node:path";
+import { readFileSync, existsSync } from "node:fs";
 import {
   HOOK_COMMAND_NAME,
   STOP_HOOK_COMMAND_NAME,
@@ -9,6 +8,7 @@ import {
   type SettingsDocument,
 } from "./settings.js";
 import { settingsPathFor, type Scope } from "./paths.js";
+import { writeAtomicJSON } from "../core/fs.js";
 
 interface RunResult {
   path: string;
@@ -41,8 +41,7 @@ function readSettings(path: string): SettingsDocument {
 }
 
 function writeSettings(path: string, doc: SettingsDocument): void {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(doc, null, 2)}\n`, "utf8");
+  writeAtomicJSON(path, doc);
 }
 
 export function runInit(opts: {

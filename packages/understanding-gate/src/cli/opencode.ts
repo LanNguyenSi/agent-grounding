@@ -4,12 +4,10 @@
 
 import {
   existsSync,
-  mkdirSync,
   readFileSync,
   unlinkSync,
-  writeFileSync,
 } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 import { homedir } from "node:os";
 import {
   renderRules,
@@ -19,6 +17,7 @@ import {
   COMMAND_FILENAME,
   PLUGIN_SHIM_FILENAME,
 } from "../adapters/opencode/index.js";
+import { writeAtomicText } from "../core/fs.js";
 
 export type OpencodeScope = "user" | "project";
 
@@ -53,8 +52,7 @@ function writeIfChanged(path: string, content: string): boolean {
     const current = readFileSync(path, "utf8");
     if (current === content) return false;
   }
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, content, "utf8");
+  writeAtomicText(path, content);
   return true;
 }
 
