@@ -9,6 +9,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   readdirSync,
   rmSync,
 } from "node:fs";
@@ -204,7 +205,7 @@ describe("persistReportPlugin: end-to-end", () => {
     expect(logs).toHaveLength(1);
   });
 
-  it("survives a client.session.message that throws (silent no-op, no file written)", async () => {
+  it("logs a transport_error and does not throw when client.session.message rejects", async () => {
     const throwingClient: OpencodeClient = {
       session: {
         message: async () => {
@@ -232,6 +233,62 @@ describe("persistReportPlugin: end-to-end", () => {
         },
       }),
     ).resolves.toBeUndefined();
-    expect(existsSync(join(tmp, ".understanding-gate"))).toBe(false);
+    // No real report file should appear.
+    expect(existsSync(join(tmp, ".understanding-gate", "reports"))).toBe(false);
+    // But a transport-error breadcrumb should land in parse-errors/.
+    const errsDir = join(tmp, ".understanding-gate", "parse-errors");
+    expect(existsSync(errsDir)).toBe(true);
+    const logs = readdirSync(errsDir).filter((n) => n.endsWith(".log"));
+    expect(logs).toHaveLength(1);
+    const body = readFileSync(join(errsDir, logs[0]!), "utf8");
+    const parsed = JSON.parse(body) as {
+      kind: string;
+      sessionID: string | null;
+      messageID: string | null;
+      error: { message?: string };
+    };
+    expect(parsed.kind).toBe("transport_error");
+    expect(parsed.sessionID).toBe("s");
+    expect(parsed.messageID).toBe("m3");
+    expect(parsed.error.message).toBe("network down");
+  });
+
+  it("logs a transport_error when client.session.message resolves with { error } and no data", async () => {
+    const errorReturningClient: OpencodeClient = {
+      session: {
+        message: async () => ({
+          error: { code: 502, message: "bad gateway" },
+        }),
+      },
+    };
+    const hooks = await persistReportPlugin({
+      client: errorReturningClient,
+      directory: tmp,
+    });
+    if (!hooks.event) return;
+    await hooks.event({
+      event: {
+        type: "message.updated",
+        properties: {
+          info: {
+            id: "m4",
+            sessionID: "s2",
+            role: "assistant",
+            finish: "ok",
+          },
+        },
+      },
+    });
+    const errsDir = join(tmp, ".understanding-gate", "parse-errors");
+    expect(existsSync(errsDir)).toBe(true);
+    const logs = readdirSync(errsDir).filter((n) => n.endsWith(".log"));
+    expect(logs).toHaveLength(1);
+    const parsed = JSON.parse(readFileSync(join(errsDir, logs[0]!), "utf8")) as {
+      kind: string;
+      error: { code?: number; message?: string };
+    };
+    expect(parsed.kind).toBe("transport_error");
+    expect(parsed.error.code).toBe(502);
+    expect(parsed.error.message).toBe("bad gateway");
   });
 });
