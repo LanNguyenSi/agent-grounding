@@ -16,7 +16,13 @@ import {
 } from "./hypothesis-store-fs.js";
 
 export type SyncOutcome =
-  | { kind: "ok"; storePath: string; result: RegisterResult }
+  | {
+      kind: "ok";
+      storePath: string;
+      result: RegisterResult;
+      /** Entries dropped from the on-disk store because they failed per-entry validation. */
+      droppedFromStore: number;
+    }
   | { kind: "error"; message: string };
 
 export interface SyncOptions {
@@ -39,12 +45,19 @@ export function syncHypothesesFromReport(
 ): SyncOutcome {
   try {
     const storePath = resolve(opts.reportDir, "..", HYPOTHESES_STORE_FILENAME);
-    const store = loadOrCreateStore(storePath, opts.sessionId);
+    const { store, droppedCount } = loadOrCreateStore(storePath, opts.sessionId);
     const result = registerReportHypotheses(report, store);
-    if (result.added.length > 0) {
+    // Persist if we added anything new OR if we silently dropped corrupt
+    // entries on load — otherwise the bad entries linger on disk.
+    if (result.added.length > 0 || droppedCount > 0) {
       saveStore(storePath, store);
     }
-    return { kind: "ok", storePath, result };
+    return {
+      kind: "ok",
+      storePath,
+      result,
+      droppedFromStore: droppedCount,
+    };
   } catch (err) {
     return { kind: "error", message: String(err) };
   }

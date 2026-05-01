@@ -10,17 +10,26 @@
 import { existsSync, readFileSync } from "node:fs";
 import {
   createStore,
+  type Hypothesis,
   type HypothesisStore,
 } from "@lannguyensi/hypothesis-tracker";
 import { writeAtomicJSON } from "./fs.js";
 
 export const HYPOTHESES_STORE_FILENAME = "hypotheses.json";
 
+export interface LoadResult {
+  store: HypothesisStore;
+  /** Count of array entries that failed per-entry validation. */
+  droppedCount: number;
+}
+
 export function loadOrCreateStore(
   path: string,
   session = "default",
-): HypothesisStore {
-  if (!existsSync(path)) return createStore(session);
+): LoadResult {
+  if (!existsSync(path)) {
+    return { store: createStore(session), droppedCount: 0 };
+  }
   try {
     const raw = readFileSync(path, "utf8");
     const parsed = JSON.parse(raw) as unknown;
@@ -30,14 +39,43 @@ export function loadOrCreateStore(
       Array.isArray((parsed as { hypotheses?: unknown }).hypotheses) &&
       typeof (parsed as { session?: unknown }).session === "string"
     ) {
-      return parsed as HypothesisStore;
+      const top = parsed as { session: string; hypotheses: unknown[] };
+      const valid: Hypothesis[] = [];
+      let droppedCount = 0;
+      for (const entry of top.hypotheses) {
+        if (isValidHypothesis(entry)) valid.push(entry);
+        else droppedCount += 1;
+      }
+      return {
+        store: { session: top.session, hypotheses: valid },
+        droppedCount,
+      };
     }
   } catch {
     // fall through to a fresh store on corrupt JSON
   }
-  return createStore(session);
+  return { store: createStore(session), droppedCount: 0 };
 }
 
 export function saveStore(path: string, store: HypothesisStore): void {
   writeAtomicJSON(path, store);
+}
+
+// Keep in sync with Hypothesis['status'] in @lannguyensi/hypothesis-tracker.
+// If the upstream union grows, this guard will silently drop valid rows.
+const VALID_STATUSES = new Set(["unverified", "supported", "rejected"]);
+
+export function isValidHypothesis(entry: unknown): entry is Hypothesis {
+  if (!entry || typeof entry !== "object") return false;
+  const h = entry as Record<string, unknown>;
+  return (
+    typeof h.id === "string" &&
+    typeof h.text === "string" &&
+    typeof h.status === "string" &&
+    VALID_STATUSES.has(h.status) &&
+    Array.isArray(h.evidence) &&
+    Array.isArray(h.required_checks) &&
+    typeof h.createdAt === "string" &&
+    typeof h.updatedAt === "string"
+  );
 }
