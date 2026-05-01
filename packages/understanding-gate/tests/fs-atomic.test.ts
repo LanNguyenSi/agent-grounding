@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   existsSync,
   mkdtempSync,
@@ -9,7 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { writeAtomicJSON, writeAtomicText } from "../src/core/fs.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -101,11 +101,17 @@ describe("concurrent writers do not produce torn files", () => {
   // Cross-process: spawns N child processes that all call writeAtomicJSON
   // on the same final path at the same time. This is the real torn-file
   // test — without atomic rename, partial writes would surface here.
+  const PKG_ROOT = resolve(__dirname, "..");
+  const FS_DIST = resolve(PKG_ROOT, "dist", "core", "fs.js");
+  beforeAll(() => {
+    if (!existsSync(FS_DIST)) {
+      execFileSync("npm", ["run", "build"], { cwd: PKG_ROOT, stdio: "ignore" });
+    }
+  });
+
   it("N parallel processes writing the same path yield a valid JSON file", async () => {
     const finalPath = join(tmpDir, "shared.json");
-    const fsModulePath = pathToFileURL(
-      resolve(__dirname, "..", "dist", "core", "fs.js"),
-    ).href;
+    const fsModulePath = pathToFileURL(FS_DIST).href;
     const writerScript = resolve(__dirname, "fixtures", "concurrent-writer.mjs");
     const N = 12;
 

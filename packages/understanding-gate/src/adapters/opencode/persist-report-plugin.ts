@@ -11,12 +11,12 @@
 // the function below as default. The user adds an entry to `opencode.json`
 // pointing at that file (documented in the printed init message).
 
-import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { parseReport } from "../../core/parser.js";
 import { saveReport } from "../../core/persistence.js";
 import { syncHypothesesFromReport } from "../../core/hypothesis-sync.js";
+import { writeAtomicText } from "../../core/fs.js";
 import {
   PARSE_ERRORS_SUBDIR,
   handlePersistReport,
@@ -113,10 +113,9 @@ function resolveParseErrorDir(cwd: string, env: PersistReportEnv): string {
 }
 
 function writeParseErrorLog(dir: string, payload: string): string {
-  mkdirSync(dir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const filename = `${stamp}-${randomBytes(3).toString("hex")}.log`;
   const path = join(dir, filename);
-  writeFileSync(path, payload, "utf8");
+  writeAtomicText(path, payload);
   return path;
 }
