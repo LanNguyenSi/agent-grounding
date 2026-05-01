@@ -61,6 +61,8 @@ export function saveStore(path: string, store: HypothesisStore): void {
   writeAtomicJSON(path, store);
 }
 
+// Keep in sync with Hypothesis['status'] in @lannguyensi/hypothesis-tracker.
+// If the upstream union grows, this guard will silently drop valid rows.
 const VALID_STATUSES = new Set(["unverified", "supported", "rejected"]);
 
 export function isValidHypothesis(entry: unknown): entry is Hypothesis {

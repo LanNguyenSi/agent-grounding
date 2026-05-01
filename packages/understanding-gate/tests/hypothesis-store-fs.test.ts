@@ -8,6 +8,7 @@ import {
   saveStore,
 } from "../src/core/hypothesis-store-fs.js";
 import { syncHypothesesFromReport } from "../src/core/hypothesis-sync.js";
+import type { Hypothesis } from "@lannguyensi/hypothesis-tracker";
 import type { UnderstandingReport } from "../src/schema/types.js";
 
 let tmp: string;
@@ -21,7 +22,7 @@ afterEach(() => {
   rmSync(tmp, { recursive: true, force: true });
 });
 
-const validHypothesis = {
+const validHypothesis: Hypothesis = {
   id: "h-1",
   text: "the bug is in foo",
   status: "unverified",
@@ -97,7 +98,7 @@ describe("saveStore", () => {
   it("round-trips through loadOrCreateStore", () => {
     saveStore(storePath, {
       session: "rt",
-      hypotheses: [validHypothesis as never],
+      hypotheses: [validHypothesis],
     });
     const back = loadOrCreateStore(storePath);
     expect(back.droppedCount).toBe(0);
