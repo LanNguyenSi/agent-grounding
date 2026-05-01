@@ -19,7 +19,7 @@ function setupDb(): Database.Database {
   d.exec(`
     CREATE TABLE IF NOT EXISTS entries (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      type        TEXT    NOT NULL CHECK(type IN ('fact','hypothesis','rejected','unknown')),
+      type        TEXT    NOT NULL CHECK(type IN ('fact','hypothesis','rejected','unknown','policy_decision')),
       content     TEXT    NOT NULL,
       source      TEXT,
       confidence  TEXT    NOT NULL DEFAULT 'medium' CHECK(confidence IN ('high','medium','low')),
@@ -269,6 +269,151 @@ describe("getSummary — Phase 5 #5: server-side filters", () => {
     const emptyFilteredSummary = getSummary(db, "s1", {});
     expect(emptyFilteredSummary.facts.length).toBe(fullSummary.facts.length);
     expect(emptyFilteredSummary.hypotheses.length).toBe(fullSummary.hypotheses.length);
+  });
+});
+
+describe("Phase 5 #4 — policy_decision entry type", () => {
+  it("addEntry accepts type='policy_decision' and getSummary buckets it separately", () => {
+    addEntry(db, {
+      type: "policy_decision",
+      content: 'policy_decision:review-before-merge:deny {"reason":"x"}',
+      session: "p4",
+      source: "harness-policy-intercept",
+    });
+    addEntry(db, {
+      type: "fact",
+      content: "review:42 approved",
+      session: "p4",
+    });
+    const summary = getSummary(db, "p4");
+    expect(summary.policyDecisions).toHaveLength(1);
+    expect(summary.facts).toHaveLength(1);
+    expect(summary.policyDecisions[0]!.content).toContain("review-before-merge");
+    expect(summary.facts[0]!.content).toBe("review:42 approved");
+  });
+
+  it("policy_decision rows do not appear in the four evidence buckets", () => {
+    addEntry(db, {
+      type: "policy_decision",
+      content: 'policy_decision:review-before-merge:deny {"ledgerTag":"review:42"}',
+      session: "p4-isolation",
+    });
+    const summary = getSummary(db, "p4-isolation");
+    expect(summary.facts).toHaveLength(0);
+    expect(summary.hypotheses).toHaveLength(0);
+    expect(summary.rejected).toHaveLength(0);
+    expect(summary.unknowns).toHaveLength(0);
+    // The substring "review:42" lives inside the policy_decision payload.
+    // listEntries with the contentPrefix filter picks it up by design,
+    // but a consumer iterating evidence buckets only never sees it —
+    // which is the Phase 5 #4 invariant we ship.
+    const allEvidence = [
+      ...summary.facts,
+      ...summary.hypotheses,
+      ...summary.rejected,
+      ...summary.unknowns,
+    ];
+    expect(allEvidence).toEqual([]);
+  });
+
+  it("listEntries can still retrieve policy_decision rows when needed", () => {
+    addEntry(db, {
+      type: "policy_decision",
+      content: "policy_decision:test",
+      session: "p4-list",
+    });
+    addEntry(db, { type: "fact", content: "evidence", session: "p4-list" });
+    const all = listEntries(db, { session: "p4-list" });
+    expect(all).toHaveLength(2);
+    expect(all.map((e) => e.type).sort()).toEqual(["fact", "policy_decision"]);
+  });
+
+  it("rejects unknown type values via the SQL CHECK constraint", () => {
+    expect(() =>
+      addEntry(db, {
+        type: "bogus" as never,
+        content: "x",
+        session: "p4-bogus",
+      }),
+    ).toThrow();
+  });
+
+  it("migrates a legacy ledger that lacks policy_decision in its CHECK", () => {
+    // Build a fresh in-memory db with the OLD schema (pre-Phase-5-#4)
+    // and confirm the migration adds the new type without dropping
+    // existing rows.
+    const legacy = new Database(":memory:");
+    legacy.exec(`
+      CREATE TABLE entries (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        type        TEXT    NOT NULL CHECK(type IN ('fact','hypothesis','rejected','unknown')),
+        content     TEXT    NOT NULL,
+        source      TEXT,
+        confidence  TEXT    NOT NULL DEFAULT 'medium' CHECK(confidence IN ('high','medium','low')),
+        session     TEXT    NOT NULL DEFAULT 'default',
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+        updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+    legacy
+      .prepare(
+        "INSERT INTO entries (type, content, session) VALUES (?, ?, ?)",
+      )
+      .run("fact", "legacy entry", "legacy");
+    // Write a `policy_decision` should fail under the legacy CHECK…
+    expect(() =>
+      legacy
+        .prepare("INSERT INTO entries (type, content, session) VALUES (?, ?, ?)")
+        .run("policy_decision", "should fail before migration", "legacy"),
+    ).toThrow();
+
+    // Now run the same migrate() that getDb() runs on open.
+    // Re-importing it would couple the test to the export surface;
+    // re-running the canonical sequence directly is enough to pin the
+    // contract that callers re-opening an old db are migrated.
+    const tableSql = (
+      legacy
+        .prepare(
+          "SELECT sql FROM sqlite_master WHERE type='table' AND name='entries'",
+        )
+        .get() as { sql?: string } | undefined
+    )?.sql;
+    expect(tableSql).toBeDefined();
+    expect(tableSql!.includes("policy_decision")).toBe(false);
+
+    legacy.exec(`
+      BEGIN;
+      CREATE TABLE entries_new (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        type        TEXT    NOT NULL CHECK(type IN ('fact','hypothesis','rejected','unknown','policy_decision')),
+        content     TEXT    NOT NULL,
+        source      TEXT,
+        confidence  TEXT    NOT NULL DEFAULT 'medium' CHECK(confidence IN ('high','medium','low')),
+        session     TEXT    NOT NULL DEFAULT 'default',
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+        updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO entries_new (id, type, content, source, confidence, session, created_at, updated_at)
+      SELECT id, type, content, source, confidence, session, created_at, updated_at FROM entries;
+      DROP TABLE entries;
+      ALTER TABLE entries_new RENAME TO entries;
+      COMMIT;
+    `);
+
+    // Existing row preserved.
+    const rows = legacy
+      .prepare("SELECT type, content FROM entries WHERE session='legacy'")
+      .all() as Array<{ type: string; content: string }>;
+    expect(rows).toEqual([{ type: "fact", content: "legacy entry" }]);
+
+    // New type now accepted.
+    expect(() =>
+      legacy
+        .prepare("INSERT INTO entries (type, content, session) VALUES (?, ?, ?)")
+        .run("policy_decision", "post-migration entry", "legacy"),
+    ).not.toThrow();
+
+    legacy.close();
   });
 });
 

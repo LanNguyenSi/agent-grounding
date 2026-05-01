@@ -47,11 +47,17 @@ export function resetDb(): void {
   _db = null;
 }
 
+// SQL fragment for the canonical entries-table CHECK constraint. Kept
+// in sync with the EntryType union in `types.ts`. Phase 5 #4 added
+// `policy_decision`.
+const ENTRY_TYPE_CHECK =
+  "CHECK(type IN ('fact','hypothesis','rejected','unknown','policy_decision'))";
+
 function migrate(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS entries (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      type        TEXT    NOT NULL CHECK(type IN ('fact','hypothesis','rejected','unknown')),
+      type        TEXT    NOT NULL ${ENTRY_TYPE_CHECK},
       content     TEXT    NOT NULL,
       source      TEXT,
       confidence  TEXT    NOT NULL DEFAULT 'medium' CHECK(confidence IN ('high','medium','low')),
@@ -63,6 +69,44 @@ function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_session ON entries(session);
     CREATE INDEX IF NOT EXISTS idx_type    ON entries(type);
   `);
+
+  // Phase 5 #4 — pre-existing ledgers have the old CHECK that omits
+  // `policy_decision`. SQLite has no ALTER TABLE ... CHECK; the
+  // canonical recipe is the rename-rebuild dance. Detect via the
+  // stored DDL in sqlite_master and rebuild only when needed so a
+  // fresh-install path stays a single CREATE TABLE statement.
+  const tableSql = (
+    db
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='entries'",
+      )
+      .get() as { sql?: string } | undefined
+  )?.sql;
+  if (tableSql && !tableSql.includes("policy_decision")) {
+    db.exec(`
+      BEGIN;
+      CREATE TABLE entries_new (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        type        TEXT    NOT NULL ${ENTRY_TYPE_CHECK},
+        content     TEXT    NOT NULL,
+        source      TEXT,
+        confidence  TEXT    NOT NULL DEFAULT 'medium' CHECK(confidence IN ('high','medium','low')),
+        session     TEXT    NOT NULL DEFAULT 'default',
+        created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+        updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO entries_new
+        (id, type, content, source, confidence, session, created_at, updated_at)
+      SELECT
+        id, type, content, source, confidence, session, created_at, updated_at
+      FROM entries;
+      DROP TABLE entries;
+      ALTER TABLE entries_new RENAME TO entries;
+      CREATE INDEX IF NOT EXISTS idx_session ON entries(session);
+      CREATE INDEX IF NOT EXISTS idx_type    ON entries(type);
+      COMMIT;
+    `);
+  }
 }
 
 function mapRow(row: Record<string, unknown>): LedgerEntry {
@@ -208,6 +252,7 @@ export function getSummary(
   hypotheses: LedgerEntry[];
   rejected: LedgerEntry[];
   unknowns: LedgerEntry[];
+  policyDecisions: LedgerEntry[];
 } {
   const all = listEntries(db, { session, ...filters });
   return {
@@ -215,6 +260,7 @@ export function getSummary(
     hypotheses: all.filter((e) => e.type === "hypothesis"),
     rejected: all.filter((e) => e.type === "rejected"),
     unknowns: all.filter((e) => e.type === "unknown"),
+    policyDecisions: all.filter((e) => e.type === "policy_decision"),
   };
 }
 
