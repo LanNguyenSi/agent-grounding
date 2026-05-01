@@ -44,22 +44,20 @@ function writeSettings(path: string, doc: SettingsDocument): void {
   writeAtomicJSON(path, doc);
 }
 
+// commandName override removed in Phase 1.10: it only ever rewrote the
+// UserPromptSubmit hook, so a non-default value left UPS pointing at a
+// custom binary while Stop still pointed at the default. Asymmetric and
+// undocumented; no consumer in this package or its CLI ever used it.
 export function runInit(opts: {
   scope: Scope;
   cwd?: string;
-  /** Override the UserPromptSubmit binary name (legacy escape hatch). */
-  commandName?: string;
 }): RunResult {
   const path = settingsPathFor(opts.scope, opts.cwd);
   const before = readSettings(path);
   let doc = before;
   let changed = false;
   for (const hook of HOOKS_TO_INSTALL) {
-    const command =
-      hook.event === "UserPromptSubmit"
-        ? (opts.commandName ?? hook.command)
-        : hook.command;
-    const result = addHook(doc, hook.event, command);
+    const result = addHook(doc, hook.event, hook.command);
     doc = result.doc;
     if (result.added) changed = true;
   }
@@ -70,7 +68,6 @@ export function runInit(opts: {
 export function runUninstall(opts: {
   scope: Scope;
   cwd?: string;
-  commandName?: string;
 }): RunResult {
   const path = settingsPathFor(opts.scope, opts.cwd);
   if (!existsSync(path)) return { path, changed: false };
@@ -78,11 +75,7 @@ export function runUninstall(opts: {
   let doc = before;
   let changed = false;
   for (const hook of HOOKS_TO_INSTALL) {
-    const command =
-      hook.event === "UserPromptSubmit"
-        ? (opts.commandName ?? hook.command)
-        : hook.command;
-    const result = removeHook(doc, hook.event, command);
+    const result = removeHook(doc, hook.event, hook.command);
     doc = result.doc;
     if (result.removed) changed = true;
   }
