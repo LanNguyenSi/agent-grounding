@@ -128,9 +128,29 @@ export function rejectHypothesis(
   return getEntry(db, id);
 }
 
+export interface ListEntriesOptions {
+  session?: string;
+  type?: EntryType;
+  /**
+   * Phase 5 #5 — server-side recency filter. Pass an ISO-8601 UTC
+   * timestamp (e.g. `"2026-05-01T08:00:00Z"`); rows with `created_at`
+   * earlier than this are excluded at the SQL layer. Callers are
+   * responsible for translating their `--since 1h` shorthand into an
+   * absolute cutoff before passing it in.
+   */
+  sinceIso?: string;
+  /**
+   * Phase 5 #5 — server-side content prefix filter. Rows whose
+   * `content` does NOT start with this string are excluded. Reduces
+   * the wire payload when consumers (e.g. harness audit) only care
+   * about a known prefix family like `policy_decision:`.
+   */
+  contentPrefix?: string;
+}
+
 export function listEntries(
   db: Database.Database,
-  opts: { session?: string; type?: EntryType } = {},
+  opts: ListEntriesOptions = {},
 ): LedgerEntry[] {
   const conditions: string[] = [];
   const params: Record<string, string> = {};
@@ -143,6 +163,18 @@ export function listEntries(
     conditions.push("type = @type");
     params.type = opts.type;
   }
+  if (opts.sinceIso !== undefined) {
+    conditions.push("created_at >= @sinceIso");
+    params.sinceIso = opts.sinceIso;
+  }
+  if (opts.contentPrefix !== undefined && opts.contentPrefix.length > 0) {
+    // Escape SQL LIKE metacharacters (% _ \) so a prefix like
+    // `policy_decision:` matches literally rather than the underscore
+    // wildcard. Use \\ as the LIKE escape character.
+    const escaped = opts.contentPrefix.replace(/([\\%_])/g, "\\$1");
+    conditions.push("content LIKE @contentPrefix ESCAPE '\\'");
+    params.contentPrefix = `${escaped}%`;
+  }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const rows = db
@@ -151,16 +183,27 @@ export function listEntries(
   return rows.map(mapRow);
 }
 
+export interface GetSummaryFilters {
+  /**
+   * Same shape as `ListEntriesOptions.sinceIso`. Filtered server-side
+   * via SQL `created_at >= @sinceIso`.
+   */
+  sinceIso?: string;
+  /** Same shape as `ListEntriesOptions.contentPrefix`. */
+  contentPrefix?: string;
+}
+
 export function getSummary(
   db: Database.Database,
   session = "default",
+  filters: GetSummaryFilters = {},
 ): {
   facts: LedgerEntry[];
   hypotheses: LedgerEntry[];
   rejected: LedgerEntry[];
   unknowns: LedgerEntry[];
 } {
-  const all = listEntries(db, { session });
+  const all = listEntries(db, { session, ...filters });
   return {
     facts: all.filter((e) => e.type === "fact"),
     hypotheses: all.filter((e) => e.type === "hypothesis"),
