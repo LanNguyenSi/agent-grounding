@@ -3,13 +3,13 @@
 // transcript, extracts the most recent assistant text, and runs the pure
 // handler. All error paths exit 0 so the hook never blocks the harness.
 
-import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { readStdin } from "../io.js";
 import { parseReport } from "../../core/parser.js";
 import { saveReport } from "../../core/persistence.js";
 import { syncHypothesesFromReport } from "../../core/hypothesis-sync.js";
+import { writeAtomicText } from "../../core/fs.js";
 import {
   PARSE_ERRORS_SUBDIR,
   handleStop,
@@ -101,11 +101,10 @@ function resolveParseErrorDir(cwd: string, env: StopHookEnv): string {
 }
 
 function writeParseErrorLog(dir: string, payload: string): string {
-  mkdirSync(dir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const filename = `${stamp}-${randomBytes(3).toString("hex")}.log`;
   const path = join(dir, filename);
-  writeFileSync(path, payload, "utf8");
+  writeAtomicText(path, payload);
   return path;
 }
 

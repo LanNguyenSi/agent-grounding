@@ -12,21 +12,14 @@
 // the file mtime or create a duplicate.
 
 import {
-  closeSync,
   existsSync,
-  fsyncSync,
   mkdirSync,
-  openSync,
   readFileSync,
   readdirSync,
-  renameSync,
   statSync,
-  unlinkSync,
-  writeFileSync,
-  writeSync,
 } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
-import { randomBytes } from "node:crypto";
+import { writeAtomicText } from "./fs.js";
 import type { UnderstandingReport } from "../schema/types.js";
 
 export const DEFAULT_REPORT_DIR = ".understanding-gate/reports";
@@ -84,7 +77,7 @@ export function saveReport(
   const filename = `${isoStamp}-${slug}.json`;
   const finalPath = join(dir, filename);
 
-  writeAtomic(finalPath, json);
+  writeAtomicText(finalPath, json);
   return { path: finalPath, written: true };
 }
 
@@ -211,41 +204,6 @@ function findExistingByContent(
   return null;
 }
 
-function writeAtomic(finalPath: string, contents: string): void {
-  const tmpPath = `${finalPath}.tmp-${randomBytes(6).toString("hex")}`;
-  // openSync + writeSync + fsyncSync to make the durability story explicit;
-  // a plain writeFileSync followed by rename would still work but doesn't
-  // flush before rename.
-  let fd: number | null = null;
-  try {
-    fd = openSync(tmpPath, "wx", 0o644);
-    writeSync(fd, contents);
-    fsyncSync(fd);
-  } catch {
-    // Fallback for environments where openSync/fsync misbehave (rare).
-    writeFileSync(tmpPath, contents, { encoding: "utf8", flag: "w" });
-  } finally {
-    if (fd !== null) {
-      try {
-        closeSync(fd);
-      } catch {
-        // ignore close errors
-      }
-    }
-  }
-  try {
-    renameSync(tmpPath, finalPath);
-  } catch (err) {
-    // Best-effort cleanup of the tmp file before rethrowing so we don't
-    // leave debris behind.
-    try {
-      unlinkSync(tmpPath);
-    } catch {
-      // ignore
-    }
-    throw err;
-  }
-}
 
 function resolveLoadPath(idOrPath: string, opts: ListOptions): string | null {
   if (isAbsolute(idOrPath)) {
