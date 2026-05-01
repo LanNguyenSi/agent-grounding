@@ -1,6 +1,6 @@
 {
   "name": "@lannguyensi/understanding-gate",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pre-execution gate that asks AI agents to produce an Understanding Report before acting",
   "license": "MIT",
   "repository": {
@@ -26,10 +26,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/cli.js dist/adapters/claude-code/user-prompt-submit.js dist/adapters/claude-code/stop.js",
     "dev": "tsx src/cli.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@lannguyensi/hypothesis-tracker": "^0.1.0",
