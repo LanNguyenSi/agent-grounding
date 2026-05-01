@@ -74,6 +74,38 @@ describe("pickMode", () => {
         "fast_confirm",
       );
     });
+
+    describe("self-reference resistance (bare form is strict)", () => {
+      it.each([
+        "fix the grill_me regex",
+        "write a test for grill me behavior",
+        "the grill_me marker is documented in the README",
+        "I rewrote the grill-me classifier yesterday",
+      ])("does NOT escalate when prompt only mentions %s", (prompt) => {
+        expect(pickMode(prompt, {})).toBe("fast_confirm");
+      });
+
+      it.each([
+        "grill me on auth",
+        "GRILL ME!",
+        "please look at this,\ngrill me on the migration",
+        "first paragraph.\n\ngrill_me about the rollout",
+        "is this fine? grill me on it",
+      ])("escalates when bare form sits at a strong boundary: %s", (prompt) => {
+        expect(pickMode(prompt, {})).toBe("grill_me");
+      });
+    });
+
+    describe("slash form stays loose by design", () => {
+      it.each([
+        "please /grill the migration plan",
+        "describe the /grill command",
+        "run /grill-me before merging",
+        "the docs mention /grill_me too",
+      ])("escalates anywhere it appears: %s", (prompt) => {
+        expect(pickMode(prompt, {})).toBe("grill_me");
+      });
+    });
   });
 
   describe("input hardening", () => {
