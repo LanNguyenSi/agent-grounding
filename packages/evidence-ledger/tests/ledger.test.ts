@@ -253,6 +253,17 @@ describe("getSummary — Phase 5 #5: server-side filters", () => {
     expect(summary.facts[0]!.content).toBe("policy_decision:literal-match");
   });
 
+  it("sinceIso accepts ISO-8601 `YYYY-MM-DDTHH:MM:SSZ` form via datetime() normalization", () => {
+    // Without the datetime() normalization, lexicographic comparison
+    // between the stored `2026-04-30 11:00:00` and an ISO cutoff
+    // `2026-04-30T08:00:00Z` would fail (T=0x54 > space=0x20), so the
+    // cutoff would effectively exclude every same-day row. This test
+    // pins the contract advertised in the JSDoc / MCP describe.
+    const summary = getSummary(db, "s1", { sinceIso: "2026-04-30T11:00:00Z" });
+    expect(summary.facts).toHaveLength(2);
+    expect(summary.hypotheses).toHaveLength(1);
+  });
+
   it("empty filters keep back-compat (returns full summary)", () => {
     const fullSummary = getSummary(db, "s1");
     const emptyFilteredSummary = getSummary(db, "s1", {});

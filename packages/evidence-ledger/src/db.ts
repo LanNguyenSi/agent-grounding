@@ -164,7 +164,13 @@ export function listEntries(
     params.type = opts.type;
   }
   if (opts.sinceIso !== undefined) {
-    conditions.push("created_at >= @sinceIso");
+    // Compare via SQLite's `datetime()` so both the stored
+    // `YYYY-MM-DD HH:MM:SS` form and the ISO `YYYY-MM-DDTHH:MM:SSZ`
+    // form normalize to the same value. Lexicographic comparison
+    // fails between the two formats because `T` (0x54) > space
+    // (0x20), so a same-day cutoff would silently exclude every row
+    // stored under the `datetime('now')` form.
+    conditions.push("datetime(created_at) >= datetime(@sinceIso)");
     params.sinceIso = opts.sinceIso;
   }
   if (opts.contentPrefix !== undefined && opts.contentPrefix.length > 0) {
