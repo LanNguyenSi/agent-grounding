@@ -8,13 +8,14 @@ import { randomBytes } from "node:crypto";
 import { readStdin } from "../io.js";
 import { parseReport } from "../../core/parser.js";
 import { saveReport } from "../../core/persistence.js";
-import { syncHypothesesFromReport } from "../../core/hypothesis-sync.js";
 import { writeAtomicText } from "../../core/fs.js";
 import {
   PARSE_ERRORS_SUBDIR,
+  SYNC_ERRORS_SUBDIR,
   handleStop,
   type StopHookEnv,
 } from "./handle-stop.js";
+import { runSyncAndLog } from "./sync-and-log.js";
 import { extractLastAssistantText } from "./transcript.js";
 
 interface StopHookPayload {
@@ -70,11 +71,12 @@ async function main(): Promise<void> {
 
   // Phase 1.5: register the report's assumptions + open questions in
   // the hypothesis-tracker store. Best-effort; failure does not affect
-  // the saved report file.
+  // the saved report file but lands a side-channel log so dogfood can
+  // see what went wrong without breaking the silent-exit-0 stance.
   if (outcome.kind === "saved") {
-    syncHypothesesFromReport(outcome.report, {
-      reportDir: dirname(outcome.path),
-      sessionId,
+    runSyncAndLog(outcome.report, outcome.path, sessionId, {
+      resolveSyncErrorDir: () => resolveSyncErrorDir(cwd, env),
+      writeSyncErrorLog,
     });
   }
 }
@@ -93,14 +95,34 @@ function parsePayload(raw: string): StopHookPayload | null {
 }
 
 function resolveParseErrorDir(cwd: string, env: StopHookEnv): string {
+  return resolveErrorDir(cwd, env, PARSE_ERRORS_SUBDIR);
+}
+
+function resolveSyncErrorDir(cwd: string, env: StopHookEnv): string {
+  return resolveErrorDir(cwd, env, SYNC_ERRORS_SUBDIR);
+}
+
+function resolveErrorDir(
+  cwd: string,
+  env: StopHookEnv,
+  subdir: string,
+): string {
   const reportDirEnv = env.UNDERSTANDING_GATE_REPORT_DIR;
   if (reportDirEnv && reportDirEnv.length > 0) {
-    return resolve(dirname(reportDirEnv), PARSE_ERRORS_SUBDIR);
+    return resolve(dirname(reportDirEnv), subdir);
   }
-  return resolve(cwd, ".understanding-gate", PARSE_ERRORS_SUBDIR);
+  return resolve(cwd, ".understanding-gate", subdir);
 }
 
 function writeParseErrorLog(dir: string, payload: string): string {
+  return writeStampedLog(dir, payload);
+}
+
+function writeSyncErrorLog(dir: string, payload: string): string {
+  return writeStampedLog(dir, payload);
+}
+
+function writeStampedLog(dir: string, payload: string): string {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const filename = `${stamp}-${randomBytes(3).toString("hex")}.log`;
   const path = join(dir, filename);

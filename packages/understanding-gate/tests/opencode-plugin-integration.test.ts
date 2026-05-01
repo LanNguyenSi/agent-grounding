@@ -5,7 +5,13 @@
 // real saveReport (no mocks below the plugin layer).
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { persistReportPlugin } from "../src/adapters/opencode/persist-report-plugin.js";
@@ -158,6 +164,44 @@ describe("persistReportPlugin: end-to-end", () => {
     expect(logs).toHaveLength(1);
     // No real report file should appear.
     expect(existsSync(join(tmp, ".understanding-gate", "reports"))).toBe(false);
+  });
+
+  it("writes a sync-error log when hypothesis-sync fails post-save", async () => {
+    // Stage a directory exactly where hypotheses.json would be written so
+    // saveStore's renameSync trips EISDIR. Result: report file lands fine,
+    // sync-errors/ gets a stamped log breadcrumb.
+    mkdirSync(join(tmp, ".understanding-gate"), { recursive: true });
+    mkdirSync(join(tmp, ".understanding-gate", "hypotheses.json"), {
+      recursive: true,
+    });
+
+    const client = makeClient([{ type: "text", text: FULL_REPORT_TEXT }]);
+    const hooks = await persistReportPlugin({ client, directory: tmp });
+    if (!hooks.event) return;
+    await hooks.event({
+      event: {
+        type: "message.updated",
+        properties: {
+          info: {
+            id: "m-sync",
+            sessionID: "session-sync-fail",
+            role: "assistant",
+            finish: "ok",
+          },
+        },
+      },
+    });
+
+    const reportsDir = join(tmp, ".understanding-gate", "reports");
+    const reportFiles = existsSync(reportsDir)
+      ? readdirSync(reportsDir).filter((n) => n.endsWith(".json"))
+      : [];
+    expect(reportFiles).toHaveLength(1);
+
+    const syncErrDir = join(tmp, ".understanding-gate", "sync-errors");
+    expect(existsSync(syncErrDir)).toBe(true);
+    const logs = readdirSync(syncErrDir).filter((n) => n.endsWith(".log"));
+    expect(logs).toHaveLength(1);
   });
 
   it("survives a client.session.message that throws (silent no-op, no file written)", async () => {
