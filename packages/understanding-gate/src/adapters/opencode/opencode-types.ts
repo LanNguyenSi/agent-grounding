@@ -48,11 +48,16 @@ export type OpencodeEvent =
   | { type: string; properties?: unknown };
 
 // session.message returns { info, parts } in the response data envelope.
+// With throwOnError:false (the SDK default), transport / HTTP failures
+// surface as { data: undefined, error: ... } instead of a thrown promise.
+// We model `error` as unknown because its concrete shape varies between
+// the openapi-fetch and node-fetch transports.
 export interface OpencodeSessionMessageResponse {
   data?: {
     info?: OpencodeMessage;
     parts?: OpencodePart[];
   };
+  error?: unknown;
 }
 
 export interface OpencodeSessionApi {

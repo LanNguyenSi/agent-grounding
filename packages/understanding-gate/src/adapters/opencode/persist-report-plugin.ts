@@ -48,19 +48,13 @@ export const persistReportPlugin: OpencodePlugin = async (
       if (!info.sessionID || !info.id) return;
 
       // Fetch the message + parts so we have the full assistant text.
-      // Errors are swallowed: a plugin throw would surface in opencode's
-      // diagnostic stream, which is exactly the noise we promised to avoid.
-      let text = "";
-      try {
-        const result = await ctx.client.session.message({
-          path: { id: info.sessionID, messageID: info.id },
-        });
-        text = extractAssistantText(result);
-      } catch {
-        return;
-      }
-      if (!text) return;
-
+      // Two failure modes to handle without ever throwing back into the
+      // plugin runtime:
+      //   1. The promise rejects (e.g. fetch internals throw) — caught
+      //      below, drop a transport-error log breadcrumb, return.
+      //   2. The promise resolves with { error, data: undefined } because
+      //      the SDK runs throwOnError:false by default — same treatment.
+      const cwd = ctx.directory;
       const env: PersistReportEnv = {
         UNDERSTANDING_GATE_DISABLE: process.env.UNDERSTANDING_GATE_DISABLE,
         UNDERSTANDING_GATE_TASK_ID: process.env.UNDERSTANDING_GATE_TASK_ID,
@@ -68,9 +62,23 @@ export const persistReportPlugin: OpencodePlugin = async (
         UNDERSTANDING_GATE_REPORT_DIR:
           process.env.UNDERSTANDING_GATE_REPORT_DIR,
       };
-
-      const cwd = ctx.directory;
       const parseErrorDir = resolveParseErrorDir(cwd, env);
+
+      let text = "";
+      try {
+        const result = await ctx.client.session.message({
+          path: { id: info.sessionID, messageID: info.id },
+        });
+        if (result?.error || !result?.data) {
+          logTransportError(parseErrorDir, info, result?.error);
+          return;
+        }
+        text = extractAssistantText(result);
+      } catch (err) {
+        logTransportError(parseErrorDir, info, err);
+        return;
+      }
+      if (!text) return;
 
       const outcome = handlePersistReport(
         {
@@ -148,4 +156,40 @@ function writeStampedLog(dir: string, payload: string): string {
   const path = join(dir, filename);
   writeAtomicText(path, payload);
   return path;
+}
+
+// Drop a parse-errors entry tagged transport_error. Lives next to the
+// regular parse failures so dogfood inspection is still
+// `ls .understanding-gate/parse-errors/`. The payload is JSON so the
+// log type can be told apart from a real bad-Report dump.
+function logTransportError(
+  dir: string,
+  info: { id?: string; sessionID?: string },
+  err: unknown,
+): void {
+  try {
+    const payload = JSON.stringify(
+      {
+        kind: "transport_error",
+        sessionID: info.sessionID ?? null,
+        messageID: info.id ?? null,
+        at: new Date().toISOString(),
+        error: stringifyError(err),
+      },
+      null,
+      2,
+    );
+    writeStampedLog(dir, `${payload}\n`);
+  } catch {
+    // ignore: side-channel must not crash the plugin either.
+  }
+}
+
+function stringifyError(err: unknown): unknown {
+  if (err === undefined) return null;
+  if (err instanceof Error) {
+    return { name: err.name, message: err.message, stack: err.stack };
+  }
+  if (err && typeof err === "object") return err;
+  return String(err);
 }
