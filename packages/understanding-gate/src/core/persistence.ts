@@ -188,7 +188,10 @@ function findExistingByHash(
   hash: string,
 ): string | null {
   if (!existsSync(dir)) return null;
-  const suffix = `-${slug}-${hash}.json`;
+  // Bind the slug to the iso-stamp boundary by including the trailing
+  // `Z-`. Without it, slug "task" would spuriously match a filename
+  // written for slug "my-task" if the hashes collided.
+  const suffix = `Z-${slug}-${hash}.json`;
   for (const name of readdirSync(dir)) {
     if (name.endsWith(suffix)) return join(dir, name);
   }
@@ -212,7 +215,7 @@ function resolveLoadPath(idOrPath: string, opts: ListOptions): string | null {
   // Filename layout is `<iso>-<slug>-<hash8>.json`, so we match by the
   // `-<slug>-<8 hex>.json` shape rather than a fixed suffix.
   const slug = sanitizeSlug(idOrPath);
-  const slugMatcher = new RegExp(`-${escapeRegex(slug)}-[0-9a-f]{8}\\.json$`);
+  const slugMatcher = new RegExp(`Z-${escapeRegex(slug)}-[0-9a-f]{8}\\.json$`);
   const matches = readdirSync(dir)
     .filter((n) => slugMatcher.test(n))
     .sort()
