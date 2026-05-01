@@ -14,7 +14,8 @@
   "files": [
     "dist",
     "README.md",
-    "ROADMAP.md"
+    "ROADMAP.md",
+    "CHANGELOG.md"
   ],
   "type": "module",
   "bin": {
