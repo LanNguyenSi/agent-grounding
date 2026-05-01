@@ -79,7 +79,7 @@ Same data via `ledger export --session readme-demo` produces structured JSON for
 ### Pre-execution
 | Package | Description |
 |---------|-------------|
-| [understanding-gate](packages/understanding-gate) | Asks agents to produce an Understanding Report before acting (Phase -1 docs, Phase 0 in progress) |
+| [understanding-gate](packages/understanding-gate) | Asks agents to produce an Understanding Report before acting. Phase 1 shipped (parser, persistence, claude-code Stop hook + opencode plugin, hypothesis-tracker bridge); published as [`@lannguyensi/understanding-gate@0.1.0`](https://www.npmjs.com/package/@lannguyensi/understanding-gate) |
 
 ### Verification
 | Package | Description |
