@@ -118,10 +118,10 @@ server.tool(
 
 server.tool(
   'ledger_add',
-  'Append an entry to the evidence ledger for a session. Types: fact (verified), hypothesis (unverified), rejected (disproven), unknown (open question).',
+  'Append an entry to the evidence ledger for a session. Types: fact (verified), hypothesis (unverified), rejected (disproven), unknown (open question), policy_decision (Phase 5 #4 audit row, kept in a separate bucket from evidence types).',
   {
     sessionId: z.string().describe('Session id — used as the ledger session namespace.'),
-    type: z.enum(['fact', 'hypothesis', 'rejected', 'unknown']),
+    type: z.enum(['fact', 'hypothesis', 'rejected', 'unknown', 'policy_decision']),
     content: z.string().describe('What you observed / hypothesize / rejected.'),
     source: z.string().optional().describe('Where the evidence came from (file path, log line, command output).'),
     confidence: z.enum(['high', 'medium', 'low']).optional(),
@@ -168,6 +168,7 @@ server.tool(
         hypotheses: summary.hypotheses.length,
         rejected: summary.rejected.length,
         unknowns: summary.unknowns.length,
+        policyDecisions: summary.policyDecisions.length,
       },
       entries: summary,
     });
