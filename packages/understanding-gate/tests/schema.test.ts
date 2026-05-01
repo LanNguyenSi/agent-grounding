@@ -84,4 +84,60 @@ describe("UNDERSTANDING_REPORT_SCHEMA", () => {
       validate({ ...validReport, createdAt: "not-a-date" }),
     ).toBe(false);
   });
+
+  describe("list-field tightness", () => {
+    const ALL_LIST_FIELDS = [
+      "derivedTodos",
+      "acceptanceCriteria",
+      "assumptions",
+      "openQuestions",
+      "outOfScope",
+      "risks",
+      "verificationPlan",
+    ] as const;
+
+    const NON_EMPTY_REQUIRED = [
+      "derivedTodos",
+      "acceptanceCriteria",
+      "verificationPlan",
+    ] as const;
+
+    const ALLOW_EMPTY = [
+      "assumptions",
+      "openQuestions",
+      "outOfScope",
+      "risks",
+    ] as const;
+
+    it.each(ALL_LIST_FIELDS)("rejects an empty-string item in %s", (field) => {
+      const validate = makeValidator();
+      expect(validate({ ...validReport, [field]: [""] })).toBe(false);
+      expect(
+        validate.errors?.some((e) => e.instancePath === `/${field}/0`),
+      ).toBe(true);
+    });
+
+    it.each(ALL_LIST_FIELDS)(
+      "rejects a list that mixes valid and empty strings in %s",
+      (field) => {
+        const validate = makeValidator();
+        expect(validate({ ...validReport, [field]: ["good", ""] })).toBe(false);
+      },
+    );
+
+    it.each(NON_EMPTY_REQUIRED)("rejects an empty array for %s", (field) => {
+      const validate = makeValidator();
+      expect(validate({ ...validReport, [field]: [] })).toBe(false);
+      expect(
+        validate.errors?.some(
+          (e) => e.instancePath === `/${field}` && e.keyword === "minItems",
+        ),
+      ).toBe(true);
+    });
+
+    it.each(ALLOW_EMPTY)("allows an empty array for %s", (field) => {
+      const validate = makeValidator();
+      expect(validate({ ...validReport, [field]: [] })).toBe(true);
+    });
+  });
 });
