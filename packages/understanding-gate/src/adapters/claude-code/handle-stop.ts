@@ -32,6 +32,7 @@ import type {
 // heading.
 export const REPORT_MARKER_RE = /^\s*#+\s*understanding\s+report\b/im;
 export const PARSE_ERRORS_SUBDIR = "parse-errors";
+export const SYNC_ERRORS_SUBDIR = "sync-errors";
 
 export interface StopHookDeps {
   parseReport: (markdown: string, defaults?: ParseDefaults) => ParseResult;
