@@ -20,6 +20,7 @@ import {
 } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { writeAtomicText } from "./fs.js";
+import { UNDERSTANDING_REPORT_SCHEMA } from "../schema/report-schema.js";
 import type { UnderstandingReport } from "../schema/types.js";
 
 export const DEFAULT_REPORT_DIR = ".understanding-gate/reports";
@@ -150,28 +151,14 @@ function sanitizeSlug(raw: string): string {
     .slice(0, 80);
 }
 
-// Stable JSON: required keys first in schema order, then optional keys in
-// schema order. Two reports with the same content always serialize the
-// same way, which is what idempotency needs.
-const KEY_ORDER: readonly (keyof UnderstandingReport)[] = [
-  "taskId",
-  "mode",
-  "riskLevel",
-  "currentUnderstanding",
-  "intendedOutcome",
-  "derivedTodos",
-  "acceptanceCriteria",
-  "assumptions",
-  "openQuestions",
-  "outOfScope",
-  "risks",
-  "verificationPlan",
-  "requiresHumanApproval",
-  "approvalStatus",
-  "createdAt",
-  "approvedAt",
-  "approvedBy",
-];
+// Stable JSON: keys serialize in the order they appear in
+// UNDERSTANDING_REPORT_SCHEMA.properties. Sourcing this from the schema
+// (the single source of truth for the on-wire shape) means a future
+// schema field cannot be silently stripped from persisted reports
+// because someone forgot to update a parallel list here.
+const KEY_ORDER: readonly (keyof UnderstandingReport)[] = Object.keys(
+  UNDERSTANDING_REPORT_SCHEMA.properties,
+) as (keyof UnderstandingReport)[];
 
 function canonicalJSON(report: UnderstandingReport): string {
   const ordered: Record<string, unknown> = {};

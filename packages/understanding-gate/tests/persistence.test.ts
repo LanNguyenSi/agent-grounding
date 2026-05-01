@@ -254,11 +254,10 @@ describe("loadReport", () => {
 });
 
 describe("saveReport: schema/canonical-order coverage", () => {
-  // Drift guard: canonicalJSON in persistence.ts iterates a hardcoded
-  // KEY_ORDER list. If the schema gains a property and KEY_ORDER is not
-  // updated, the new property would be silently dropped from disk. This
-  // test asserts a round-trip preserves every schema-declared property,
-  // failing fast on drift.
+  // Now-redundant safety belt: KEY_ORDER in persistence.ts is derived
+  // directly from UNDERSTANDING_REPORT_SCHEMA.properties at module load,
+  // so a schema-only addition cannot drop a field. Test stays as a
+  // belt-and-braces regression catch in case someone reverts that.
   it("round-trips every property declared in UNDERSTANDING_REPORT_SCHEMA", () => {
     const schemaProps = Object.keys(
       UNDERSTANDING_REPORT_SCHEMA.properties,
@@ -278,6 +277,25 @@ describe("saveReport: schema/canonical-order coverage", () => {
       expect(persisted, `schema property "${key}" missing from canonicalJSON`)
         .toHaveProperty(key);
     }
+  });
+
+  it("on-disk key order matches schema property order", () => {
+    const fullReport: UnderstandingReport = {
+      ...baseReport,
+      approvedAt: "2026-04-30T10:30:00.000Z",
+      approvedBy: "lan@example.com",
+    };
+    const saved = saveReport(fullReport, { dir: tmpDir });
+    const onDiskKeys = Object.keys(
+      JSON.parse(readFileSync(saved.path, "utf8")),
+    );
+    const schemaKeys = Object.keys(
+      UNDERSTANDING_REPORT_SCHEMA.properties,
+    ).filter(
+      (k) =>
+        (fullReport as unknown as Record<string, unknown>)[k] !== undefined,
+    );
+    expect(onDiskKeys).toEqual(schemaKeys);
   });
 });
 
