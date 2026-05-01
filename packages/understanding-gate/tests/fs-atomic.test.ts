@@ -49,9 +49,9 @@ describe("writeAtomicText", () => {
   });
 
   // Drives the cleanup branch of writeAtomicText: when renameSync throws
-  // (here EISDIR — the final path is an existing directory), the helper
-  // must unlink the staged tmp file and rethrow. Verifies the failure
-  // path that the success-path tests can't reach.
+  // (here EISDIR, because the final path is an existing directory), the
+  // helper must unlink the staged tmp file and rethrow. Covers the
+  // failure path that the success-path tests can't reach.
   it("rethrows and removes the tmp file when renameSync fails", () => {
     const finalPath = join(tmpDir, "blocking-dir");
     mkdirSync(finalPath, { recursive: true });
