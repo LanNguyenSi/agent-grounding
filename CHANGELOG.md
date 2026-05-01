@@ -20,7 +20,7 @@ Version-locked published packages:
 
 Independently-versioned published packages (own tag, own CHANGELOG):
 
-- `@lannguyensi/understanding-gate` — see [`packages/understanding-gate/CHANGELOG.md`](packages/understanding-gate/CHANGELOG.md). Released under tags of the form `understanding-gate-vX.Y.Z` so its cadence does not bump the four version-locked packages.
+- `@lannguyensi/understanding-gate`: see [`packages/understanding-gate/CHANGELOG.md`](packages/understanding-gate/CHANGELOG.md). Released under tags of the form `understanding-gate-vX.Y.Z` so its cadence does not bump the four version-locked packages.
 
 ## understanding-gate v0.1.0 - 2026-05-01
 
