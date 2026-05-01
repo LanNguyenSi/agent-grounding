@@ -18,6 +18,7 @@ import {
   readdirSync,
   statSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { isAbsolute, join, resolve } from "node:path";
 import { writeAtomicText } from "./fs.js";
 import { UNDERSTANDING_REPORT_SCHEMA } from "../schema/report-schema.js";
@@ -65,17 +66,20 @@ export function saveReport(
 
   const slug = sanitizeSlug(report.taskId) || "report";
   const json = canonicalJSON(report);
+  const hash = contentHash(json);
 
-  // Idempotency: a file with the same taskId AND byte-identical canonical
-  // JSON already on disk -> no-op. We scan only filenames ending in
-  // "-<slug>.json" to keep the cost bounded.
-  const existing = findExistingByContent(dir, slug, json);
+  // Idempotency: any file in the dir whose name ends "-<slug>-<hash>.json"
+  // already encodes the byte-identical canonical JSON we'd write. The
+  // check needs only readdir; no per-file reads or byte-compares in the
+  // hot path. Hash collisions on 8 hex chars (32 bits) are improbable
+  // enough at v0 dir sizes that we accept the false-positive risk.
+  const existing = findExistingByHash(dir, slug, hash);
   if (existing) {
     return { path: existing, written: false };
   }
 
   const isoStamp = (opts.now ?? new Date()).toISOString().replace(/[:.]/g, "-");
-  const filename = `${isoStamp}-${slug}.json`;
+  const filename = `${isoStamp}-${slug}-${hash}.json`;
   const finalPath = join(dir, filename);
 
   writeAtomicText(finalPath, json);
@@ -170,23 +174,26 @@ function canonicalJSON(report: UnderstandingReport): string {
   return `${JSON.stringify(ordered, null, 2)}\n`;
 }
 
-function findExistingByContent(
+function contentHash(canonicalJson: string): string {
+  return createHash("sha256").update(canonicalJson).digest("hex").slice(0, 8);
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function findExistingByHash(
   dir: string,
   slug: string,
-  desired: string,
+  hash: string,
 ): string | null {
   if (!existsSync(dir)) return null;
-  const suffix = `-${slug}.json`;
+  // Bind the slug to the iso-stamp boundary by including the trailing
+  // `Z-`. Without it, slug "task" would spuriously match a filename
+  // written for slug "my-task" if the hashes collided.
+  const suffix = `Z-${slug}-${hash}.json`;
   for (const name of readdirSync(dir)) {
-    if (!name.endsWith(suffix)) continue;
-    const path = join(dir, name);
-    let actual: string;
-    try {
-      actual = readFileSync(path, "utf8");
-    } catch {
-      continue;
-    }
-    if (actual === desired) return path;
+    if (name.endsWith(suffix)) return join(dir, name);
   }
   return null;
 }
@@ -205,10 +212,12 @@ function resolveLoadPath(idOrPath: string, opts: ListOptions): string | null {
   if (existsSync(direct)) return direct;
 
   // Treat idOrPath as a taskId; pick the most recent matching file.
+  // Filename layout is `<iso>-<slug>-<hash8>.json`, so we match by the
+  // `-<slug>-<8 hex>.json` shape rather than a fixed suffix.
   const slug = sanitizeSlug(idOrPath);
-  const suffix = `-${slug}.json`;
+  const slugMatcher = new RegExp(`Z-${escapeRegex(slug)}-[0-9a-f]{8}\\.json$`);
   const matches = readdirSync(dir)
-    .filter((n) => n.endsWith(suffix))
+    .filter((n) => slugMatcher.test(n))
     .sort()
     .reverse();
   if (matches.length > 0) return join(dir, matches[0]);

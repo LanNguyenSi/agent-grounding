@@ -78,7 +78,7 @@ describe("saveReport", () => {
     expect(result.written).toBe(true);
     expect(existsSync(result.path)).toBe(true);
     expect(result.path.startsWith(tmpDir)).toBe(true);
-    expect(result.path.endsWith("-ug-persist-1.json")).toBe(true);
+    expect(result.path).toMatch(/-ug-persist-1-[0-9a-f]{8}\.json$/);
     const contents = JSON.parse(readFileSync(result.path, "utf8"));
     expect(contents.taskId).toBe(baseReport.taskId);
     expect(contents.intendedOutcome).toBe("round-trip");
@@ -98,6 +98,26 @@ describe("saveReport", () => {
     expect(b.path).toBe(a.path);
     const afterMtime = statSync(a.path).mtimeMs;
     expect(afterMtime).toBe(beforeMtime);
+    expect(readdirSync(tmpDir).filter((n) => n.endsWith(".json"))).toHaveLength(
+      1,
+    );
+  });
+
+  it("idempotency check does not re-read file bodies (filename-only)", () => {
+    // Truncate the on-disk file after the first save. If saveReport's
+    // idempotency check still byte-compared the contents, this would
+    // miss and write a second file. With the content-hash filename it
+    // matches by name alone, so the truncated file is treated as the
+    // existing match and no read is needed.
+    const a = saveReport(baseReport, { dir: tmpDir });
+    writeFileSync(a.path, "");
+    const b = saveReport(baseReport, {
+      dir: tmpDir,
+      now: new Date("2027-01-01T00:00:00Z"),
+    });
+    expect(b.written).toBe(false);
+    expect(b.path).toBe(a.path);
+    expect(readFileSync(a.path, "utf8")).toBe("");
     expect(readdirSync(tmpDir).filter((n) => n.endsWith(".json"))).toHaveLength(
       1,
     );
@@ -136,7 +156,7 @@ describe("saveReport", () => {
   it("falls back to slug=report when taskId has no usable characters", () => {
     const r: UnderstandingReport = { ...baseReport, taskId: "!!!" };
     const result = saveReport(r, { dir: tmpDir });
-    expect(result.path.endsWith("-report.json")).toBe(true);
+    expect(result.path).toMatch(/-report-[0-9a-f]{8}\.json$/);
   });
 
   it("does not leave a .tmp- file behind on a successful write", () => {

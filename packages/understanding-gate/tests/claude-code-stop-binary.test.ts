@@ -126,7 +126,7 @@ describe("claude-code Stop binary (end-to-end)", () => {
       n.endsWith(".json"),
     );
     expect(reports).toHaveLength(1);
-    expect(reports[0]).toMatch(/-session-full\.json$/);
+    expect(reports[0]).toMatch(/-session-full-[0-9a-f]{8}\.json$/);
   });
 
   it("exits silently with no files when the transcript lacks a report marker", () => {
