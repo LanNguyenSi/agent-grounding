@@ -140,12 +140,27 @@ server.tool(
 
 server.tool(
   'ledger_summary',
-  'Return facts/hypotheses/rejected/unknowns for a session. Use to brief a follow-up agent or before claim-gate evaluation.',
+  'Return facts/hypotheses/rejected/unknowns for a session. Use to brief a follow-up agent or before claim-gate evaluation. Phase 5 #5: optional server-side filters.',
   {
     sessionId: z.string(),
+    sinceIso: z
+      .string()
+      .optional()
+      .describe(
+        'Optional ISO-8601 UTC cutoff (e.g. "2026-05-01T08:00:00Z"). Rows with `created_at` earlier than this are excluded server-side.',
+      ),
+    contentPrefix: z
+      .string()
+      .optional()
+      .describe(
+        'Optional content-prefix filter. Only rows whose `content` starts with this string are returned. Useful for harness audit consumers that only want `policy_decision:` rows.',
+      ),
   },
-  async ({ sessionId }) => {
-    const summary = getSummary(ledgerDb(), sessionId);
+  async ({ sessionId, sinceIso, contentPrefix }) => {
+    const filters: { sinceIso?: string; contentPrefix?: string } = {};
+    if (sinceIso !== undefined) filters.sinceIso = sinceIso;
+    if (contentPrefix !== undefined) filters.contentPrefix = contentPrefix;
+    const summary = getSummary(ledgerDb(), sessionId, filters);
     return jsonResponse({
       sessionId,
       counts: {

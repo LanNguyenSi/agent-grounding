@@ -196,6 +196,82 @@ describe("getSummary", () => {
   });
 });
 
+describe("getSummary — Phase 5 #5: server-side filters", () => {
+  beforeEach(() => {
+    db.prepare(
+      "INSERT INTO entries (type, content, session, created_at) VALUES (?, ?, ?, ?)",
+    ).run("fact", "policy_decision:review-before-merge:deny ...", "s1", "2026-04-30 08:00:00");
+    db.prepare(
+      "INSERT INTO entries (type, content, session, created_at) VALUES (?, ?, ?, ?)",
+    ).run("fact", "policy_decision:review-before-merge:allow ...", "s1", "2026-04-30 11:00:00");
+    db.prepare(
+      "INSERT INTO entries (type, content, session, created_at) VALUES (?, ?, ?, ?)",
+    ).run("fact", "agent-recorded fact unrelated to policy", "s1", "2026-04-30 11:30:00");
+    db.prepare(
+      "INSERT INTO entries (type, content, session, created_at) VALUES (?, ?, ?, ?)",
+    ).run("hypothesis", "policy_decision:dogfood-recency:warn-degraded ...", "s1", "2026-04-30 11:45:00");
+  });
+
+  it("sinceIso filter excludes rows older than the cutoff", () => {
+    const summary = getSummary(db, "s1", { sinceIso: "2026-04-30 11:00:00" });
+    // deny@08:00 dropped; allow@11:00, fact@11:30, warn@11:45 kept
+    expect(summary.facts).toHaveLength(2);
+    expect(summary.hypotheses).toHaveLength(1);
+    expect(summary.facts.map((e) => e.content).join("\n")).not.toContain("deny");
+  });
+
+  it("contentPrefix filter keeps only matching rows", () => {
+    const summary = getSummary(db, "s1", { contentPrefix: "policy_decision:" });
+    // 2 policy_decision facts + 1 policy_decision hypothesis; the
+    // unrelated fact is excluded.
+    expect(summary.facts).toHaveLength(2);
+    expect(summary.hypotheses).toHaveLength(1);
+    expect(summary.facts.every((e) => e.content.startsWith("policy_decision:"))).toBe(true);
+  });
+
+  it("sinceIso + contentPrefix compose", () => {
+    const summary = getSummary(db, "s1", {
+      sinceIso: "2026-04-30 11:00:00",
+      contentPrefix: "policy_decision:",
+    });
+    // allow@11:00 + warn@11:45 (the 11:30 unrelated fact is excluded by prefix)
+    expect(summary.facts).toHaveLength(1);
+    expect(summary.hypotheses).toHaveLength(1);
+  });
+
+  it("contentPrefix escapes SQL LIKE metacharacters", () => {
+    db.prepare(
+      "INSERT INTO entries (type, content, session, created_at) VALUES (?, ?, ?, ?)",
+    ).run("fact", "policy_decision:literal-match", "s2", "2026-04-30 12:00:00");
+    db.prepare(
+      "INSERT INTO entries (type, content, session, created_at) VALUES (?, ?, ?, ?)",
+    ).run("fact", "policyXdecision:wildcard-spoof", "s2", "2026-04-30 12:01:00");
+    // Naive LIKE without escape would let `policy_decision:` match
+    // `policyXdecision:` because `_` is the LIKE single-char wildcard.
+    const summary = getSummary(db, "s2", { contentPrefix: "policy_decision:" });
+    expect(summary.facts).toHaveLength(1);
+    expect(summary.facts[0]!.content).toBe("policy_decision:literal-match");
+  });
+
+  it("sinceIso accepts ISO-8601 `YYYY-MM-DDTHH:MM:SSZ` form via datetime() normalization", () => {
+    // Without the datetime() normalization, lexicographic comparison
+    // between the stored `2026-04-30 11:00:00` and an ISO cutoff
+    // `2026-04-30T08:00:00Z` would fail (T=0x54 > space=0x20), so the
+    // cutoff would effectively exclude every same-day row. This test
+    // pins the contract advertised in the JSDoc / MCP describe.
+    const summary = getSummary(db, "s1", { sinceIso: "2026-04-30T11:00:00Z" });
+    expect(summary.facts).toHaveLength(2);
+    expect(summary.hypotheses).toHaveLength(1);
+  });
+
+  it("empty filters keep back-compat (returns full summary)", () => {
+    const fullSummary = getSummary(db, "s1");
+    const emptyFilteredSummary = getSummary(db, "s1", {});
+    expect(emptyFilteredSummary.facts.length).toBe(fullSummary.facts.length);
+    expect(emptyFilteredSummary.hypotheses.length).toBe(fullSummary.hypotheses.length);
+  });
+});
+
 describe("clearSession", () => {
   it("removes all entries for a session", () => {
     addEntry(db, { type: "fact", content: "temp fact", session: "temp" });
