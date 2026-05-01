@@ -6,17 +6,27 @@ are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and the published packages adhere to [Semantic Versioning](https://semver.org/).
 
-This monorepo currently version-locks the four published library packages
+This monorepo currently version-locks four published library packages
 together: a single tag `vX.Y.Z` releases all of them at the same version.
 That coupling can be loosened later if a package's release cadence
 diverges.
 
-Published packages:
+Version-locked published packages:
 
 - `@lannguyensi/grounding-wrapper`
 - `@lannguyensi/evidence-ledger`
 - `@lannguyensi/claim-gate`
 - `@lannguyensi/hypothesis-tracker`
+
+Independently-versioned published packages (own tag, own CHANGELOG):
+
+- `@lannguyensi/understanding-gate`: see [`packages/understanding-gate/CHANGELOG.md`](packages/understanding-gate/CHANGELOG.md). Released under tags of the form `understanding-gate-vX.Y.Z` so its cadence does not bump the four version-locked packages.
+
+## understanding-gate v0.1.0 - 2026-05-01
+
+First public release of `@lannguyensi/understanding-gate` (independently versioned, tag `understanding-gate-v0.1.0`). Implements Phases -1 through 1 of the package's [`ROADMAP`](packages/understanding-gate/ROADMAP.md): claude-code MVP (UserPromptSubmit hook, fast_confirm + grill_me modes), opencode adapter (rules + plugin), structured Markdown → Report parser, content-hash-keyed local persistence, claude-code Stop hook + opencode `message.updated` plugin auto-capture, and the hypothesis-tracker bridge that registers assumptions + open questions. Plus the Phase 1 robustness, observability, and ergonomics follow-ups.
+
+Full release notes: [`packages/understanding-gate/CHANGELOG.md`](packages/understanding-gate/CHANGELOG.md).
 
 ## [0.1.0] - 2026-04-28
 
