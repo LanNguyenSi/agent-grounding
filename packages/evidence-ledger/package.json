@@ -1,6 +1,6 @@
 {
   "name": "@lannguyensi/evidence-ledger",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Structured evidence tracking for agent debugging sessions",
   "license": "MIT",
   "repository": {
