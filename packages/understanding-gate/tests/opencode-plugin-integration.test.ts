@@ -96,7 +96,7 @@ describe("persistReportPlugin: end-to-end", () => {
     expect(existsSync(reportsDir)).toBe(true);
     const files = readdirSync(reportsDir).filter((n) => n.endsWith(".json"));
     expect(files).toHaveLength(1);
-    expect(files[0]).toMatch(/-session-int\.json$/);
+    expect(files[0]).toMatch(/-session-int-[0-9a-f]{8}\.json$/);
   });
 
   it("does nothing when info.finish is not set (still streaming)", async () => {
