@@ -14,8 +14,8 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@lannguyensi/claim-gate": "0.1.0",
-    "@lannguyensi/evidence-ledger": "0.1.0",
+    "@lannguyensi/claim-gate": "0.2.0",
+    "@lannguyensi/evidence-ledger": "0.2.0",
     "commander": "^12.0.0"
   },
   "devDependencies": {

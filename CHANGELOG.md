@@ -22,6 +22,56 @@ Independently-versioned published packages (own tag, own CHANGELOG):
 
 - `@lannguyensi/understanding-gate`: see [`packages/understanding-gate/CHANGELOG.md`](packages/understanding-gate/CHANGELOG.md). Released under tags of the form `understanding-gate-vX.Y.Z` so its cadence does not bump the four version-locked packages.
 
+## [0.2.0] - 2026-05-01
+
+Coordinated release with harness Phase 5 (LanNguyenSi/harness v0.5.0).
+The four version-locked packages all bump to 0.2.0; `evidence-ledger`
+is the only one with new code, the others go along by repo convention.
+Pre-1.0: the public API surface continues to be subject to change
+between minor releases.
+
+### `@lannguyensi/evidence-ledger`
+
+#### Added
+
+- **`policy_decision` first-class entry type** (Phase 5 #4 / harness PR
+  #47). `EntryType` union extended; `getSummary` returns a 5th bucket
+  `policyDecisions: LedgerEntry[]`; the four evidence buckets
+  (`facts/hypotheses/rejected/unknowns`) now exclude policy_decision
+  rows so audit/evidence consumers don't contaminate each other. Old
+  CHECK constraints are auto-migrated on first open via the canonical
+  rename-recreate dance, preserving rows.
+- **`getSummary` server-side filters** (Phase 5 #5 / harness PR #46).
+  Optional `sinceIso` (`created_at >= datetime(@sinceIso)`) and
+  `contentPrefix` (`content LIKE prefix% ESCAPE '\\'`, with LIKE
+  metacharacter escape so a literal `_` in the prefix doesn't act as
+  a wildcard) keep the wire payload narrow when consumers only need a
+  recent or prefix-bound slice.
+- **`parseLedgerTimestamp` UTC normalisation** at the SQL layer for
+  the new `sinceIso` filter (Phase 5 #8). SQLite's `datetime('now')`
+  writes UTC `YYYY-MM-DD HH:MM:SS`; lexicographic compare against an
+  ISO-8601 `YYYY-MM-DDTHH:MM:SSZ` cutoff fails (`T` > space). Filter
+  now compares via `datetime(...)` on both sides.
+
+#### Changed
+
+- `getSummary` signature: third optional `filters` arg
+  (`{ sinceIso?, contentPrefix? }`). Existing 2-arg callers continue
+  to work unchanged.
+- `LedgerSummary` type adds `policyDecisions: LedgerEntry[]`. Old
+  consumers that only read the four evidence buckets are unaffected.
+
+### `grounding-mcp`
+
+Internal-only (kept `private: true`). The MCP server's `ledger_add`
+zod enum now accepts `policy_decision`, and `ledger_summary` surfaces
+the new bucket + counts. Used by harness via direct binary spawn
+(`node grounding-mcp/dist/server.js`).
+
+### `@lannguyensi/grounding-wrapper`, `@lannguyensi/claim-gate`, `@lannguyensi/hypothesis-tracker`
+
+No code changes. Bumped to 0.2.0 to keep the version-locked invariant.
+
 ## understanding-gate v0.1.0 - 2026-05-01
 
 First public release of `@lannguyensi/understanding-gate` (independently versioned, tag `understanding-gate-v0.1.0`). Implements Phases -1 through 1 of the package's [`ROADMAP`](packages/understanding-gate/ROADMAP.md): claude-code MVP (UserPromptSubmit hook, fast_confirm + grill_me modes), opencode adapter (rules + plugin), structured Markdown → Report parser, content-hash-keyed local persistence, claude-code Stop hook + opencode `message.updated` plugin auto-capture, and the hypothesis-tracker bridge that registers assumptions + open questions. Plus the Phase 1 robustness, observability, and ergonomics follow-ups.
