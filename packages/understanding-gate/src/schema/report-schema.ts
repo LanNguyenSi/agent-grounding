@@ -33,13 +33,37 @@ export const UNDERSTANDING_REPORT_SCHEMA = {
     },
     currentUnderstanding: { type: "string", minLength: 1 },
     intendedOutcome: { type: "string", minLength: 1 },
-    derivedTodos: { type: "array", items: { type: "string" } },
-    acceptanceCriteria: { type: "array", items: { type: "string" } },
-    assumptions: { type: "array", items: { type: "string" } },
-    openQuestions: { type: "array", items: { type: "string" } },
-    outOfScope: { type: "array", items: { type: "string" } },
-    risks: { type: "array", items: { type: "string" } },
-    verificationPlan: { type: "array", items: { type: "string" } },
+    // List fields: every item must be a non-empty string.
+    //
+    // minItems decision per field:
+    //   - derivedTodos / acceptanceCriteria / verificationPlan
+    //     are core to the gate's value (what the agent will DO, what
+    //     "done" looks like, how it will verify). An empty list signals
+    //     the agent skipped real planning, so we reject with minItems: 1.
+    //   - assumptions / openQuestions / outOfScope / risks
+    //     can legitimately be empty in a confident, low-risk report
+    //     (no assumptions made, nothing unclear, nothing scoped out).
+    //     Schema allows []; the agent's prompt is still expected to
+    //     prefer explicit emptiness over silent omission.
+    derivedTodos: {
+      type: "array",
+      minItems: 1,
+      items: { type: "string", minLength: 1 },
+    },
+    acceptanceCriteria: {
+      type: "array",
+      minItems: 1,
+      items: { type: "string", minLength: 1 },
+    },
+    assumptions: { type: "array", items: { type: "string", minLength: 1 } },
+    openQuestions: { type: "array", items: { type: "string", minLength: 1 } },
+    outOfScope: { type: "array", items: { type: "string", minLength: 1 } },
+    risks: { type: "array", items: { type: "string", minLength: 1 } },
+    verificationPlan: {
+      type: "array",
+      minItems: 1,
+      items: { type: "string", minLength: 1 },
+    },
     requiresHumanApproval: { type: "boolean" },
     approvalStatus: {
       type: "string",
