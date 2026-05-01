@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -45,6 +46,66 @@ describe("writeAtomicText", () => {
     writeAtomicText(path, "first");
     writeAtomicText(path, "second");
     expect(readFileSync(path, "utf8")).toBe("second");
+  });
+
+  // Drives the cleanup branch of writeAtomicText: when renameSync throws
+  // (here EISDIR — the final path is an existing directory), the helper
+  // must unlink the staged tmp file and rethrow. Verifies the failure
+  // path that the success-path tests can't reach.
+  it("rethrows and removes the tmp file when renameSync fails", () => {
+    const finalPath = join(tmpDir, "blocking-dir");
+    mkdirSync(finalPath, { recursive: true });
+
+    expect(() => writeAtomicText(finalPath, "payload")).toThrow();
+
+    const leftover = readdirSync(tmpDir).filter((n) => n.includes(".tmp-"));
+    expect(leftover).toEqual([]);
+    // The blocking directory survives untouched.
+    expect(existsSync(finalPath)).toBe(true);
+  });
+
+  // Same cleanup branch via the saveReport integration path. Catches
+  // regressions where saveReport begins to swallow the rethrow or
+  // accidentally leaves a partial <iso>-<slug>.json behind.
+  it("saveReport rethrows on rename failure with no leftover files", async () => {
+    const reportDir = join(tmpDir, "reports");
+    mkdirSync(reportDir, { recursive: true });
+    const slug = "renamefail";
+
+    // Pre-create a directory exactly where saveReport will try to write
+    // its file. We can't predict the iso stamp, so override now to a
+    // fixed value and stage a directory at that exact final path.
+    const fixedNow = new Date("2026-04-30T11:22:33.444Z");
+    const isoStamp = fixedNow.toISOString().replace(/[:.]/g, "-");
+    const finalPath = join(reportDir, `${isoStamp}-${slug}.json`);
+    mkdirSync(finalPath, { recursive: true });
+
+    const { saveReport } = await import("../src/core/persistence.js");
+    expect(() =>
+      saveReport(
+        {
+          taskId: slug,
+          mode: "fast_confirm",
+          riskLevel: "low",
+          currentUnderstanding: "u",
+          intendedOutcome: "o",
+          derivedTodos: ["a"],
+          acceptanceCriteria: ["b"],
+          assumptions: ["c"],
+          openQuestions: ["d"],
+          outOfScope: [],
+          risks: [],
+          verificationPlan: ["p"],
+          requiresHumanApproval: false,
+          approvalStatus: "approved",
+          createdAt: "2026-04-30T11:22:33.444Z",
+        },
+        { dir: reportDir, now: fixedNow },
+      ),
+    ).toThrow();
+
+    const leftover = readdirSync(reportDir).filter((n) => n.includes(".tmp-"));
+    expect(leftover).toEqual([]);
   });
 });
 
