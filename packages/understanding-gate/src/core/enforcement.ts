@@ -67,7 +67,17 @@ export function decideEnforcement(input: EnforcementInput): EnforcementDecision 
     };
   }
 
-  if (!input.writeToolNames.has(input.tool)) {
+  // Trim incidental whitespace before the deny-list lookup so a harness
+  // payload like `"Edit "` or `"Edit\n"` doesn't silently fall through
+  // to the read-only allow path. Case-folding is intentionally NOT
+  // applied: Claude Code uses PascalCase, opencode uses lowercase, and
+  // the per-adapter sets (CLAUDE_CODE_WRITE_TOOLS / OPENCODE_WRITE_TOOLS)
+  // already enforce that distinction. Cross-folding would mask a
+  // harness/version mistake by treating "edit" against the Claude Code
+  // set as a write tool — better to surface that as a readonly allow
+  // and let the caller catch it.
+  const normalizedTool = input.tool.trim();
+  if (!input.writeToolNames.has(normalizedTool)) {
     return {
       decision: "allow",
       mode: "readonly_tool",
