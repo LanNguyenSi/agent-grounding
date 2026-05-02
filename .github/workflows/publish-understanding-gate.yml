@@ -54,7 +54,8 @@ jobs:
         run: |
           for f in packages/understanding-gate/dist/cli.js \
                    packages/understanding-gate/dist/adapters/claude-code/user-prompt-submit.js \
-                   packages/understanding-gate/dist/adapters/claude-code/stop.js; do
+                   packages/understanding-gate/dist/adapters/claude-code/stop.js \
+                   packages/understanding-gate/dist/adapters/claude-code/pre-tool-use.js; do
             if [ ! -x "$f" ]; then
               echo "::error::$f is not executable. Did the build script's chmod run?" >&2
               exit 1
