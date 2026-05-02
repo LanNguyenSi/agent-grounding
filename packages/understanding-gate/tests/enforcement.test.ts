@@ -167,6 +167,51 @@ describe("decideEnforcement: force bypass", () => {
   });
 });
 
+describe("decideEnforcement: tool-name normalization (Phase 2 follow-up)", () => {
+  // Whitespace around the tool name is trimmed before the deny-list
+  // lookup so a harness payload like "Edit " or "Edit\n" doesn't slip
+  // through as a read-only allow. Case is intentionally NOT folded:
+  // PascalCase (Claude Code) vs. lowercase (opencode) is per-adapter
+  // and meaningful.
+  for (const tool of ["Edit ", " Edit", "Edit\n", "\tEdit"]) {
+    it(`treats whitespace-padded "${JSON.stringify(tool)}" as Edit`, () => {
+      const d = decideEnforcement({
+        tool,
+        writeToolNames: W,
+        reportExists: false,
+        reportApproved: false,
+        env: {},
+      });
+      expect(d.decision).toBe("block");
+      expect(d.mode).toBe("no_report");
+    });
+  }
+
+  it("does not case-fold across adapters: lowercase `edit` against Claude Code set still passes (readonly_tool)", () => {
+    const d = decideEnforcement({
+      tool: "edit",
+      writeToolNames: W,
+      reportExists: false,
+      reportApproved: false,
+      env: {},
+    });
+    expect(d.decision).toBe("allow");
+    expect(d.mode).toBe("readonly_tool");
+  });
+
+  it("does not case-fold across adapters: PascalCase `Bash` against opencode set still passes (readonly_tool)", () => {
+    const d = decideEnforcement({
+      tool: "Bash",
+      writeToolNames: OPENCODE_WRITE_TOOLS,
+      reportExists: false,
+      reportApproved: false,
+      env: {},
+    });
+    expect(d.decision).toBe("allow");
+    expect(d.mode).toBe("readonly_tool");
+  });
+});
+
 describe("decideEnforcement: opencode tool names", () => {
   it("blocks the lowercase `write` tool with no report", () => {
     const d = decideEnforcement({
