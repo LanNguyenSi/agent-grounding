@@ -1,7 +1,7 @@
 {
   "name": "review-claim-gate",
   "version": "1.0.0",
-  "description": "Claim-gate consumer for PR-review subagents — enforces a merge_approval policy backed by evidence-ledger evidence",
+  "description": "Claim-gate consumer for PR-review subagents, enforces a merge_approval policy backed by evidence-ledger evidence",
   "type": "module",
   "bin": {
     "review-claim-gate": "./dist/cli.js"
