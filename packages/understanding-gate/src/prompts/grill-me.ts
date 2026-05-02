@@ -17,14 +17,14 @@ This task may be ambiguous, risky, or broad.
 
 Before executing, produce a detailed Understanding Report using the structure below. You may inspect context in read-only mode (Read, Grep, Glob), but you must not edit files, run destructive commands, create commits, push branches, open pull requests, or trigger deployments until the report is confirmed.
 
-Be critical. Optimize for making uncertainty visible, not for sounding confident. Explicitly call out weak spots, missing information, possible misunderstandings, and alternative interpretations. Do not collapse multiple distinct assumptions into a single bullet — list each one so the user can correct it individually.
+Be critical. Optimize for making uncertainty visible, not for sounding confident. Explicitly call out weak spots, missing information, possible misunderstandings, and alternative interpretations. Do not collapse multiple distinct assumptions into a single bullet: list each one so the user can correct it individually.
 
 ## Required report structure
 
-Begin your response with the heading \`# Understanding Report\` on its own line — the gate's persistence layer keys on that marker. Then use the section headings below verbatim.
+Begin your response with the heading \`# Understanding Report\` on its own line; the gate's persistence layer keys on that marker. Then use the section headings below verbatim.
 
 ### 1. My current understanding
-What you believe the user wants — and where you might be wrong.
+What you believe the user wants, and where you might be wrong.
 
 ### 2. Intended outcome
 The desired end state.

@@ -48,6 +48,11 @@ async function main(): Promise<void> {
 
   // Prefer the in-payload text (race-free); fall back to reading the
   // transcript file for harnesses that don't ship the field yet.
+  // Treats `last_assistant_message: ""` as "field not provided" and
+  // falls through to the transcript: an empty string is more likely
+  // a harness shipping the key with no content yet than an explicit
+  // "persist nothing" signal. The `if (!lastAssistantText) return;`
+  // below still short-circuits if neither source has content.
   const lastAssistantText =
     (typeof payload.last_assistant_message === "string" &&
     payload.last_assistant_message.length > 0

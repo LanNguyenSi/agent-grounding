@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.2.1 — 2026-05-02
+## 0.2.1, 2026-05-02
 
-### Fixed — Phase 2 dogfood polish
+### Fixed: Phase 2 dogfood polish
 
 - **`grill_me` and `full` prompt templates now prescribe the parser's 9
   section headings AND the top-level `# Understanding Report` marker.**
@@ -10,7 +10,7 @@
   subheadings (`**Task:**`, `**Assumptions I'm making:**`, …); the
   Stop-hook parser rejected the report with `missing_sections`, no
   file landed in `.understanding-gate/reports/`, and
-  `understanding-gate approve` had nothing to flip — the Phase-2
+  `understanding-gate approve` had nothing to flip, so the Phase-2
   approve flow couldn't close end-to-end. The new templates list
   `### 1. My current understanding` through `### 9. Verification plan`
   verbatim and tell the agent to begin with `# Understanding Report`
@@ -31,8 +31,8 @@
   (`tests/claude-code-transcript.test.ts`): synthetic transcript with
   the report in turn 1 followed by tool_use boundaries before the
   final assistant text; `parseTrailingAssistantText` collects both.
-  Documents that the trailing-walk itself was always correct — the
-  0.2.0 symptom was upstream in the template + the harness flush race.
+  Documents that the trailing-walk itself was always correct; the
+  0.2.0 symptom was upstream in the template plus the harness flush race.
 - **Stop binary test for the new `last_assistant_message` preference**
   (`tests/claude-code-stop-binary.test.ts`): payload-text wins even
   when the transcript file is empty; falls back cleanly when the
