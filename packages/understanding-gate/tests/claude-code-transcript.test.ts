@@ -149,6 +149,72 @@ describe("parseTrailingAssistantText", () => {
     expect(parseTrailingAssistantText(jsonl)).toBe("current reply");
   });
 
+  // 0.2.1 dogfood regression: under `claude -p`, the agent's flow is
+  // typically [text(report)] → [tool_use(Read)] → [user(tool_result)]
+  // → [tool_use(Edit blocked)] → [user(tool_result)] → [text(final)].
+  // Each tool_use lives in its own assistant entry (no embedded text).
+  // The walk must collect text from BOTH the preamble entry and the
+  // post-block entry so the marker is visible to the parser.
+  it("collects assistant text across tool_use boundaries (claude -p preamble pattern)", () => {
+    const jsonl = makeJSONL([
+      // human prompt with a STRING content (claude -p shape, not array)
+      {
+        type: "user",
+        message: { role: "user", content: "add a farewell function" },
+      },
+      // turn-1: text preamble (the report) — a separate assistant entry
+      {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "text", text: "# Understanding Report\n\n### 1. My current understanding\nadd farewell" },
+          ],
+        },
+      },
+      // turn-1 cont'd: pure tool_use entry, no text
+      {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [{ type: "tool_use", name: "Read", input: { path: "x" } }],
+        },
+      },
+      // tool_result lands as user entry — must NOT terminate the walk
+      {
+        type: "user",
+        toolUseResult: { ok: true },
+        message: { role: "user", content: [{ type: "tool_result", content: "ok" }] },
+      },
+      // another tool_use entry, no text
+      {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [{ type: "tool_use", name: "Edit", input: {} }],
+        },
+      },
+      // deny tool_result
+      {
+        type: "user",
+        toolUseResult: { ok: false },
+        message: { role: "user", content: [{ type: "tool_result", content: "blocked" }] },
+      },
+      // final assistant text after the block
+      {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "I won't bypass the hook." }],
+        },
+      },
+    ]);
+    const out = parseTrailingAssistantText(jsonl);
+    expect(out).toContain("# Understanding Report");
+    expect(out).toContain("### 1. My current understanding");
+    expect(out).toContain("I won't bypass the hook.");
+  });
+
   it("handles CRLF line endings", () => {
     const jsonl = makeJSONL([
       {
