@@ -6,12 +6,12 @@ Phased delivery. Each phase ships independently and is reviewable in isolation. 
 
 | Phase | Goal | Components | Depends on |
 |---|---|---|---|
-| -1 Foundation | Anchor every follow-up task with shared docs | `README.md`, `ROADMAP.md`, `docs/architecture.md` | none |
-| 0 Claude Code MVP | Working prompt-hook in Claude Code, fast-confirm default, task-like classifier | package scaffold, `core/{classifier,mode,prompts,schema}`, `adapters/claude-code/user-prompt-submit`, CLI `init --target claude-code`, dogfood | Phase -1 |
-| 0.5 opencode | Same value for opencode users, accepting the no-per-prompt-hook limitation | `adapters/opencode/{rules,command}`, CLI `init --target opencode` | Phase 0 |
-| 1 Structured output | Parse and persist the report; bridge to `hypothesis-tracker` | `core/parser`, `core/persistence`, claude-code `Stop`/`PostToolUse` hook, opencode `message.updated` plugin | Phase 0 (schema reused) |
-| 2 Enforcement | Block write tools until approval marker exists | `adapters/claude-code/pre-tool-use`, opencode `tool.execute.before`, CLI `approve`/`revoke`/`status`, audit log | Phase 1 (report id needed for marker) |
-| 3 agent-tasks integration | Promote local marker to a first-class lifecycle state | new states + endpoints in `agent-tasks`, `grounding-wrapper` consumes the report | Phase 2 stable |
+| -1 Foundation ✅ | Anchor every follow-up task with shared docs | `README.md`, `ROADMAP.md`, `docs/architecture.md` | none |
+| 0 Claude Code MVP ✅ | Working prompt-hook in Claude Code, fast-confirm default, task-like classifier | package scaffold, `core/{classifier,mode,prompts,schema}`, `adapters/claude-code/user-prompt-submit`, CLI `init --target claude-code`, dogfood | Phase -1 |
+| 0.5 opencode ✅ | Same value for opencode users, accepting the no-per-prompt-hook limitation | `adapters/opencode/{rules,command}`, CLI `init --target opencode` | Phase 0 |
+| 1 Structured output ✅ | Parse and persist the report; bridge to `hypothesis-tracker` | `core/parser`, `core/persistence`, claude-code `Stop`/`PostToolUse` hook, opencode `message.updated` plugin | Phase 0 (schema reused) |
+| 2 Enforcement ✅ | Block write tools until the persisted report's `approvalStatus === "approved"` | `core/{approval,audit,enforcement}`, `adapters/claude-code/pre-tool-use`, opencode `tool.execute.before`, CLI `approve`/`revoke`/`status`, audit log | Phase 1 (report file is the marker) |
+| 3 agent-tasks integration | Promote local approval to a first-class lifecycle state | new states + endpoints in `agent-tasks`, `grounding-wrapper` consumes the report | Phase 2 stable |
 
 ## Task tracking
 

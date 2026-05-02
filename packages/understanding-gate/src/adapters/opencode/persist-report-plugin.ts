@@ -14,9 +14,19 @@
 import { dirname, join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { parseReport } from "../../core/parser.js";
-import { saveReport } from "../../core/persistence.js";
+import { listReports, saveReport } from "../../core/persistence.js";
 import { syncHypothesesFromReport } from "../../core/hypothesis-sync.js";
 import { writeAtomicText } from "../../core/fs.js";
+import {
+  appendAuditLine,
+  defaultAuditLogPath,
+  type AuditEvent,
+} from "../../core/audit.js";
+import { findLatestForTask, isApproved } from "../../core/approval.js";
+import {
+  OPENCODE_WRITE_TOOLS,
+  decideEnforcement,
+} from "../../core/enforcement.js";
 import {
   PARSE_ERRORS_SUBDIR,
   SYNC_ERRORS_SUBDIR,
@@ -27,13 +37,22 @@ import type {
   OpencodeHooks,
   OpencodePlugin,
   OpencodePluginInput,
+  OpencodeToolExecuteBeforeInput,
+  OpencodeToolExecuteBeforeOutput,
 } from "./opencode-types.js";
 import { extractAssistantText } from "./extract.js";
 
 export const persistReportPlugin: OpencodePlugin = async (
   ctx: OpencodePluginInput,
 ): Promise<OpencodeHooks> => {
+  const cwd = ctx.directory;
   return {
+    "tool.execute.before": (
+      input: OpencodeToolExecuteBeforeInput,
+      _output: OpencodeToolExecuteBeforeOutput,
+    ) => {
+      enforceBeforeToolExecute(cwd, input);
+    },
     event: async ({ event }) => {
       if (event.type !== "message.updated") return;
       const properties = (event as { properties?: unknown }).properties;
@@ -54,7 +73,6 @@ export const persistReportPlugin: OpencodePlugin = async (
       //      below, drop a transport-error log breadcrumb, return.
       //   2. The promise resolves with { error, data: undefined } because
       //      the SDK runs throwOnError:false by default — same treatment.
-      const cwd = ctx.directory;
       const env: PersistReportEnv = {
         UNDERSTANDING_GATE_DISABLE: process.env.UNDERSTANDING_GATE_DISABLE,
         UNDERSTANDING_GATE_TASK_ID: process.env.UNDERSTANDING_GATE_TASK_ID,
@@ -192,4 +210,75 @@ function stringifyError(err: unknown): unknown {
   }
   if (err && typeof err === "object") return err;
   return String(err);
+}
+
+// Phase 2 enforcement on opencode's tool.execute.before hook. Throws an
+// Error to abort tool dispatch when the gate decides to block; opencode
+// surfaces the throw message back to the model. Audit-logs block /
+// force-bypass; never logs allow-by-readonly to keep volume sane.
+function enforceBeforeToolExecute(
+  cwd: string,
+  input: OpencodeToolExecuteBeforeInput,
+): void {
+  const tool = input.tool || "";
+  const sessionId = input.sessionID ?? null;
+  const taskId = process.env.UNDERSTANDING_GATE_TASK_ID || sessionId || "";
+
+  let entries: ReturnType<typeof listReports> = [];
+  try {
+    entries = listReports({
+      cwd,
+      dir: process.env.UNDERSTANDING_GATE_REPORT_DIR || undefined,
+    });
+  } catch {
+    entries = [];
+  }
+  const latest = taskId ? findLatestForTask(entries, taskId) : null;
+
+  const decision = decideEnforcement({
+    tool,
+    writeToolNames: OPENCODE_WRITE_TOOLS,
+    reportExists: latest !== null,
+    reportApproved: isApproved(latest),
+    env: {
+      UNDERSTANDING_GATE_DISABLE: process.env.UNDERSTANDING_GATE_DISABLE,
+      UNDERSTANDING_GATE_FORCE: process.env.UNDERSTANDING_GATE_FORCE,
+      UNDERSTANDING_GATE_FORCE_REASON:
+        process.env.UNDERSTANDING_GATE_FORCE_REASON,
+    },
+  });
+
+  if (decision.mode === "force_bypass") {
+    safeAppendAudit(cwd, {
+      kind: "force_bypass",
+      tool,
+      reason: decision.reason,
+      sessionId,
+      taskId: taskId || null,
+      adapter: "opencode",
+    });
+    return;
+  }
+
+  if (decision.decision === "block") {
+    safeAppendAudit(cwd, {
+      kind: "block",
+      tool,
+      reason: decision.reason,
+      sessionId,
+      taskId: taskId || null,
+      adapter: "opencode",
+    });
+    throw new Error(decision.reason);
+  }
+
+  // allow path (approved / readonly_tool / disabled): silent.
+}
+
+function safeAppendAudit(cwd: string, event: AuditEvent): void {
+  try {
+    appendAuditLine(defaultAuditLogPath(cwd), event);
+  } catch {
+    // ignore: audit-write must not change enforcement outcome.
+  }
 }
