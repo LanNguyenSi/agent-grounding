@@ -96,6 +96,27 @@ describe("runInit (project scope)", () => {
     );
     expect(() => runInit({ scope: "project", cwd: tmp })).toThrow();
   });
+
+  // Type-shape branches: readSettings rejects valid JSON whose root is
+  // not an object. Without these guards, downstream code would treat
+  // `null`, an array, or a primitive as a SettingsDocument and merge
+  // hooks into it, corrupting the file.
+  for (const [label, body] of [
+    ["null", "null"],
+    ["array", "[1, 2, 3]"],
+    ["string", '"a string"'],
+    ["number", "42"],
+    ["boolean", "true"],
+  ] as const) {
+    it(`throws when settings.json root is a ${label} (not an object)`, () => {
+      const settingsDir = join(tmp, ".claude");
+      mkdirSync(settingsDir, { recursive: true });
+      writeFileSync(join(settingsDir, "settings.json"), body, "utf8");
+      expect(() => runInit({ scope: "project", cwd: tmp })).toThrow(
+        /not a JSON object/,
+      );
+    });
+  }
 });
 
 describe("runUninstall (project scope)", () => {
