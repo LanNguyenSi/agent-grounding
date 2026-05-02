@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { runInit, runUninstall } from "./cli/init.js";
 import { runOpencodeInit, runOpencodeUninstall } from "./cli/opencode.js";
 import { runReportList, runReportShow } from "./cli/report.js";
+import { runApprove, runRevoke, runStatus } from "./cli/approve.js";
 import { getPromptSnippet, FULL_PROMPT } from "./prompts.js";
 import type { Mode } from "./mode.js";
 import type { Scope } from "./cli/paths.js";
@@ -15,7 +16,7 @@ program
   .description(
     "Pre-execution gate that asks AI agents to produce an Understanding Report before acting.",
   )
-  .version("0.1.0");
+  .version("0.2.0");
 
 function resolveScope(value: string | undefined): Scope {
   if (value === "user" || value === "project") return value;
@@ -45,13 +46,15 @@ program
       const result = runInit({ scope });
       if (result.changed) {
         process.stdout.write(
-          `understanding-gate: wrote hook entry to ${result.path}\n` +
-            `next: try a prompt like "add a logout button to src/Header.tsx"\n` +
+          `understanding-gate: wrote hook entries to ${result.path}\n` +
+            `installed: UserPromptSubmit (Phase 0), Stop (Phase 1), PreToolUse (Phase 2)\n` +
+            `next: try a prompt like "add a logout button to src/Header.tsx".\n` +
+            `      after the agent emits the report, run \`understanding-gate approve\` to unlock write tools.\n` +
             `disable temporarily with: UNDERSTANDING_GATE_DISABLE=1 claude\n`,
         );
       } else {
         process.stdout.write(
-          `understanding-gate: ${result.path} already has the hook entry; nothing to do.\n`,
+          `understanding-gate: ${result.path} already has all hook entries; nothing to do.\n`,
         );
       }
       return;
@@ -177,6 +180,52 @@ report
   .option("--dir <path>", "override report directory")
   .action((id: string, opts: { dir?: string }) => {
     const result = runReportShow({ id, dir: opts.dir });
+    if (result.stdout) process.stdout.write(result.stdout);
+    if (result.stderr) process.stderr.write(result.stderr);
+    process.exit(result.exitCode);
+  });
+
+program
+  .command("approve")
+  .description("Mark the latest Understanding Report as approved (Phase 2 enforcement)")
+  .option("--task-id <id>", "approve the latest report matching this taskId")
+  .option("--report-id <id>", "approve a specific report (taskId, filename, or absolute path)")
+  .option("--dir <path>", "override report directory")
+  .action((opts: { taskId?: string; reportId?: string; dir?: string }) => {
+    const result = runApprove({
+      taskId: opts.taskId,
+      reportId: opts.reportId,
+      dir: opts.dir,
+    });
+    if (result.stdout) process.stdout.write(result.stdout);
+    if (result.stderr) process.stderr.write(result.stderr);
+    process.exit(result.exitCode);
+  });
+
+program
+  .command("revoke")
+  .description("Revoke a previously approved Understanding Report (set status=pending)")
+  .option("--task-id <id>", "revoke approval for the latest report matching this taskId")
+  .option("--report-id <id>", "revoke a specific report (taskId, filename, or absolute path)")
+  .option("--dir <path>", "override report directory")
+  .action((opts: { taskId?: string; reportId?: string; dir?: string }) => {
+    const result = runRevoke({
+      taskId: opts.taskId,
+      reportId: opts.reportId,
+      dir: opts.dir,
+    });
+    if (result.stdout) process.stdout.write(result.stdout);
+    if (result.stderr) process.stderr.write(result.stderr);
+    process.exit(result.exitCode);
+  });
+
+program
+  .command("status")
+  .description("Show approval state of persisted Understanding Reports")
+  .option("--task-id <id>", "limit to a single taskId")
+  .option("--dir <path>", "override report directory")
+  .action((opts: { taskId?: string; dir?: string }) => {
+    const result = runStatus({ taskId: opts.taskId, dir: opts.dir });
     if (result.stdout) process.stdout.write(result.stdout);
     if (result.stderr) process.stderr.write(result.stderr);
     process.exit(result.exitCode);

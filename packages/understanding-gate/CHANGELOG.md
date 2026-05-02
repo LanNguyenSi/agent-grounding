@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.2.0 — 2026-05-02
+
+### Added — Phase 2 (enforcement)
+
+- **`PreToolUse` hook for Claude Code** (`understanding-gate-claude-pre-tool-use`
+  bin) blocks `Write`, `Edit`, `MultiEdit`, `NotebookEdit`, and `Bash` tool
+  calls when the latest persisted Understanding Report for the active
+  session is missing or has `approvalStatus !== "approved"`. Read-only
+  tools (`Read`, `Grep`, `Glob`, `LS`, …) always pass.
+- **opencode `tool.execute.before` hook** in the same plugin enforces the
+  same rule for the lowercase `write` / `edit` / `bash` tools by throwing
+  the deny reason back to the model.
+- **`understanding-gate approve | revoke | status` CLI subcommands**.
+  Approval is the persisted report file's `approvalStatus` field; the CLI
+  loads the latest report (filtered by `--task-id`), flips the field, and
+  saves a new snapshot. The original pending draft remains in the dir as
+  audit trail.
+- **`UNDERSTANDING_GATE_FORCE=1` + `UNDERSTANDING_GATE_FORCE_REASON`** for
+  one-shot bypass. The reason must be ≥ 10 characters; otherwise the gate
+  still blocks. Both bypass and block events land in
+  `.understanding-gate/audit.log` (JSONL).
+- **`UNDERSTANDING_GATE_DISABLE=1`** kill-switch (already supported by the
+  earlier hooks) now also short-circuits enforcement.
+- **`init` registers the new hook** alongside `UserPromptSubmit` and
+  `Stop`; existing 0.1.x installs upgrade by re-running
+  `understanding-gate init`.
+
+### Changed
+
+- `withApprovalStatus` (and therefore `approve` / `revoke`) refreshes
+  `createdAt` on every state flip so the latest snapshot wins
+  `findLatestForTask`'s sort. The previous snapshot is kept in the dir;
+  the authoritative timeline of state changes is the JSONL audit log.
+
+### Failure-mode posture
+
+The gate still degrades to "allow + silent" on malformed hook input,
+listReports failures, audit-log write failures, or any other unexpected
+runtime error. Enforcement is enforced on the happy path and never
+turns into a tarpit on the sad path.
+
 ## 0.1.1 — 2026-05-01
 
 ### Fixed

@@ -45,6 +45,7 @@ export type ReportEntry = {
   riskLevel: UnderstandingReport["riskLevel"];
   approvalStatus: UnderstandingReport["approvalStatus"];
   createdAt: string;
+  approvedAt?: string;
 };
 
 export type ListOptions = { dir?: string; cwd?: string };
@@ -107,6 +108,7 @@ export function listReports(opts: ListOptions = {}): ReportEntry[] {
       riskLevel: parsed.riskLevel,
       approvalStatus: parsed.approvalStatus,
       createdAt: parsed.createdAt ?? "",
+      approvedAt: parsed.approvedAt,
     });
   }
   entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt));

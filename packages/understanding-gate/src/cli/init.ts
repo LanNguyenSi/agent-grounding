@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import {
   HOOK_COMMAND_NAME,
+  PRE_TOOL_USE_HOOK_COMMAND_NAME,
   STOP_HOOK_COMMAND_NAME,
   addHook,
   removeHook,
@@ -15,12 +16,16 @@ interface RunResult {
   changed: boolean;
 }
 
+// Order matters only for the human-readable diff: settings.json grows in
+// the listed sequence on a fresh install. Re-running init on a partial
+// install adds whatever hooks are missing; addHook is idempotent.
 const HOOKS_TO_INSTALL: ReadonlyArray<{
   event: ClaudeHookEvent;
   command: string;
 }> = [
   { event: "UserPromptSubmit", command: HOOK_COMMAND_NAME },
   { event: "Stop", command: STOP_HOOK_COMMAND_NAME },
+  { event: "PreToolUse", command: PRE_TOOL_USE_HOOK_COMMAND_NAME },
 ];
 
 function readSettings(path: string): SettingsDocument {

@@ -32,10 +32,12 @@ export interface SettingsDocument {
   [key: string]: unknown;
 }
 
-export type ClaudeHookEvent = "UserPromptSubmit" | "Stop";
+export type ClaudeHookEvent = "UserPromptSubmit" | "Stop" | "PreToolUse";
 
 export const HOOK_COMMAND_NAME = "understanding-gate-claude-hook";
 export const STOP_HOOK_COMMAND_NAME = "understanding-gate-claude-stop";
+export const PRE_TOOL_USE_HOOK_COMMAND_NAME =
+  "understanding-gate-claude-pre-tool-use";
 
 export function hasHook(
   doc: SettingsDocument,

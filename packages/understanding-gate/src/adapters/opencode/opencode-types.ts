@@ -75,8 +75,27 @@ export interface OpencodePluginInput {
   directory: string;
 }
 
+// `tool.execute.before` fires before opencode dispatches a tool call to
+// the runtime. The plugin can mutate `output.args` or throw to abort the
+// call (the throw message surfaces back to the model). We only read
+// `input.tool` and use throw-to-deny; mutation is not used.
+export interface OpencodeToolExecuteBeforeInput {
+  /** Canonical tool name (e.g. "write", "edit", "bash"). */
+  tool: string;
+  /** opencode-supplied session id, if known. */
+  sessionID?: string;
+}
+
+export interface OpencodeToolExecuteBeforeOutput {
+  args?: Record<string, unknown>;
+}
+
 export interface OpencodeHooks {
   event?: (input: { event: OpencodeEvent }) => Promise<void>;
+  "tool.execute.before"?: (
+    input: OpencodeToolExecuteBeforeInput,
+    output: OpencodeToolExecuteBeforeOutput,
+  ) => Promise<void> | void;
 }
 
 export type OpencodePlugin = (input: OpencodePluginInput) => Promise<OpencodeHooks>;

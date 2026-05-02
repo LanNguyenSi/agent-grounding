@@ -2,13 +2,13 @@
 
 Pre-execution gate for AI agent harnesses. Before an agent edits files, runs destructive commands, or opens PRs, this tool asks it to emit a structured Understanding Report so a human can confirm, correct, or "grill me" before execution begins.
 
-> **Status:** Phase 0.5 in progress. Phase 0 (Claude Code adapter, CLI, dogfood) is shipped; this phase adds the opencode adapter. Phase 1 (structured report) is next. See [ROADMAP.md](./ROADMAP.md).
+> **Status:** Phase 2 (enforcement) shipped. Phases -1, 0, 0.5, 1, 2 are live: prompt-hook gate, structured report parsing + persistence, and tool-blocking until the report is approved. Phase 3 (agent-tasks lifecycle integration) is next. See [ROADMAP.md](./ROADMAP.md).
 
 ## What it does
 
 Installs a prompt-hook into your agent harness (Claude Code, opencode). When the user submits a task-like prompt, the hook injects an instruction asking the agent to first produce a report covering: current understanding, intended outcome, derived todos, acceptance criteria, assumptions, open questions, out-of-scope, risks, verification plan.
 
-In Phase 0 this is advisory: the agent can ignore the snippet and proceed. Phase 2 adds tool-blocking enforcement.
+Once the report is emitted and approved, the gate also _blocks_ destructive tools (`Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Bash` on Claude Code; `write`, `edit`, `bash` on opencode) until the user runs `understanding-gate approve`. Read-only tools (`Read`, `Grep`, `Glob`, `LS`, …) stay open at all times.
 
 Two modes:
 
@@ -43,22 +43,47 @@ npx @lannguyensi/understanding-gate init --target opencode
 
 opencode has no per-prompt hook before model inference, so v0.5 falls back to a static rules file (`.opencode/rules/understanding-gate.md`) plus an explicit custom command (`.opencode/command/grill.md`). The agent always sees the fast-confirm rule; the user invokes `/grill` for the deeper challenge.
 
-### Disable temporarily
+### Approve / revoke the gate
 
 ```bash
-UNDERSTANDING_GATE_DISABLE=1 claude
+# After the agent emits a report you accept, in another terminal:
+understanding-gate approve            # picks the latest report in cwd
+understanding-gate approve --task-id <id>
+understanding-gate approve --report-id <taskId|filename|path>
+
+# Reverse it:
+understanding-gate revoke
+
+# Inspect:
+understanding-gate status
 ```
 
-## What v0 does NOT do
+The CLI flips the persisted report's `approvalStatus` field — that is the source of truth the `PreToolUse` hook reads. Each approve / revoke also drops a JSONL line in `.understanding-gate/audit.log` (block, approve, revoke, force_bypass).
 
-- Block any tool. The Phase 0 gate is advisory; Phase 2 ships enforcement.
+### Disable or force-bypass
+
+```bash
+# Kill switch (gate is off entirely):
+UNDERSTANDING_GATE_DISABLE=1 claude
+
+# Bypass enforcement once with a recorded reason (≥ 10 chars; logged):
+UNDERSTANDING_GATE_FORCE=1 \
+UNDERSTANDING_GATE_FORCE_REASON="incident-recovery for ticket 1234" \
+claude
+```
+
+`FORCE` without a `FORCE_REASON` (or with one shorter than 10 chars) still blocks — the bypass is deliberately friction-bearing.
+
+## What v0 still does NOT do
+
 - Call an LLM. The task-like classifier is a deterministic keyword regex.
-- Persist the agent's report. Phase 1 adds local persistence; Phase 3 syncs to `agent-tasks`.
+- Sync approval state to `agent-tasks`. Phase 3 promotes the local marker to a first-class lifecycle state.
 - Auto-escalate to `grill_me` based on risk. Manual escalation only in v0.
+- Time-based expiry of approvals. An approved report stays approved until you revoke.
 
 ## Roadmap
 
-See [ROADMAP.md](./ROADMAP.md). Phase 0 (Claude Code adapter + CLI) shipped. Phase 0.5 ships the opencode adapter. Phase 1 parses and persists the report; Phase 2 adds tool-blocking enforcement; Phase 3 integrates with `agent-tasks` lifecycle states.
+See [ROADMAP.md](./ROADMAP.md). Phases -1 / 0 / 0.5 / 1 / 2 shipped: prompt-hook, structured report, persistence, hypothesis bridge, tool-blocking enforcement. Phase 3 is `agent-tasks` lifecycle integration.
 
 ## Design docs
 
