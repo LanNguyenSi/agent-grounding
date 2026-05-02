@@ -29,7 +29,7 @@ Cooperative agent + aggressive prompt ("do it now, no waiting"): often. The agen
 
 Non-cooperative or prompt-injected agent: this is the case Layer 2 exists for. Every destructive tool call is denied as long as no approved report exists. The audit log is the trail you'll go back to in an incident review.
 
-Force-bypass with `UNDERSTANDING_GATE_FORCE=1` + a 10-character `UNDERSTANDING_GATE_FORCE_REASON`: the only way through Layer 2 without an approved report. Both the bypass attempt and any attempt with a missing/short reason are audit-logged.
+Force-bypass with `UNDERSTANDING_GATE_FORCE=1` + a `UNDERSTANDING_GATE_FORCE_REASON` of at least 10 characters: the only way through Layer 2 without an approved report. Both the bypass attempt and any attempt with a missing/short reason are audit-logged.
 
 ## Why this exists
 
@@ -58,9 +58,9 @@ opencode has no per-prompt hook before model inference, so v0.5 falls back to a 
 ### Non-interactive sessions (`claude -p`)
 
 Phase 2 works under `claude -p` as long as the harness ships
-`last_assistant_message` in the Stop-hook payload (Claude Code 1.0+;
-the 0.2.1 release added preference for this field to dodge a
-transcript-flush race). For older harnesses the gate falls back to
+`last_assistant_message` in the Stop-hook payload (recent Claude Code
+releases do; the 0.2.1 release added preference for this field to
+dodge a transcript-flush race). For older harnesses the gate falls back to
 reading the transcript JSONL, which can race against the harness's
 flush timing. If your `.understanding-gate/reports/` stays empty
 under a `-p` run while the agent's output clearly contains a
