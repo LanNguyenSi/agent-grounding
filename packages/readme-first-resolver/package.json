@@ -10,7 +10,8 @@
     "build": "tsc",
     "dev": "ts-node src/index.ts",
     "test": "jest",
-    "test:ci": "jest --ci --coverage"
+    "test:ci": "jest --ci --coverage",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "chalk": "^4.1.2",
