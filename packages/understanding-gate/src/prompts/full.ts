@@ -9,6 +9,8 @@ You may inspect context in read-only mode, but you must not edit files, run dest
 
 ## Required report structure
 
+Begin your response with the heading \`# Understanding Report\` on its own line; the gate's persistence layer keys on that marker. Then use the section headings below verbatim.
+
 ### 1. My current understanding
 Summarize what you believe the user wants.
 

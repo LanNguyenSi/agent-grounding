@@ -167,6 +167,50 @@ describe("claude-code Stop binary (end-to-end)", () => {
     expect(logs).toHaveLength(1);
   });
 
+  // 0.2.1: prefer payload.last_assistant_message over the transcript
+  // file. Newer Claude Code releases ship the final assistant text in
+  // the Stop payload directly; reading it dodges a race where Stop
+  // fires before the transcript JSONL has been flushed (observed live
+  // under `claude -p`).
+  it("persists the report from payload.last_assistant_message even when the transcript is empty", () => {
+    // Empty transcript file: simulates the race where the JSONL hasn't
+    // been written yet when Stop fires.
+    writeFileSync(transcriptPath, "", "utf8");
+    const reportDir = join(tmp, "reports");
+    mkdirSync(reportDir, { recursive: true });
+    const result = spawnSync("node", [BINARY], {
+      input: JSON.stringify({
+        session_id: "session-payload",
+        transcript_path: transcriptPath,
+        cwd: tmp,
+        hook_event_name: "Stop",
+        last_assistant_message: FULL_REPORT_TEXT,
+      }),
+      encoding: "utf8",
+      env: { ...process.env, UNDERSTANDING_GATE_REPORT_DIR: reportDir },
+    });
+    expect(result.status, result.stderr ?? "").toBe(0);
+    const reports = readdirSync(reportDir).filter((n) => n.endsWith(".json"));
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toMatch(/-session-payload-[0-9a-f]{8}\.json$/);
+  });
+
+  it("falls back to the transcript file when last_assistant_message is missing", () => {
+    writeTranscript(FULL_REPORT_TEXT);
+    const { code, stderr } = runStopHook({
+      session_id: "session-fallback",
+      transcript_path: transcriptPath,
+      cwd: tmp,
+      hook_event_name: "Stop",
+      // last_assistant_message intentionally omitted
+    });
+    expect(code, stderr).toBe(0);
+    const reports = readdirSync(join(tmp, "reports")).filter((n) =>
+      n.endsWith(".json"),
+    );
+    expect(reports).toHaveLength(1);
+  });
+
   it("does not crash on malformed stdin JSON", () => {
     const reportDir = join(tmp, "reports");
     mkdirSync(reportDir, { recursive: true });

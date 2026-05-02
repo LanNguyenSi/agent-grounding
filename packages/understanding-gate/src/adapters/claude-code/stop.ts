@@ -23,6 +23,13 @@ interface StopHookPayload {
   transcript_path?: string;
   cwd?: string;
   hook_event_name?: string;
+  // 0.2.1: newer Claude Code releases ship the final assistant text
+  // directly in the payload. Reading it sidesteps a race where Stop
+  // fires before the transcript JSONL has been flushed (observed
+  // under `claude -p`, where the report often hadn't landed on disk
+  // yet when the hook ran). Fall back to the transcript file when
+  // the field is missing (older harnesses).
+  last_assistant_message?: string;
 }
 
 async function main(): Promise<void> {
@@ -38,10 +45,21 @@ async function main(): Promise<void> {
 
   const cwd = payload.cwd ?? process.cwd();
   const sessionId = payload.session_id ?? "claude-code-session";
-  const transcriptPath = payload.transcript_path;
-  if (!transcriptPath) return;
 
-  const lastAssistantText = extractLastAssistantText(transcriptPath);
+  // Prefer the in-payload text (race-free); fall back to reading the
+  // transcript file for harnesses that don't ship the field yet.
+  // Treats `last_assistant_message: ""` as "field not provided" and
+  // falls through to the transcript: an empty string is more likely
+  // a harness shipping the key with no content yet than an explicit
+  // "persist nothing" signal. The `if (!lastAssistantText) return;`
+  // below still short-circuits if neither source has content.
+  const lastAssistantText =
+    (typeof payload.last_assistant_message === "string" &&
+    payload.last_assistant_message.length > 0
+      ? payload.last_assistant_message
+      : payload.transcript_path
+        ? extractLastAssistantText(payload.transcript_path)
+        : "");
   if (!lastAssistantText) return;
 
   const env: StopHookEnv = {
