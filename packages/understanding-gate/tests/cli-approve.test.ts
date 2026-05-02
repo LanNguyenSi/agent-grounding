@@ -12,6 +12,7 @@ import {
   saveReport,
 } from "../src/core/persistence.js";
 import { defaultAuditLogPath } from "../src/core/audit.js";
+import { findLatestForTask } from "../src/core/approval.js";
 import type { UnderstandingReport } from "../src/schema/types.js";
 
 const baseReport: UnderstandingReport = {
@@ -113,6 +114,29 @@ describe("runRevoke", () => {
       .trim()
       .split("\n");
     expect(JSON.parse(lines[lines.length - 1] ?? "{}").kind).toBe("revoke");
+  });
+
+  // Regression net for the load-bearing audit story: a revoke after a
+  // real approve must clear approvedAt/approvedBy AND bump createdAt so
+  // findLatestForTask picks the revoked snapshot, not the older approved
+  // one whose `approvedAt` would otherwise win the sort.
+  it("approve → revoke → findLatestForTask returns the revoked snapshot", () => {
+    saveReport(baseReport, { cwd: tmp });
+    runApprove({
+      cwd: tmp,
+      now: new Date("2026-05-02T11:00:00.000Z"),
+    });
+    runRevoke({
+      cwd: tmp,
+      now: new Date("2026-05-02T12:00:00.000Z"),
+    });
+
+    const entries = listReports({ cwd: tmp });
+    expect(entries.length).toBeGreaterThanOrEqual(2);
+    const latest = findLatestForTask(entries, "session-cli");
+    expect(latest).not.toBeNull();
+    expect(latest?.approvalStatus).toBe("pending");
+    expect(latest?.approvedAt).toBeUndefined();
   });
 });
 

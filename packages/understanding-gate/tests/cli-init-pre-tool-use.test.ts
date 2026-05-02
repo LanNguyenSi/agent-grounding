@@ -49,47 +49,34 @@ describe("runInit (PreToolUse hook)", () => {
     });
   });
 
-  it("merges into a settings.json with a foreign PreToolUse hook", () => {
+  it("merges into a settings.json that already has a foreign PreToolUse hook", () => {
+    // Original-customer scenario: settings.json exists from before the
+    // gate was installed and already carries a foreign PreToolUse entry.
+    // The first runInit must add OUR entry without touching theirs.
     const path = join(tmp, ".claude", "settings.json");
-    const foreign: SettingsDocument = {
+    mkdirSync(join(tmp, ".claude"), { recursive: true });
+    const seed: SettingsDocument = {
       hooks: {
         PreToolUse: [
           {
             matcher: "Bash",
-            hooks: [{ type: "command", command: "/usr/local/bin/some-other-tool" }],
+            hooks: [
+              { type: "command", command: "/usr/local/bin/some-other-tool" },
+            ],
           },
         ],
       },
     };
-    runInit({
-      scope: "project",
-      cwd: tmp,
-    });
-    // runInit writes the file even on first call; foreign hook setup is
-    // only relevant when both coexist. Build the union explicitly:
+    writeFileSync(path, JSON.stringify(seed, null, 2));
+
+    const result = runInit({ scope: "project", cwd: tmp });
+    expect(result.changed).toBe(true);
     const after = read(path);
     const cmds = (after.hooks?.PreToolUse ?? []).flatMap((m) =>
       m.hooks.map((h) => h.command),
     );
+    expect(cmds).toContain("/usr/local/bin/some-other-tool");
     expect(cmds).toContain(PRE_TOOL_USE_HOOK_COMMAND_NAME);
-
-    // Now seed a foreign hook + re-init: foreign survives.
-    const merged: SettingsDocument = {
-      hooks: {
-        PreToolUse: [
-          ...(after.hooks?.PreToolUse ?? []),
-          ...(foreign.hooks?.PreToolUse ?? []),
-        ],
-      },
-    };
-    writeFileSync(path, JSON.stringify(merged, null, 2));
-    runInit({ scope: "project", cwd: tmp });
-    const final = read(path);
-    const finalCmds = (final.hooks?.PreToolUse ?? []).flatMap((m) =>
-      m.hooks.map((h) => h.command),
-    );
-    expect(finalCmds).toContain("/usr/local/bin/some-other-tool");
-    expect(finalCmds).toContain(PRE_TOOL_USE_HOOK_COMMAND_NAME);
   });
 
   it("is idempotent (second init reports no change)", () => {

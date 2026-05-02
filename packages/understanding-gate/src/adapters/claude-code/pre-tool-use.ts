@@ -38,4 +38,8 @@ main().catch((err: unknown) => {
   process.stderr.write(
     `understanding-gate claude-code pre-tool-use hook failed silently: ${String(err)}\n`,
   );
+  // Pin the exit code so a future edit that lets a throw escape `main`
+  // doesn't accidentally exit non-zero and crash the harness — the
+  // header comment promises "all error paths exit 0 with empty stdout".
+  process.exitCode = 0;
 });
