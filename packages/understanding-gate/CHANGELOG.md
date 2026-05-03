@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.2.2, 2026-05-03
+
+### Fixed: Trim tool name before deny-list lookup
+
+- **`decideEnforcement` now `.trim()`s the incoming `tool_name` before
+  the write-tool deny-list lookup.** Previously the match was a
+  strict `Set.has` against `CLAUDE_CODE_WRITE_TOOLS` /
+  `OPENCODE_WRITE_TOOLS`, so a harness payload like `"Edit "` (trailing
+  space) or `"Edit\n"` (trailing newline) silently fell through to the
+  read-only allow path, bypassing the gate entirely. With the trim,
+  every whitespace variant of a write tool now hits the same block
+  decision as the canonical form.
+- **Case-folding is intentionally NOT applied.** Claude Code uses
+  PascalCase (`Edit`, `Write`), opencode uses lowercase (`edit`,
+  `write`), and the per-adapter sets enforce that distinction on
+  purpose. Folding cross-harness would mask a version/harness mismatch
+  by treating `"edit"` against the Claude Code set as a write tool.
+  The trim fix is whitespace-only.
+- **Tests:** +5 cases covering whitespace variants for `Edit` plus
+  explicit cross-adapter no-folding asserts in both directions
+  (`tests/core/enforcement.test.ts`). 444/444 vitest green at release
+  time (438 + 6 since v0.2.1).
+- **Dogfood:** verified end-to-end against the published
+  `understanding-gate-claude-pre-tool-use` hook binary with
+  `tool_name` payloads `Edit`, `Edit `, `Edit\n`, `  Edit`, and `Read`
+  (read-only control). All four `Edit` whitespace variants block with
+  exit 2 and a `permissionDecision: deny` envelope; `Read` falls
+  through silently with exit 0.
+
+Refs PR #55.
+
 ## 0.2.1, 2026-05-02
 
 ### Fixed: Phase 2 dogfood polish
