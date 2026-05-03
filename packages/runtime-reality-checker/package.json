@@ -3,14 +3,10 @@
   "version": "1.0.0",
   "description": "Checks if actual runtime state matches documentation and assumptions",
   "type": "module",
-  "bin": {
-    "rrc": "./dist/cli.js"
-  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "dev": "tsx src/cli.ts",
     "test": "vitest run",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
