@@ -29,6 +29,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "postbuild": "chmod +x ./dist/index.js",
     "dev": "ts-node src/index.ts",
     "test": "jest",
     "test:ci": "jest --ci --coverage",
