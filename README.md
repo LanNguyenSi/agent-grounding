@@ -122,7 +122,7 @@ The motivating incident lives in an internal logbook: an agent investigated two 
 
 ## Status
 
-Experimental — functional tools with tests, APIs may evolve. Each package has its own README with install + usage; this top-level README is a routing index.
+Experimental — functional tools with tests, APIs may evolve. Each package has its own README with install + usage; this top-level README is a routing index. Build/contribution notes live in [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Where this fits
 
