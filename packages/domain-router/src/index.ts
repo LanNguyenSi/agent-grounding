@@ -3,6 +3,8 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import { route, impact } from './lib.js';
 
+export * from './lib.js';
+
 const program = new Command();
 
 program
@@ -64,4 +66,6 @@ program
     console.log();
   });
 
-program.parse();
+if (require.main === module) {
+  program.parse();
+}
