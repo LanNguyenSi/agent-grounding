@@ -107,13 +107,13 @@ This server is meant to run on the agent's local machine via stdio. There's no a
 
 ```bash
 # Build
-npm run build --workspace grounding-mcp
+npm run build --workspace @lannguyensi/grounding-mcp
 
 # Run tests (uses temp ledger.db + temp sessions dir, never touches real ones)
-npm test --workspace grounding-mcp
+npm test --workspace @lannguyensi/grounding-mcp
 
 # Run the server in dev mode
-npm run dev --workspace grounding-mcp
+npm run dev --workspace @lannguyensi/grounding-mcp
 ```
 
 When changing tool descriptions, restart Claude Code — MCP tool catalogs are cached at session start.

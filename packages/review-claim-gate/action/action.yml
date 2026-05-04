@@ -79,7 +79,7 @@ runs:
         cd "$ACTION_PATH/../../.."
         npm ci --no-audit --no-fund
         npm run build:deps
-        npm run build -w review-claim-gate
+        npm run build -w @lannguyensi/review-claim-gate
 
     - name: Evaluate merge_approval gate
       id: gate
