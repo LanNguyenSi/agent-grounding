@@ -8,7 +8,7 @@ Active development is on `master`. Only the latest published release of each `@l
 
 Please **do not** open a public GitHub issue for security reports.
 
-Email **raylsreturn@googlemail.com** with:
+Email **contact@lan-nguyen-si.de** with:
 
 - Affected package and version
 - Reproduction steps or proof-of-concept
