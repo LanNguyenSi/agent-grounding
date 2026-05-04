@@ -74,7 +74,7 @@ describe("action.yml — shape", () => {
     );
     expect(installStep).toBeDefined();
     expect(installStep.run).toContain("npm ci");
-    expect(installStep.run).toContain("build -w review-claim-gate");
+    expect(installStep.run).toContain("build -w @lannguyensi/review-claim-gate");
   });
 
   it("the gate step invokes the CLI with --json on the built dist", () => {

@@ -9,13 +9,15 @@ Agents often jump to random logs, processes, or services without first clarifyin
 - Which repos are relevant?
 - Which documents should be read first?
 
+## Install
+
+```bash
+npm install -g @lannguyensi/domain-router
+```
+
 ## Usage
 
 ```bash
-npm install
-npm run build
-npm link
-
 # Route a keyword to its scope
 domain-router route -k clawd-monitor -w /projects
 
@@ -54,7 +56,7 @@ domain-router route -k clawd-monitor -w /projects --json
 ## API
 
 ```typescript
-import { route } from 'domain-router';
+import { route } from '@lannguyensi/domain-router';
 
 const result = route({
   keyword: 'clawd-monitor',

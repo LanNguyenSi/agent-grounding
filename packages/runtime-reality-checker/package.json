@@ -1,7 +1,20 @@
 {
-  "name": "runtime-reality-checker",
-  "version": "1.0.0",
+  "name": "@lannguyensi/runtime-reality-checker",
+  "version": "0.1.0",
   "description": "Checks if actual runtime state matches documentation and assumptions",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LanNguyenSi/agent-grounding.git",
+    "directory": "packages/runtime-reality-checker"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -20,6 +33,5 @@
     "tsx": "^4.7.0",
     "typescript": "^5.3.3",
     "vitest": "^4.1.4"
-  },
-  "private": true
+  }
 }

@@ -39,7 +39,7 @@ All five must be true for `allowed: true`. Missing prereqs surface in
 ## Install
 
 ```bash
-npm install review-claim-gate
+npm install @lannguyensi/review-claim-gate
 ```
 
 ## CLI
@@ -115,7 +115,7 @@ import {
   evaluateMergeApproval,
   isMergeAllowed,
   type ReviewContext,
-} from "review-claim-gate";
+} from "@lannguyensi/review-claim-gate";
 
 const ctx: ReviewContext = {
   tests_pass: true,

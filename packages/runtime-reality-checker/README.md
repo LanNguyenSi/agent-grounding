@@ -2,10 +2,16 @@
 
 Compares actual runtime state against documentation and assumptions. Surfaces drift between what's documented and what's actually running — prevents agents from diagnosing based on stale or incorrect system models.
 
+## Install
+
+```bash
+npm install @lannguyensi/runtime-reality-checker
+```
+
 ## Usage
 
 ```typescript
-import { runRealityCheck, hasCriticalDrift } from "runtime-reality-checker";
+import { runRealityCheck, hasCriticalDrift } from "@lannguyensi/runtime-reality-checker";
 
 const result = runRealityCheck(
   "production-server",
@@ -62,7 +68,7 @@ section).
 `verifyMemoryReference` does that check in-process:
 
 ```typescript
-import { verifyMemoryReference } from "runtime-reality-checker";
+import { verifyMemoryReference } from "@lannguyensi/runtime-reality-checker";
 
 // 1. Does the file still exist?
 const pathResult = verifyMemoryReference({

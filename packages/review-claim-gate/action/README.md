@@ -134,7 +134,7 @@ write checks; `act` with a PAT works.
 ## How the action works
 
 1. `actions/setup-node@v4` — Node 22 with `npm` cache.
-2. `npm ci && build:deps && build -w review-claim-gate` at the monorepo
+2. `npm ci && build:deps && build -w @lannguyensi/review-claim-gate` at the monorepo
    root (relative to the action path). Reuses the exact `merge_approval`
    policy from `review-claim-gate`; the action is a thin transport
    wrapper, never a duplicated policy.

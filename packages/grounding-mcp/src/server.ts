@@ -23,7 +23,7 @@ import {
 import {
   verifyMemoryReference,
   type MemoryReference,
-} from 'runtime-reality-checker';
+} from '@lannguyensi/runtime-reality-checker';
 
 import { saveSession, loadSession } from './session-store.js';
 import { ledgerDb } from './ledger-bridge.js';

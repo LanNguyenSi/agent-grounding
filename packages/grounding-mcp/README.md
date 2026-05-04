@@ -31,10 +31,7 @@ A phase that ends up with `'skipped'` status (because no steps mapped to it for 
 ## Install + register
 
 ```bash
-cd /path/to/agent-grounding
-npm install
-npm run build --workspaces
-npm link --workspace grounding-mcp     # makes `grounding-mcp` resolvable as a bin
+npm install -g @lannguyensi/grounding-mcp
 ```
 
 Then add to your Claude Code `~/.claude/settings.json`:
@@ -44,6 +41,19 @@ Then add to your Claude Code `~/.claude/settings.json`:
   "mcpServers": {
     "grounding": {
       "command": "grounding-mcp"
+    }
+  }
+}
+```
+
+You can also invoke it without a global install via `npx`:
+
+```json
+{
+  "mcpServers": {
+    "grounding": {
+      "command": "npx",
+      "args": ["-y", "@lannguyensi/grounding-mcp"]
     }
   }
 }
@@ -97,13 +107,13 @@ This server is meant to run on the agent's local machine via stdio. There's no a
 
 ```bash
 # Build
-npm run build --workspace grounding-mcp
+npm run build --workspace @lannguyensi/grounding-mcp
 
 # Run tests (uses temp ledger.db + temp sessions dir, never touches real ones)
-npm test --workspace grounding-mcp
+npm test --workspace @lannguyensi/grounding-mcp
 
 # Run the server in dev mode
-npm run dev --workspace grounding-mcp
+npm run dev --workspace @lannguyensi/grounding-mcp
 ```
 
 When changing tool descriptions, restart Claude Code — MCP tool catalogs are cached at session start.
