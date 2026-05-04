@@ -14,9 +14,12 @@ This release is the first to land that workflow on a real tag.
 ### What ships
 
 - The three top-level helpers, unchanged from the in-monorepo shape:
-  - `track(store, hypothesis)`, `verify(claim, context, claimType)`,
-    `validate(checks)`, plus `createStore` and the type re-exports for
-    `Hypothesis`, `EvidenceContext`, `ValidationCheck`, etc.
+  - `track(store, input)`, `verify(claim, evidence, claimType)`,
+    `validate({ session, claim, type?, ledgerSummary? })`, plus
+    `createStore` and `deriveContextFromSession` (escape hatch when a
+    consumer already has a `ClaimContext`-based flow). Type re-exports
+    for `ClaimContext`, `ClaimResult`, `ClaimType`, `GroundingSession`,
+    `Hypothesis`, `HypothesisStore`, `LedgerSummary`.
 - TypeScript types are bundled (`dist/index.d.ts`).
 - Four scoped runtime dependencies, all already published:
   `@lannguyensi/claim-gate@0.2.0`, `@lannguyensi/evidence-ledger@0.2.0`,
