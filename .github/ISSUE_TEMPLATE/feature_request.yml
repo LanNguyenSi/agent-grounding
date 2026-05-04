@@ -1,0 +1,41 @@
+name: Feature request
+description: Propose a new capability, gate, or check
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package
+      options:
+        - claim-gate
+        - debug-playbook-engine
+        - domain-router
+        - evidence-ledger
+        - grounding-mcp
+        - grounding-sdk
+        - grounding-wrapper
+        - hypothesis-tracker
+        - readme-first-resolver
+        - review-claim-gate
+        - runtime-reality-checker
+        - understanding-gate
+        - new package
+        - other / unsure
+    validations:
+      required: true
+  - type: textarea
+    id: usecase
+    attributes:
+      label: Use case
+      description: What problem does this solve? Who feels the pain today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Sketch the API, gate semantics, or workflow change.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
