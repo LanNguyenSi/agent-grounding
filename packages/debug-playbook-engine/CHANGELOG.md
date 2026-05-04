@@ -11,13 +11,17 @@ flag, and wired up the tag-driven `publish-libs.yml` workflow.
 
 ### What ships
 
-CLI + library that guides agents through domain-specific, ordered
-diagnostic sequences. Prevents hypothesis-hopping by gating claims behind
-completed playbook steps.
+A CLI plus a programmatic library that guides agents through
+domain-specific, ordered diagnostic sequences. Prevents hypothesis-hopping
+by gating claims behind completed playbook steps.
 
-- `getPlaybook(domain, problem)`, `initRun(playbook)`, `recordStep(...)`,
-  `canMakeClaim(state, claimType)`: programmatic API.
-- Bin: `debug-playbook` for CLI invocation.
+- Bin: `debug-playbook`. Subcommands `run`, `next`, plus `--json` for
+  scripted callers.
+- Library exports: `getPlaybook`, `initRun`, `getCurrentStep`,
+  `recordStep`, `getRemainingMandatory`. The package entry point only
+  starts the CLI when invoked as the bin (gated by `require.main ===
+  module`); calling `require('@lannguyensi/debug-playbook-engine')`
+  returns the library exports cleanly.
 - Built-in playbooks: `clawd-monitor` (basic connectivity), `github` (API
   connectivity), `generic` (fallback diagnostic sequence).
 

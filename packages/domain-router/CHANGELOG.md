@@ -11,15 +11,17 @@ tag-driven `publish-libs.yml` workflow.
 
 ### What ships
 
-CLI + library that resolves a keyword / problem to the correct repos,
-components, and documentation scope. Prevents agents from jumping to
-random logs or services without first clarifying which system is meant.
+A CLI plus a programmatic library that resolves a keyword / problem to
+the correct repos, components, and documentation scope. Prevents agents
+from jumping to random logs or services without first clarifying which
+system is meant.
 
-- `route({ keyword, workspace, context })`: returns
-  `{ domain, primary_repos, related_components, priority_files,
-  forbidden_initial_jumps, confidence }`.
-- Bin: `domain-router` for CLI invocation with `--json` output for
-  scripted callers.
+- Bin: `domain-router` with subcommands `route` and `impact`, plus
+  `--json` output for scripted callers.
+- Library exports: `route`, `impact`. The package entry point only
+  starts the CLI when invoked as the bin (gated by `require.main ===
+  module`); calling `require('@lannguyensi/domain-router')` returns the
+  library exports cleanly.
 
 ### Install
 

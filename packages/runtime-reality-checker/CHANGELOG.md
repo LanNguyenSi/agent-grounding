@@ -27,3 +27,8 @@ flag, and wired up the tag-driven `publish-libs.yml` workflow.
 `@lannguyensi/grounding-mcp@0.1.0` declares this package as a runtime
 dependency for its `verify_memory_reference` tool. Publishing this first
 unblocks the grounding-mcp release.
+
+### Runtime dependencies
+
+Pure JS: `chalk`, `commander`. No internal cross-deps on unpublished
+packages.

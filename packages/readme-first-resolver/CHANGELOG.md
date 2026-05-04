@@ -11,15 +11,16 @@ flag, and wired up the tag-driven `publish-libs.yml` workflow.
 
 ### What ships
 
-CLI + library that forces agents to read primary documentation before any
-analysis, and builds a system mental model from it. Returns
-`ready_for_analysis: true` only when the configured `must_read` files have
-been processed.
+A CLI plus a programmatic library that forces agents to read primary
+documentation before any analysis and builds a system mental model from
+it. Returns `ready_for_analysis: true` only when the configured
+`must_read` files have been processed.
 
-- `resolve({ repo_path, must_read })`: returns
-  `{ system_summary, unknowns, sources_read, sources_missing,
-  ready_for_analysis }`.
-- Bin: `readme-first` for CLI invocation with `--json` output.
+- Bin: `readme-first` with subcommand `resolve` and `--json` output.
+- Library exports: `resolve`. The package entry point only starts the
+  CLI when invoked as the bin (gated by `require.main === module`);
+  calling `require('@lannguyensi/readme-first-resolver')` returns the
+  library exports cleanly.
 
 ### Install
 
