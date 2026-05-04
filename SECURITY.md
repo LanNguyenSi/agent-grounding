@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-Active development is on `master`. Only the latest release of each `@lannguyensi/<package>` on npm is supported.
+Active development is on `master`. Only the latest published release of each `@lannguyensi/*` package on npm is supported.
 
 ## Reporting a Vulnerability
 
