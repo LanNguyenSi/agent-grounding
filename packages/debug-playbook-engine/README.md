@@ -10,13 +10,15 @@ Agents jump between hypotheses without systematic verification:
 - Is the dependency reachable?
 - Does the architecture assumption even hold?
 
+## Install
+
+```bash
+npm install -g @lannguyensi/debug-playbook-engine
+```
+
 ## Usage
 
 ```bash
-npm install
-npm run build
-npm link
-
 # Start a diagnostic playbook
 debug-playbook run -d clawd-monitor -p "agent not visible in monitor"
 
@@ -60,7 +62,7 @@ debug-playbook run -d clawd-monitor -p "agent not visible" --json
 ## API
 
 ```typescript
-import { getPlaybook, initRun, recordStep, canMakeClaim } from 'debug-playbook-engine';
+import { getPlaybook, initRun, recordStep, canMakeClaim } from '@lannguyensi/debug-playbook-engine';
 
 const playbook = getPlaybook('clawd-monitor', 'agent not visible');
 const state = initRun(playbook);

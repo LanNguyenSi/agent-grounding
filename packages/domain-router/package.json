@@ -1,7 +1,20 @@
 {
-  "name": "domain-router",
-  "version": "1.0.0",
+  "name": "@lannguyensi/domain-router",
+  "version": "0.1.0",
   "description": "Routes a keyword/problem to the correct repos, components and docs scope",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LanNguyenSi/agent-grounding.git",
+    "directory": "packages/domain-router"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "main": "dist/index.js",
   "bin": {
     "domain-router": "./dist/index.js"
@@ -27,6 +40,5 @@
     "jest": "^30.3.0",
     "ts-jest": "^29.4.9",
     "typescript": "^5.0.0"
-  },
-  "private": true
+  }
 }

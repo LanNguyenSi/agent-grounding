@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { initSession, advancePhase } from '@lannguyensi/grounding-wrapper';
 import { addEntry, getSummary } from '@lannguyensi/evidence-ledger';
 import { evaluateClaim } from '@lannguyensi/claim-gate';
-import { verifyMemoryReference } from 'runtime-reality-checker';
+import { verifyMemoryReference } from '@lannguyensi/runtime-reality-checker';
 
 import { saveSession, loadSession, sessionExists } from '../src/session-store.js';
 import { ledgerDb, resetLedgerDb } from '../src/ledger-bridge.js';

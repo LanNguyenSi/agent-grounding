@@ -1,7 +1,20 @@
 {
-  "name": "readme-first-resolver",
-  "version": "1.0.0",
+  "name": "@lannguyensi/readme-first-resolver",
+  "version": "0.1.0",
   "description": "Forces agents to read primary docs before any analysis",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LanNguyenSi/agent-grounding.git",
+    "directory": "packages/readme-first-resolver"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "main": "dist/index.js",
   "bin": {
     "readme-first": "./dist/index.js"
@@ -27,6 +40,5 @@
     "jest": "^30.3.0",
     "ts-jest": "^29.4.9",
     "typescript": "^5.0.0"
-  },
-  "private": true
+  }
 }

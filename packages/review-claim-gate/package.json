@@ -1,7 +1,20 @@
 {
-  "name": "review-claim-gate",
-  "version": "1.0.0",
+  "name": "@lannguyensi/review-claim-gate",
+  "version": "0.1.0",
   "description": "Claim-gate consumer for PR-review subagents, enforces a merge_approval policy backed by evidence-ledger evidence",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LanNguyenSi/agent-grounding.git",
+    "directory": "packages/review-claim-gate"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "type": "module",
   "bin": {
     "review-claim-gate": "./dist/cli.js"
@@ -25,6 +38,5 @@
     "typescript": "^5.3.3",
     "vitest": "^4.1.4",
     "yaml": "^2.6.1"
-  },
-  "private": true
+  }
 }

@@ -1,7 +1,20 @@
 {
-  "name": "grounding-sdk",
-  "version": "1.0.0",
+  "name": "@lannguyensi/grounding-sdk",
+  "version": "0.1.0",
   "description": "Ergonomic facade over agent-grounding: verify claims, track hypotheses, validate sessions",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LanNguyenSi/agent-grounding.git",
+    "directory": "packages/grounding-sdk"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -21,6 +34,5 @@
     "@types/node": "^20.11.5",
     "typescript": "^5.3.3",
     "vitest": "^4.1.4"
-  },
-  "private": true
+  }
 }

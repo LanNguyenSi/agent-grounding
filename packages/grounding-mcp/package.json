@@ -1,7 +1,20 @@
 {
-  "name": "grounding-mcp",
+  "name": "@lannguyensi/grounding-mcp",
   "version": "0.1.0",
   "description": "MCP server exposing the agent-grounding stack (grounding-wrapper, evidence-ledger, claim-gate) to long-running Claude Code sessions",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LanNguyenSi/agent-grounding.git",
+    "directory": "packages/grounding-mcp"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "type": "module",
   "bin": {
     "grounding-mcp": "./dist/server.js"
@@ -22,7 +35,7 @@
     "@lannguyensi/claim-gate": "0.2.0",
     "@lannguyensi/evidence-ledger": "0.2.0",
     "@lannguyensi/grounding-wrapper": "0.2.0",
-    "runtime-reality-checker": "1.0.0",
+    "@lannguyensi/runtime-reality-checker": "0.1.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -30,6 +43,5 @@
     "tsx": "^4.7.0",
     "typescript": "^5.3.3",
     "vitest": "^4.1.4"
-  },
-  "private": true
+  }
 }

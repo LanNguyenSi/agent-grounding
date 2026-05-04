@@ -31,10 +31,7 @@ A phase that ends up with `'skipped'` status (because no steps mapped to it for 
 ## Install + register
 
 ```bash
-cd /path/to/agent-grounding
-npm install
-npm run build --workspaces
-npm link --workspace grounding-mcp     # makes `grounding-mcp` resolvable as a bin
+npm install -g @lannguyensi/grounding-mcp
 ```
 
 Then add to your Claude Code `~/.claude/settings.json`:
@@ -44,6 +41,19 @@ Then add to your Claude Code `~/.claude/settings.json`:
   "mcpServers": {
     "grounding": {
       "command": "grounding-mcp"
+    }
+  }
+}
+```
+
+You can also invoke it without a global install via `npx`:
+
+```json
+{
+  "mcpServers": {
+    "grounding": {
+      "command": "npx",
+      "args": ["-y", "@lannguyensi/grounding-mcp"]
     }
   }
 }

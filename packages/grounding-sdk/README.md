@@ -11,7 +11,7 @@ library call the MCP server would make.
 ## Install
 
 ```bash
-npm install grounding-sdk
+npm install @lannguyensi/grounding-sdk
 ```
 
 ## Quickstart
@@ -22,7 +22,7 @@ import {
   track,
   verify,
   validate,
-} from "grounding-sdk";
+} from "@lannguyensi/grounding-sdk";
 import { initSession, advancePhase } from "@lannguyensi/grounding-wrapper";
 import { getDb, addEntry, getSummary } from "@lannguyensi/evidence-ledger";
 

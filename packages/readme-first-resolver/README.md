@@ -10,13 +10,15 @@ Agents often start with logs, processes, or guesses instead of:
 - Setup instructions
 - `.env.example`
 
+## Install
+
+```bash
+npm install -g @lannguyensi/readme-first-resolver
+```
+
 ## Usage
 
 ```bash
-npm install
-npm run build
-npm link
-
 # Resolve docs for a repo
 readme-first resolve -p /projects/clawd-monitor
 
@@ -50,7 +52,7 @@ readme-first resolve -p /projects/clawd-monitor --json
 ## API
 
 ```typescript
-import { resolve } from 'readme-first-resolver';
+import { resolve } from '@lannguyensi/readme-first-resolver';
 
 const result = resolve({
   repo_path: '/projects/clawd-monitor',

@@ -1,7 +1,20 @@
 {
-  "name": "debug-playbook-engine",
-  "version": "1.0.0",
+  "name": "@lannguyensi/debug-playbook-engine",
+  "version": "0.1.0",
   "description": "Guides agents through domain-specific, ordered diagnostic sequences",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LanNguyenSi/agent-grounding.git",
+    "directory": "packages/debug-playbook-engine"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "main": "dist/index.js",
   "bin": {
     "debug-playbook": "./dist/index.js"
@@ -26,6 +39,5 @@
     "jest": "^30.3.0",
     "ts-jest": "^29.4.9",
     "typescript": "^5.0.0"
-  },
-  "private": true
+  }
 }

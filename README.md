@@ -57,6 +57,32 @@ $LEDGER show --session readme-demo
 
 Same data via `ledger export --session readme-demo` produces structured JSON for hand-off to another agent or a human. Same data via `grounding-mcp`'s `ledger_summary` verb is what `harness explain --trace` and `harness audit` consume to replay policy decisions; see [the harness integration](https://github.com/LanNguyenSi/harness) for the wiring.
 
+## Install from npm
+
+Every package is published under the `@lannguyensi/` scope and installable directly:
+
+```bash
+# Library APIs
+npm install @lannguyensi/evidence-ledger
+npm install @lannguyensi/claim-gate
+npm install @lannguyensi/hypothesis-tracker
+npm install @lannguyensi/runtime-reality-checker
+npm install @lannguyensi/grounding-wrapper
+npm install @lannguyensi/grounding-sdk
+npm install @lannguyensi/review-claim-gate
+
+# CLIs (install globally to expose the bin)
+npm install -g @lannguyensi/debug-playbook-engine    # → debug-playbook
+npm install -g @lannguyensi/domain-router            # → domain-router
+npm install -g @lannguyensi/readme-first-resolver    # → readme-first
+npm install -g @lannguyensi/understanding-gate       # → understanding-gate
+
+# MCP server (install globally or invoke via npx)
+npm install -g @lannguyensi/grounding-mcp            # → grounding-mcp
+```
+
+The `git clone` workflow above is for hacking on the monorepo itself; downstream consumers install only what they need from npm.
+
 ## Next steps
 
 | If you want to... | Read |
@@ -79,7 +105,7 @@ Same data via `ledger export --session readme-demo` produces structured JSON for
 ### Pre-execution
 | Package | Description |
 |---------|-------------|
-| [understanding-gate](packages/understanding-gate) | Asks agents to produce an Understanding Report before acting. Phase 1 shipped (parser, persistence, claude-code Stop hook + opencode plugin, hypothesis-tracker bridge); published as [`@lannguyensi/understanding-gate@0.1.0`](https://www.npmjs.com/package/@lannguyensi/understanding-gate) |
+| [understanding-gate](packages/understanding-gate) | Asks agents to produce an Understanding Report before acting. Phase 1 shipped (parser, persistence, claude-code Stop hook + opencode plugin, hypothesis-tracker bridge); published as [`@lannguyensi/understanding-gate`](https://www.npmjs.com/package/@lannguyensi/understanding-gate) |
 
 ### Verification
 | Package | Description |

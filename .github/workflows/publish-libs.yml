@@ -1,0 +1,79 @@
+name: Publish library to npm
+
+# Publishes one workspace package per push of a tag matching `<pkg>-v<version>`.
+# Existing packages with their own dedicated workflow keep that one
+# (`publish-npm.yml` handles the four legacy libs that move in lockstep,
+# `publish-understanding-gate.yml` handles understanding-gate). The packages
+# here move independently — each gets its own tag.
+
+on:
+  push:
+    tags:
+      - "grounding-sdk-v*"
+      - "grounding-mcp-v*"
+      - "debug-playbook-engine-v*"
+      - "domain-router-v*"
+      - "readme-first-resolver-v*"
+      - "review-claim-gate-v*"
+      - "runtime-reality-checker-v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse tag
+        id: parse
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          # Strip trailing -v<semver>(-<prerelease>)? to recover the package name.
+          pkg=$(echo "$tag" | sed -E 's/-v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$//')
+          version="${tag#${pkg}-v}"
+          echo "pkg=$pkg" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Publishing @lannguyensi/${pkg}@${version}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Preflight, verify NPM_TOKEN secret is set
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NPM_TOKEN}" ]; then
+            echo "::error::NPM_TOKEN secret is not configured. Add it under Settings -> Secrets and variables -> Actions before tagging a release." >&2
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify package version matches tag
+        run: |
+          pkg_version=$(node -p "require('./packages/${{ steps.parse.outputs.pkg }}/package.json').version")
+          if [ "$pkg_version" != "${{ steps.parse.outputs.version }}" ]; then
+            echo "::error::Tag version (${{ steps.parse.outputs.version }}) does not match packages/${{ steps.parse.outputs.pkg }}/package.json ($pkg_version)" >&2
+            exit 1
+          fi
+
+      - name: Build (topo-ordered libs)
+        run: npm run build:deps
+
+      - name: Build the package being published
+        run: npm run build --workspace=@lannguyensi/${{ steps.parse.outputs.pkg }}
+
+      - name: Test the package being published
+        run: npm test --workspace=@lannguyensi/${{ steps.parse.outputs.pkg }}
+
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --workspace=@lannguyensi/${{ steps.parse.outputs.pkg }} --access public --provenance
