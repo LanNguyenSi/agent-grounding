@@ -10,7 +10,7 @@ const program = new Command();
 program
   .name('domain-router')
   .description('Route a keyword/problem to the correct repos, components and docs')
-  .version('1.0.0');
+  .version('0.1.0');
 
 program
   .command('route')
