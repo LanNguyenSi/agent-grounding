@@ -67,13 +67,33 @@ import { getPlaybook, initRun, recordStep, canMakeClaim } from '@lannguyensi/deb
 const playbook = getPlaybook('clawd-monitor', 'agent not visible');
 const state = initRun(playbook);
 
-// Record step results as you work through them
+// Record step results as you work through them. `recordStep` enforces
+// the playbook's mandatory order, so you cannot jump past pending
+// mandatory steps.
 recordStep(state, 'check-repo-model', 'done', 'README confirms Docker deployment');
 recordStep(state, 'check-agent-process', 'done', 'process not running');
 
-// Gate claims behind completed steps
-const { allowed, reason } = canMakeClaim(state, 'root-cause');
+// `canMakeClaim` gates a claim behind the steps it requires.
+// A `config` claim needs the `check-config` step, which we have not run
+// yet, so the gate correctly blocks here.
+const blocked = canMakeClaim(state, 'config');
+// blocked.allowed === false
+// blocked.reason === ['Required step not completed: check-config']
+
+// Walk the mandatory order to reach `check-config`, then the gate opens.
+recordStep(state, 'check-start-mode', 'done', 'manual: clawd run');
+recordStep(state, 'check-config', 'done', 'CLAWD_TOKEN sourced from .env');
+const allowed = canMakeClaim(state, 'config');
+// allowed.allowed === true
 ```
+
+Caveat: `canMakeClaim`'s requirements for `root-cause` and
+`architecture` mix step IDs from different built-in playbooks
+(`check-repo-model` lives in `clawd-monitor` / `github`, while
+`read-docs` and `check-process` live in `generic`), so no single
+built-in playbook can satisfy either claim type on its own. To gate
+those claims today, extend a domain playbook with the missing step
+IDs, or compose facts from multiple playbook runs before the call.
 
 ## Part of the grounding stack
 
