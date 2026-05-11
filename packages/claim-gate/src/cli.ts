@@ -5,7 +5,7 @@ import { evaluateClaim, detectClaimType, POLICIES } from "./lib.js";
 import type { ClaimContext, ClaimType } from "./lib.js";
 
 const program = new Command();
-program.name("claim-gate").description("Policy engine for agent diagnoses").version("1.0.0");
+program.name("claim-gate").description("Policy engine for agent diagnoses").version("0.2.0");
 
 program
   .command("check <claim>")

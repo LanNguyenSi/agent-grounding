@@ -22,7 +22,7 @@ const program = new Command();
 program
   .name('grounding-wrapper')
   .description('Orchestrate the full lan-tools grounding stack — enforce correct agent entry path')
-  .version('1.0.0');
+  .version('0.2.0');
 
 program
   .command('start')

@@ -10,7 +10,7 @@ const program = new Command();
 program
   .name('readme-first')
   .description('Read primary docs before analysis — build a system mental model')
-  .version('1.0.0');
+  .version('0.1.0');
 
 program
   .command('resolve')
