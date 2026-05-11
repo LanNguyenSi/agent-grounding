@@ -87,11 +87,13 @@ const allowed = canMakeClaim(state, 'config');
 // allowed.allowed === true
 ```
 
-The `root-cause` and `architecture` claim types require step IDs
-(`read-docs`, `check-process`) that only exist in the `generic`
-playbook. If you need to gate a `root-cause` claim under a different
-playbook, either run `generic` for those cross-cutting checks or add
-the missing step IDs to your domain playbook.
+Caveat: `canMakeClaim`'s requirements for `root-cause` and
+`architecture` mix step IDs from different built-in playbooks
+(`check-repo-model` lives in `clawd-monitor` / `github`, while
+`read-docs` and `check-process` live in `generic`), so no single
+built-in playbook can satisfy either claim type on its own. To gate
+those claims today, extend a domain playbook with the missing step
+IDs, or compose facts from multiple playbook runs before the call.
 
 ## Part of the grounding stack
 
