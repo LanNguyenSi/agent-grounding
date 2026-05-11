@@ -39,13 +39,19 @@ This is the front-of-pipeline counterpart to `claim-gate` (no claims without evi
 
 ## Quickstart
 
-### Claude Code (v0)
+### Claude Code
 
 ```bash
 npx @lannguyensi/understanding-gate init --target claude-code
 ```
 
-Writes a `UserPromptSubmit` hook entry into `.claude/settings.json` (project scope) or `~/.claude/settings.json` (`--scope user`). The hook only fires on task-like prompts (keyword classifier), so non-task questions are unaffected.
+Writes three hook entries into `.claude/settings.json` (project scope) or `~/.claude/settings.json` (`--scope user`):
+
+- `UserPromptSubmit`, the Layer-1 prompt-template hook (Phase 0).
+- `Stop`, which parses the agent's final message and persists the report (Phase 1).
+- `PreToolUse`, the Layer-2 enforcement hook that blocks write tools until the latest report is approved (Phase 2).
+
+All three are installed in one shot; you do not need to wire them up by hand. The `UserPromptSubmit` hook only fires on task-like prompts (keyword classifier), so non-task questions are unaffected. To remove the entries again, run `understanding-gate uninstall --target claude-code` (respects the same `--scope`).
 
 ### opencode (v0.5)
 
@@ -53,7 +59,13 @@ Writes a `UserPromptSubmit` hook entry into `.claude/settings.json` (project sco
 npx @lannguyensi/understanding-gate init --target opencode
 ```
 
-opencode has no per-prompt hook before model inference, so v0.5 falls back to a static rules file (`.opencode/rules/understanding-gate.md`) plus an explicit custom command (`.opencode/command/grill.md`). The agent always sees the fast-confirm rule; the user invokes `/grill` for the deeper challenge.
+opencode has no per-prompt hook before model inference, so v0.5 installs three files:
+
+- `.opencode/rules/understanding-gate.md`, the static fast-confirm rule the agent always sees.
+- `.opencode/command/grill.md`, the explicit `/grill` command for the deeper challenge.
+- `.opencode/plugins/understanding-gate-persist-report.ts`, a `message.updated` plugin shim that parses the agent's report and writes it to `.understanding-gate/reports/`. Without this shim Phases 1 and 2 degrade silently (no persisted report means nothing to approve, so the `PreToolUse`/`tool.execute.before` block has no `approved` marker to look at).
+
+The agent always sees the fast-confirm rule; the user invokes `/grill` for the deeper challenge. To remove the three files again, run `understanding-gate uninstall --target opencode`.
 
 ### Non-interactive sessions (`claude -p`)
 
@@ -79,7 +91,9 @@ understanding-gate approve --report-id <taskId|filename|path>
 understanding-gate revoke
 
 # Inspect:
-understanding-gate status
+understanding-gate status              # current approval state in cwd
+understanding-gate report list         # all persisted reports
+understanding-gate report show <id>    # one report (taskId, filename, or path)
 ```
 
 The CLI flips the persisted report's `approvalStatus` field, which is the source of truth the `PreToolUse` hook reads. Each approve / revoke also drops a JSONL line in `.understanding-gate/audit.log` (block, approve, revoke, force_bypass).
@@ -98,11 +112,13 @@ claude
 
 `FORCE` without a `FORCE_REASON` (or with one shorter than 10 chars) still blocks; the bypass is deliberately friction-bearing.
 
-## What v0 still does NOT do
+## Not implemented yet
 
-- Call an LLM. The task-like classifier is a deterministic keyword regex.
+Phases -1, 0, 0.5, 1, 2 are live. The following items are deliberately out of scope for the current release; some are scheduled for later phases, some are deferred indefinitely:
+
+- Call an LLM for prompt classification. The task-like classifier is a deterministic keyword regex. Determinism plus zero per-prompt latency.
 - Sync approval state to `agent-tasks`. Phase 3 promotes the local marker to a first-class lifecycle state.
-- Auto-escalate to `grill_me` based on risk. Manual escalation only in v0.
+- Auto-escalate to `grill_me` based on risk heuristics. Manual escalation only for now.
 - Time-based expiry of approvals. An approved report stays approved until you revoke.
 
 ## Roadmap
