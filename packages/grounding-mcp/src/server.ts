@@ -26,7 +26,7 @@ import {
 } from '@lannguyensi/runtime-reality-checker';
 
 import { saveSession, loadSession } from './session-store.js';
-import { ledgerDb } from './ledger-bridge.js';
+import { ledgerDb, ledgerStatus } from './ledger-bridge.js';
 import { deriveContext } from './derive-context.js';
 
 const server = new McpServer({
@@ -250,6 +250,13 @@ server.tool(
     const result = verifyMemoryReference(ref);
     return jsonResponse(result);
   },
+);
+
+server.tool(
+  'ledger_status',
+  'Return ledger reachability + lightweight stats (entry count, db path, last-write timestamp). No-arg liveness probe — designed for harness MCP health checks. Does not require a session.',
+  {},
+  async () => jsonResponse(ledgerStatus()),
 );
 
 // ── Start ────────────────────────────────────────────────────────────────
