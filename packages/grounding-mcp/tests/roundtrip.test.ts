@@ -22,7 +22,7 @@ import { evaluateClaim } from '@lannguyensi/claim-gate';
 import { verifyMemoryReference } from '@lannguyensi/runtime-reality-checker';
 
 import { saveSession, loadSession, sessionExists } from '../src/session-store.js';
-import { ledgerDb, resetLedgerDb } from '../src/ledger-bridge.js';
+import { ledgerDb, ledgerStatus, resetLedgerDb } from '../src/ledger-bridge.js';
 import { deriveContext } from '../src/derive-context.js';
 
 let tmpRoot: string;
@@ -149,6 +149,36 @@ describe('grounding-mcp round trip', () => {
     });
     expect(miss.exists).toBe(false);
     expect(miss.foundIn).toEqual([]);
+  });
+
+  it('ledger_status returns ok with counts when the ledger is reachable', () => {
+    const a = initSession({ keyword: 'health-probe', problem: 'p' });
+    addEntry(ledgerDb(), { type: 'fact', content: 'one', session: a.id });
+    addEntry(ledgerDb(), { type: 'fact', content: 'two', session: a.id });
+
+    const result = ledgerStatus();
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.entryCount).toBe(2);
+    expect(result.dbPath).toBe(process.env.EVIDENCE_LEDGER_DB);
+    expect(typeof result.lastWriteAt).toBe('string');
+  });
+
+  it('ledger_status returns a structured error when the db is unreachable', () => {
+    // Point the loader at a non-sqlite file so better-sqlite3 opens it
+    // but fails on the first prepare/query. The handler must not propagate
+    // — it returns a structured error so harness's MCP probe gets a usable
+    // response.
+    resetLedgerDb();
+    const { writeFileSync } = require('node:fs') as typeof import('node:fs');
+    const corruptPath = join(tmpRoot, 'corrupt.db');
+    writeFileSync(corruptPath, 'this is not a sqlite database');
+    process.env.EVIDENCE_LEDGER_DB = corruptPath;
+
+    const result = ledgerStatus();
+    expect(result.status).toBe('error');
+    if (result.status !== 'error') return;
+    expect(result.message.length).toBeGreaterThan(0);
   });
 
   it('round-trips a complete advance chain to "complete" phase', () => {

@@ -18,3 +18,39 @@ export function ledgerDb(): Database.Database {
 export function resetLedgerDb(): void {
   resetDb();
 }
+
+export type LedgerStatus =
+  | {
+      status: 'ok';
+      dbPath: string;
+      entryCount: number;
+      lastWriteAt: string | null;
+    }
+  | { status: 'error'; message: string };
+
+// No-arg liveness probe for the evidence ledger. Designed for harness's
+// MCP health probe (tools/call with empty arguments). Returns a structured
+// shape rather than throwing so an unreachable ledger does not crash the
+// server.
+export function ledgerStatus(): LedgerStatus {
+  try {
+    const db = ledgerDb();
+    const countRow = db
+      .prepare('SELECT COUNT(*) AS c FROM entries')
+      .get() as { c: number };
+    const lastRow = db
+      .prepare('SELECT MAX(created_at) AS t FROM entries')
+      .get() as { t: string | null };
+    return {
+      status: 'ok',
+      dbPath: process.env.EVIDENCE_LEDGER_DB ?? '<default>',
+      entryCount: countRow.c,
+      lastWriteAt: lastRow.t,
+    };
+  } catch (err) {
+    return {
+      status: 'error',
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
