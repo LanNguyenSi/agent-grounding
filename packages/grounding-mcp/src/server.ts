@@ -29,9 +29,14 @@ import { saveSession, loadSession } from './session-store.js';
 import { ledgerDb, ledgerStatus } from './ledger-bridge.js';
 import { deriveContext } from './derive-context.js';
 
+// Single source of truth for the version string emitted by both the
+// MCP `name+version` handshake and the `--version` CLI short-circuit.
+// Bump alongside package.json on release.
+const PACKAGE_VERSION = '0.1.0';
+
 const server = new McpServer({
   name: 'grounding-mcp',
-  version: '0.1.0',
+  version: PACKAGE_VERSION,
 });
 
 // Wrap a JSON payload as an MCP text-content response. The MCP SDK requires
@@ -262,6 +267,15 @@ server.tool(
 // ── Start ────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  // CLI short-circuit: print the version and exit before opening stdio
+  // for the MCP transport. Tooling that probes installed binaries with
+  // `<bin> --version` (e.g. `harness doctor`'s tools.mcp min_version
+  // check) otherwise hangs on stdin while the transport waits for an
+  // initialize request that never arrives.
+  if (process.argv.includes('--version') || process.argv.includes('-v')) {
+    process.stdout.write(`${PACKAGE_VERSION}\n`);
+    return;
+  }
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
