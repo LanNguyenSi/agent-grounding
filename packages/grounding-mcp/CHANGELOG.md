@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `grounding-mcp --version` (alias `-v`): fast-exit CLI short-circuit
+  that prints the package version and returns 0 without opening the
+  stdio MCP transport. Tooling that probes installed MCP binaries (e.g.
+  `harness doctor`'s `tools.mcp[]` `min_version` check) otherwise hangs
+  on stdin waiting for the initialize request that never arrives.
+
 ## 0.1.0, 2026-05-04
 
 ### First publish under the @lannguyensi scope
