@@ -99,14 +99,17 @@ describe("handleStop: marker gating", () => {
     );
     expect(out.kind).toBe("no_report");
     expect(deps.parseReport).not.toHaveBeenCalled();
+    expect(deps.writeParseErrorLog).not.toHaveBeenCalled();
   });
 
-  it("returns no_report on empty text", () => {
+  it("returns no_report on empty text without writing any log", () => {
+    const deps = makeDeps();
     const out = handleStop(
       makeInput({ lastAssistantText: "" }),
-      makeDeps(),
+      deps,
     );
     expect(out.kind).toBe("no_report");
+    expect(deps.writeParseErrorLog).not.toHaveBeenCalled();
   });
 
   it("matches the marker case-insensitively when on a heading line", () => {
@@ -254,5 +257,92 @@ describe("handleStop: parse_error path", () => {
     expect(out.kind).toBe("parse_error");
     if (out.kind !== "parse_error") return;
     expect(out.logPath).toBe("");
+  });
+});
+
+describe("handleStop: fast_confirm-attempt breadcrumb", () => {
+  const fastConfirmText = [
+    "- I understood the task as: ship the gate",
+    "- I will do: write the patch",
+    "- I will not touch: unrelated tests",
+    "- I will verify by: running vitest",
+    "- Assumptions: env vars are set",
+  ].join("\n");
+
+  it("writes a no_marker_fast_confirm_attempt log when bullets match without the heading", () => {
+    const deps = makeDeps();
+    const out = handleStop(
+      makeInput({ lastAssistantText: fastConfirmText }),
+      deps,
+    );
+    expect(out.kind).toBe("no_report");
+    if (out.kind !== "no_report") return;
+    expect(out.logPath).toBe("/tmp/parse-errors/log.log");
+    expect(deps.parseReport).not.toHaveBeenCalled();
+    expect(deps.saveReport).not.toHaveBeenCalled();
+    expect(deps.writeParseErrorLog).toHaveBeenCalledTimes(1);
+    const [dir, payload] = (
+      deps.writeParseErrorLog as ReturnType<typeof vi.fn>
+    ).mock.calls[0];
+    expect(dir).toBe("/tmp/work/.understanding-gate/parse-errors");
+    expect(payload).toContain("no_marker_fast_confirm_attempt");
+    expect(payload).toContain("fast_confirm");
+    expect(payload).toContain("--- raw ---");
+    expect(payload).toContain("I understood the task as");
+  });
+
+  it("does NOT log when only one or two bullets happen to match (below threshold)", () => {
+    const deps = makeDeps();
+    const out = handleStop(
+      makeInput({
+        lastAssistantText:
+          "Sure, I will do that and Assumptions seem fine here.",
+      }),
+      deps,
+    );
+    expect(out.kind).toBe("no_report");
+    expect(deps.writeParseErrorLog).not.toHaveBeenCalled();
+  });
+
+  it("forwards UNDERSTANDING_GATE_MODE into the breadcrumb payload", () => {
+    const deps = makeDeps();
+    handleStop(
+      makeInput({
+        lastAssistantText: fastConfirmText,
+        env: { UNDERSTANDING_GATE_MODE: "grill_me" },
+      }),
+      deps,
+    );
+    const [, payload] = (
+      deps.writeParseErrorLog as ReturnType<typeof vi.fn>
+    ).mock.calls[0];
+    expect(payload).toContain('"mode": "grill_me"');
+  });
+
+  it("degrades to plain no_report when the breadcrumb log writer throws", () => {
+    const deps = makeDeps({
+      writeParseErrorLog: vi.fn(() => {
+        throw new Error("disk full");
+      }),
+    });
+    const out = handleStop(
+      makeInput({ lastAssistantText: fastConfirmText }),
+      deps,
+    );
+    expect(out.kind).toBe("no_report");
+    if (out.kind !== "no_report") return;
+    expect(out.logPath).toBeUndefined();
+  });
+
+  it("does NOT log when the Understanding Report marker matches (save path takes over)", () => {
+    const deps = makeDeps();
+    const out = handleStop(
+      makeInput({
+        lastAssistantText: `# Understanding Report\n\n${fastConfirmText}`,
+      }),
+      deps,
+    );
+    expect(out.kind).toBe("saved");
+    expect(deps.writeParseErrorLog).not.toHaveBeenCalled();
   });
 });

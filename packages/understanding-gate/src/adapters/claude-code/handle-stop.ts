@@ -34,6 +34,33 @@ export const REPORT_MARKER_RE = /^\s*#+\s*understanding\s+report\b/im;
 export const PARSE_ERRORS_SUBDIR = "parse-errors";
 export const SYNC_ERRORS_SUBDIR = "sync-errors";
 
+// fast_confirm mode produces five bullet items with no "Understanding
+// Report" heading, so REPORT_MARKER_RE never matches and the harvest
+// path silently exits — leaving operators staring at an empty reports/
+// dir with no breadcrumb to debug from. Detect attempts by counting the
+// five distinct bullet prefixes from src/prompts/fast-confirm.ts; a
+// threshold of three avoids matching a casual "I will do X." reply that
+// only happens to share one prefix.
+const FAST_CONFIRM_BULLETS: ReadonlyArray<RegExp> = [
+  /^\s*[-*+]\s*i\s+understood\s+the\s+task\s+as\b/im,
+  /^\s*[-*+]\s*i\s+will\s+do\b/im,
+  /^\s*[-*+]\s*i\s+will\s+not\s+touch\b/im,
+  /^\s*[-*+]\s*i\s+will\s+verify\s+by\b/im,
+  /^\s*[-*+]\s*assumptions\b/im,
+];
+const FAST_CONFIRM_MIN_HITS = 3;
+
+export function looksLikeFastConfirmAttempt(text: string): boolean {
+  let hits = 0;
+  for (const re of FAST_CONFIRM_BULLETS) {
+    if (re.test(text)) {
+      hits += 1;
+      if (hits >= FAST_CONFIRM_MIN_HITS) return true;
+    }
+  }
+  return false;
+}
+
 export interface StopHookDeps {
   parseReport: (markdown: string, defaults?: ParseDefaults) => ParseResult;
   saveReport: (report: UnderstandingReport, opts?: SaveOptions) => SaveResult;
@@ -68,7 +95,7 @@ export interface StopHookInput {
 
 export type StopHookOutcome =
   | { kind: "disabled" }
-  | { kind: "no_report" }
+  | { kind: "no_report"; logPath?: string }
   | {
       kind: "saved";
       path: string;
@@ -76,6 +103,8 @@ export type StopHookOutcome =
       report: UnderstandingReport;
     }
   | { kind: "parse_error"; logPath: string; error: ParseError };
+
+const PREVIEW_CHARS = 200;
 
 export function handleStop(
   input: StopHookInput,
@@ -87,7 +116,44 @@ export function handleStop(
 
   const text = input.lastAssistantText;
   if (typeof text !== "string" || !REPORT_MARKER_RE.test(text)) {
-    return { kind: "no_report" };
+    // Cheap escape hatch for the common case (any non-report turn) before
+    // the more expensive bullet-pattern probe.
+    if (typeof text !== "string" || text.length === 0) {
+      return { kind: "no_report" };
+    }
+    if (!looksLikeFastConfirmAttempt(text)) {
+      return { kind: "no_report" };
+    }
+    // The agent emitted what looks like a fast_confirm response but
+    // without the heading the marker regex requires. The harvest path
+    // can't persist it, but the operator deserves a breadcrumb instead
+    // of an empty reports/ dir.
+    const stamp = deps.now().toISOString().replace(/[:.]/g, "-");
+    const payload = `${JSON.stringify(
+      {
+        reason: "no_marker_fast_confirm_attempt",
+        mode: normaliseMode(input.env.UNDERSTANDING_GATE_MODE) ?? "fast_confirm",
+        textLength: text.length,
+        preview: text.slice(0, PREVIEW_CHARS),
+        stamp,
+        sessionId: input.sessionId,
+        hint:
+          "fast_confirm bullets matched but the '# Understanding Report' " +
+          "heading required by handle-stop.ts is missing — the prompt " +
+          "snippet uses '# Fast Confirm Mode'. Either switch to grill_me " +
+          "(emits the required heading + sections) or accept that " +
+          "fast_confirm relies on the .pending-approval marker alone.",
+      },
+      null,
+      2,
+    )}\n\n--- raw ---\n${text}\n`;
+    let logPath: string | undefined;
+    try {
+      logPath = deps.writeParseErrorLog(input.parseErrorDir, payload);
+    } catch {
+      // even the log write failed; degrade to silent no_report.
+    }
+    return logPath ? { kind: "no_report", logPath } : { kind: "no_report" };
   }
 
   // Adapter-supplied defaults for fields the v0 prompts don't ask the
