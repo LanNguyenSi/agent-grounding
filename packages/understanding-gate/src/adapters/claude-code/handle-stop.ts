@@ -143,7 +143,7 @@ export function handleStop(
         sessionId: input.sessionId,
         hint:
           "fast_confirm bullets matched but the '# Understanding Report' " +
-          "heading required by handle-stop.ts is missing — the prompt " +
+          "heading required by handle-stop.ts is missing; the prompt " +
           "snippet uses '# Fast Confirm Mode'. Either switch to grill_me " +
           "(emits the required heading + sections) or accept that " +
           "fast_confirm relies on the .pending-approval marker alone.",

@@ -16,7 +16,7 @@ program
   .description(
     "Pre-execution gate that asks AI agents to produce an Understanding Report before acting.",
   )
-  .version("0.2.2");
+  .version("0.2.3");
 
 function resolveScope(value: string | undefined): Scope {
   if (value === "user" || value === "project") return value;
