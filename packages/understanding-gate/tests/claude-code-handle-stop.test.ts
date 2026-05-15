@@ -291,17 +291,39 @@ describe("handleStop: fast_confirm-attempt breadcrumb", () => {
     expect(payload).toContain("I understood the task as");
   });
 
-  it("does NOT log when only one or two bullets happen to match (below threshold)", () => {
+  it("does NOT log when below the 4-of-5 threshold (3 incidental bullet matches)", () => {
     const deps = makeDeps();
     const out = handleStop(
       makeInput({
-        lastAssistantText:
-          "Sure, I will do that and Assumptions seem fine here.",
+        lastAssistantText: [
+          "- I will do the refactor next sprint",
+          "- I will not touch the legacy auth code",
+          "- I will verify by running the suite",
+        ].join("\n"),
       }),
       deps,
     );
     expect(out.kind).toBe("no_report");
     expect(deps.writeParseErrorLog).not.toHaveBeenCalled();
+  });
+
+  it("tolerates indented and mixed-marker bullets in the heuristic", () => {
+    const deps = makeDeps();
+    const out = handleStop(
+      makeInput({
+        lastAssistantText: [
+          "  * I understood the task as: foo",
+          "  + I will do: bar",
+          "  - I will not touch: baz",
+          "  * I will verify by: qux",
+        ].join("\n"),
+      }),
+      deps,
+    );
+    expect(out.kind).toBe("no_report");
+    if (out.kind !== "no_report") return;
+    expect(out.logPath).toBe("/tmp/parse-errors/log.log");
+    expect(deps.writeParseErrorLog).toHaveBeenCalledTimes(1);
   });
 
   it("forwards UNDERSTANDING_GATE_MODE into the breadcrumb payload", () => {

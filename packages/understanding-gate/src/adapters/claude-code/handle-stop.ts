@@ -36,11 +36,15 @@ export const SYNC_ERRORS_SUBDIR = "sync-errors";
 
 // fast_confirm mode produces five bullet items with no "Understanding
 // Report" heading, so REPORT_MARKER_RE never matches and the harvest
-// path silently exits — leaving operators staring at an empty reports/
+// path silently exits, leaving operators staring at an empty reports/
 // dir with no breadcrumb to debug from. Detect attempts by counting the
-// five distinct bullet prefixes from src/prompts/fast-confirm.ts; a
-// threshold of three avoids matching a casual "I will do X." reply that
-// only happens to share one prefix.
+// five distinct bullet prefixes from src/prompts/fast-confirm.ts.
+//
+// Threshold 4 (not 3): a natural-English reply that bullets "I will do
+// X / I will not touch Y / I will verify by Z" hits 3 by accident — a
+// realistic false-positive that would flood parse-errors/ with logs
+// that have nothing to do with the gate. Requiring 4 of 5 still tolerates
+// one mangled bullet without losing genuine attempts.
 const FAST_CONFIRM_BULLETS: ReadonlyArray<RegExp> = [
   /^\s*[-*+]\s*i\s+understood\s+the\s+task\s+as\b/im,
   /^\s*[-*+]\s*i\s+will\s+do\b/im,
@@ -48,7 +52,7 @@ const FAST_CONFIRM_BULLETS: ReadonlyArray<RegExp> = [
   /^\s*[-*+]\s*i\s+will\s+verify\s+by\b/im,
   /^\s*[-*+]\s*assumptions\b/im,
 ];
-const FAST_CONFIRM_MIN_HITS = 3;
+const FAST_CONFIRM_MIN_HITS = 4;
 
 export function looksLikeFastConfirmAttempt(text: string): boolean {
   let hits = 0;
