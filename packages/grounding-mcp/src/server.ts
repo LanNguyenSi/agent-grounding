@@ -32,7 +32,7 @@ import { deriveContext } from './derive-context.js';
 // Single source of truth for the version string emitted by both the
 // MCP `name+version` handshake and the `--version` CLI short-circuit.
 // Bump alongside package.json on release.
-const PACKAGE_VERSION = '0.1.0';
+const PACKAGE_VERSION = '0.2.0';
 
 const server = new McpServer({
   name: 'grounding-mcp',
