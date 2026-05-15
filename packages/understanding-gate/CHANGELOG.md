@@ -8,7 +8,7 @@
   emits a recognizable `fast_confirm` response without the `# Understanding
   Report` heading.** Before 0.2.3 the marker-mismatch path in
   `handle-stop.ts` short-circuited to `kind: "no_report"` silently, no
-  `mkdir`, no log — operators were left with an empty `reports/` dir and
+  `mkdir`, no log; operators were left with an empty `reports/` dir and
   no breadcrumb to trace back to the prompt/parser shape mismatch (the
   `fast_confirm` prompt template emits bullets only, the parser requires
   the `# Understanding Report` heading + 9 named sections).
@@ -24,7 +24,7 @@
 - **Tests:** +6 cases in `tests/claude-code-handle-stop.test.ts`
   (bullet-match breadcrumb, below-threshold non-match, mode forwarding,
   log-writer-throws degrade-to-silent, marker-match-wins-over-bullet-match,
-  indented + mixed `-` / `*` / `+` marker variants). 449/449 vitest green.
+  indented + mixed `-` / `*` / `+` marker variants). 450/450 vitest green.
 - **Out of scope:** the underlying prompt/parser reconciliation that would
   let `fast_confirm` produce a saved report end-to-end is tracked as a
   separate follow-up (agent-tasks `eaac8fe5`); this release ships the
