@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.2.3, 2026-05-15
+
+### Fixed: Observable breadcrumb for fast_confirm bullet-attempts
+
+- **Stop hook now writes a `parse-errors/<stamp>-*.log` when the assistant
+  emits a recognizable `fast_confirm` response without the `# Understanding
+  Report` heading.** Before 0.2.3 the marker-mismatch path in
+  `handle-stop.ts` short-circuited to `kind: "no_report"` silently, no
+  `mkdir`, no log; operators were left with an empty `reports/` dir and
+  no breadcrumb to trace back to the prompt/parser shape mismatch (the
+  `fast_confirm` prompt template emits bullets only, the parser requires
+  the `# Understanding Report` heading + 9 named sections).
+- **Detection is heuristic + tight.** A new `looksLikeFastConfirmAttempt`
+  helper counts matches against the five distinct bullet prefixes that
+  `src/prompts/fast-confirm.ts` emits (`I understood the task as`,
+  `I will do`, `I will not touch`, `I will verify by`, `Assumptions`).
+  Threshold is 4-of-5: a natural-English reply like "I will do X / I will
+  not touch Y / I will verify by Z" only hits 3 and stays silent, so the
+  breadcrumb path doesn't flood `parse-errors/` on every casual turn.
+- **`StopHookOutcome.no_report` gains an optional `logPath?: string`.**
+  Backward-compatible: `stop.ts` only branches on `outcome.kind === "saved"`.
+- **Tests:** +6 cases in `tests/claude-code-handle-stop.test.ts`
+  (bullet-match breadcrumb, below-threshold non-match, mode forwarding,
+  log-writer-throws degrade-to-silent, marker-match-wins-over-bullet-match,
+  indented + mixed `-` / `*` / `+` marker variants). 450/450 vitest green.
+- **Out of scope:** the underlying prompt/parser reconciliation that would
+  let `fast_confirm` produce a saved report end-to-end is tracked as a
+  separate follow-up (agent-tasks `eaac8fe5`); this release ships the
+  observability fix only.
+
+Refs PR #74.
+
 ## 0.2.2, 2026-05-03
 
 ### Fixed: Trim tool name before deny-list lookup
