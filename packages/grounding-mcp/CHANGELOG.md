@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.0, 2026-05-15
+
 ### Added
 
 - `grounding-mcp --version` (alias `-v`): fast-exit CLI short-circuit
