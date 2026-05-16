@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.3.0, 2026-05-16
+
+### Feature: fast_confirm reports now persist end-to-end
+
+- **Parser-side bullet-to-section mapping for fast_confirm mode.** The
+  `fast_confirm` prompt emits five plain bullets with no
+  `# Understanding Report` heading or 9-section structure that the
+  parser required. PR #74 (0.2.3) made the silent failure observable
+  via a `no_marker_fast_confirm_attempt` breadcrumb. This release
+  closes the gap: `parseReport` now matches the five bullet prefixes
+  (`I understood the task as:`, `I will do:`, `I will not touch:`,
+  `I will verify by:`, `Assumptions:`) against the canonical section
+  keys when `defaults.mode === "fast_confirm"` AND the section split
+  returned zero headings. The existing 9-section walk still wins when
+  canonical sections are present, so a fast_confirm agent that emits
+  a full Report parses cleanly.
+- **`UNDERSTANDING_REPORT_SCHEMA_FAST_CONFIRM` variant.** New export
+  alongside the strict `UNDERSTANDING_REPORT_SCHEMA`. Same properties
+  block (so `minLength` / `minItems` still apply when an agent
+  volunteers any dropped field), but drops `derivedTodos`,
+  `acceptanceCriteria`, `openQuestions`, `risks` from `required`.
+  Those four are the sections the fast_confirm prompt does not ask for.
+  The validator is mode-aware: picks the relaxed schema when resolved
+  `merged.mode === "fast_confirm"` (post-metadata-override).
+- **Stop hook breadcrumb removed.** Both `REPORT_MARKER_RE` matches AND
+  fast_confirm-bullet matches now route through `parseReport`. The
+  existing `parse_error` log surface preserves observability for the
+  subset where bullets reach the parser but still fail (e.g., wrong
+  mode in env). Dead `PREVIEW_CHARS` constant removed.
+- **Acceptance:** a fresh fast_confirm turn writes a saved report at
+  `UNDERSTANDING_GATE_REPORT_DIR/<timestamp>-<taskId>-<hash>.json`
+  with `mode: fast_confirm`, all five mapped sections populated, the
+  four dropped sections absent (schema accepts).
+- **Backwards compatibility.** A `mode: grill_me` parse of a strict
+  9-section report is unchanged. A `mode: fast_confirm` parse of a
+  strict 9-section report also succeeds (uses relaxed schema but
+  properties match). A `mode: undefined` parse of five bullets still
+  fails (no fast_confirm pre-seed since `isFastConfirm` is false).
+
+PR #78 (agent-tasks `eaac8fe5-bab8-4053-b7bc-0f63d277aeb5`). Verified
+end-to-end against the compiled Stop bin: 455/455 vitest, tsc + npm
+build clean, all 3 CI gates green.
+
 ## 0.2.3, 2026-05-15
 
 ### Fixed: Observable breadcrumb for fast_confirm bullet-attempts

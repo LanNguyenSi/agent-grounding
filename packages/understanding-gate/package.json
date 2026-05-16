@@ -1,6 +1,6 @@
 {
   "name": "@lannguyensi/understanding-gate",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Pre-execution gate that asks AI agents to produce an Understanding Report before acting",
   "license": "MIT",
   "repository": {
