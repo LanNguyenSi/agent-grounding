@@ -260,7 +260,14 @@ describe("handleStop: parse_error path", () => {
   });
 });
 
-describe("handleStop: fast_confirm-attempt breadcrumb", () => {
+describe("handleStop: fast_confirm bullet routing", () => {
+  // agent-tasks/eaac8fe5: fast_confirm bullets no longer dead-end in a
+  // breadcrumb. The handler routes them to parseReport, which now maps
+  // the 5 bullet prefixes to canonical sections + validates against the
+  // fast_confirm-relaxed schema. The breadcrumb has been replaced by
+  // the existing parse_error log surface (kind: "parse_error") for
+  // the subset of inputs where bullets look right but parsing still
+  // fails (e.g., wrong mode in env).
   const fastConfirmText = [
     "- I understood the task as: ship the gate",
     "- I will do: write the patch",
@@ -269,29 +276,23 @@ describe("handleStop: fast_confirm-attempt breadcrumb", () => {
     "- Assumptions: env vars are set",
   ].join("\n");
 
-  it("writes a no_marker_fast_confirm_attempt log when bullets match without the heading", () => {
+  it("routes bullets to parseReport (no early-return; parser sees them)", () => {
     const deps = makeDeps();
-    const out = handleStop(
+    handleStop(
       makeInput({ lastAssistantText: fastConfirmText }),
       deps,
     );
-    expect(out.kind).toBe("no_report");
-    if (out.kind !== "no_report") return;
-    expect(out.logPath).toBe("/tmp/parse-errors/log.log");
-    expect(deps.parseReport).not.toHaveBeenCalled();
-    expect(deps.saveReport).not.toHaveBeenCalled();
-    expect(deps.writeParseErrorLog).toHaveBeenCalledTimes(1);
-    const [dir, payload] = (
-      deps.writeParseErrorLog as ReturnType<typeof vi.fn>
+    expect(deps.parseReport).toHaveBeenCalledTimes(1);
+    const [text, defaults] = (
+      deps.parseReport as ReturnType<typeof vi.fn>
     ).mock.calls[0];
-    expect(dir).toBe("/tmp/work/.understanding-gate/parse-errors");
-    expect(payload).toContain("no_marker_fast_confirm_attempt");
-    expect(payload).toContain("fast_confirm");
-    expect(payload).toContain("--- raw ---");
-    expect(payload).toContain("I understood the task as");
+    expect(text).toBe(fastConfirmText);
+    // Default mode is fast_confirm; the parser will pick the relaxed
+    // schema based on this and bullet-map the 5 prefixes.
+    expect(defaults.mode).toBe("fast_confirm");
   });
 
-  it("does NOT log when below the 4-of-5 threshold (3 incidental bullet matches)", () => {
+  it("does NOT route when below the 4-of-5 threshold (3 incidental bullet matches)", () => {
     const deps = makeDeps();
     const out = handleStop(
       makeInput({
@@ -304,12 +305,13 @@ describe("handleStop: fast_confirm-attempt breadcrumb", () => {
       deps,
     );
     expect(out.kind).toBe("no_report");
+    expect(deps.parseReport).not.toHaveBeenCalled();
     expect(deps.writeParseErrorLog).not.toHaveBeenCalled();
   });
 
   it("tolerates indented and mixed-marker bullets in the heuristic", () => {
     const deps = makeDeps();
-    const out = handleStop(
+    handleStop(
       makeInput({
         lastAssistantText: [
           "  * I understood the task as: foo",
@@ -320,13 +322,10 @@ describe("handleStop: fast_confirm-attempt breadcrumb", () => {
       }),
       deps,
     );
-    expect(out.kind).toBe("no_report");
-    if (out.kind !== "no_report") return;
-    expect(out.logPath).toBe("/tmp/parse-errors/log.log");
-    expect(deps.writeParseErrorLog).toHaveBeenCalledTimes(1);
+    expect(deps.parseReport).toHaveBeenCalledTimes(1);
   });
 
-  it("forwards UNDERSTANDING_GATE_MODE into the breadcrumb payload", () => {
+  it("forwards UNDERSTANDING_GATE_MODE into parseReport defaults", () => {
     const deps = makeDeps();
     handleStop(
       makeInput({
@@ -335,28 +334,38 @@ describe("handleStop: fast_confirm-attempt breadcrumb", () => {
       }),
       deps,
     );
-    const [, payload] = (
-      deps.writeParseErrorLog as ReturnType<typeof vi.fn>
+    expect(deps.parseReport).toHaveBeenCalledTimes(1);
+    const [, defaults] = (
+      deps.parseReport as ReturnType<typeof vi.fn>
     ).mock.calls[0];
-    expect(payload).toContain('"mode": "grill_me"');
+    // Env mode overrides the default "fast_confirm"; the parser will
+    // then run the strict schema against the 5 bullets and (correctly)
+    // reject as the bullets do not satisfy the strict 9-section shape.
+    expect(defaults.mode).toBe("grill_me");
   });
 
-  it("degrades to plain no_report when the breadcrumb log writer throws", () => {
+  it("emits parse_error (not no_report) when bullets reach parser but fail validation", () => {
+    // Simulate a parser failure: the dep mock can return ok:false.
     const deps = makeDeps({
-      writeParseErrorLog: vi.fn(() => {
-        throw new Error("disk full");
-      }),
+      parseReport: vi.fn(() => ({
+        ok: false as const,
+        error: {
+          reason: "missing_sections" as const,
+          missing: ["currentUnderstanding"],
+          schemaErrors: [],
+          message: "Missing required sections",
+        },
+      })),
     });
     const out = handleStop(
       makeInput({ lastAssistantText: fastConfirmText }),
       deps,
     );
-    expect(out.kind).toBe("no_report");
-    if (out.kind !== "no_report") return;
-    expect(out.logPath).toBeUndefined();
+    expect(out.kind).toBe("parse_error");
+    expect(deps.writeParseErrorLog).toHaveBeenCalledTimes(1);
   });
 
-  it("does NOT log when the Understanding Report marker matches (save path takes over)", () => {
+  it("does NOT route when the Understanding Report marker matches (save path takes over)", () => {
     const deps = makeDeps();
     const out = handleStop(
       makeInput({
@@ -365,6 +374,6 @@ describe("handleStop: fast_confirm-attempt breadcrumb", () => {
       deps,
     );
     expect(out.kind).toBe("saved");
-    expect(deps.writeParseErrorLog).not.toHaveBeenCalled();
+    expect(deps.parseReport).toHaveBeenCalledTimes(1);
   });
 });

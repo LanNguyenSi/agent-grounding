@@ -1,6 +1,19 @@
 // JSON Schema for UnderstandingReport. Bundled as a TS const so consumers
 // can import it without runtime fs IO. ajv-strict-compatible: only standard
 // keywords, no unknown extensions.
+//
+// Two variants exported:
+//   UNDERSTANDING_REPORT_SCHEMA               for full / grill_me reports
+//   UNDERSTANDING_REPORT_SCHEMA_FAST_CONFIRM  for fast_confirm reports
+//
+// The fast_confirm variant drops `derivedTodos` and `acceptanceCriteria`
+// from the required set (the fast_confirm prompt emits five bullets, none
+// of which are a todo list or acceptance-criteria list). Everything else
+// is identical: same property definitions, same minLength / minItems on
+// the fields that ARE present. Agents in fast_confirm mode that
+// nevertheless emit a full Report still parse cleanly: the relaxed
+// schema is a strict superset of inputs the strict schema accepts.
+// Rationale: see agent-tasks/eaac8fe5.
 
 export const UNDERSTANDING_REPORT_SCHEMA = {
   $schema: "http://json-schema.org/draft-07/schema#",
@@ -73,4 +86,23 @@ export const UNDERSTANDING_REPORT_SCHEMA = {
     approvedAt: { type: "string", format: "date-time" },
     approvedBy: { type: "string" },
   },
+} as const;
+
+// Fast-confirm variant. Drops the four sections the fast_confirm prompt
+// never emits (derivedTodos, acceptanceCriteria, openQuestions, risks)
+// from the required set. The prompt only asks for five bullets
+// (currentUnderstanding, intendedOutcome, outOfScope, verificationPlan,
+// assumptions). Properties block unchanged, so a fast_confirm report
+// that volunteers any of the dropped fields still validates by shape.
+export const UNDERSTANDING_REPORT_SCHEMA_FAST_CONFIRM = {
+  ...UNDERSTANDING_REPORT_SCHEMA,
+  $id:
+    "https://lannguyensi.github.io/agent-grounding/understanding-report.fast-confirm.schema.json",
+  required: UNDERSTANDING_REPORT_SCHEMA.required.filter(
+    (k) =>
+      k !== "derivedTodos" &&
+      k !== "acceptanceCriteria" &&
+      k !== "openQuestions" &&
+      k !== "risks",
+  ),
 } as const;

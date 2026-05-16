@@ -393,3 +393,121 @@ describe("parseReport: malformed metadata", () => {
     expect(r.error.reason).toBe("invalid_metadata");
   });
 });
+
+// agent-tasks/eaac8fe5: fast_confirm-mode reports come from a 5-bullet
+// prompt with no `# Understanding Report` heading. The parser maps the
+// bullet prefixes to the canonical sections and validates against the
+// fast_confirm-relaxed schema (derivedTodos + acceptanceCriteria not
+// required). Without this work, fast_confirm reports were silently
+// un-harvestable end-to-end (only grill_me produced saved files).
+
+const FAST_CONFIRM_BULLETS = `- I understood the task as: add producer hints to deny envelopes
+- I will do: wire ProducerSchema into PolicySchema and render in reason
+- I will not touch: the schema validators outside the new producers field
+- I will verify by: tsc + vitest + live smoke against full-manifest
+- Assumptions: at-least-one-mcp is enforceable at parse time
+`;
+
+describe("parseReport: fast_confirm bullet parsing", () => {
+  it("maps the 5 bullet prefixes to canonical sections", () => {
+    const r = parseReport(FAST_CONFIRM_BULLETS, {
+      taskId: "fc-test-1",
+      mode: "fast_confirm",
+      riskLevel: "low",
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.report.currentUnderstanding).toBe(
+      "add producer hints to deny envelopes",
+    );
+    expect(r.report.intendedOutcome).toBe(
+      "wire ProducerSchema into PolicySchema and render in reason",
+    );
+    expect(r.report.outOfScope).toEqual([
+      "the schema validators outside the new producers field",
+    ]);
+    expect(r.report.verificationPlan).toEqual([
+      "tsc + vitest + live smoke against full-manifest",
+    ]);
+    expect(r.report.assumptions).toEqual([
+      "at-least-one-mcp is enforceable at parse time",
+    ]);
+    expect(r.report.mode).toBe("fast_confirm");
+    expect(r.report.requiresHumanApproval).toBe(true);
+    expect(r.report.approvalStatus).toBe("pending");
+  });
+
+  it("fast_confirm-relaxed schema omits derivedTodos + acceptanceCriteria from required", () => {
+    const r = parseReport(FAST_CONFIRM_BULLETS, {
+      taskId: "fc-test-2",
+      mode: "fast_confirm",
+      riskLevel: "low",
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // Both fields absent on the parsed report (the prompt does not
+    // emit them; the relaxed schema accepts absence). Compare via
+    // `in` so we distinguish "present and undefined" from "absent".
+    expect("derivedTodos" in r.report).toBe(false);
+    expect("acceptanceCriteria" in r.report).toBe(false);
+  });
+
+  it("strict-mode parse of the same fast_confirm bullets fails (back-compat guard)", () => {
+    // Without `mode: fast_confirm` in defaults, the parser runs the
+    // strict schema. The 5 bullets do not satisfy the strict required
+    // set (no 9 sections, no derivedTodos / acceptanceCriteria), so
+    // the parse must fail. This pins backwards compatibility: existing
+    // callers that do not opt in to fast_confirm see no behaviour change.
+    const r = parseReport(FAST_CONFIRM_BULLETS, {
+      taskId: "fc-test-3",
+      mode: "grill_me",
+      riskLevel: "low",
+    });
+    expect(r.ok).toBe(false);
+  });
+
+  it("ignores a fast_confirm fallback when canonical sections are present", () => {
+    // If the agent emits a full 9-section report under fast_confirm mode,
+    // the section walk wins; bullet preprocessing only kicks in when the
+    // section split returned zero matches. Verify by parsing FULL_MARKDOWN
+    // with mode: fast_confirm should succeed and preserve all 9 sections.
+    const r = parseReport(FULL_MARKDOWN, {
+      taskId: "fc-test-4",
+      mode: "fast_confirm",
+      riskLevel: "low",
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.report.derivedTodos).toEqual([
+      "write the parser",
+      "add ajv validation",
+      "ship under @lannguyensi/understanding-gate",
+    ]);
+    expect(r.report.acceptanceCriteria).toEqual([
+      "round-trip succeeds",
+      "missing sections detected",
+      "schema violations surfaced",
+    ]);
+  });
+
+  it("partial bullet match still fails with missing_sections", () => {
+    // If only some bullets are present, the parse must still fail so
+    // the breadcrumb-write path in handle-stop.ts can log it. Drop the
+    // two paragraph bullets that map to required-in-fast_confirm fields
+    // (currentUnderstanding + intendedOutcome).
+    const partial = FAST_CONFIRM_BULLETS.split("\n")
+      .filter(
+        (l) => !l.startsWith("- I understood") && !l.startsWith("- I will do"),
+      )
+      .join("\n");
+    const r = parseReport(partial, {
+      taskId: "fc-test-5",
+      mode: "fast_confirm",
+      riskLevel: "low",
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.missing).toContain("currentUnderstanding");
+    expect(r.error.missing).toContain("intendedOutcome");
+  });
+});
