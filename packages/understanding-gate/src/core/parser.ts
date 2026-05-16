@@ -17,7 +17,10 @@
 
 import Ajv, { type ErrorObject, type ValidateFunction } from "ajv";
 import addFormats from "ajv-formats";
-import { UNDERSTANDING_REPORT_SCHEMA } from "../schema/report-schema.js";
+import {
+  UNDERSTANDING_REPORT_SCHEMA,
+  UNDERSTANDING_REPORT_SCHEMA_FAST_CONFIRM,
+} from "../schema/report-schema.js";
 import type {
   ApprovalStatus,
   RiskLevel,
@@ -106,15 +109,105 @@ const SECTIONS: SectionSpec[] = [
 
 const METADATA_ALIASES = ["metadata"];
 
-// Pre-compiled validator. Module-level because compilation is the slow step
-// and the schema is static.
+// Pre-compiled validators. Module-level because compilation is the slow
+// step and the schemas are static. Two schemas: the strict default and a
+// fast_confirm variant that drops derivedTodos + acceptanceCriteria from
+// `required` (agent-tasks/eaac8fe5).
 let cachedValidator: ValidateFunction | null = null;
-function getValidator(): ValidateFunction {
+let cachedFastConfirmValidator: ValidateFunction | null = null;
+function getValidator(mode: UnderstandingGateMode | undefined): ValidateFunction {
+  if (mode === "fast_confirm") {
+    if (cachedFastConfirmValidator) return cachedFastConfirmValidator;
+    const ajv = new Ajv({ strict: true, allErrors: true });
+    addFormats(ajv);
+    cachedFastConfirmValidator = ajv.compile(
+      UNDERSTANDING_REPORT_SCHEMA_FAST_CONFIRM,
+    );
+    return cachedFastConfirmValidator;
+  }
   if (cachedValidator) return cachedValidator;
   const ajv = new Ajv({ strict: true, allErrors: true });
   addFormats(ajv);
   cachedValidator = ajv.compile(UNDERSTANDING_REPORT_SCHEMA);
   return cachedValidator;
+}
+
+// Fast-confirm bullet → section mapping (agent-tasks/eaac8fe5). The
+// fast_confirm prompt emits 5 single-line bullets with no
+// `# Understanding Report` heading or 9-section structure. Map prefixes
+// to the corresponding canonical section so the existing collector +
+// validator pipeline (with the fast_confirm-relaxed schema) can persist
+// a parseable Report end-to-end.
+//
+// "I will do:" maps to intendedOutcome (paragraph), NOT derivedTodos:
+// the prompt asks for a one-line summary of intent, not a todo list.
+// The fast_confirm-relaxed schema drops derivedTodos + acceptanceCriteria
+// from required for exactly this reason.
+//
+// Match is case-insensitive, prefix-anchored after the leading "- " /
+// "* " / "+ " marker (plus tolerated "1." enumeration). The remainder
+// of the line after the colon is the bullet value.
+const FAST_CONFIRM_BULLET_RE =
+  /^\s{0,3}(?:[-*+]|\d+[.)])\s+([^:]+?)\s*:\s*(.*)$/;
+
+type FastConfirmKey =
+  | "currentUnderstanding"
+  | "intendedOutcome"
+  | "outOfScope"
+  | "verificationPlan"
+  | "assumptions";
+
+const FAST_CONFIRM_PREFIX_MAP: Array<{ prefix: RegExp; key: FastConfirmKey }> = [
+  { prefix: /^i understood the task as\b/i, key: "currentUnderstanding" },
+  { prefix: /^i will do\b/i, key: "intendedOutcome" },
+  { prefix: /^i will not touch\b/i, key: "outOfScope" },
+  { prefix: /^i will verify by\b/i, key: "verificationPlan" },
+  { prefix: /^assumptions\b/i, key: "assumptions" },
+];
+
+const FAST_CONFIRM_LIST_KEYS = new Set<FastConfirmKey>([
+  "outOfScope",
+  "verificationPlan",
+  "assumptions",
+]);
+
+function parseFastConfirmBullets(
+  markdown: string,
+): Partial<UnderstandingReport> | null {
+  const collected: Record<FastConfirmKey, string> = {
+    currentUnderstanding: "",
+    intendedOutcome: "",
+    outOfScope: "",
+    verificationPlan: "",
+    assumptions: "",
+  };
+  let anyMatched = false;
+  for (const rawLine of markdown.split(/\r?\n/)) {
+    const m = rawLine.match(FAST_CONFIRM_BULLET_RE);
+    if (!m) continue;
+    const label = m[1].trim();
+    const value = m[2].trim();
+    if (value.length === 0) continue;
+    for (const { prefix, key } of FAST_CONFIRM_PREFIX_MAP) {
+      if (prefix.test(label) && collected[key].length === 0) {
+        collected[key] = value;
+        anyMatched = true;
+        break;
+      }
+    }
+  }
+  if (!anyMatched) return null;
+  const out: Partial<UnderstandingReport> = {};
+  for (const key of Object.keys(collected) as FastConfirmKey[]) {
+    const value = collected[key];
+    if (value.length === 0) continue;
+    if (FAST_CONFIRM_LIST_KEYS.has(key)) {
+      (out as Record<string, unknown>)[key] = [value];
+    } else {
+      (out as Record<string, unknown>)[key] = value;
+    }
+  }
+  return out;
 }
 
 export function parseReport(
@@ -135,12 +228,42 @@ export function parseReport(
 
   const sections = splitIntoSections(markdown);
 
-  const collected: Partial<UnderstandingReport> = {};
+  let collected: Partial<UnderstandingReport> = {};
   const missing: string[] = [];
 
+  // Fast-confirm fallback: when the markdown has no `# Understanding Report`
+  // heading or 9-section structure AND the mode is fast_confirm, attempt
+  // to parse the 5-bullet shape the fast_confirm prompt emits. The
+  // existing section-walk below still runs for the canonical sections;
+  // this just pre-seeds `collected` so an unstructured fast_confirm
+  // response persists end-to-end (agent-tasks/eaac8fe5).
+  const isFastConfirm = defaults.mode === "fast_confirm";
+  if (isFastConfirm && sections.length === 0) {
+    const fc = parseFastConfirmBullets(markdown);
+    if (fc) collected = fc;
+  }
+
   for (const spec of SECTIONS) {
+    // Skip section keys already collected from the fast_confirm fallback.
+    // The canonical-section walk would otherwise mark them as missing.
+    if ((collected as Record<string, unknown>)[spec.key] !== undefined) continue;
     const body = pickSection(sections, spec.aliases);
     if (body == null) {
+      // In fast_confirm mode, the four sections the prompt never emits
+      // (derivedTodos, acceptanceCriteria, openQuestions, risks) are
+      // absent by design. The relaxed schema drops them from `required`.
+      // Don't mark them missing when the markdown also doesn't carry
+      // them. If a fast_confirm-mode agent DID emit them, the section
+      // walk above still collects them via the `body != null` path.
+      if (
+        isFastConfirm &&
+        (spec.key === "derivedTodos" ||
+          spec.key === "acceptanceCriteria" ||
+          spec.key === "openQuestions" ||
+          spec.key === "risks")
+      ) {
+        continue;
+      }
       missing.push(spec.key);
       continue;
     }
@@ -206,7 +329,11 @@ export function parseReport(
     };
   }
 
-  const validator = getValidator();
+  // Pick the mode-appropriate validator. fast_confirm uses a relaxed
+  // schema that drops derivedTodos + acceptanceCriteria from required.
+  const validator = getValidator(
+    (merged["mode"] as UnderstandingGateMode | undefined) ?? defaults.mode,
+  );
   if (!validator(merged)) {
     return {
       ok: false,

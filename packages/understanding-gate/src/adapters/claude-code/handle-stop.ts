@@ -108,8 +108,6 @@ export type StopHookOutcome =
     }
   | { kind: "parse_error"; logPath: string; error: ParseError };
 
-const PREVIEW_CHARS = 200;
-
 export function handleStop(
   input: StopHookInput,
   deps: StopHookDeps,
@@ -119,45 +117,18 @@ export function handleStop(
   }
 
   const text = input.lastAssistantText;
-  if (typeof text !== "string" || !REPORT_MARKER_RE.test(text)) {
-    // Cheap escape hatch for the common case (any non-report turn) before
-    // the more expensive bullet-pattern probe.
-    if (typeof text !== "string" || text.length === 0) {
-      return { kind: "no_report" };
-    }
-    if (!looksLikeFastConfirmAttempt(text)) {
-      return { kind: "no_report" };
-    }
-    // The agent emitted what looks like a fast_confirm response but
-    // without the heading the marker regex requires. The harvest path
-    // can't persist it, but the operator deserves a breadcrumb instead
-    // of an empty reports/ dir.
-    const stamp = deps.now().toISOString().replace(/[:.]/g, "-");
-    const payload = `${JSON.stringify(
-      {
-        reason: "no_marker_fast_confirm_attempt",
-        mode: normaliseMode(input.env.UNDERSTANDING_GATE_MODE) ?? "fast_confirm",
-        textLength: text.length,
-        preview: text.slice(0, PREVIEW_CHARS),
-        stamp,
-        sessionId: input.sessionId,
-        hint:
-          "fast_confirm bullets matched but the '# Understanding Report' " +
-          "heading required by handle-stop.ts is missing; the prompt " +
-          "snippet uses '# Fast Confirm Mode'. Either switch to grill_me " +
-          "(emits the required heading + sections) or accept that " +
-          "fast_confirm relies on the .pending-approval marker alone.",
-      },
-      null,
-      2,
-    )}\n\n--- raw ---\n${text}\n`;
-    let logPath: string | undefined;
-    try {
-      logPath = deps.writeParseErrorLog(input.parseErrorDir, payload);
-    } catch {
-      // even the log write failed; degrade to silent no_report.
-    }
-    return logPath ? { kind: "no_report", logPath } : { kind: "no_report" };
+  const hasReportMarker =
+    typeof text === "string" && REPORT_MARKER_RE.test(text);
+  const hasFastConfirmBullets =
+    typeof text === "string" && looksLikeFastConfirmAttempt(text);
+
+  if (!hasReportMarker && !hasFastConfirmBullets) {
+    // Cheap escape: not a report and not even a fast_confirm bullet
+    // pattern. No further work to do.
+    return { kind: "no_report" };
+  }
+  if (typeof text !== "string" || text.length === 0) {
+    return { kind: "no_report" };
   }
 
   // Adapter-supplied defaults for fields the v0 prompts don't ask the
