@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createRequire } from "node:module";
 import { Command } from "commander";
 import { runInit, runUninstall } from "./cli/init.js";
 import { runOpencodeInit, runOpencodeUninstall } from "./cli/opencode.js";
@@ -10,13 +11,22 @@ import type { Scope } from "./cli/paths.js";
 
 type Target = "claude-code" | "opencode";
 
+// Read the version from package.json at runtime rather than hardcoding a
+// literal: the previous .version("0.2.3") drifted past the 0.3.0 release
+// because the literal was not bumped alongside package.json, so
+// `understanding-gate --version` reported a stale string even on installs
+// with current code. createRequire is portable across the package's
+// ES-module + bundler-resolution setup and needs no tsconfig changes.
+const requireFromHere = createRequire(import.meta.url);
+const pkg = requireFromHere("../package.json") as { version: string };
+
 const program = new Command();
 program
   .name("understanding-gate")
   .description(
     "Pre-execution gate that asks AI agents to produce an Understanding Report before acting.",
   )
-  .version("0.2.3");
+  .version(pkg.version);
 
 function resolveScope(value: string | undefined): Scope {
   if (value === "user" || value === "project") return value;
