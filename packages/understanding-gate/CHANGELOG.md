@@ -1,14 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.3.1, 2026-05-17
 
 ### Fixed: `understanding-gate --version` reads from package.json
 
 - **`src/cli.ts` now sources `.version()` from `package.json` at runtime via `createRequire`.** Previously hardcoded `.version("0.2.3")` literal drifted past the 0.3.0 release because the bump touched `package.json` but not the CLI source, so installs on `@lannguyensi/understanding-gate@0.3.0` still reported `0.2.3` from `understanding-gate --version`. The functional 0.3.0 changes were always present in the installed dist; only the `--version` output was stale.
-- **Why it matters.** `harness doctor` enforces `min_version` floors declared in hook manifests via `<bin> --version`. Without this fix, any harness floor at `>= 0.3.0` on the understanding-gate hooks false-positives on every install. The harness-side floor work (LanNguyenSi/harness task `6af1727f`) is queued blocked-by this fix shipping as 0.3.1+.
+- **Why it matters.** `harness doctor` enforces `min_version` floors declared in hook manifests via `<bin> --version`. Without this fix, any harness floor at `>= 0.3.0` on the understanding-gate hooks false-positives on every install. The harness-side floor work (LanNguyenSi/harness task `6af1727f`) is queued blocked-by this release shipping.
 - **Regression test.** `tests/cli-version.test.ts` spawns `dist/cli.js --version` and asserts the output matches `package.json`. Prevents the literal from ever drifting again.
 
-PR pending (agent-tasks `73092e5e`). Verified: 456/456 vitest, tsc + npm build clean, `node dist/cli.js --version` prints `0.3.0`.
+PR #80 (agent-tasks `73092e5e`). Verified: 456/456 vitest, tsc + npm build clean, `node dist/cli.js --version` prints the bumped version.
 
 ## 0.3.0, 2026-05-16
 
