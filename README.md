@@ -152,7 +152,7 @@ Experimental — functional tools with tests, APIs may evolve. Each package has 
 
 ## Where this fits
 
-`agent-grounding` is the **Validate** stage of the [Project OS](https://github.com/LanNguyenSi/project-os) Human-Agent Dev Lifecycle:
+`agent-grounding` is the **Validate** stage of the [Project OS](https://github.com/LanNguyenSi/project-pilot) Human-Agent Dev Lifecycle:
 
 - [agent-planforge](https://github.com/LanNguyenSi/agent-planforge) plans
 - [agent-tasks](https://github.com/LanNguyenSi/agent-tasks) coordinates
