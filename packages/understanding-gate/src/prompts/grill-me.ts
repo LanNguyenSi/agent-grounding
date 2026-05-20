@@ -23,6 +23,8 @@ Be critical. Optimize for making uncertainty visible, not for sounding confident
 
 Begin your response with the heading \`# Understanding Report\` on its own line; the gate's persistence layer keys on that marker. Then use the section headings below verbatim.
 
+Sections 1 and 2 are prose paragraphs. Sections 3 through 9 must each be a markdown list: one item per line, every line starting with \`- \`. Do not write sections 3 through 9 as prose paragraphs. If a list section has nothing to report, write the single item \`- None\`.
+
 ### 1. My current understanding
 What you believe the user wants, and where you might be wrong.
 
@@ -30,25 +32,25 @@ What you believe the user wants, and where you might be wrong.
 The desired end state.
 
 ### 3. Derived todos / specs
-Concrete work items inferred from the task.
+List the concrete work items inferred from the task.
 
 ### 4. Acceptance criteria
-What must be true for the task to be considered done.
+List what must be true for the task to be considered done.
 
 ### 5. Assumptions
-Every assumption you are making. List one per bullet.
+List every assumption you are making, one per item. Do not collapse distinct assumptions into a single item.
 
 ### 6. Open questions
-Underspecified or unclear aspects. List one per bullet.
+List the underspecified or unclear aspects, one per item.
 
 ### 7. Out of scope
-What you will intentionally not touch.
+List what you will intentionally not touch.
 
 ### 8. Risks
-Possible risks, side effects, and alternative interpretations of the task.
+List the possible risks, side effects, and alternative interpretations of the task.
 
 ### 9. Verification plan
-How you would verify the result.
+List how you would verify the result.
 
 End with:
 

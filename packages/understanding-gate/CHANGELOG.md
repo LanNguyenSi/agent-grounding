@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.2, 2026-05-20
+
+### Fixed: `full` + `grill_me` prompts now instruct sections 3-9 as markdown lists
+
+- **The injected Understanding Report prompt and the Stop-hook parser disagreed on the shape of report sections 3-9.** The parser (`src/core/parser.ts`) types sections 3-9 (Derived todos, Acceptance criteria, Assumptions, Open questions, Out of scope, Risks, Verification plan) as `kind: "list"`: a prose-paragraph body parses to an empty list, so the section reads as absent and the whole report is rejected with `missing_sections`. The `full` and `grill_me` templates used mixed verbs ("Define", "State", "Mention", "Explain") for those sections and never told the agent they must be markdown lists, so an agent following the prompt literally wrote sections 4/7/8/9 as prose and its report was dropped.
+- **The failure was silent.** `harness approve understanding` still writes the gate marker from the staged `.pending-approval`, so the gate opens and nobody notices, but no JSON report is persisted. Observed 2026-05-20 (session 0a248d9e): 31 `missing_sections` parse-error logs under `.understanding-gate/parse-errors/` while the report text plainly carried the `### ` headings, just as prose.
+- **Fix.** Both `FULL_PROMPT` and `GRILL_ME_PROMPT` now state, before the section list, that sections 3-9 must each be a markdown list (one item per line, starting with `- `) and that a list section with nothing to report must be written as a single `- None` item. The per-section verbs are normalized to "List ...". The parser is unchanged: the prompt-side fix is lower-risk than relaxing the parser, and a prompt-conformant report parses cleanly (proven by the existing roundtrip test). `grill_me` carried the identical defect and is fixed in the same change.
+- **Regression test.** `tests/prompts.test.ts` asserts both templates carry the markdown-list instruction and the `- None` empty form.
+
+agent-tasks `111fc7d9`. Verified: 457/457 vitest, tsc + npm build clean.
+
 ## 0.3.1, 2026-05-17
 
 ### Fixed: `understanding-gate --version` reads from package.json

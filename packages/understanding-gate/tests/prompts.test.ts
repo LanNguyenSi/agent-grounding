@@ -49,6 +49,22 @@ describe("prompt snippets", () => {
     expect(FULL_PROMPT).toMatch(/`# Understanding Report`/);
   });
 
+  it("full + grill-me templates instruct sections 3-9 as markdown lists with an explicit empty form", () => {
+    // Regression (agent-tasks/111fc7d9): the parser types report sections
+    // 3-9 as `kind: "list"`; a prose-paragraph body parses to an empty
+    // list and the whole report is rejected `missing_sections`. The
+    // templates previously used mixed verbs ("Define", "State", "Mention",
+    // "Explain") that did not signal a list, so an agent following the
+    // prompt literally wrote prose for those sections and its report was
+    // silently dropped. Both templates must now state the markdown-list
+    // requirement and the `- None` empty form so a literal prompt-follower
+    // produces a parseable report.
+    for (const prompt of [FULL_PROMPT, GRILL_ME_PROMPT]) {
+      expect(prompt).toMatch(/markdown list/i);
+      expect(prompt).toMatch(/- None/);
+    }
+  });
+
   it("grill-me prompt enumerates all 9 report sections (0.2.1 alignment)", () => {
     // Regression: the original prose-only grill_me let the agent improvise
     // its own headings, which the Stop-hook parser then rejected. Phase 2
@@ -155,5 +171,54 @@ describe("prompt roundtrip: parseReport accepts what the template asks for", () 
       );
     }
     expect(result.ok).toBe(true);
+  });
+
+  it("a report with prose (non-list) bodies for sections 3-9 is rejected (the contract the prompt fix exists for)", () => {
+    // This is the exact failure mode agent-tasks/111fc7d9 fixed at the
+    // prompt layer: the parser types sections 3-9 as `kind: "list"`, so
+    // a prose-paragraph body parses to an empty list and the report is
+    // rejected `missing_sections`. The prompt fix steers agents to
+    // markdown lists so this path is not hit in practice; this test
+    // pins the parser contract that makes the prompt fix necessary
+    // (the parser is intentionally left strict).
+    const proseReport = [
+      "# Understanding Report",
+      "",
+      "### 1. My current understanding",
+      "We need to add feature X.",
+      "",
+      "### 2. Intended outcome",
+      "Feature X is shipped.",
+      "",
+      "### 3. Derived todos / specs",
+      "We will implement X and wire it into the CLI.",
+      "",
+      "### 4. Acceptance criteria",
+      "X behaves as specified and the suite stays green.",
+      "",
+      "### 5. Assumptions",
+      "It is a TypeScript project on the current toolchain.",
+      "",
+      "### 6. Open questions",
+      "None.",
+      "",
+      "### 7. Out of scope",
+      "Unrelated refactors are not touched.",
+      "",
+      "### 8. Risks",
+      "A regression in adjacent code is possible.",
+      "",
+      "### 9. Verification plan",
+      "Run vitest after the change.",
+    ].join("\n");
+    const result = parseReport(proseReport, {
+      taskId: "t",
+      mode: "grill_me",
+      riskLevel: "low",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.reason).toBe("missing_sections");
+    }
   });
 });
