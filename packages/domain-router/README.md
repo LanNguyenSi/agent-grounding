@@ -1,6 +1,6 @@
 # domain-router
 
-Routes a keyword or problem to the correct repos, components, and documentation scope. Part of the [lan-tools](https://github.com/LanNguyenSi/lava-ice-logs/tree/main/lan-tools) agent grounding stack.
+Routes a keyword or problem to the correct repos, components, and documentation scope. Part of the agent-grounding stack.
 
 ## Problem
 
@@ -61,7 +61,7 @@ import { route } from '@lannguyensi/domain-router';
 const result = route({
   keyword: 'clawd-monitor',
   workspace: '/projects',
-  context: { host: 'ice-vps', problem_hint: 'agent not visible' }
+  context: { host: 'vps-01', problem_hint: 'agent not visible' }
 });
 // → { domain, primary_repos, related_components, priority_files, forbidden_initial_jumps, confidence }
 ```
@@ -69,7 +69,6 @@ const result = route({
 ## Part of the grounding stack
 
 1. **domain-router** ← you are here
-2. [readme-first-resolver](https://github.com/LanNguyenSi/readme-first-resolver)
-3. [debug-playbook-engine](https://github.com/LanNguyenSi/debug-playbook-engine)
-4. [evidence-ledger](https://github.com/LanNguyenSi/evidence-ledger)
-5. [agent-entrypoint](https://github.com/LanNguyenSi/agent-entrypoint)
+2. [readme-first-resolver](../readme-first-resolver)
+3. [debug-playbook-engine](../debug-playbook-engine)
+4. [evidence-ledger](../evidence-ledger)

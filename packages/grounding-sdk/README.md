@@ -1,7 +1,7 @@
 # grounding-sdk
 
-Ergonomic facade over the agent-grounding primitives. Three entry points —
-`verify`, `track`, `validate` — wrap `claim-gate`, `hypothesis-tracker`,
+Ergonomic facade over the agent-grounding primitives. Three entry points,
+`verify`, `track`, `validate`, wrap `claim-gate`, `hypothesis-tracker`,
 and `evidence-ledger` so agent code does not have to learn the full
 surface.
 
@@ -81,7 +81,7 @@ Register a hypothesis in the given `HypothesisStore`. `input` can be a
 string (treated as `{ text }`) or a `TrackInput` with an optional
 `requiredChecks: string[]`. Returns the created `Hypothesis` with
 auto-generated id and timestamps. The store is the `hypothesis-tracker`
-in-memory shape — bring your own persistence via that package's
+in-memory shape, bring your own persistence via that package's
 `exportStore` / `importStore`.
 
 ### `validate({ session, claim, type?, ledgerSummary? }): ValidateResult`
@@ -93,15 +93,15 @@ standard `ClaimResult` plus a `derivedContext` field so callers can see
 which prereqs the SDK detected.
 
 When `ledgerSummary` is omitted, `has_evidence` and
-`alternatives_considered` both default to `false` — the result is still
+`alternatives_considered` both default to `false`, the result is still
 well-defined, just based on fewer inputs.
 
 ### Helpers
 
-- `deriveContextFromSession(session, summary?): ClaimContext` — the
+- `deriveContextFromSession(session, summary?): ClaimContext`: the
   mapping `validate` uses internally, exported for consumers that
   already have their own `evaluateClaim` flow.
-- `createStore(session?): HypothesisStore` — re-exported from
+- `createStore(session?): HypothesisStore`: re-exported from
   `hypothesis-tracker`, so consumers only import from one package.
 
 ## When to use what

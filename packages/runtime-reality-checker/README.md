@@ -1,6 +1,6 @@
 # runtime-reality-checker
 
-Compares actual runtime state against documentation and assumptions. Surfaces drift between what's documented and what's actually running — prevents agents from diagnosing based on stale or incorrect system models.
+Compares actual runtime state against documentation and assumptions. Surfaces drift between what's documented and what's actually running, prevents agents from diagnosing based on stale or incorrect system models.
 
 ## Install
 
@@ -37,7 +37,7 @@ if (hasCriticalDrift(result)) {
 
 | Function | Description |
 |----------|-------------|
-| `runRealityCheck(domain, expected, actual)` | Full reality check — returns processes, drift, and readiness |
+| `runRealityCheck(domain, expected, actual)` | Full reality check, returns processes, drift, and readiness |
 | `checkProcesses(expected, actual)` | Compare expected vs actual process states |
 | `buildDriftItems(processResults)` | Generate drift items from process comparison |
 | `hasCriticalDrift(result)` | Check if any critical drift exists |
@@ -59,7 +59,7 @@ if (hasCriticalDrift(result)) {
 
 A memory that names a concrete file, symbol, or CLI flag is making a
 claim about the current repo state. Files get renamed, symbols get
-deleted, never-merged PRs leave phantom references — and a memory
+deleted, never-merged PRs leave phantom references, and a memory
 written months ago has no way to catch up on its own. `CLAUDE.md`
 mandates that an agent verify such references *before* recommending
 anything based on a memory (see the "Before recommending from memory"
@@ -95,13 +95,13 @@ const flagResult = verifyMemoryReference({
 
 Implementation notes:
 
-- No runtime dependencies — native `fs` recursion + `RegExp`. Walks a
+- No runtime dependencies, native `fs` recursion + `RegExp`. Walks a
   typical mid-size repo in ~100 ms.
 - Default ignores: `node_modules`, `dist`, `build`, `.git`, `.next`,
   `coverage`, `.venv`, `__pycache__`, `.turbo`, `.cache`.
 - Default extensions (symbol/flag): `ts`, `tsx`, `mts`, `mjs`, `js`,
   `jsx`, `py`, `go`, `rs`, `java`. Override via `VerifyOptions.extensions`.
-- Cap via `VerifyOptions.maxFiles` (default 5000) — the `summary` flags
+- Cap via `VerifyOptions.maxFiles` (default 5000): the `summary` flags
   truncation so the caller can raise the cap on a larger repo.
 - Never throws: unreadable `repoRoot` returns `{ exists: false }`.
 - `kind:'flag'` uses a word-boundary guard: `-v` does **not** match
@@ -111,7 +111,7 @@ Implementation notes:
 - `kind:'path'` on a *relative* value refuses to check paths that
   resolve outside `repoRoot` (traversal like `../../etc/passwd` →
   `exists:false` with a clear summary). Absolute values pass through
-  unchanged — use that when the caller legitimately wants to check
+  unchanged, use that when the caller legitimately wants to check
   something outside the repo.
 - **Symlink cycles are safe.** The walker uses `lstat` to classify
   directory symlinks out of the descent and canonicalises each

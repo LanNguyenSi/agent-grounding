@@ -1,6 +1,6 @@
 # readme-first-resolver
 
-Forces agents to read primary documentation before any analysis, and builds a system mental model from it. Part of the [lan-tools](https://github.com/LanNguyenSi/lava-ice-logs/tree/main/lan-tools) agent grounding stack.
+Forces agents to read primary documentation before any analysis, and builds a system mental model from it. Part of the agent-grounding stack.
 
 ## Problem
 
@@ -67,8 +67,7 @@ const result = resolve({
 
 ## Part of the grounding stack
 
-1. [domain-router](https://github.com/LanNguyenSi/domain-router)
+1. [domain-router](../domain-router)
 2. **readme-first-resolver** ← you are here
-3. [debug-playbook-engine](https://github.com/LanNguyenSi/debug-playbook-engine)
-4. [evidence-ledger](https://github.com/LanNguyenSi/evidence-ledger)
-5. [agent-entrypoint](https://github.com/LanNguyenSi/agent-entrypoint)
+3. [debug-playbook-engine](../debug-playbook-engine)
+4. [evidence-ledger](../evidence-ledger)

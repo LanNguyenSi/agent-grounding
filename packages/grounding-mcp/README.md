@@ -1,6 +1,6 @@
 # grounding-mcp
 
-MCP server that exposes the [agent-grounding](../../) stack — `grounding-wrapper`, `evidence-ledger`, `claim-gate`, `runtime-reality-checker` — as tools a long-running Claude Code session can call directly. Sits between the agent and the framework so a debug task can be framed, tracked, and gated without subprocess plumbing.
+MCP server that exposes the [agent-grounding](../../) stack, `grounding-wrapper`, `evidence-ledger`, `claim-gate`, `runtime-reality-checker`, as tools a long-running Claude Code session can call directly. Sits between the agent and the framework so a debug task can be framed, tracked, and gated without subprocess plumbing.
 
 ## Why
 
@@ -26,7 +26,7 @@ The other packages in this repo are CLI-first. That works fine for scripted invo
 | Session JSON | `~/.grounding-mcp/sessions/<id>.json` | `GROUNDING_MCP_SESSIONS_DIR` |
 | Evidence ledger | `~/.evidence-ledger/ledger.db` (owned by `evidence-ledger`) | `EVIDENCE_LEDGER_DB` |
 
-A phase that ends up with `'skipped'` status (because no steps mapped to it for the chosen keyword — e.g. a non-service domain skips runtime-inspection) counts as satisfied for `claim_evaluate_from_session`. Otherwise the gate would block forever on prerequisites the agent can't actually complete.
+A phase that ends up with `'skipped'` status (because no steps mapped to it for the chosen keyword, e.g. a non-service domain skips runtime-inspection) counts as satisfied for `claim_evaluate_from_session`. Otherwise the gate would block forever on prerequisites the agent can't actually complete.
 
 ## Install + register
 
@@ -101,7 +101,7 @@ mcp__grounding__claim_evaluate_from_session({
 
 ## Trust model
 
-This server is meant to run on the agent's local machine via stdio. There's no auth, no rate limiting, no input sanitization beyond what zod's schema validation gives. The evidence-ledger is shared with any other tool that opens `~/.evidence-ledger/ledger.db` — be aware that other CLIs (`ledger`, etc.) can read and write the same data.
+This server is meant to run on the agent's local machine via stdio. There's no auth, no rate limiting, no input sanitization beyond what zod's schema validation gives. The evidence-ledger is shared with any other tool that opens `~/.evidence-ledger/ledger.db`, be aware that other CLIs (`ledger`, etc.) can read and write the same data.
 
 ## Development
 
@@ -116,4 +116,4 @@ npm test --workspace @lannguyensi/grounding-mcp
 npm run dev --workspace @lannguyensi/grounding-mcp
 ```
 
-When changing tool descriptions, restart Claude Code — MCP tool catalogs are cached at session start.
+When changing tool descriptions, restart Claude Code, MCP tool catalogs are cached at session start.
