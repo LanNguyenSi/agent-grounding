@@ -4,7 +4,7 @@ Composite GitHub Action that evaluates the `merge_approval` claim-gate
 (from [`review-claim-gate`](../)) and posts the verdict as a Check-Run
 on the pull request. When combined with branch-protection's **Required
 checks** setting, it turns the review checklist from a norm into a
-mechanical merge gate — a reviewer who skips a dimension cannot click
+mechanical merge gate, a reviewer who skips a dimension cannot click
 merge.
 
 ## Usage
@@ -62,7 +62,7 @@ To turn the Check-Run into a hard gate:
    push one PR first so the check name appears in the search box).
 
 After this is set, a PR with `BLOCKED` verdict cannot be merged via the
-GitHub UI — even with an approving review.
+GitHub UI, even with an approving review.
 
 ## Inputs
 
@@ -87,12 +87,12 @@ GitHub UI — even with an approving review.
 | `score`       | Readiness score 0–100                                           |
 | `report-path` | Path to the full JSON report in `$RUNNER_TEMP`                  |
 
-## Evidence sources — committed file vs. local ledger
+## Evidence sources: committed file vs. local ledger
 
 `evidence_logged` can come from three places, in this priority order:
 
-1. **`--evidence-logged` input is `'true'`** — forces the flag. Documented in the label table. Honor-system.
-2. **Committed evidence file** at `./.agent-grounding/evidence/<task-id>.jsonl` in the checked-out workspace. The CLI auto-detects this path relative to `$GITHUB_WORKSPACE` and counts valid JSON lines as the evidence count. This is the **high-integrity path** — reviewer exports their local ledger into the PR branch.
+1. **`--evidence-logged` input is `'true'`**: forces the flag. Documented in the label table. Honor-system.
+2. **Committed evidence file** at `./.agent-grounding/evidence/<task-id>.jsonl` in the checked-out workspace. The CLI auto-detects this path relative to `$GITHUB_WORKSPACE` and counts valid JSON lines as the evidence count. This is the **high-integrity path**, reviewer exports their local ledger into the PR branch.
 3. **Local evidence-ledger DB** at `$EVIDENCE_LEDGER_PATH` (default `.evidence-ledger/db.sqlite`). On a fresh CI runner this is always empty; only useful for local `act` runs.
 
 ### Reviewer workflow for committed evidence
@@ -133,7 +133,7 @@ write checks; `act` with a PAT works.
 
 ## How the action works
 
-1. `actions/setup-node@v4` — Node 22 with `npm` cache.
+1. `actions/setup-node@v4`: Node 22 with `npm` cache.
 2. `npm ci && build:deps && build -w @lannguyensi/review-claim-gate` at the monorepo
    root (relative to the action path). Reuses the exact `merge_approval`
    policy from `review-claim-gate`; the action is a thin transport
@@ -148,15 +148,15 @@ write checks; `act` with a PAT works.
 
 ## Out of scope
 
-- Auto-merge on success — the consumer workflow owns that.
+- Auto-merge on success: the consumer workflow owns that.
 - GitLab / Bitbucket variants.
-- Server-side integration with the agent-tasks merge webhook —
+- Server-side integration with the agent-tasks merge webhook,
   separately tracked in agent-tasks.
 
 ## Why it is composite, not a bundled JS action
 
 The action runs the existing `review-claim-gate` CLI end-to-end. A
 bundled JS action would need to inline `better-sqlite3` (a native
-module) and publish a pre-bundled `dist/index.js` — higher maintenance
+module) and publish a pre-bundled `dist/index.js`, higher maintenance
 overhead for no behavioural gain. Composite keeps the CLI as the single
 source of truth and the consumer pays ~30s of install time per PR.

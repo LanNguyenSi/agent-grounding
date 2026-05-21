@@ -3,14 +3,14 @@
 A claim-gate-shaped evaluator specialised for PR review / merge decisions.
 Instead of asking *"has the agent verified enough to assert a diagnosis?"*
 (that's `claim-gate`), this package asks *"has the reviewer done enough
-to approve this merge?"* — and encodes that question as a policy the
+to approve this merge?"*, and encodes that question as a policy the
 review subagent must actually pass, not a checklist it can quietly skip.
 
 ## Why
 
 Today's PR-review subagent workflow relies on the orchestrating Claude
 session handing the reviewer a checklist in-prompt. Nothing enforces
-that the reviewer actually covered every dimension — a shallow review
+that the reviewer actually covered every dimension, a shallow review
 can return "APPROVE" after catching one obvious bug and missing four
 subtle ones (see `feedback_review_briefing.md` for the 2026-04-14
 Connect-Agent-Modal incident).
@@ -30,7 +30,7 @@ machine-parseable, so the parent session can refuse to proceed to
 | `tests_pass`                     | CI green or local `npm test` exit 0                                                       |
 | `review_checklist_complete`      | Every rubric item (correctness, security/scope, tests, docs) ticked off                   |
 | `no_unresolved_review_comments`  | Every review comment resolved or replied to                                               |
-| `scope_matches_task`             | PR diff stays inside the task scope — no drive-by refactors                               |
+| `scope_matches_task`             | PR diff stays inside the task scope, no drive-by refactors                                |
 | `evidence_logged`                | ≥1 evidence-ledger entry tagged with this PR's task id (session = task id)                |
 
 All five must be true for `allowed: true`. Missing prereqs surface in
@@ -77,7 +77,7 @@ use `review-claim-gate export --task-id <branch-name> --from-session <gs-id>`
 to write the evidence file under the branch/task naming convention without
 having to re-log the findings.
 
-Explicit `--evidence-file <path>` with a non-existent path throws — silent fallback would be misleading. The auto-detect path is also the convention `export` writes to, so the reviewer round-trip is export → commit → check.
+Explicit `--evidence-file <path>` with a non-existent path throws, silent fallback would be misleading. The auto-detect path is also the convention `export` writes to, so the reviewer round-trip is export → commit → check.
 
 ### JSON shape
 
@@ -144,13 +144,13 @@ You are a rigorous PR reviewer. Review PR #<N> on branch `<BRANCH>` in
 `<REPO>`. Task id: `<TASK-ID>`.
 
 Walk the standard review checklist:
-1. Correctness — effect/lifecycle bugs, race conditions, error paths.
-2. Security / scope / least-privilege — scope creep, injection, secrets.
-3. Permission gating — backend invariants for UI-surfaced controls.
-4. Scope creep — anything unrelated to the task?
-5. Open questions from the task description — each answered or deferred?
-6. Backend invariants — does the called endpoint accept this shape?
-7. Docs coherence — README/getting-started consistent?
+1. Correctness: effect/lifecycle bugs, race conditions, error paths.
+2. Security / scope / least-privilege: scope creep, injection, secrets.
+3. Permission gating: backend invariants for UI-surfaced controls.
+4. Scope creep: anything unrelated to the task?
+5. Open questions from the task description: each answered or deferred?
+6. Backend invariants: does the called endpoint accept this shape?
+7. Docs coherence: README/getting-started consistent?
 8. Test coverage of the risky bits.
 9. Integration touchpoints.
 
@@ -180,15 +180,15 @@ fails.
 A ready-to-use composite action that runs this CLI on a PR and posts
 the verdict as a Check-Run lives in [`action/`](./action/). Required
 branch-protection on the `merge-approval` check turns the gate into a
-hard merge blocker — a reviewer cannot click "Merge" when the JSON
+hard merge blocker, a reviewer cannot click "Merge" when the JSON
 verdict says `allowed: false`. See [`action/README.md`](./action/README.md)
 for the consumer workflow snippet and local `act` instructions.
 
 ## Out of scope
 
-- Wiring into `mcp__agent-tasks__task_finish(approve)` server-side — separately tracked.
-- Auto-deriving `scope_matches_task` from a real diff — first pass is a manual flag.
-- Multi-reviewer aggregation — one reviewer per claim today.
+- Wiring into `mcp__agent-tasks__task_finish(approve)` server-side: separately tracked.
+- Auto-deriving `scope_matches_task` from a real diff: first pass is a manual flag.
+- Multi-reviewer aggregation: one reviewer per claim today.
 
 ## Why a separate package and not a 10th `claim-gate` type?
 

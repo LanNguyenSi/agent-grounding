@@ -1,17 +1,17 @@
 # grounding-wrapper
 
-Orchestrates the full [lan-tools](https://github.com/LanNguyenSi/lava-ice-logs/tree/main/lan-tools) agent grounding stack. Enforces the correct entry path before any debugging begins — even good agents lose focus when they have free tool access.
+Orchestrates the full agent-grounding stack. Enforces the correct entry path before any debugging begins, even good agents lose focus when they have free tool access.
 
 ## What it does
 
 Before any analysis, automatically:
-1. **Resolves scope** via [domain-router](https://github.com/LanNguyenSi/domain-router)
-2. **Reads primary docs** via [readme-first-resolver](https://github.com/LanNguyenSi/readme-first-resolver)
-3. **Loads playbook** via [debug-playbook-engine](https://github.com/LanNguyenSi/debug-playbook-engine)
-4. **Checks runtime** via [runtime-reality-checker](https://github.com/LanNguyenSi/runtime-reality-checker) *(for service/agent domains)*
-5. **Tracks evidence** via [evidence-ledger](https://github.com/LanNguyenSi/evidence-ledger)
-6. **Gates claims** via [claim-gate](https://github.com/LanNguyenSi/claim-gate)
-7. **Manages hypotheses** via [hypothesis-tracker](https://github.com/LanNguyenSi/hypothesis-tracker)
+1. **Resolves scope** via [domain-router](../domain-router)
+2. **Reads primary docs** via [readme-first-resolver](../readme-first-resolver)
+3. **Loads playbook** via [debug-playbook-engine](../debug-playbook-engine)
+4. **Checks runtime** via [runtime-reality-checker](../runtime-reality-checker) *(for service/agent domains)*
+5. **Tracks evidence** via [evidence-ledger](../evidence-ledger)
+6. **Gates claims** via [claim-gate](../claim-gate)
+7. **Manages hypotheses** via [hypothesis-tracker](../hypothesis-tracker)
 
 ## Usage
 
@@ -99,12 +99,11 @@ const updated = handleScopeChange(session, 'new-keyword');
 
 | # | Tool | Role |
 |---|------|------|
-| 1 | [domain-router](https://github.com/LanNguyenSi/domain-router) | Scope resolution |
-| 2 | [readme-first-resolver](https://github.com/LanNguyenSi/readme-first-resolver) | Doc reading |
-| 3 | [debug-playbook-engine](https://github.com/LanNguyenSi/debug-playbook-engine) | Playbook sequencing |
-| 4 | [evidence-ledger](https://github.com/LanNguyenSi/evidence-ledger) | Fact tracking |
-| 5 | [claim-gate](https://github.com/LanNguyenSi/claim-gate) | Claim gating |
-| 6 | [runtime-reality-checker](https://github.com/LanNguyenSi/runtime-reality-checker) 🌋 | Runtime verification |
-| 7 | [hypothesis-tracker](https://github.com/LanNguyenSi/hypothesis-tracker) 🌋 | Hypothesis management |
-| 8 | [agent-entrypoint](https://github.com/LanNguyenSi/agent-entrypoint) | Repo entry manifest |
+| 1 | [domain-router](../domain-router) | Scope resolution |
+| 2 | [readme-first-resolver](../readme-first-resolver) | Doc reading |
+| 3 | [debug-playbook-engine](../debug-playbook-engine) | Playbook sequencing |
+| 4 | [evidence-ledger](../evidence-ledger) | Fact tracking |
+| 5 | [claim-gate](../claim-gate) | Claim gating |
+| 6 | [runtime-reality-checker](../runtime-reality-checker) | Runtime verification |
+| 7 | [hypothesis-tracker](../hypothesis-tracker) | Hypothesis management |
 | **→** | **grounding-wrapper** | **Orchestrates all of the above** |

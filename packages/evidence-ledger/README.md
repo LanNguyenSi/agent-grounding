@@ -13,10 +13,8 @@ Agents (and humans) frequently make the same mistake during debugging:
 Evidence Ledger enforces a discipline:
 - **Facts** require a source
 - **Hypotheses** are tracked separately from facts
-- **Rejected hypotheses stay visible** — so you don't re-investigate dead ends
-- **Unknowns are acknowledged** — not quietly assumed away
-
-Based on [lan-tools/04-evidence-ledger.md](https://github.com/LanNguyenSi/lava-ice-logs/tree/master/lan-tools).
+- **Rejected hypotheses stay visible**: so you don't re-investigate dead ends
+- **Unknowns are acknowledged**: not quietly assumed away
 
 ## Install
 
@@ -92,7 +90,7 @@ ledger clear --session "nginx-debug-2026-04-02"
 
 ## Retention
 
-The ledger grows monotonically — `ledger fact` / `hypothesis` / `unknown` only ever append. Long-running dogfood machines will accumulate stale sessions that slow queries and dilute summaries. Use `prune` to bound the database by age:
+The ledger grows monotonically, `ledger fact` / `hypothesis` / `unknown` only ever append. Long-running dogfood machines will accumulate stale sessions that slow queries and dilute summaries. Use `prune` to bound the database by age:
 
 ```bash
 # Inspect what would go, don't touch the DB yet
@@ -115,7 +113,7 @@ Typical cron usage:
 0 3 * * 0  ledger prune --older-than 30d --json >> ~/.evidence-ledger/prune.log 2>&1
 ```
 
-`prune` does not `VACUUM` automatically — `VACUUM` takes an exclusive lock on the database and would stall every other CLI invocation. After a large purge, reclaim disk manually:
+`prune` does not `VACUUM` automatically: `VACUUM` takes an exclusive lock on the database and would stall every other CLI invocation. After a large purge, reclaim disk manually:
 
 ```bash
 sqlite3 ~/.evidence-ledger/ledger.db 'VACUUM;'
@@ -144,15 +142,15 @@ console.log(summary.facts, summary.hypotheses);
 | Type | Icon | Description |
 |------|------|-------------|
 | `fact` | ✓ | Confirmed observation with a verifiable source |
-| `hypothesis` | ? | Possible explanation — not yet confirmed or rejected |
-| `rejected` | ✗ | Disproven hypothesis — kept visible to avoid re-investigation |
+| `hypothesis` | ? | Possible explanation, not yet confirmed or rejected |
+| `rejected` | ✗ | Disproven hypothesis, kept visible to avoid re-investigation |
 | `unknown` | ~ | Something that still needs clarification |
 
 ## Rules (from the spec)
 
 - Every strong claim needs at least one source
 - Root causes only when: direct evidence exists AND counter-hypotheses have been checked
-- Rejected hypotheses remain visible — never deleted
+- Rejected hypotheses remain visible, never deleted
 
 ## Tests
 

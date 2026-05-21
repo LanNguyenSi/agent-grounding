@@ -1,6 +1,6 @@
 # debug-playbook-engine
 
-Guides agents through domain-specific, ordered diagnostic sequences. Prevents hypothesis-hopping. Part of the [lan-tools](https://github.com/LanNguyenSi/lava-ice-logs/tree/main/lan-tools) agent grounding stack.
+Guides agents through domain-specific, ordered diagnostic sequences. Prevents hypothesis-hopping. Part of the agent-grounding stack.
 
 ## Problem
 
@@ -97,8 +97,7 @@ IDs, or compose facts from multiple playbook runs before the call.
 
 ## Part of the grounding stack
 
-1. [domain-router](https://github.com/LanNguyenSi/domain-router)
-2. [readme-first-resolver](https://github.com/LanNguyenSi/readme-first-resolver)
+1. [domain-router](../domain-router)
+2. [readme-first-resolver](../readme-first-resolver)
 3. **debug-playbook-engine** ← you are here
-4. [evidence-ledger](https://github.com/LanNguyenSi/evidence-ledger)
-5. [agent-entrypoint](https://github.com/LanNguyenSi/agent-entrypoint)
+4. [evidence-ledger](../evidence-ledger)

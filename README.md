@@ -98,7 +98,7 @@ The `git clone` workflow above is for hacking on the monorepo itself; downstream
 | Gate `merge_approval` on tests + checklist + evidence-ledger entry | [`packages/review-claim-gate`](packages/review-claim-gate) |
 | Ask agents to produce an Understanding Report before acting | [`packages/understanding-gate`](packages/understanding-gate) |
 | Wire the stack into an MCP-speaking client (Claude Code, Codex, OpenCode) | [`packages/grounding-mcp`](packages/grounding-mcp) |
-| Orchestrate the stack — enforce correct tool order | [`packages/grounding-wrapper`](packages/grounding-wrapper) |
+| Orchestrate the stack, enforce correct tool order | [`packages/grounding-wrapper`](packages/grounding-wrapper) |
 
 ## Packages
 
@@ -119,15 +119,15 @@ The `git clone` workflow above is for hacking on the monorepo itself; downstream
 |---------|-------------|
 | [debug-playbook-engine](packages/debug-playbook-engine) | Guides agents through domain-specific diagnostic sequences |
 | [evidence-ledger](packages/evidence-ledger) | Structured evidence tracking during debugging |
-| [grounding-wrapper](packages/grounding-wrapper) | Orchestrates the grounding stack — enforces correct tool order |
+| [grounding-wrapper](packages/grounding-wrapper) | Orchestrates the grounding stack, enforces correct tool order |
 | [readme-first-resolver](packages/readme-first-resolver) | Forces agents to read primary docs before any analysis |
 | [domain-router](packages/domain-router) | Routes keywords to correct repos, components and docs scope |
 
 ### SDK
 | Package | Description |
 |---------|-------------|
-| [grounding-sdk](packages/grounding-sdk) | `verify`/`track`/`validate` — ergonomic in-process facade over the stack |
-| [review-claim-gate](packages/review-claim-gate) | `merge_approval` gate for PR-review subagents — fails closed unless tests pass, the checklist is complete, and ≥1 evidence-ledger entry exists |
+| [grounding-sdk](packages/grounding-sdk) | `verify`/`track`/`validate`, ergonomic in-process facade over the stack |
+| [review-claim-gate](packages/review-claim-gate) | `merge_approval` gate for PR-review subagents, fails closed unless tests pass, the checklist is complete, and ≥1 evidence-ledger entry exists |
 
 ### Integration
 | Package | Description |
@@ -138,17 +138,17 @@ The `git clone` workflow above is for hacking on the monorepo itself; downstream
 
 AI agents are good at generating plausible explanations. They're bad at verifying them. This framework enforces discipline:
 
-- **Don't assume** — check runtime state before diagnosing.
-- **Don't claim** — gate strong assertions behind evidence.
-- **Don't forget** — track all hypotheses, don't silently drop them.
-- **Don't skip steps** — follow diagnostic playbooks in order.
-- **Don't guess scope** — route to the correct domain first.
+- **Don't assume**: check runtime state before diagnosing.
+- **Don't claim**: gate strong assertions behind evidence.
+- **Don't forget**: track all hypotheses, don't silently drop them.
+- **Don't skip steps**: follow diagnostic playbooks in order.
+- **Don't guess scope**: route to the correct domain first.
 
-The motivating incident lives in an internal logbook: an agent investigated two `agent-grounding` tasks against a checkout that was 16 commits behind origin, declared both "stale" because the relevant directories didn't exist locally, and only caught the drift hours later when a third task forced a fresh `git pull`. Two corrections had to be walked back. The check that would have caught it (`git fetch && git status` before any structural claim) is exactly what `runtime-reality-checker` + `claim-gate` enforce — given a runtime that consults them.
+The motivating incident lives in an internal logbook: an agent investigated two `agent-grounding` tasks against a checkout that was 16 commits behind origin, declared both "stale" because the relevant directories didn't exist locally, and only caught the drift hours later when a third task forced a fresh `git pull`. Two corrections had to be walked back. The check that would have caught it (`git fetch && git status` before any structural claim) is exactly what `runtime-reality-checker` + `claim-gate` enforce, given a runtime that consults them.
 
 ## Status
 
-Experimental — functional tools with tests, APIs may evolve. Each package has its own README with install + usage; this top-level README is a routing index. Build/contribution notes live in [CONTRIBUTING.md](./CONTRIBUTING.md).
+Experimental, functional tools with tests, APIs may evolve. Each package has its own README with install + usage; this top-level README is a routing index. Build/contribution notes live in [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Where this fits
 
