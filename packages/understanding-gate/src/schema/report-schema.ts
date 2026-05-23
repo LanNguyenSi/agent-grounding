@@ -34,6 +34,7 @@ export const UNDERSTANDING_REPORT_SCHEMA = {
     "outOfScope",
     "risks",
     "verificationPlan",
+    "priorArt",
     "requiresHumanApproval",
     "approvalStatus",
   ],
@@ -77,6 +78,16 @@ export const UNDERSTANDING_REPORT_SCHEMA = {
       minItems: 1,
       items: { type: "string", minLength: 1 },
     },
+    // Section 10 (v0.4.0): the agent must state, before committing to
+    // build, what was searched for an existing solution and what was
+    // found. minItems: 1 because an empty list (or a placeholder
+    // "- None") would defeat the purpose: the section exists to make
+    // "should this be built at all" a forced, written question.
+    priorArt: {
+      type: "array",
+      minItems: 1,
+      items: { type: "string", minLength: 1 },
+    },
     requiresHumanApproval: { type: "boolean" },
     approvalStatus: {
       type: "string",
@@ -88,12 +99,19 @@ export const UNDERSTANDING_REPORT_SCHEMA = {
   },
 } as const;
 
-// Fast-confirm variant. Drops the four sections the fast_confirm prompt
-// never emits (derivedTodos, acceptanceCriteria, openQuestions, risks)
-// from the required set. The prompt only asks for five bullets
-// (currentUnderstanding, intendedOutcome, outOfScope, verificationPlan,
-// assumptions). Properties block unchanged, so a fast_confirm report
-// that volunteers any of the dropped fields still validates by shape.
+// Fast-confirm variant. Drops the sections the fast_confirm prompt
+// never emits (derivedTodos, acceptanceCriteria, openQuestions, risks,
+// and priorArt) from the required set. The prompt only asks for five
+// bullets (currentUnderstanding, intendedOutcome, outOfScope,
+// verificationPlan, assumptions). Properties block unchanged, so a
+// fast_confirm report that volunteers any of the dropped fields still
+// validates by shape.
+//
+// priorArt-in-fast-confirm rationale: the failure class the new section
+// guards against (multi-turn build of an unnecessary tool) is
+// intrinsically a grill_me / full situation; fast_confirm is for
+// low-stakes prompts where the gate barely fires. Forcing priorArt in
+// fast_confirm would defeat the mode's purpose.
 export const UNDERSTANDING_REPORT_SCHEMA_FAST_CONFIRM = {
   ...UNDERSTANDING_REPORT_SCHEMA,
   $id:
@@ -103,6 +121,7 @@ export const UNDERSTANDING_REPORT_SCHEMA_FAST_CONFIRM = {
       k !== "derivedTodos" &&
       k !== "acceptanceCriteria" &&
       k !== "openQuestions" &&
-      k !== "risks",
+      k !== "risks" &&
+      k !== "priorArt",
   ),
 } as const;

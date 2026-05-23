@@ -48,6 +48,11 @@ It should reject malformed input.
 - unit tests
 - dogfood once 1.3 lands
 
+### 10. Prior art
+- searched: npm + GitHub for "Understanding Gate"
+- found nothing equivalent
+- build new, no existing tool matches the scope
+
 ## Metadata
 taskId: ug-test-1
 mode: grill_me
@@ -57,7 +62,7 @@ approvalStatus: pending
 `;
 
 describe("parseReport: full round-trip", () => {
-  it("recovers all 9 required sections + metadata", () => {
+  it("recovers all 10 required sections + metadata", () => {
     const r = parseReport(FULL_MARKDOWN);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -83,6 +88,11 @@ describe("parseReport: full round-trip", () => {
     expect(r.report.verificationPlan).toEqual([
       "unit tests",
       "dogfood once 1.3 lands",
+    ]);
+    expect(r.report.priorArt).toEqual([
+      "searched: npm + GitHub for \"Understanding Gate\"",
+      "found nothing equivalent",
+      "build new, no existing tool matches the scope",
     ]);
   });
 
@@ -145,6 +155,47 @@ describe("parseReport: missing sections", () => {
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.error.missing).toContain("risks");
+  });
+});
+
+describe("parseReport: priorArt section (v0.4.0)", () => {
+  it("rejects a report missing the Prior Art section", () => {
+    const md = FULL_MARKDOWN.replace(
+      /### 10\. Prior art[\s\S]*?(?=## Metadata)/,
+      "",
+    );
+    const r = parseReport(md);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.reason).toBe("missing_sections");
+    expect(r.error.missing).toContain("priorArt");
+  });
+
+  it("rejects a report with an empty Prior Art section", () => {
+    const md = FULL_MARKDOWN.replace(
+      /### 10\. Prior art[\s\S]*?(?=## Metadata)/,
+      "### 10. Prior art\n\n",
+    );
+    const r = parseReport(md);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.missing).toContain("priorArt");
+  });
+
+  it("accepts a fast_confirm report that omits Prior Art (relaxed schema)", () => {
+    const fastConfirmBullets = [
+      "- I understood the task as: add a logout button",
+      "- I will do: wire it into the Header component",
+      "- I will not touch: the auth state",
+      "- I will verify by: clicking it once and watching the network tab",
+      "- Assumptions: the existing /api/logout endpoint works",
+    ].join("\n");
+    const r = parseReport(fastConfirmBullets, {
+      taskId: "t",
+      mode: "fast_confirm",
+      riskLevel: "low",
+    });
+    expect(r.ok).toBe(true);
   });
 });
 
