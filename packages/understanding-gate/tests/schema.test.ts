@@ -23,6 +23,7 @@ const validReport: UnderstandingReport = {
   outOfScope: ["enforcement"],
   risks: ["friction"],
   verificationPlan: ["unit tests"],
+  priorArt: ["searched npm", "found nothing", "build new"],
   requiresHumanApproval: true,
   approvalStatus: "pending",
 };
@@ -94,12 +95,14 @@ describe("UNDERSTANDING_REPORT_SCHEMA", () => {
       "outOfScope",
       "risks",
       "verificationPlan",
+      "priorArt",
     ] as const;
 
     const NON_EMPTY_REQUIRED = [
       "derivedTodos",
       "acceptanceCriteria",
       "verificationPlan",
+      "priorArt",
     ] as const;
 
     const ALLOW_EMPTY = [

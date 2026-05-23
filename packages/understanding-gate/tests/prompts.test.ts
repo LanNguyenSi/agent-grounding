@@ -28,7 +28,7 @@ describe("prompt snippets", () => {
     expect(GRILL_ME_PROMPT).toMatch(/grill me/i);
   });
 
-  it("full prompt enumerates all 9 report sections", () => {
+  it("full prompt enumerates all 10 report sections", () => {
     expect(FULL_PROMPT).toMatch(/My current understanding/);
     expect(FULL_PROMPT).toMatch(/Intended outcome/);
     expect(FULL_PROMPT).toMatch(/Derived todos/);
@@ -38,6 +38,7 @@ describe("prompt snippets", () => {
     expect(FULL_PROMPT).toMatch(/Out of scope/);
     expect(FULL_PROMPT).toMatch(/Risks/);
     expect(FULL_PROMPT).toMatch(/Verification plan/);
+    expect(FULL_PROMPT).toMatch(/Prior art/);
   });
 
   it("templates instruct the agent to begin with the `# Understanding Report` marker", () => {
@@ -49,7 +50,7 @@ describe("prompt snippets", () => {
     expect(FULL_PROMPT).toMatch(/`# Understanding Report`/);
   });
 
-  it("full + grill-me templates instruct sections 3-9 as markdown lists with an explicit empty form", () => {
+  it("full + grill-me templates instruct sections 3-10 as markdown lists with an explicit empty form", () => {
     // Regression (agent-tasks/111fc7d9): the parser types report sections
     // 3-9 as `kind: "list"`; a prose-paragraph body parses to an empty
     // list and the whole report is rejected `missing_sections`. The
@@ -65,7 +66,7 @@ describe("prompt snippets", () => {
     }
   });
 
-  it("grill-me prompt enumerates all 9 report sections (0.2.1 alignment)", () => {
+  it("grill-me prompt enumerates all 10 report sections (0.2.1 alignment)", () => {
     // Regression: the original prose-only grill_me let the agent improvise
     // its own headings, which the Stop-hook parser then rejected. Phase 2
     // approve flow couldn't close because nothing landed in reports/.
@@ -78,6 +79,7 @@ describe("prompt snippets", () => {
     expect(GRILL_ME_PROMPT).toMatch(/Out of scope/);
     expect(GRILL_ME_PROMPT).toMatch(/Risks/);
     expect(GRILL_ME_PROMPT).toMatch(/Verification plan/);
+    expect(GRILL_ME_PROMPT).toMatch(/Prior art/);
   });
 });
 
@@ -140,6 +142,8 @@ describe("prompt roundtrip: parseReport accepts what the template asks for", () 
     if (headingLower === "risks" || headingLower.startsWith("risks"))
       return "- regression in adjacent code";
     if (headingLower.includes("verification")) return "- run vitest after the change";
+    if (headingLower.includes("prior art"))
+      return "- searched npm + GitHub for existing X implementations; nothing matched; build new";
     return "(placeholder)";
   }
 

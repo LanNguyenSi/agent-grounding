@@ -4,7 +4,7 @@
 // Contract:
 //   parseReport(markdown, defaults?) -> { ok: true, report } | { ok: false, error }
 //
-// Markdown shape: nine numbered or named sections matching the keys below
+// Markdown shape: ten numbered or named sections matching the keys below
 // (heading level # / ## / ### all accepted, optional "1." numeric prefix).
 // Body of a list-typed section is a unordered/ordered list; body of a
 // paragraph-typed section is one or more lines, joined with single newlines.
@@ -105,6 +105,12 @@ const SECTIONS: SectionSpec[] = [
     kind: "list",
     aliases: ["verification plan", "verification"],
   },
+  // Section 10 (v0.4.0). The Stop-capture parser walks SECTIONS in order;
+  // adding priorArt at the end keeps Section 10's numbering aligned with
+  // the prompt templates. fast_confirm: the relaxed schema drops it from
+  // required so a fast_confirm report (no `# Understanding Report`
+  // heading, five bullets) still parses.
+  { key: "priorArt", kind: "list", aliases: ["prior art"] },
 ];
 
 const METADATA_ALIASES = ["metadata"];
@@ -260,7 +266,8 @@ export function parseReport(
         (spec.key === "derivedTodos" ||
           spec.key === "acceptanceCriteria" ||
           spec.key === "openQuestions" ||
-          spec.key === "risks")
+          spec.key === "risks" ||
+          spec.key === "priorArt")
       ) {
         continue;
       }

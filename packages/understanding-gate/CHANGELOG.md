@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0, 2026-05-23
+
+### Feature: Prior Art is now a required 10th section of the Understanding Report (BREAKING)
+
+- **Motivation.** The existing nine sections (Current Understanding, Intended Outcome, Derived Todos, Acceptance Criteria, Assumptions, Open Questions, Out Of Scope, Risks, Verification Plan) all frame the task *as given*. None forces the agent to ask whether the task should be built at all. Concrete failure 2026-05-22: `pattern-scout`, a ~5000-line agent-dx package, was designed across several turns, built, reviewed, merged, and then found redundant with an existing external tool (`opensrc-mcp`) that already solved the problem better. The Understanding Report for that build was complete and would have passed any review; its frame was correct, the task as given was the wrong task.
+- **What this release adds.** A 10th required section, "Prior art", with stricter content rules: the agent must list the channels it checked for an existing solution (web, package registries, MCP directories, the org's own repos, the project's existing modules), the closest existing tool or pattern found, and an explicit "adopt" / "extend" / "build new" judgment with a reason. The section may not be blank; `- None` is explicitly disallowed by the prompt. The parser deliberately does NOT string-match `- None` itself — the prompt is the contract, the parser is structural. A literal `- None` bullet parses as `priorArt: ["None"]` and validates; the deterrent lives in the agent-facing prompt template.
+- **Parser change.** `priorArt: string[]` is a required field on `UnderstandingReport` with `minItems: 1`. `src/core/parser.ts#SECTIONS` adds `{ key: "priorArt", kind: "list", aliases: ["prior art"] }`. `UNDERSTANDING_REPORT_SCHEMA` adds `priorArt` to `required` and `properties`.
+- **`fast_confirm` mode is unchanged.** The five-bullet shape (currentUnderstanding, intendedOutcome, outOfScope, verificationPlan, assumptions) does not carry Prior Art and the relaxed schema (`UNDERSTANDING_REPORT_SCHEMA_FAST_CONFIRM`) excludes `priorArt` from `required` alongside `derivedTodos`, `acceptanceCriteria`, `openQuestions`, `risks`. Rationale: the failure class this section guards against (multi-turn build of an unnecessary tool) is intrinsically a `grill_me` / full situation; `fast_confirm` is for low-stakes prompts where the gate barely fires.
+- **Migration.** Operators who land 0.4.0 should expect their agents' Reports to fail the parse until the prompt change propagates. The companion harness change (PR in `LanNguyenSi/harness`, follow-up task) bumps the `min_version` floor on the `understanding-before-execution` policy pack to 0.4.0 so `harness doctor` flags installs that haven't upgraded.
+- **Tests.** `tests/parser.test.ts` adds a missing-Prior-Art reject case, an empty-Prior-Art reject case, and an explicit-fast_confirm accept case. `tests/schema.test.ts` extends `ALL_LIST_FIELDS` and `NON_EMPTY_REQUIRED` to include `priorArt`. `tests/prompts.test.ts` asserts both `FULL_PROMPT` and `GRILL_ME_PROMPT` mention Prior Art. Roundtrip fillTemplate exemplar covers the new section.
+
+Filed from harness `798d7173`, agent-grounding task `924b01ee`. Verified: 464/464 vitest, tsc + npm build clean.
+
 ## 0.3.2, 2026-05-20
 
 ### Fixed: `full` + `grill_me` prompts now instruct sections 3-9 as markdown lists

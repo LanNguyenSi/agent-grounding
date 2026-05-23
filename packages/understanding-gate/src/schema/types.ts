@@ -23,6 +23,13 @@ export interface UnderstandingReport {
   outOfScope: string[];
   risks: string[];
   verificationPlan: string[];
+  /**
+   * Section 10 of the Understanding Report (added in v0.4.0). Forces the
+   * agent to state, before committing to build, what was searched for an
+   * existing solution and what was found. Required in `grill_me` / full;
+   * optional in `fast_confirm` (the five-bullet shape doesn't carry it).
+   */
+  priorArt: string[];
 
   requiresHumanApproval: boolean;
   approvalStatus: ApprovalStatus;
