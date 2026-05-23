@@ -182,6 +182,23 @@ describe("parseReport: priorArt section (v0.4.0)", () => {
     expect(r.error.missing).toContain("priorArt");
   });
 
+  it("accepts a literal `- None` Prior Art bullet (parser is structural, prompt is the deterrent)", () => {
+    // Pin the intentional parser/prompt asymmetry: the prompt template
+    // tells the agent NOT to write `- None`, but the parser does not
+    // string-match the value. A literal "- None" passes the structural
+    // check (one non-empty bullet) and validates. If a future change
+    // adds parser-side `- None` rejection, this test will fail and
+    // force a deliberate choice rather than a silent contract shift.
+    const md = FULL_MARKDOWN.replace(
+      /### 10\. Prior art[\s\S]*?(?=## Metadata)/,
+      "### 10. Prior art\n- None\n\n",
+    );
+    const r = parseReport(md);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.report.priorArt).toEqual(["None"]);
+  });
+
   it("accepts a fast_confirm report that omits Prior Art (relaxed schema)", () => {
     const fastConfirmBullets = [
       "- I understood the task as: add a logout button",

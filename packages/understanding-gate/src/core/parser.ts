@@ -4,7 +4,7 @@
 // Contract:
 //   parseReport(markdown, defaults?) -> { ok: true, report } | { ok: false, error }
 //
-// Markdown shape: nine numbered or named sections matching the keys below
+// Markdown shape: ten numbered or named sections matching the keys below
 // (heading level # / ## / ### all accepted, optional "1." numeric prefix).
 // Body of a list-typed section is a unordered/ordered list; body of a
 // paragraph-typed section is one or more lines, joined with single newlines.
