@@ -4,6 +4,10 @@ import {
   type StopHookDeps,
   type StopHookInput,
 } from "../src/adapters/claude-code/handle-stop.js";
+import {
+  PARSE_ERROR_RAW_MAX_BYTES,
+  truncateForLog,
+} from "../src/adapters/error-log.js";
 import type { UnderstandingReport } from "../src/schema/types.js";
 import type { ParseResult } from "../src/core/parser.js";
 
@@ -236,6 +240,31 @@ describe("handleStop: parse_error path", () => {
     expect(out.error.reason).toBe("missing_sections");
   });
 
+  it("caps the raw assistant-text section so a 1 MB input writes a bounded log", () => {
+    const oneMb = `# Understanding Report\n\n${"x".repeat(1024 * 1024)}`;
+    const deps = makeDeps({
+      parseReport: vi.fn(
+        (): ParseResult => ({
+          ok: false,
+          error: {
+            reason: "missing_sections",
+            missing: ["assumptions"],
+            schemaErrors: [],
+            message: "missing assumptions",
+          },
+        }),
+      ),
+    });
+    handleStop(makeInput({ lastAssistantText: oneMb }), deps);
+    const [, payload] = (
+      deps.writeParseErrorLog as ReturnType<typeof vi.fn>
+    ).mock.calls[0];
+    expect(typeof payload).toBe("string");
+    expect((payload as string).length).toBeLessThan(100 * 1024);
+    expect(payload as string).toContain("[truncated ");
+    expect(payload as string).toContain("more bytes]");
+  });
+
   it("still returns parse_error when the log writer itself throws", () => {
     const deps = makeDeps({
       parseReport: vi.fn(
@@ -257,6 +286,18 @@ describe("handleStop: parse_error path", () => {
     expect(out.kind).toBe("parse_error");
     if (out.kind !== "parse_error") return;
     expect(out.logPath).toBe("");
+  });
+});
+
+describe("truncateForLog", () => {
+  it("returns the input unchanged when under the limit", () => {
+    expect(truncateForLog("short", PARSE_ERROR_RAW_MAX_BYTES)).toBe("short");
+  });
+  it("appends a byte-accurate truncation marker when over the limit", () => {
+    const input = "a".repeat(70 * 1024);
+    const out = truncateForLog(input, 64 * 1024);
+    expect(out.startsWith("a".repeat(64 * 1024))).toBe(true);
+    expect(out).toContain(`[truncated ${70 * 1024 - 64 * 1024} more bytes]`);
   });
 });
 

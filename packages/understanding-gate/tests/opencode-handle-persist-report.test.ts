@@ -199,6 +199,30 @@ describe("handlePersistReport: parse_error path", () => {
     expect(payload).toContain("--- raw ---");
   });
 
+  it("caps the raw assistant-text section so a 1 MB input writes a bounded log", () => {
+    const oneMb = `# Understanding Report\n\n${"x".repeat(1024 * 1024)}`;
+    const deps = makeDeps({
+      parseReport: vi.fn(
+        (): ParseResult => ({
+          ok: false,
+          error: {
+            reason: "missing_sections",
+            missing: ["assumptions"],
+            schemaErrors: [],
+            message: "missing assumptions",
+          },
+        }),
+      ),
+    });
+    handlePersistReport(makeInput({ lastAssistantText: oneMb }), deps);
+    const [, payload] = (
+      deps.writeParseErrorLog as ReturnType<typeof vi.fn>
+    ).mock.calls[0];
+    expect((payload as string).length).toBeLessThan(100 * 1024);
+    expect(payload as string).toContain("[truncated ");
+    expect(payload as string).toContain("more bytes]");
+  });
+
   it("still returns parse_error when log writer throws", () => {
     const deps = makeDeps({
       parseReport: vi.fn(
