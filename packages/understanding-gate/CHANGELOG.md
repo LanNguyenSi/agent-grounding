@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.1, 2026-05-24
+
+### Fixed: parse-error log raw payload now capped at 64 KiB across both adapters
+
+- A runaway agent emitting megabytes of assistant text on parse failure used to write the whole text into `<reportDir>/../parse-errors/<stamp>.log`. The atomic-write half (tmp+rename via `writeAtomicText`) was already in place since 0.3.x (see PR #86 lifting the helpers to `adapters/error-log.ts`); the size cap was the missing half.
+- `adapters/error-log.ts` now exports `PARSE_ERROR_RAW_MAX_BYTES` (64 KiB) and `truncateForLog(text, maxBytes)`. The cap is applied in both the claude-code Stop hook (`adapters/claude-code/handle-stop.ts`) and the opencode persist-report adapter (`adapters/opencode/persist-report.ts`), so a 1 MB parse failure now lands ~64 KiB of raw text plus a byte-accurate `[truncated N more bytes]` marker. Byte-bounded, not character-bounded; partial trailing UTF-8 sequences become U+FFFD per `Buffer.toString("utf8")` semantics with the overflow count measured against the original `byteLength`.
+- **Tests.** New 1 MB integration tests for both adapters (`tests/claude-code-handle-stop.test.ts`, `tests/opencode-handle-persist-report.test.ts`) plus unit coverage of `truncateForLog` at the boundary. 469/469 vitest pass.
+
+agent-tasks task `2c56bc1f`, PR #88. No behaviour change for parse-success or no-report paths.
+
 ## 0.4.0, 2026-05-23
 
 ### Feature: Prior Art is now a required 10th section of the Understanding Report (BREAKING)
