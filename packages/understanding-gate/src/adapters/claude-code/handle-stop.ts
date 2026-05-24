@@ -31,8 +31,13 @@ import type {
 // emit "# Understanding Report" or similar as the report's top-level
 // heading.
 export const REPORT_MARKER_RE = /^\s*#+\s*understanding\s+report\b/im;
-export const PARSE_ERRORS_SUBDIR = "parse-errors";
-export const SYNC_ERRORS_SUBDIR = "sync-errors";
+// Re-exported from ../error-log.js (the single source of truth across
+// both adapters). Kept here so any external importer that consumed the
+// old per-adapter export keeps working.
+export {
+  PARSE_ERRORS_SUBDIR,
+  SYNC_ERRORS_SUBDIR,
+} from "../error-log.js";
 
 // fast_confirm mode produces five bullet items with no "Understanding
 // Report" heading, so REPORT_MARKER_RE never matches and the harvest

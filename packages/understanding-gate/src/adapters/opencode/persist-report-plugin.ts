@@ -11,12 +11,8 @@
 // the function below as default. The user adds an entry to `opencode.json`
 // pointing at that file (documented in the printed init message).
 
-import { dirname, join, resolve } from "node:path";
-import { randomBytes } from "node:crypto";
 import { parseReport } from "../../core/parser.js";
 import { listReports, saveReport } from "../../core/persistence.js";
-import { syncHypothesesFromReport } from "../../core/hypothesis-sync.js";
-import { writeAtomicText } from "../../core/fs.js";
 import {
   appendAuditLine,
   defaultAuditLogPath,
@@ -30,6 +26,11 @@ import {
 import {
   PARSE_ERRORS_SUBDIR,
   SYNC_ERRORS_SUBDIR,
+  resolveErrorDir,
+  writeStampedLog,
+} from "../error-log.js";
+import { runSyncAndLog } from "../sync-and-log.js";
+import {
   handlePersistReport,
   type PersistReportEnv,
 } from "./persist-report.js";
@@ -118,19 +119,14 @@ export const persistReportPlugin: OpencodePlugin = async (
       // hypothesis-tracker store. Best-effort and never throws — same
       // "don't crash the harness" stance as the rest of the plugin.
       // On error, drop a side-channel log so the failure is visible
-      // on disk without raising in the plugin runtime.
+      // on disk without raising in the plugin runtime. Routed through
+      // the shared runSyncAndLog so the claude-code Stop binary and
+      // this plugin stay byte-equivalent on the post-save path.
       if (outcome.kind === "saved") {
-        const sync = syncHypothesesFromReport(outcome.report, {
-          reportDir: dirname(outcome.path),
-          sessionId: info.sessionID,
+        runSyncAndLog(outcome.report, outcome.path, info.sessionID, {
+          resolveSyncErrorDir: () => resolveSyncErrorDir(cwd, env),
+          writeSyncErrorLog,
         });
-        if (sync.kind === "error") {
-          try {
-            writeSyncErrorLog(resolveSyncErrorDir(cwd, env), sync.message);
-          } catch {
-            // ignore: side-channel must not crash the plugin either.
-          }
-        }
       }
     },
   };
@@ -138,7 +134,10 @@ export const persistReportPlugin: OpencodePlugin = async (
 
 export default persistReportPlugin;
 
-// --- helpers (mirror the claude-code Stop binary) -----------------------
+// --- helpers ------------------------------------------------------------
+// Thin wrappers around the shared ../error-log.js primitives so each
+// callsite reads as "this is the parse-error dir / this writes a sync
+// log" rather than passing the subdir constant inline every time.
 
 function resolveParseErrorDir(cwd: string, env: PersistReportEnv): string {
   return resolveErrorDir(cwd, env, PARSE_ERRORS_SUBDIR);
@@ -148,32 +147,12 @@ function resolveSyncErrorDir(cwd: string, env: PersistReportEnv): string {
   return resolveErrorDir(cwd, env, SYNC_ERRORS_SUBDIR);
 }
 
-function resolveErrorDir(
-  cwd: string,
-  env: PersistReportEnv,
-  subdir: string,
-): string {
-  const reportDirEnv = env.UNDERSTANDING_GATE_REPORT_DIR;
-  if (reportDirEnv && reportDirEnv.length > 0) {
-    return resolve(dirname(reportDirEnv), subdir);
-  }
-  return resolve(cwd, ".understanding-gate", subdir);
-}
-
 function writeParseErrorLog(dir: string, payload: string): string {
   return writeStampedLog(dir, payload);
 }
 
 function writeSyncErrorLog(dir: string, payload: string): string {
   return writeStampedLog(dir, payload);
-}
-
-function writeStampedLog(dir: string, payload: string): string {
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const filename = `${stamp}-${randomBytes(3).toString("hex")}.log`;
-  const path = join(dir, filename);
-  writeAtomicText(path, payload);
-  return path;
 }
 
 // Drop a parse-errors entry tagged transport_error. Lives next to the
