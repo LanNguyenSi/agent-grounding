@@ -25,8 +25,13 @@ import type {
 } from "../../core/persistence.js";
 
 export const REPORT_MARKER_RE = /^\s*#+\s*understanding\s+report\b/im;
-export const PARSE_ERRORS_SUBDIR = "parse-errors";
-export const SYNC_ERRORS_SUBDIR = "sync-errors";
+// Re-exported from ../error-log.js (the single source of truth across
+// both adapters). Kept here so any external importer that consumed the
+// old per-adapter export keeps working.
+export {
+  PARSE_ERRORS_SUBDIR,
+  SYNC_ERRORS_SUBDIR,
+} from "../error-log.js";
 
 export interface PersistReportDeps {
   parseReport: (markdown: string, defaults?: ParseDefaults) => ParseResult;

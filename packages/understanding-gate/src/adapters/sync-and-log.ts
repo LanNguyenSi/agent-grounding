@@ -1,15 +1,16 @@
-// Post-save hypothesis-sync helper, factored out of the Stop binary so
-// both the binary entrypoint and tests can drive it without spawning a
-// child process. Side effect: on sync error, drops a side-channel log
-// file under the resolved sync-error dir. Returns the SyncOutcome so
-// callers (or tests) can inspect what happened.
+// Post-save hypothesis-sync helper, factored out so all adapters
+// (claude-code Stop binary, opencode persist-report plugin) share the
+// same try-sync-log-swallow contract on the post-save path. Side
+// effect: on sync error, drops a side-channel log file under the
+// resolved sync-error dir. Returns the SyncOutcome so callers (or
+// tests) can inspect what happened.
 
 import { dirname } from "node:path";
 import {
   syncHypothesesFromReport,
   type SyncOutcome,
-} from "../../core/hypothesis-sync.js";
-import type { UnderstandingReport } from "../../schema/types.js";
+} from "../core/hypothesis-sync.js";
+import type { UnderstandingReport } from "../schema/types.js";
 
 export interface SyncAndLogDeps {
   /** Resolves the directory where the sync-error log should land. */

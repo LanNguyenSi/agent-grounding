@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runSyncAndLog } from "../src/adapters/claude-code/sync-and-log.js";
+import { runSyncAndLog } from "../src/adapters/sync-and-log.js";
 import { writeAtomicText } from "../src/core/fs.js";
 import type { UnderstandingReport } from "../src/schema/types.js";
 
@@ -35,6 +35,7 @@ const baseReport: UnderstandingReport = {
   outOfScope: [],
   risks: [],
   verificationPlan: ["p"],
+  priorArt: ["q"],
   requiresHumanApproval: false,
   approvalStatus: "approved",
   createdAt: "2026-04-30T12:00:00.000Z",

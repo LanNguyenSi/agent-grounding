@@ -3,19 +3,17 @@
 // transcript, extracts the most recent assistant text, and runs the pure
 // handler. All error paths exit 0 so the hook never blocks the harness.
 
-import { dirname, join, resolve } from "node:path";
-import { randomBytes } from "node:crypto";
 import { readStdin } from "../io.js";
 import { parseReport } from "../../core/parser.js";
 import { saveReport } from "../../core/persistence.js";
-import { writeAtomicText } from "../../core/fs.js";
 import {
   PARSE_ERRORS_SUBDIR,
   SYNC_ERRORS_SUBDIR,
-  handleStop,
-  type StopHookEnv,
-} from "./handle-stop.js";
-import { runSyncAndLog } from "./sync-and-log.js";
+  resolveErrorDir,
+  writeStampedLog,
+} from "../error-log.js";
+import { runSyncAndLog } from "../sync-and-log.js";
+import { handleStop, type StopHookEnv } from "./handle-stop.js";
 import { extractLastAssistantText } from "./transcript.js";
 
 interface StopHookPayload {
@@ -120,32 +118,12 @@ function resolveSyncErrorDir(cwd: string, env: StopHookEnv): string {
   return resolveErrorDir(cwd, env, SYNC_ERRORS_SUBDIR);
 }
 
-function resolveErrorDir(
-  cwd: string,
-  env: StopHookEnv,
-  subdir: string,
-): string {
-  const reportDirEnv = env.UNDERSTANDING_GATE_REPORT_DIR;
-  if (reportDirEnv && reportDirEnv.length > 0) {
-    return resolve(dirname(reportDirEnv), subdir);
-  }
-  return resolve(cwd, ".understanding-gate", subdir);
-}
-
 function writeParseErrorLog(dir: string, payload: string): string {
   return writeStampedLog(dir, payload);
 }
 
 function writeSyncErrorLog(dir: string, payload: string): string {
   return writeStampedLog(dir, payload);
-}
-
-function writeStampedLog(dir: string, payload: string): string {
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const filename = `${stamp}-${randomBytes(3).toString("hex")}.log`;
-  const path = join(dir, filename);
-  writeAtomicText(path, payload);
-  return path;
 }
 
 main().catch((err: unknown) => {
