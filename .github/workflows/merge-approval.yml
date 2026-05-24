@@ -44,7 +44,7 @@ jobs:
             core.setOutput('evidence_logged',           has('review:evidence-logged').toString());
 
       - name: Run merge-approval gate
-        uses: LanNguyenSi/agent-grounding/packages/review-claim-gate/action@master
+        uses: LanNguyenSi/agent-grounding/packages/review-claim-gate/action@62faca5b4ad7f9b9072fdad284287a351a114097 # review-claim-gate-v0.1.0
         with:
           task-id: ${{ github.event.pull_request.head.ref }}
           pr-number: ${{ github.event.pull_request.number }}
