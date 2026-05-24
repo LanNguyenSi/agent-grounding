@@ -24,6 +24,7 @@ import type {
   SaveOptions,
   SaveResult,
 } from "../../core/persistence.js";
+import { PARSE_ERROR_RAW_MAX_BYTES, truncateForLog } from "../error-log.js";
 
 // Anchor at line start with a heading prefix so casual mentions like
 // "I'll write an Understanding Report next" don't trigger the parser.
@@ -175,7 +176,7 @@ export function handleStop(
     },
     null,
     2,
-  )}\n\n--- raw ---\n${text}\n`;
+  )}\n\n--- raw ---\n${truncateForLog(text, PARSE_ERROR_RAW_MAX_BYTES)}\n`;
   let logPath = "";
   try {
     logPath = deps.writeParseErrorLog(errorDir, payload);

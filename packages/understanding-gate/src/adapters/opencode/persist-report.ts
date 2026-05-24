@@ -23,6 +23,7 @@ import type {
   SaveOptions,
   SaveResult,
 } from "../../core/persistence.js";
+import { PARSE_ERROR_RAW_MAX_BYTES, truncateForLog } from "../error-log.js";
 
 export const REPORT_MARKER_RE = /^\s*#+\s*understanding\s+report\b/im;
 // Re-exported from ../error-log.js (the single source of truth across
@@ -123,7 +124,7 @@ export function handlePersistReport(
     },
     null,
     2,
-  )}\n\n--- raw ---\n${text}\n`;
+  )}\n\n--- raw ---\n${truncateForLog(text, PARSE_ERROR_RAW_MAX_BYTES)}\n`;
   let logPath = "";
   try {
     logPath = deps.writeParseErrorLog(input.parseErrorDir, payload);

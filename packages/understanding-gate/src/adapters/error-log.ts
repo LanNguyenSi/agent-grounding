@@ -49,6 +49,32 @@ export function resolveErrorDir(
 }
 
 /**
+ * Cap for the `--- raw ---` section of parse-error logs. A runaway agent
+ * emitting MBs of assistant text would otherwise write MBs to disk on
+ * every parse failure. 64 KiB is enough to surface the report's failing
+ * section in operator debugging.
+ */
+export const PARSE_ERROR_RAW_MAX_BYTES = 64 * 1024;
+
+/**
+ * Truncate `text` to at most `maxBytes` UTF-8 bytes and append a marker
+ * with the byte count that was dropped. Bytes — not characters — because
+ * the goal is bounding on-disk size.
+ *
+ * Byte slicing can land mid-UTF-8-sequence. `Buffer.subarray(...).toString("utf8")`
+ * replaces the trailing partial sequence with U+FFFD rather than stripping
+ * it; the `overflow` count is still measured against the original
+ * `byteLength` so the marker stays byte-accurate.
+ */
+export function truncateForLog(text: string, maxBytes: number): string {
+  const buf = Buffer.from(text, "utf8");
+  if (buf.byteLength <= maxBytes) return text;
+  const overflow = buf.byteLength - maxBytes;
+  const truncated = buf.subarray(0, maxBytes).toString("utf8");
+  return `${truncated}\n[truncated ${overflow} more bytes]`;
+}
+
+/**
  * Atomic stamped-log writer. Filename is
  * `<ISO-timestamp>-<6-hex-bytes>.log`. Returns the absolute path so the
  * caller can surface it (e.g. for tests or operator inspection).
