@@ -1,0 +1,26 @@
+
+🧭 Grounding Wrapper: Session Started
+
+  ID:      gs-clawd-monitor-mplkwzqq
+  Scope:   clawd-monitor
+  Problem: agent not visible in monitor
+
+  Mandatory Sequence:
+    1. domain-router
+    2. readme-first-resolver
+    3. debug-playbook-engine
+    4. runtime-reality-checker
+    5. evidence-ledger
+    6. claim-gate
+    7. hypothesis-tracker
+
+  Active Guardrails:
+    🔒 No root-cause claim before README is read
+    🔒 Mandatory steps cannot be skipped
+    🔒 No token/config claim before config source is verified
+    🔒 No network claim before process state is verified
+    🔒 No architecture claim before primary docs are read
+
+  ▶ Start now with:
+    → domain-router: Resolve scope: identify primary repos, components, priority files
+

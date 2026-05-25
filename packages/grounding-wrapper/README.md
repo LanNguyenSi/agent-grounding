@@ -1,17 +1,23 @@
 # grounding-wrapper
 
-Orchestrates the full agent-grounding stack. Enforces the correct entry path before any debugging begins, even good agents lose focus when they have free tool access.
+Plans grounding sessions for agents. Given a `{keyword, problem}` input, it computes:
 
-## What it does
+1. A recommended **ordered sequence** of tools the agent should invoke
+2. A set of **active guardrails** (rules the agent must not violate)
+3. A **phase machine** the agent can advance through as it works
 
-Before any analysis, automatically:
-1. **Resolves scope** via [domain-router](../domain-router)
-2. **Reads primary docs** via [readme-first-resolver](../readme-first-resolver)
-3. **Loads playbook** via [debug-playbook-engine](../debug-playbook-engine)
-4. **Checks runtime** via [runtime-reality-checker](../runtime-reality-checker) *(for service/agent domains)*
-5. **Tracks evidence** via [evidence-ledger](../evidence-ledger)
-6. **Gates claims** via [claim-gate](../claim-gate)
-7. **Manages hypotheses** via [hypothesis-tracker](../hypothesis-tracker)
+It is the planning surface for the agent-grounding stack, not the enforcement surface.
+
+## What it does NOT do
+
+This package is intentionally a **pure planner**. It does **not**:
+
+- invoke `domain-router`, `readme-first-resolver`, `debug-playbook-engine`, `evidence-ledger`, `claim-gate`, `runtime-reality-checker`, or `hypothesis-tracker`
+- block tool calls that violate the recommended sequence
+- persist sessions to disk
+- guarantee that the agent follows the plan
+
+**Enforcement is a separate concern.** A downstream Policy (typically wired via [harness](https://github.com/LanNguyenSi/harness)) is what blocks an agent's tool call when the sequence is violated or a guardrail is breached. The wrapper recommends; harness enforces. See the [Public API for enforcement](#public-api-for-enforcement) section below for the consumption contract.
 
 ## Usage
 
@@ -36,7 +42,7 @@ grounding-wrapper start -k clawd-monitor -p "agent not visible" --json
 ## Example Output
 
 ```
-🧭 Grounding Wrapper — Session Started
+🧭 Grounding Wrapper: Session Started
 
   ID:      gs-clawd-monitor-m8x2k4
   Scope:   clawd-monitor
@@ -62,6 +68,8 @@ grounding-wrapper start -k clawd-monitor -p "agent not visible" --json
     → domain-router: Resolve scope: identify primary repos, components, priority files
 ```
 
+The output is advisory. Whether the agent actually invokes `domain-router` next is up to the agent (or a Policy that enforces it).
+
 ## Guardrails
 
 | ID | Rule |
@@ -72,28 +80,72 @@ grounding-wrapper start -k clawd-monitor -p "agent not visible" --json
 | `no-network-claim-before-process-check` | No network claim before process state is verified |
 | `no-step-skipping` | Mandatory steps cannot be skipped |
 
-## API
+## Library API
 
 ```typescript
 import { initSession, getCurrentTools, advancePhase, isGuardrailActive } from '@lannguyensi/grounding-wrapper';
 
 const session = initSession({ keyword: 'clawd-monitor', problem: 'agent not visible' });
 
-// What to invoke right now
+// What the agent should invoke right now (advisory)
 const tools = getCurrentTools(session);
 
-// Advance after completing current phase
+// Advance after the agent completes the current phase
 advancePhase(session);
 
-// Check guardrails before allowing actions
+// Inspect whether a guardrail applies (advisory; enforcement is external)
 if (isGuardrailActive(session, 'no-root-cause-before-readme')) {
-  // block the claim
+  // a Policy can use this signal to block a tool call
 }
 
 // Handle scope change mid-session
 import { handleScopeChange } from '@lannguyensi/grounding-wrapper';
 const updated = handleScopeChange(session, 'new-keyword');
 ```
+
+### Exported types
+
+`GroundingInput`, `GroundingSession`, `GroundingStep`, `GroundingPhase`, `GuardrailId`. All types and functions are in `src/lib.ts`.
+
+## Public API for enforcement
+
+A typical pipeline that wants to *enforce* what this package recommends consumes the planner output and writes to a separate signal store (e.g. the evidence-ledger) that a Policy then reads.
+
+A worked example for a harness Policy author:
+
+```ts
+// 1. The agent (or a session-start hook) computes the plan once
+const session = initSession({ keyword, problem });
+
+// 2. The hook emits one ledger entry per planned step, prefixed for grep-ability:
+//    grounding:plan:<sessionId>:<stepIndex>:<tool>
+//      payload: { phase, mandatory, description }
+//
+//    plus one entry per active guardrail:
+//    grounding:guardrail:<sessionId>:<guardrailId>
+//
+// 3. A harness PreToolUse Policy then matches tool calls against the plan:
+//
+//    name: enforce-grounding-sequence
+//    triggers: [ tool == 'Bash' && command =~ /^gh pr merge/ ]
+//    requiresEval:
+//      tag: grounding:guardrail:${session}:no-step-skipping
+//      mustBe: cleared        # i.e. an explicit clearance entry exists
+//    onMiss:
+//      decision: block
+//      reason:  "grounding: step <n> not completed, see grounding:plan:* entries"
+```
+
+The contract this package owes a downstream enforcer:
+
+- **Stable shape**: `GroundingSession` is the source of truth; fields are not renamed without a major-version bump.
+- **Pure**: `initSession` is deterministic in `keyword`+`problem` modulo `id` and `started_at`. No filesystem or network.
+- **Idempotent advance**: `advancePhase` past `complete` is a no-op (covered by tests).
+
+The contract this package does **not** owe:
+
+- Writing to the evidence-ledger. That is the caller's job.
+- Knowing about harness, agent-tasks, or any specific enforcer. The output is plain JSON.
 
 ## The full grounding stack
 
@@ -106,4 +158,4 @@ const updated = handleScopeChange(session, 'new-keyword');
 | 5 | [claim-gate](../claim-gate) | Claim gating |
 | 6 | [runtime-reality-checker](../runtime-reality-checker) | Runtime verification |
 | 7 | [hypothesis-tracker](../hypothesis-tracker) | Hypothesis management |
-| **→** | **grounding-wrapper** | **Orchestrates all of the above** |
+| **→** | **grounding-wrapper** | **Plans / recommends the entry path; enforcement is external** |

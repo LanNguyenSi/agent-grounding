@@ -1,0 +1,28 @@
+
+📋 Grounding Phases: arch-redesign
+
+
+  [scope-resolution]
+    → domain-router [mandatory]
+       Resolve scope: identify primary repos, components, priority files
+
+  [doc-reading]
+    → readme-first-resolver [mandatory]
+       Read primary documentation and build system mental model
+
+  [playbook-loading]
+    → debug-playbook-engine [mandatory]
+       Load domain-specific diagnostic playbook and ordered steps
+
+  [evidence-collection]
+    → evidence-ledger [mandatory]
+       Track facts, hypotheses, and rejected explanations
+
+  [claim-evaluation]
+    → claim-gate [mandatory]
+       Evaluate whether claims are backed by sufficient evidence
+
+  [evidence-collection]
+    → hypothesis-tracker [optional]
+       Manage competing hypotheses and test against evidence
+

@@ -1,0 +1,21 @@
+{
+  "id": "gs-clawd-monitor-mplkwzrg",
+  "resolved_scope": "clawd-monitor",
+  "mandatory_sequence": [
+    "domain-router",
+    "readme-first-resolver",
+    "debug-playbook-engine",
+    "runtime-reality-checker",
+    "evidence-ledger",
+    "claim-gate",
+    "hypothesis-tracker"
+  ],
+  "active_guardrails": [
+    "no-root-cause-before-readme",
+    "no-step-skipping",
+    "no-token-claim-before-config-check",
+    "no-network-claim-before-process-check",
+    "no-architecture-claim-before-docs"
+  ],
+  "current_phase": "scope-resolution"
+}

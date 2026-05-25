@@ -22,6 +22,29 @@ Independently-versioned published packages (own tag, own CHANGELOG):
 
 - `@lannguyensi/understanding-gate`: see [`packages/understanding-gate/CHANGELOG.md`](packages/understanding-gate/CHANGELOG.md). Released under tags of the form `understanding-gate-vX.Y.Z` so its cadence does not bump the four version-locked packages.
 
+## [Unreleased]
+
+### `@lannguyensi/grounding-wrapper`
+
+#### Fixed
+
+- `advancePhase` is now idempotent once `current_phase === 'complete'`.
+  Previously, calling `advancePhase` on an already-complete session
+  silently reset `current_phase` to `scope-resolution`. New behavior:
+  the call is a no-op. Pinned by test `is idempotent once complete is
+  reached` in `src/__tests__/lib.test.ts`.
+
+#### Changed
+
+- README rewritten to match actual behavior. The package is a session
+  *planner*, not an orchestrator: it does not invoke the seven
+  downstream tools. Enforcement is the caller's job (typically a
+  harness Policy). Added a "Public API for enforcement" section
+  describing the consumption contract for downstream enforcers.
+- Test coverage on `src/lib.ts` raised to 100% (added an explicit
+  test for the `arch|design|system` guardrail path that was previously
+  uncovered).
+
 ## [0.2.0] - 2026-05-01
 
 Coordinated release with harness Phase 5 (LanNguyenSi/harness v0.5.0).
