@@ -1,14 +1,13 @@
 /**
- * Grounding Wrapper — orchestrates the full lan-tools grounding stack.
+ * Grounding Wrapper: plans grounding sessions for agents.
  *
- * Enforces the correct agent entry path before any debugging begins:
- *   1. Domain Router → resolve scope
- *   2. README First Resolver → read primary docs
- *   3. Debug Playbook Engine → load ordered steps
- *   4. Evidence Ledger → track facts
- *   5. Claim Gate → prevent premature claims
- *   6. Runtime Reality Checker → verify actual state
- *   7. Hypothesis Tracker → manage competing explanations
+ * Pure planner. Given a (keyword, problem) input, computes a recommended
+ * tool sequence, active guardrails, and a phase machine. Does NOT invoke
+ * the seven downstream tools (domain-router, readme-first-resolver,
+ * debug-playbook-engine, evidence-ledger, claim-gate, runtime-reality-checker,
+ * hypothesis-tracker). Enforcement of the recommendation is the caller's
+ * job (typically a harness Policy). See README.md for the consumption
+ * contract.
  */
 
 export type GroundingPhase =
@@ -206,8 +205,11 @@ export function initSession(input: GroundingInput): GroundingSession {
   };
 }
 
-/** Advance session to next phase */
+/** Advance session to next phase. Idempotent once `complete` is reached. */
 export function advancePhase(session: GroundingSession): GroundingSession {
+  if (session.current_phase === 'complete') {
+    return session;
+  }
   type NonCompletePhase = Exclude<GroundingPhase, 'complete'>;
   const phases = session.phases.filter((p): p is NonCompletePhase => p !== 'complete');
   const currentIndex = phases.indexOf(session.current_phase as NonCompletePhase);

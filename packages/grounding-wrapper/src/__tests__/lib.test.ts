@@ -39,6 +39,12 @@ describe('resolveGuardrails', () => {
     expect(resolveGuardrails('clawd-monitor')).toContain('no-network-claim-before-process-check');
   });
 
+  it('includes architecture guardrail for arch/design/system keywords', () => {
+    expect(resolveGuardrails('arch-decision')).toContain('no-architecture-claim-before-docs');
+    expect(resolveGuardrails('system-redesign')).toContain('no-architecture-claim-before-docs');
+    expect(resolveGuardrails('design-doc')).toContain('no-architecture-claim-before-docs');
+  });
+
   it('deduplicates guardrails', () => {
     const rails = resolveGuardrails('clawd-monitor-auth');
     const unique = new Set(rails);
@@ -130,6 +136,14 @@ describe('advancePhase', () => {
       if (session.current_phase === 'complete') break;
       advancePhase(session);
     }
+    expect(session.current_phase).toBe('complete');
+  });
+
+  it('is idempotent once complete is reached', () => {
+    const session = initSession({ keyword: 'simple-tool', problem: 'test' });
+    while (session.current_phase !== 'complete') advancePhase(session);
+    advancePhase(session);
+    advancePhase(session);
     expect(session.current_phase).toBe('complete');
   });
 });

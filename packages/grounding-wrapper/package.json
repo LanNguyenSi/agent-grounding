@@ -1,7 +1,7 @@
 {
   "name": "@lannguyensi/grounding-wrapper",
   "version": "0.2.0",
-  "description": "Orchestrates the lan-tools grounding stack, enforces correct agent entry path",
+  "description": "Plans grounding sessions for agents (recommended tool sequence, guardrails, phases). Pure planner; enforcement is external.",
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -4,7 +4,6 @@ import chalk from 'chalk';
 import {
   initSession,
   getCurrentTools,
-  advancePhase,
   isGuardrailActive,
   GuardrailId,
 } from './lib.js';
@@ -21,7 +20,7 @@ const program = new Command();
 
 program
   .name('grounding-wrapper')
-  .description('Orchestrate the full lan-tools grounding stack — enforce correct agent entry path')
+  .description('Plan a grounding session: recommend the agent entry path (sequence, guardrails, phases). Enforcement is external.')
   .version('0.2.0');
 
 program
@@ -44,7 +43,7 @@ program
       return;
     }
 
-    console.log(chalk.bold.cyan(`\n🧭 Grounding Wrapper — Session Started\n`));
+    console.log(chalk.bold.cyan(`\n🧭 Grounding Wrapper: Session Started\n`));
     console.log(`  ID:      ${chalk.gray(session.id)}`);
     console.log(`  Scope:   ${chalk.bold(session.resolved_scope)}`);
     console.log(`  Problem: ${session.problem}`);
@@ -98,7 +97,7 @@ program
       return;
     }
 
-    console.log(chalk.bold.cyan(`\n📋 Grounding Phases — ${session.resolved_scope}\n`));
+    console.log(chalk.bold.cyan(`\n📋 Grounding Phases: ${session.resolved_scope}\n`));
     let lastPhase = '';
     for (const step of session.steps) {
       if (step.phase !== lastPhase) {
