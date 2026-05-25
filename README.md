@@ -98,7 +98,7 @@ The `git clone` workflow above is for hacking on the monorepo itself; downstream
 | Gate `merge_approval` on tests + checklist + evidence-ledger entry | [`packages/review-claim-gate`](packages/review-claim-gate) |
 | Ask agents to produce an Understanding Report before acting | [`packages/understanding-gate`](packages/understanding-gate) |
 | Wire the stack into an MCP-speaking client (Claude Code, Codex, OpenCode) | [`packages/grounding-mcp`](packages/grounding-mcp) |
-| Orchestrate the stack, enforce correct tool order | [`packages/grounding-wrapper`](packages/grounding-wrapper) |
+| Plan the agent entry path (sequence, guardrails, phases) for downstream enforcement | [`packages/grounding-wrapper`](packages/grounding-wrapper) |
 
 ## Packages
 
@@ -119,7 +119,7 @@ The `git clone` workflow above is for hacking on the monorepo itself; downstream
 |---------|-------------|
 | [debug-playbook-engine](packages/debug-playbook-engine) | Guides agents through domain-specific diagnostic sequences |
 | [evidence-ledger](packages/evidence-ledger) | Structured evidence tracking during debugging |
-| [grounding-wrapper](packages/grounding-wrapper) | Orchestrates the grounding stack, enforces correct tool order |
+| [grounding-wrapper](packages/grounding-wrapper) | Plans grounding sessions (recommended tool sequence, guardrails, phases). Pure planner; enforcement is external. |
 | [readme-first-resolver](packages/readme-first-resolver) | Forces agents to read primary docs before any analysis |
 | [domain-router](packages/domain-router) | Routes keywords to correct repos, components and docs scope |
 
