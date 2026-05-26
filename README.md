@@ -62,10 +62,16 @@ Same data via `ledger export --session readme-demo` produces structured JSON for
 Every package is published under the `@lannguyensi/` scope and installable directly:
 
 ```bash
-# Library APIs
-npm install @lannguyensi/hypothesis-tracker
-npm install @lannguyensi/runtime-reality-checker
+# Library APIs (claim-gate, evidence-ledger, grounding-wrapper, and
+# review-claim-gate ship both a library and a CLI; the CLI install
+# below exposes the bin, this install just adds the importable API)
+npm install @lannguyensi/claim-gate
+npm install @lannguyensi/evidence-ledger
 npm install @lannguyensi/grounding-sdk
+npm install @lannguyensi/grounding-wrapper
+npm install @lannguyensi/hypothesis-tracker
+npm install @lannguyensi/review-claim-gate
+npm install @lannguyensi/runtime-reality-checker
 
 # CLIs (install globally to expose the bin)
 npm install -g @lannguyensi/claim-gate               # → claim-gate
