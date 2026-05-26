@@ -55,6 +55,43 @@ if (hasCriticalDrift(result)) {
 | `ProcessCheckResult` | Per-process comparison result (drift flags for state, startup, port) |
 | `StartupMode` | systemd, docker, pm2, manual, cron, unknown |
 
+## PreToolUse policy (PoC)
+
+Beyond the library API, this package ships a PreToolUse policy hook that runs `runRealityCheck` before a defined class of runtime-mutating tool calls (compose / systemctl / kill / deploy script) and blocks when critical drift is present. The agent-grounding repo owns the policy and the spec at [`docs/policy-runtime-reality.md`](../../docs/policy-runtime-reality.md), the harness side registers the hook (separate follow-up task).
+
+```typescript
+import { handlePolicyPreToolUse, type Probe } from "@lannguyensi/runtime-reality-checker/policy";
+
+// In a wrapper binary or test:
+const probe: Probe = ({ keyword, expected }) => {
+  // Run `docker ps`, `systemctl list-units`, etc. Return ActualProcessState[].
+  return [/* ... */];
+};
+
+const result = handlePolicyPreToolUse(stdinJson, process.env, {
+  loadExpectations,
+  probe,
+});
+process.stdout.write(result.stdout);
+process.stderr.write(result.stderr);
+if (result.exitCode !== 0) process.exit(result.exitCode);
+```
+
+The package binary `runtime-reality-policy-pre-tool-use` is a thin wrapper that ships without a probe (degrades to allow, or blocks if `RUNTIME_REALITY_PROBE_FAIL_BLOCK=1`). The full integration plus probe lives in the harness-side follow-up.
+
+Env knobs:
+
+| Variable | Effect |
+| --- | --- |
+| `RUNTIME_REALITY_DISABLE=1` | Skip all checks (silent) |
+| `RUNTIME_REALITY_KEYWORD=<domain>` | Look up `<domain>.json` under the expectations dir |
+| `RUNTIME_REALITY_EXPECTATIONS_DIR=<path>` | Override default `~/.runtime-reality/expectations/` |
+| `RUNTIME_REALITY_WARN_AS_BLOCK=1` | Treat warning-tier drift as a block |
+| `RUNTIME_REALITY_CRITICAL_AS_WARN=1` | Degrade critical drift to a warn (audit only) |
+| `RUNTIME_REALITY_PROBE_FAIL_BLOCK=1` | Block when no probe is configured or the probe throws |
+
+See the spec for the full trigger set, severity-to-decision matrix, and a worked VPS-compose example.
+
 ## verify_memory_reference
 
 A memory that names a concrete file, symbol, or CLI flag is making a

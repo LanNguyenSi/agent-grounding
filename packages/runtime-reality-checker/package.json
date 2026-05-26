@@ -1,7 +1,7 @@
 {
   "name": "@lannguyensi/runtime-reality-checker",
-  "version": "0.1.0",
-  "description": "Checks if actual runtime state matches documentation and assumptions",
+  "version": "0.2.0",
+  "description": "Checks if actual runtime state matches documentation and assumptions; ships a PreToolUse policy PoC",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -19,8 +19,22 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./policy": {
+      "types": "./dist/policy/index.d.ts",
+      "default": "./dist/policy/index.js"
+    }
+  },
+  "bin": {
+    "runtime-reality-policy-pre-tool-use": "./dist/policy/pre-tool-use.js"
+  },
   "scripts": {
     "build": "tsc",
+    "postbuild": "chmod +x dist/policy/pre-tool-use.js",
     "test": "vitest run",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
