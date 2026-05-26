@@ -274,15 +274,46 @@ server.tool(
 // here live only in-process and are meant to be churned through as the
 // agent reasons. Use them to force yourself to keep alternatives alive
 // instead of silently replacing one wrong guess with another.
+//
+// Error shape: unlike the grounding/ledger verbs (which let loadSession
+// throw and propagate as an MCP tool error), these verbs return a
+// structured `{ error: <code>, ... }` payload for not-found / out-of-range
+// cases. Lazy-create semantics make "no store" a non-exceptional state,
+// so a structured response is friendlier to a recovering agent.
+
+const hypothesisSessionIdSchema = z
+  .string()
+  .min(1)
+  .max(256)
+  .describe('Session id, namespaces the hypothesis store. Use the same id as your grounding session.');
+
+const hypothesisIdSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .describe('Hypothesis id returned by hypothesis_record.');
+
+const hypothesisTextSchema = z
+  .string()
+  .min(1)
+  .max(4096)
+  .describe('One-sentence hypothesis (e.g. "DNS resolution is failing").');
+
+const evidenceTextSchema = z
+  .string()
+  .min(1)
+  .max(4096)
+  .describe('What you observed (raw, not interpreted).');
 
 server.tool(
   'hypothesis_record',
-  'Add a new competing hypothesis with required verification checks. Use during debugging when you can name more than one possible cause — recording both forces explicit rejection later instead of silent substitution.',
+  'Add a new competing hypothesis with required verification checks. Use during debugging when you can name more than one possible cause, recording both forces explicit rejection later instead of silent substitution.',
   {
-    sessionId: z.string().describe('Session id — namespaces the hypothesis store. Use the same id as your grounding session.'),
-    text: z.string().min(1).describe('One-sentence hypothesis (e.g. "DNS resolution is failing").'),
+    sessionId: hypothesisSessionIdSchema,
+    text: hypothesisTextSchema,
     requiredChecks: z
-      .array(z.string().min(1))
+      .array(z.string().min(1).max(512))
+      .max(32)
       .default([])
       .describe('Verification steps that, if completed, would confirm or reject this hypothesis (e.g. ["Run dig", "Check /etc/resolv.conf"]).'),
   },
@@ -295,9 +326,9 @@ server.tool(
 
 server.tool(
   'hypothesis_list',
-  'Return all hypotheses for a session plus a status summary. Use to take stock before claiming a root cause — every unverified or unrejected hypothesis is an open alternative the claim-gate will block on.',
+  'Return all hypotheses for a session plus a status summary. Use to take stock before claiming a root cause: every unverified or unrejected hypothesis is an open alternative the claim-gate will block on.',
   {
-    sessionId: z.string(),
+    sessionId: hypothesisSessionIdSchema,
   },
   async ({ sessionId }) => {
     const store = getStore(sessionId);
@@ -318,12 +349,12 @@ server.tool(
 
 server.tool(
   'hypothesis_evidence',
-  'Attach evidence to an existing hypothesis. Auto-promotes an unverified hypothesis to supported (mirrors hypothesis-tracker semantics). Use with the actual observation (log line, command output) — narrative-only evidence weakens the eventual claim-gate verdict.',
+  'Attach evidence to an existing hypothesis. Auto-promotes an unverified hypothesis to supported (mirrors hypothesis-tracker semantics). Use with the actual observation (log line, command output): narrative-only evidence weakens the eventual claim-gate verdict.',
   {
-    sessionId: z.string(),
-    hypothesisId: z.string().min(1).describe('Hypothesis id returned by hypothesis_record.'),
-    evidence: z.string().min(1).describe('What you observed (raw, not interpreted).'),
-    source: z.string().optional().describe('Where the observation came from (file path, command, log file).'),
+    sessionId: hypothesisSessionIdSchema,
+    hypothesisId: hypothesisIdSchema,
+    evidence: evidenceTextSchema,
+    source: z.string().max(512).optional().describe('Where the observation came from (file path, command, log file).'),
   },
   async ({ sessionId, hypothesisId, evidence, source }) => {
     const store = getStore(sessionId);
@@ -340,10 +371,10 @@ server.tool(
 
 server.tool(
   'hypothesis_check_done',
-  'Mark one of a hypothesis\'s required_checks as completed (0-indexed). Use after actually running the check — this is how the pending_checks counter in hypothesis_list drains.',
+  'Mark one of a hypothesis\'s required_checks as completed (0-indexed). Use after actually running the check: this is how the pending_checks counter in hypothesis_list drains.',
   {
-    sessionId: z.string(),
-    hypothesisId: z.string().min(1),
+    sessionId: hypothesisSessionIdSchema,
+    hypothesisId: hypothesisIdSchema,
     checkIndex: z.number().int().min(0).describe('0-based index into required_checks.'),
   },
   async ({ sessionId, hypothesisId, checkIndex }) => {
@@ -373,9 +404,9 @@ server.tool(
   'hypothesis_reject',
   'Reject a hypothesis with a reason. The reason is appended to the evidence list as a [rejected] entry so the rejection itself becomes auditable, not a silent delete.',
   {
-    sessionId: z.string(),
-    hypothesisId: z.string().min(1),
-    reason: z.string().optional().describe('Why the hypothesis was rejected (counter-evidence, failed check, contradiction).'),
+    sessionId: hypothesisSessionIdSchema,
+    hypothesisId: hypothesisIdSchema,
+    reason: z.string().max(4096).optional().describe('Why the hypothesis was rejected (counter-evidence, failed check, contradiction).'),
   },
   async ({ sessionId, hypothesisId, reason }) => {
     const store = getStore(sessionId);
@@ -392,10 +423,10 @@ server.tool(
 
 server.tool(
   'hypothesis_support',
-  'Explicitly mark a hypothesis as supported. Usually not needed — hypothesis_evidence auto-promotes on first evidence. Use this when promotion happens out-of-band (e.g. evidence is in the ledger but not yet attached).',
+  'Explicitly mark a hypothesis as supported. Usually not needed: hypothesis_evidence auto-promotes on first evidence. Use this when promotion happens out-of-band (e.g. evidence is in the ledger but not yet attached).',
   {
-    sessionId: z.string(),
-    hypothesisId: z.string().min(1),
+    sessionId: hypothesisSessionIdSchema,
+    hypothesisId: hypothesisIdSchema,
   },
   async ({ sessionId, hypothesisId }) => {
     const store = getStore(sessionId);
