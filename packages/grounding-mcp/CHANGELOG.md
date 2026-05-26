@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.3.0, 2026-05-26
+
+### Added
+
+- `hypothesis_*` MCP tool surface wrapping `@lannguyensi/hypothesis-tracker`:
+  `hypothesis_record`, `hypothesis_list`, `hypothesis_evidence`,
+  `hypothesis_check_done`, `hypothesis_reject`, `hypothesis_support`.
+  In-memory store namespaced by sessionId (one Map per server process;
+  persistence intentionally out of scope, the ledger is the durable record).
+  Closes Phase 1 Schritt 2 of the agent-grounding phase plan, the tracker
+  was previously library-only and never exercised against real sessions.
+- New runtime dependency: `@lannguyensi/hypothesis-tracker@0.2.0`.
+
 ## 0.2.0, 2026-05-15
 
 ### Added

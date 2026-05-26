@@ -18,6 +18,12 @@ The other packages in this repo are CLI-first. That works fine for scripted invo
 | `claim_evaluate` | `claim-gate.evaluateClaim` | Run a claim through the gate with caller-supplied context. |
 | `claim_evaluate_from_session` | claim-gate + grounding-wrapper + evidence-ledger | Same, but auto-derive the context from the session's phase status + ledger entries. The default path. |
 | `verify_memory_reference` | `runtime-reality-checker.verifyMemoryReference` | Check whether a memory-referenced path / symbol / flag still exists in the repo. Call before recommending anything from a memory that cites a concrete file, function, or flag. |
+| `hypothesis_record` | `hypothesis-tracker.addHypothesis` | Add a competing hypothesis with required checks. Use when you can name more than one possible cause. |
+| `hypothesis_list` | `hypothesis-tracker.getSummary` | List all hypotheses for a session plus summary counts. Use before claiming a root cause. |
+| `hypothesis_evidence` | `hypothesis-tracker.addEvidence` | Attach evidence to a hypothesis (auto-promotes unverified to supported). |
+| `hypothesis_check_done` | `hypothesis-tracker.completeCheck` | Mark a required check as done. |
+| `hypothesis_reject` | `hypothesis-tracker.rejectHypothesis` | Reject a hypothesis with a reason, the rejection is appended as an audit entry rather than a silent delete. |
+| `hypothesis_support` | `hypothesis-tracker.supportHypothesis` | Explicitly mark a hypothesis as supported. Usually `hypothesis_evidence` is enough. |
 
 ## Storage
 
@@ -98,6 +104,47 @@ mcp__grounding__claim_evaluate_from_session({
 // → { allowed: true, score: 100, ... } — safe to surface
 //   or { allowed: false, next_steps: [...] } — go finish the listed checks first
 ```
+
+## Hypothesis tracking
+
+The `hypothesis_*` verbs wrap `hypothesis-tracker` so you can keep competing causes alive during a debug session and force explicit rejection instead of silent substitution. State is in-memory per server process (sessionId-namespaced); persistence is intentionally out of scope, the ledger is the durable record.
+
+```jsonc
+// 1. Record both possible causes early
+mcp__grounding__hypothesis_record({
+  sessionId: "gs-deploy-panel-l7k...",
+  text: "DNS resolution is failing",
+  requiredChecks: ["Run dig from container", "Check /etc/resolv.conf"]
+})
+// → { hypothesis: { id: "abc123", status: "unverified", ... } }
+
+mcp__grounding__hypothesis_record({
+  sessionId: "gs-deploy-panel-l7k...",
+  text: "Firewall blocks port 443"
+})
+
+// 2. Attach what you actually observed
+mcp__grounding__hypothesis_evidence({
+  sessionId: "gs-deploy-panel-l7k...",
+  hypothesisId: "abc123",
+  evidence: "dig example.com inside container returns NXDOMAIN",
+  source: "docker exec api dig example.com"
+})
+// → hypothesis flips unverified → supported
+
+// 3. Reject the one that didn't survive contact with evidence
+mcp__grounding__hypothesis_reject({
+  sessionId: "gs-deploy-panel-l7k...",
+  hypothesisId: "def456",
+  reason: "iptables -L shows ACCEPT on 443 from container subnet"
+})
+
+// 4. Take stock before claiming
+mcp__grounding__hypothesis_list({ sessionId: "gs-deploy-panel-l7k..." })
+// → { summary: { total: 2, supported: 1, rejected: 1, ... }, hypotheses: [...] }
+```
+
+The store has no automatic claim-gate hook, the workflow is "use this before reaching for `claim_evaluate_from_session`", not "this gates the gate". If the value of an automatic hook becomes apparent through use, that's a follow-up.
 
 ## Trust model
 

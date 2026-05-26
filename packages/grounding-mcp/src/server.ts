@@ -24,15 +24,25 @@ import {
   verifyMemoryReference,
   type MemoryReference,
 } from '@lannguyensi/runtime-reality-checker';
+import {
+  addHypothesis,
+  addEvidence,
+  completeCheck,
+  rejectHypothesis,
+  supportHypothesis,
+  getSummary as getHypothesisSummary,
+  findHypothesis,
+} from '@lannguyensi/hypothesis-tracker';
 
 import { saveSession, loadSession } from './session-store.js';
 import { ledgerDb, ledgerStatus } from './ledger-bridge.js';
 import { deriveContext } from './derive-context.js';
+import { getOrCreateStore, getStore } from './hypothesis-store.js';
 
 // Single source of truth for the version string emitted by both the
 // MCP `name+version` handshake and the `--version` CLI short-circuit.
 // Bump alongside package.json on release.
-const PACKAGE_VERSION = '0.2.0';
+const PACKAGE_VERSION = '0.3.0';
 
 const server = new McpServer({
   name: 'grounding-mcp',
@@ -254,6 +264,180 @@ server.tool(
     const ref: MemoryReference = { kind, value, ...(repoRoot ? { repoRoot } : {}) };
     const result = verifyMemoryReference(ref);
     return jsonResponse(result);
+  },
+);
+
+// ── Hypothesis tracker ──────────────────────────────────────────────────
+//
+// Scratch-pad for competing hypotheses during a debug session. Distinct
+// from the ledger (which is the durable evidence record): hypotheses
+// here live only in-process and are meant to be churned through as the
+// agent reasons. Use them to force yourself to keep alternatives alive
+// instead of silently replacing one wrong guess with another.
+//
+// Error shape: unlike the grounding/ledger verbs (which let loadSession
+// throw and propagate as an MCP tool error), these verbs return a
+// structured `{ error: <code>, ... }` payload for not-found / out-of-range
+// cases. Lazy-create semantics make "no store" a non-exceptional state,
+// so a structured response is friendlier to a recovering agent.
+
+const hypothesisSessionIdSchema = z
+  .string()
+  .min(1)
+  .max(256)
+  .describe('Session id, namespaces the hypothesis store. Use the same id as your grounding session.');
+
+const hypothesisIdSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .describe('Hypothesis id returned by hypothesis_record.');
+
+const hypothesisTextSchema = z
+  .string()
+  .min(1)
+  .max(4096)
+  .describe('One-sentence hypothesis (e.g. "DNS resolution is failing").');
+
+const evidenceTextSchema = z
+  .string()
+  .min(1)
+  .max(4096)
+  .describe('What you observed (raw, not interpreted).');
+
+server.tool(
+  'hypothesis_record',
+  'Add a new competing hypothesis with required verification checks. Use during debugging when you can name more than one possible cause, recording both forces explicit rejection later instead of silent substitution.',
+  {
+    sessionId: hypothesisSessionIdSchema,
+    text: hypothesisTextSchema,
+    requiredChecks: z
+      .array(z.string().min(1).max(512))
+      .max(32)
+      .default([])
+      .describe('Verification steps that, if completed, would confirm or reject this hypothesis (e.g. ["Run dig", "Check /etc/resolv.conf"]).'),
+  },
+  async ({ sessionId, text, requiredChecks }) => {
+    const store = getOrCreateStore(sessionId);
+    const hypothesis = addHypothesis(store, text, requiredChecks);
+    return jsonResponse({ sessionId, hypothesis });
+  },
+);
+
+server.tool(
+  'hypothesis_list',
+  'Return all hypotheses for a session plus a status summary. Use to take stock before claiming a root cause: every unverified or unrejected hypothesis is an open alternative the claim-gate will block on.',
+  {
+    sessionId: hypothesisSessionIdSchema,
+  },
+  async ({ sessionId }) => {
+    const store = getStore(sessionId);
+    if (!store) {
+      return jsonResponse({
+        sessionId,
+        summary: { total: 0, unverified: 0, supported: 0, rejected: 0, pending_checks: 0 },
+        hypotheses: [],
+      });
+    }
+    return jsonResponse({
+      sessionId,
+      summary: getHypothesisSummary(store),
+      hypotheses: store.hypotheses,
+    });
+  },
+);
+
+server.tool(
+  'hypothesis_evidence',
+  'Attach evidence to an existing hypothesis. Auto-promotes an unverified hypothesis to supported (mirrors hypothesis-tracker semantics). Use with the actual observation (log line, command output): narrative-only evidence weakens the eventual claim-gate verdict.',
+  {
+    sessionId: hypothesisSessionIdSchema,
+    hypothesisId: hypothesisIdSchema,
+    evidence: evidenceTextSchema,
+    source: z.string().max(512).optional().describe('Where the observation came from (file path, command, log file).'),
+  },
+  async ({ sessionId, hypothesisId, evidence, source }) => {
+    const store = getStore(sessionId);
+    if (!store) {
+      return jsonResponse({ error: 'no_store_for_session', sessionId });
+    }
+    const updated = addEvidence(store, hypothesisId, evidence, source);
+    if (!updated) {
+      return jsonResponse({ error: 'hypothesis_not_found', sessionId, hypothesisId });
+    }
+    return jsonResponse({ sessionId, hypothesis: updated });
+  },
+);
+
+server.tool(
+  'hypothesis_check_done',
+  'Mark one of a hypothesis\'s required_checks as completed (0-indexed). Use after actually running the check: this is how the pending_checks counter in hypothesis_list drains.',
+  {
+    sessionId: hypothesisSessionIdSchema,
+    hypothesisId: hypothesisIdSchema,
+    checkIndex: z.number().int().min(0).describe('0-based index into required_checks.'),
+  },
+  async ({ sessionId, hypothesisId, checkIndex }) => {
+    const store = getStore(sessionId);
+    if (!store) {
+      return jsonResponse({ error: 'no_store_for_session', sessionId });
+    }
+    const hypothesis = findHypothesis(store, hypothesisId);
+    if (!hypothesis) {
+      return jsonResponse({ error: 'hypothesis_not_found', sessionId, hypothesisId });
+    }
+    if (checkIndex >= hypothesis.required_checks.length) {
+      return jsonResponse({
+        error: 'check_index_out_of_range',
+        sessionId,
+        hypothesisId,
+        checkIndex,
+        availableChecks: hypothesis.required_checks.length,
+      });
+    }
+    const updated = completeCheck(store, hypothesisId, checkIndex);
+    return jsonResponse({ sessionId, hypothesis: updated });
+  },
+);
+
+server.tool(
+  'hypothesis_reject',
+  'Reject a hypothesis with a reason. The reason is appended to the evidence list as a [rejected] entry so the rejection itself becomes auditable, not a silent delete.',
+  {
+    sessionId: hypothesisSessionIdSchema,
+    hypothesisId: hypothesisIdSchema,
+    reason: z.string().max(4096).optional().describe('Why the hypothesis was rejected (counter-evidence, failed check, contradiction).'),
+  },
+  async ({ sessionId, hypothesisId, reason }) => {
+    const store = getStore(sessionId);
+    if (!store) {
+      return jsonResponse({ error: 'no_store_for_session', sessionId });
+    }
+    const updated = rejectHypothesis(store, hypothesisId, reason);
+    if (!updated) {
+      return jsonResponse({ error: 'hypothesis_not_found', sessionId, hypothesisId });
+    }
+    return jsonResponse({ sessionId, hypothesis: updated });
+  },
+);
+
+server.tool(
+  'hypothesis_support',
+  'Explicitly mark a hypothesis as supported. Usually not needed: hypothesis_evidence auto-promotes on first evidence. Use this when promotion happens out-of-band (e.g. evidence is in the ledger but not yet attached).',
+  {
+    sessionId: hypothesisSessionIdSchema,
+    hypothesisId: hypothesisIdSchema,
+  },
+  async ({ sessionId, hypothesisId }) => {
+    const store = getStore(sessionId);
+    if (!store) {
+      return jsonResponse({ error: 'no_store_for_session', sessionId });
+    }
+    const updated = supportHypothesis(store, hypothesisId);
+    if (!updated) {
+      return jsonResponse({ error: 'hypothesis_not_found_or_rejected', sessionId, hypothesisId });
+    }
+    return jsonResponse({ sessionId, hypothesis: updated });
   },
 );
 
