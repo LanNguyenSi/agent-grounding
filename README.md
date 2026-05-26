@@ -2,7 +2,7 @@
 
 **Verification and debugging framework for AI agents.**
 
-Stop agents from acting on stale assumptions, making unsupported claims, or silently switching hypotheses mid-investigation. A workspace of TypeScript packages (evidence ledger, claim gate, hypothesis tracker, runtime reality checker, debug playbook engine, domain router, MCP server) that an agent harness wires into its session and tool-call lifecycle.
+Stop agents from acting on stale assumptions, making unsupported claims, or silently switching hypotheses mid-investigation. A workspace of TypeScript packages (understanding-gate, evidence ledger, claim gate, hypothesis tracker, runtime reality checker, debug playbook engine, readme-first resolver, domain router, grounding-wrapper, grounding-sdk, review-claim-gate, MCP server) that an agent harness wires into its session and tool-call lifecycle.
 
 > Most agent tooling helps a model *talk* about a problem. `agent-grounding` makes it *prove* what it has actually checked, what it has only assumed, and what it has ruled out, before the next destructive command runs.
 
@@ -63,18 +63,18 @@ Every package is published under the `@lannguyensi/` scope and installable direc
 
 ```bash
 # Library APIs
-npm install @lannguyensi/evidence-ledger
-npm install @lannguyensi/claim-gate
 npm install @lannguyensi/hypothesis-tracker
 npm install @lannguyensi/runtime-reality-checker
-npm install @lannguyensi/grounding-wrapper
 npm install @lannguyensi/grounding-sdk
-npm install @lannguyensi/review-claim-gate
 
 # CLIs (install globally to expose the bin)
+npm install -g @lannguyensi/claim-gate               # → claim-gate
 npm install -g @lannguyensi/debug-playbook-engine    # → debug-playbook
 npm install -g @lannguyensi/domain-router            # → domain-router
+npm install -g @lannguyensi/evidence-ledger          # → ledger
+npm install -g @lannguyensi/grounding-wrapper        # → grounding-wrapper
 npm install -g @lannguyensi/readme-first-resolver    # → readme-first
+npm install -g @lannguyensi/review-claim-gate        # → review-claim-gate
 npm install -g @lannguyensi/understanding-gate       # → understanding-gate
 
 # MCP server (install globally or invoke via npx)
@@ -105,7 +105,7 @@ The `git clone` workflow above is for hacking on the monorepo itself; downstream
 ### Pre-execution
 | Package | Description |
 |---------|-------------|
-| [understanding-gate](packages/understanding-gate) | Asks agents to produce an Understanding Report before acting. Phase 1 shipped (parser, persistence, claude-code Stop hook + opencode plugin, hypothesis-tracker bridge); published as [`@lannguyensi/understanding-gate`](https://www.npmjs.com/package/@lannguyensi/understanding-gate) |
+| [understanding-gate](packages/understanding-gate) | Asks agents to produce an Understanding Report before acting. Phase 2 (enforcement) shipped: prompt-hook gate, structured report parsing + persistence, and PreToolUse blocking of destructive tools until the report is approved. Published as [`@lannguyensi/understanding-gate`](https://www.npmjs.com/package/@lannguyensi/understanding-gate) |
 
 ### Verification
 | Package | Description |
