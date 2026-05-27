@@ -61,6 +61,42 @@ export function generateSessionId(keyword: string): string {
   return `gs-${slug}-${ts}`;
 }
 
+/** Hard cap on raw keyword length, before normalisation. */
+export const KEYWORD_MAX_LENGTH = 64;
+
+/**
+ * Validate a keyword for `initSession`. Throws when the keyword would
+ * produce a degenerate session id / `resolved_scope` (the README's
+ * `Public API for enforcement` contract documents these invariants).
+ *
+ * Rules:
+ * - must be a non-empty string
+ * - raw length must be ≤ `KEYWORD_MAX_LENGTH`
+ * - after slug normalisation (`[^a-z0-9]+` → `-`, trim leading/trailing
+ *   `-`) must contain at least one ASCII alphanumeric. This rejects
+ *   whitespace-only and pure-CJK / pure-symbol inputs that would slug
+ *   to an empty string and emit ids like `gs--<ts>`.
+ */
+export function validateKeyword(keyword: unknown): void {
+  if (typeof keyword !== 'string') {
+    throw new Error(`grounding-wrapper: keyword must be a string, got ${typeof keyword}`);
+  }
+  if (keyword.length === 0) {
+    throw new Error('grounding-wrapper: keyword must not be empty');
+  }
+  if (keyword.length > KEYWORD_MAX_LENGTH) {
+    throw new Error(
+      `grounding-wrapper: keyword exceeds ${KEYWORD_MAX_LENGTH}-char limit (got ${keyword.length})`,
+    );
+  }
+  const normalised = keyword.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  if (normalised.length === 0) {
+    throw new Error(
+      `grounding-wrapper: keyword "${keyword}" normalises to an empty slug; must contain at least one ASCII alphanumeric character`,
+    );
+  }
+}
+
 /** Determine which guardrails apply for a given domain */
 export function resolveGuardrails(keyword: string): GuardrailId[] {
   const k = keyword.toLowerCase();
@@ -169,6 +205,7 @@ export function buildSteps(sequence: string[]): GroundingStep[] {
 
 /** Initialize a new grounding session */
 export function initSession(input: GroundingInput): GroundingSession {
+  validateKeyword(input.keyword);
   const sequence = buildMandatorySequence(input.keyword);
   const steps = buildSteps(sequence);
   const guardrails = resolveGuardrails(input.keyword);
