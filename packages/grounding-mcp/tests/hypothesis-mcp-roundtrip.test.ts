@@ -203,6 +203,12 @@ describe('hypothesis_* MCP roundtrip — schema validation', () => {
   // result. Tests assert both the envelope flag and a substring of the
   // formatted message so a schema rename surfaces here.
 
+  // Robust to SDK/zod formatter changes: rather than matching the
+  // pretty-printed JSON substring, we extract the formatter's JSON array
+  // from the message and assert against the parsed path. That way an SDK
+  // bump that switches indentation, swaps `JSON.stringify(..., 2)` for
+  // `flatten()`, or wraps the payload differently does not flake the test
+  // as long as the structured `path` is still present.
   function expectValidationError(
     raw: unknown,
     toolName: string,
@@ -212,7 +218,12 @@ describe('hypothesis_* MCP roundtrip — schema validation', () => {
     expect(result.isError).toBe(true);
     const text = result.content?.[0]?.text ?? '';
     expect(text).toContain(`Invalid arguments for tool ${toolName}`);
-    expect(text).toContain(`"path": [\n      "${field}"\n    ]`);
+
+    const jsonStart = text.indexOf('[');
+    expect(jsonStart).toBeGreaterThan(-1);
+    const errors = JSON.parse(text.slice(jsonStart)) as { path: (string | number)[] }[];
+    expect(Array.isArray(errors)).toBe(true);
+    expect(errors.some((e) => e.path.includes(field))).toBe(true);
   }
 
   it('rejects sessionId = "" with an MCP InvalidParams envelope', async () => {

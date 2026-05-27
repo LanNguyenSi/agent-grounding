@@ -3,6 +3,7 @@
 // sessions. See README.md for the full tool catalog and the Claude Code
 // settings.json registration block.
 
+import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -483,10 +484,19 @@ async function main(): Promise<void> {
 
 // Only auto-run `main()` when this file is the entrypoint (e.g. invoked as
 // the `grounding-mcp` bin). Importing the module from tests pulls in
-// `createServer` without opening stdio.
-const isCliEntrypoint =
-  typeof process.argv[1] === 'string' &&
-  fileURLToPath(import.meta.url) === process.argv[1];
+// `createServer` without opening stdio. `realpathSync` on argv[1] handles
+// the `node_modules/.bin/grounding-mcp` symlink so the bin invocation
+// still triggers main().
+function resolveArgv1(): string | undefined {
+  const argv1 = process.argv[1];
+  if (typeof argv1 !== 'string') return undefined;
+  try {
+    return realpathSync(argv1);
+  } catch {
+    return argv1;
+  }
+}
+const isCliEntrypoint = resolveArgv1() === fileURLToPath(import.meta.url);
 
 if (isCliEntrypoint) {
   main().catch((err) => {
