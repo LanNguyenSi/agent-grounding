@@ -141,6 +141,7 @@ The contract this package owes a downstream enforcer:
 - **Stable shape**: `GroundingSession` is the source of truth; fields are not renamed without a major-version bump.
 - **Pure**: `initSession` is deterministic in `keyword`+`problem` modulo `id` and `started_at`. No filesystem or network.
 - **Idempotent advance**: `advancePhase` past `complete` is a no-op (covered by tests).
+- **Terminal phase status**: when `advancePhase` transitions to `complete`, `phase_status.complete` is set to `'done'` (not left at `'pending'`). Consumers reading `phase_status` over the wire see a shape symmetric with every other transitioned-out phase.
 
 The contract this package does **not** owe:
 
