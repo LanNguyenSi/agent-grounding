@@ -164,3 +164,12 @@ npm run dev --workspace @lannguyensi/grounding-mcp
 ```
 
 When changing tool descriptions, restart Claude Code, MCP tool catalogs are cached at session start.
+
+### Adding a new verb? Mirror the test pattern.
+
+Two test files cover the verb surface and they catch different bugs, so a new verb usually needs an entry in both:
+
+- `tests/hypothesis.test.ts` (or sibling `*.test.ts`) drives the library + in-process store directly. Fast, covers happy paths and library invariants.
+- `tests/hypothesis-mcp-roundtrip.test.ts` drives the same verbs through a real `Client` + `InMemoryTransport` pair against `createServer()`. It is the only place that exercises the wrapper-only error branches (`no_store_for_session`, `hypothesis_not_found`, etc.) and the zod schema bounds (`.min(1)`, `.max(4096)`) end-to-end. Wrapper branches that exist only in `server.ts` are invisible to a library-level test.
+
+If a new verb introduces a structured error payload that does not exist in the underlying library (most verbs that have one do), add a roundtrip case that asserts the exact `{ error: '<code>', ... }` shape, not just `isError`.
