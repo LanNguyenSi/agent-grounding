@@ -8,6 +8,8 @@ import {
   handleScopeChange,
   getCurrentTools,
   isGuardrailActive,
+  validateKeyword,
+  KEYWORD_MAX_LENGTH,
 } from '../lib';
 
 describe('generateSessionId', () => {
@@ -118,6 +120,75 @@ describe('initSession', () => {
 
   it('scope_changed is false initially', () => {
     expect(initSession(input).scope_changed).toBe(false);
+  });
+});
+
+describe('validateKeyword (task 7db33828)', () => {
+  it('accepts a normal ASCII keyword', () => {
+    expect(() => validateKeyword('clawd-monitor')).not.toThrow();
+  });
+
+  it('accepts mixed Unicode + ASCII that normalises to a non-empty slug', () => {
+    // クラウド-monitor → "-monitor" → trimmed → "monitor"
+    expect(() => validateKeyword('クラウド-monitor')).not.toThrow();
+  });
+
+  it('rejects the empty string', () => {
+    expect(() => validateKeyword('')).toThrow(/must not be empty/);
+  });
+
+  it('rejects whitespace-only keywords', () => {
+    expect(() => validateKeyword('   ')).toThrow(/normalises to an empty slug/);
+    expect(() => validateKeyword('\t\n ')).toThrow(/normalises to an empty slug/);
+  });
+
+  it('rejects pure-Unicode (no ASCII alphanumeric)', () => {
+    expect(() => validateKeyword('クラウド')).toThrow(/normalises to an empty slug/);
+  });
+
+  it('rejects pure-symbol keywords', () => {
+    expect(() => validateKeyword('---')).toThrow(/normalises to an empty slug/);
+    expect(() => validateKeyword('!!!')).toThrow(/normalises to an empty slug/);
+  });
+
+  it(`rejects keywords longer than ${KEYWORD_MAX_LENGTH} chars`, () => {
+    const tooLong = 'a'.repeat(KEYWORD_MAX_LENGTH + 1);
+    expect(() => validateKeyword(tooLong)).toThrow(/exceeds .* limit/);
+  });
+
+  it('rejects non-string inputs', () => {
+    expect(() => validateKeyword(null)).toThrow(/must be a string/);
+    expect(() => validateKeyword(42)).toThrow(/must be a string/);
+  });
+});
+
+describe('initSession — input validation (task 7db33828)', () => {
+  it('throws on empty keyword instead of emitting "gs--<ts>"', () => {
+    expect(() => initSession({ keyword: '', problem: 'test' })).toThrow(/must not be empty/);
+  });
+
+  it('throws on whitespace-only keyword', () => {
+    expect(() => initSession({ keyword: '   ', problem: 'test' })).toThrow(
+      /normalises to an empty slug/,
+    );
+  });
+
+  it('throws on pure-Unicode keyword (no ASCII alphanumeric after normalisation)', () => {
+    expect(() => initSession({ keyword: 'クラウド', problem: 'test' })).toThrow(
+      /normalises to an empty slug/,
+    );
+  });
+
+  it(`throws on > ${KEYWORD_MAX_LENGTH}-char keyword`, () => {
+    expect(() =>
+      initSession({ keyword: 'a'.repeat(1000), problem: 'test' }),
+    ).toThrow(/exceeds .* limit/);
+  });
+
+  it('still accepts the standard happy-path keywords', () => {
+    expect(() => initSession({ keyword: 'clawd-monitor', problem: 't' })).not.toThrow();
+    expect(() => initSession({ keyword: 'github-api', problem: 't' })).not.toThrow();
+    expect(() => initSession({ keyword: 'クラウド-monitor', problem: 't' })).not.toThrow();
   });
 });
 
