@@ -24,10 +24,43 @@ Independently-versioned published packages (own tag, own CHANGELOG):
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-27
+
+Hardens the `grounding-wrapper` public surface against degenerate input
+and tightens the lifecycle-state shape exposed over MCP. The four
+version-locked packages all bump to 0.3.0; only `grounding-wrapper` has
+new code, the others go along by repo convention. Pre-1.0: the public
+API surface continues to be subject to change between minor releases.
+
+Sibling packages (`grounding-mcp` 0.3.1, `grounding-sdk` 0.1.1,
+`review-claim-gate` 0.1.1) are bumped in the same commit so their pinned
+exact `0.2.0` references on the lockstep set move to `0.3.0` and the
+workspace stays drift-free.
+
 ### `@lannguyensi/grounding-wrapper`
+
+#### Added
+
+- **`validateKeyword(keyword)`** (#98, task `7db33828`). Exported
+  helper that throws when the keyword is non-string, empty, longer
+  than `KEYWORD_MAX_LENGTH` (64), or normalises to an empty slug
+  (`toLowerCase` → `[^a-z0-9]+` collapse → trim leading/trailing `-`).
+  `initSession` calls it first so previously-silent degenerate inputs
+  (`""`, whitespace-only, pure-Unicode, oversize) now throw instead of
+  emitting ids like `gs--<ts>` and empty `resolved_scope`. Mixed inputs
+  with at least one ASCII alphanumeric after normalisation (e.g.
+  `"クラウド-monitor"` → `"monitor"`) still pass. README "Public API for
+  enforcement" gains an "Input invariants" bullet naming the rule.
 
 #### Fixed
 
+- **`phase_status.complete` set to `'done'` on terminal transition**
+  (#97, task `9a258d6d`). Previously left at `'pending'` after
+  `advancePhase` reached `complete`, so `summarizeSession` over MCP
+  emitted a shape where `current_phase: 'complete'` disagreed with
+  `phase_status.complete: 'pending'`. Now symmetric with every other
+  transitioned-out phase. Two new tests pin the invariant + idempotent
+  persistence.
 - `advancePhase` is now idempotent once `current_phase === 'complete'`.
   Previously, calling `advancePhase` on an already-complete session
   silently reset `current_phase` to `scope-resolution`. New behavior:
@@ -44,6 +77,10 @@ Independently-versioned published packages (own tag, own CHANGELOG):
 - Test coverage on `src/lib.ts` raised to 100% (added an explicit
   test for the `arch|design|system` guardrail path that was previously
   uncovered).
+
+### `@lannguyensi/evidence-ledger`, `@lannguyensi/claim-gate`, `@lannguyensi/hypothesis-tracker`
+
+No code changes. Bumped to 0.3.0 to keep the version-locked invariant.
 
 ## [0.2.0] - 2026-05-01
 
