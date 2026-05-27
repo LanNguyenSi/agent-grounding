@@ -229,6 +229,13 @@ export function advancePhase(session: GroundingSession): GroundingSession {
   session.current_phase = nextPhase;
   if (nextPhase !== 'complete') {
     session.phase_status[nextPhase] = 'active';
+  } else {
+    // Terminal phase reached: mark `complete` as `done` for shape symmetry
+    // with every other transitioned-out phase. `summarizeSession` in
+    // `grounding-mcp` exposes `phase_status` over MCP, so a consumer that
+    // sees `current_phase: 'complete'` would otherwise read
+    // `phase_status['complete']: 'pending'` and not know which is authoritative.
+    session.phase_status.complete = 'done';
   }
 
   return session;

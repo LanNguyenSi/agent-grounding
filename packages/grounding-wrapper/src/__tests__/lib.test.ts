@@ -139,6 +139,22 @@ describe('advancePhase', () => {
     expect(session.current_phase).toBe('complete');
   });
 
+  it("sets phase_status['complete'] to 'done' on transition to terminal phase (task 9a258d6d)", () => {
+    const session = initSession({ keyword: 'simple-tool', problem: 'test' });
+    expect(session.phase_status.complete).toBe('pending');
+    while (session.current_phase !== 'complete') advancePhase(session);
+    expect(session.current_phase).toBe('complete');
+    expect(session.phase_status.complete).toBe('done');
+  });
+
+  it("keeps phase_status['complete'] at 'done' across idempotent re-calls", () => {
+    const session = initSession({ keyword: 'simple-tool', problem: 'test' });
+    while (session.current_phase !== 'complete') advancePhase(session);
+    advancePhase(session);
+    advancePhase(session);
+    expect(session.phase_status.complete).toBe('done');
+  });
+
   it('is idempotent once complete is reached', () => {
     const session = initSession({ keyword: 'simple-tool', problem: 'test' });
     while (session.current_phase !== 'complete') advancePhase(session);
