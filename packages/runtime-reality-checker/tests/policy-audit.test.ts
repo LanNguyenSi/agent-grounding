@@ -133,7 +133,35 @@ describe("audit event shape per kind", () => {
     expect(e?.env_overrides_applied.probe_fail_block).toBe(false);
   });
 
-  it("probe-fail — emitted with probe_fail_block=true on the block branch too", () => {
+  it("probe-fail — emitted with probe_fail_block=true when probe throws on the block branch", () => {
+    // Symmetric to the degrade-to-allow case above: probe throws AND
+    // the operator opted in to block on probe failure. Asserts both the
+    // emit shape and the exit code/stdout block envelope so a future
+    // refactor that drops the audit on this branch surfaces here.
+    const { events, sink } = captureAudit();
+    const result = handlePolicyPreToolUse(
+      COMPOSE_PAYLOAD,
+      {
+        RUNTIME_REALITY_KEYWORD: "deploy-panel",
+        RUNTIME_REALITY_PROBE_FAIL_BLOCK: "1",
+      },
+      {
+        ...baseDeps,
+        loadExpectations: () => expectations([{ name: "panel-api" }]),
+        probe: () => {
+          throw new Error("docker socket unreachable");
+        },
+        appendAudit: sink,
+      },
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]?.kind).toBe("probe-fail");
+    expect(events[0]?.env_overrides_applied.probe_fail_block).toBe(true);
+    expect(result.exitCode).toBe(2);
+    expect(result.stdout).toContain("permissionDecision");
+  });
+
+  it("probe-fail — emitted with probe_fail_block=true on the no-probe block branch", () => {
     const { events, sink } = captureAudit();
     handlePolicyPreToolUse(
       COMPOSE_PAYLOAD,

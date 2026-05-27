@@ -7,9 +7,14 @@
 // Append semantics: a single fs.appendFileSync per call. JSONL means
 // callers can `tail -f` or stream-parse the log; a partial last line
 // is recoverable by skipping it. Writes under PIPE_BUF (4 KiB on Linux)
-// are atomic with O_APPEND, so concurrent hook invocations interleave
-// at line granularity, not within a JSON record. Audit lines are short,
-// this holds in practice.
+// are atomic with O_APPEND, so concurrent hook invocations typically
+// interleave at line granularity rather than within a JSON record.
+// Typical audit lines are a few hundred bytes; a critical-tier event
+// whose `reason` enumerates drift across many processes can exceed
+// PIPE_BUF, and on that path two concurrent writes may tear. The cost
+// is a corrupted line that `tail -f` users skip, never a lost record
+// or a crashed hook. Cap or rotate downstream if strict atomicity is
+// needed.
 //
 // Failure mode: best-effort. The default writer catches every error and
 // drops the audit line. The PreToolUse policy ALWAYS degrades to allow
