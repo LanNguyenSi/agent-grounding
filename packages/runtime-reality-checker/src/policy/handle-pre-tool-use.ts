@@ -15,6 +15,13 @@ import type { ActualProcessState, DriftItem, ExpectedProcess } from "../lib.js";
 import { runRealityCheck } from "../lib.js";
 import { matchTrigger, extractCommand, DEFAULT_TRIGGERS, type Trigger } from "./triggers.js";
 import type { ExpectationsLoadResult } from "./expectations.js";
+import type {
+  AppendAudit,
+  AuditEnvOverrides,
+  AuditEvent,
+  AuditEventKind,
+  AuditSeverity,
+} from "./audit.js";
 
 export interface PolicyEnv {
   RUNTIME_REALITY_DISABLE?: string;
@@ -51,6 +58,16 @@ export interface HandlerDeps {
   loadExpectations: (keyword: string, dir?: string) => ExpectationsLoadResult;
   probe: Probe | null;
   triggers?: readonly Trigger[];
+  /**
+   * Optional structured-audit sink. Called once per *decision-bearing*
+   * branch (block / warn / skip-noprobe / probe-fail / disabled). Skip
+   * branches that just mean "not enough info to decide" (no trigger
+   * match, missing keyword, malformed payload) are intentionally NOT
+   * audited, they fire too often to be useful and carry no operator
+   * signal. When the dep is omitted the handler is silent, mirroring
+   * the understanding-gate pattern.
+   */
+  appendAudit?: AppendAudit;
 }
 
 export type Decision =
@@ -92,7 +109,47 @@ export function handlePolicyPreToolUse(
   env: PolicyEnv,
   deps: HandlerDeps,
 ): HandlerResult {
-  if (envOn(env.RUNTIME_REALITY_DISABLE)) {
+  const auditEnv: AuditEnvOverrides = {
+    disable: envOn(env.RUNTIME_REALITY_DISABLE),
+    warn_as_block: envOn(env.RUNTIME_REALITY_WARN_AS_BLOCK),
+    critical_as_warn: envOn(env.RUNTIME_REALITY_CRITICAL_AS_WARN),
+    probe_fail_block: envOn(env.RUNTIME_REALITY_PROBE_FAIL_BLOCK),
+  };
+
+  const emitAudit = (
+    kind: AuditEventKind,
+    fields: {
+      keyword?: string | null;
+      tool_name?: string | null;
+      command?: string | null;
+      trigger_category?: string | null;
+      drift_count?: number;
+      severity?: AuditSeverity;
+      reason: string;
+    },
+  ): void => {
+    if (!deps.appendAudit) return;
+    const event: AuditEvent = {
+      kind,
+      iso_timestamp: new Date().toISOString(),
+      keyword: fields.keyword ?? null,
+      tool_name: fields.tool_name ?? null,
+      command: fields.command ?? null,
+      trigger_category: fields.trigger_category ?? null,
+      drift_count: fields.drift_count ?? 0,
+      severity: fields.severity ?? null,
+      env_overrides_applied: auditEnv,
+      reason: fields.reason,
+    };
+    try {
+      deps.appendAudit(event);
+    } catch {
+      // best-effort, see audit.ts file-level comment
+    }
+  };
+
+  if (auditEnv.disable) {
+    emitAudit("disabled", { reason: "RUNTIME_REALITY_DISABLE set" });
     return {
       ...ALLOW_SILENT_BASE,
       decision: { kind: "skip", reason: "RUNTIME_REALITY_DISABLE set" },
@@ -146,8 +203,15 @@ export function handlePolicyPreToolUse(
   }
 
   if (!deps.probe) {
-    if (envOn(env.RUNTIME_REALITY_PROBE_FAIL_BLOCK)) {
+    if (auditEnv.probe_fail_block) {
       const reason = "no probe configured (RUNTIME_REALITY_PROBE_FAIL_BLOCK is set)";
+      emitAudit("probe-fail", {
+        keyword,
+        tool_name: toolName,
+        command,
+        trigger_category: trigger.category,
+        reason,
+      });
       return {
         stdout: jsonEnvelope("deny", reason),
         stderr: `runtime-reality-checker: ${reason}, blocking\n`,
@@ -155,6 +219,13 @@ export function handlePolicyPreToolUse(
         decision: { kind: "block", reason, drift: [] },
       };
     }
+    emitAudit("skip-noprobe", {
+      keyword,
+      tool_name: toolName,
+      command,
+      trigger_category: trigger.category,
+      reason: "no probe configured",
+    });
     return {
       stdout: "",
       stderr: "runtime-reality-checker: no probe configured, degraded to allow\n",
@@ -167,14 +238,22 @@ export function handlePolicyPreToolUse(
   try {
     actual = deps.probe({ keyword, expected: loaded.file.processes });
   } catch (err) {
-    const blockOnFail = envOn(env.RUNTIME_REALITY_PROBE_FAIL_BLOCK);
+    const blockOnFail = auditEnv.probe_fail_block;
+    const reason = `probe failed: ${String(err)}`;
+    emitAudit("probe-fail", {
+      keyword,
+      tool_name: toolName,
+      command,
+      trigger_category: trigger.category,
+      reason,
+    });
     return {
-      stdout: blockOnFail ? jsonEnvelope("deny", `probe failed: ${String(err)}`) : "",
+      stdout: blockOnFail ? jsonEnvelope("deny", reason) : "",
       stderr: `runtime-reality-checker: probe threw (${String(err)}), ${blockOnFail ? "blocking" : "degraded to allow"}\n`,
       exitCode: blockOnFail ? 2 : 0,
       decision: blockOnFail
-        ? { kind: "block", reason: `probe failed: ${String(err)}`, drift: [] }
-        : { kind: "skip", reason: `probe failed: ${String(err)}` },
+        ? { kind: "block", reason, drift: [] }
+        : { kind: "skip", reason },
     };
   }
 
@@ -193,7 +272,16 @@ export function handlePolicyPreToolUse(
   const fullMessage = `${head}\n${driftLines}`;
 
   if (worstSeverity === 1) {
-    if (envOn(env.RUNTIME_REALITY_WARN_AS_BLOCK)) {
+    if (auditEnv.warn_as_block) {
+      emitAudit("block", {
+        keyword,
+        tool_name: toolName,
+        command,
+        trigger_category: trigger.category,
+        drift_count: result.drift.length,
+        severity: "warning",
+        reason: fullMessage,
+      });
       return {
         stdout: jsonEnvelope("deny", fullMessage),
         stderr: `${fullMessage}\n(blocking because RUNTIME_REALITY_WARN_AS_BLOCK is set)\n`,
@@ -201,6 +289,15 @@ export function handlePolicyPreToolUse(
         decision: { kind: "block", reason: fullMessage, drift: result.drift },
       };
     }
+    emitAudit("warn", {
+      keyword,
+      tool_name: toolName,
+      command,
+      trigger_category: trigger.category,
+      drift_count: result.drift.length,
+      severity: "warning",
+      reason: fullMessage,
+    });
     return {
       stdout: "",
       stderr: `${fullMessage}\n`,
@@ -210,7 +307,16 @@ export function handlePolicyPreToolUse(
   }
 
   // worstSeverity === 2 (critical)
-  if (envOn(env.RUNTIME_REALITY_CRITICAL_AS_WARN)) {
+  if (auditEnv.critical_as_warn) {
+    emitAudit("warn", {
+      keyword,
+      tool_name: toolName,
+      command,
+      trigger_category: trigger.category,
+      drift_count: result.drift.length,
+      severity: "critical",
+      reason: fullMessage,
+    });
     return {
       stdout: "",
       stderr: `${fullMessage}\n(allowing because RUNTIME_REALITY_CRITICAL_AS_WARN is set)\n`,
@@ -218,6 +324,15 @@ export function handlePolicyPreToolUse(
       decision: { kind: "warn", reason: fullMessage, drift: result.drift },
     };
   }
+  emitAudit("block", {
+    keyword,
+    tool_name: toolName,
+    command,
+    trigger_category: trigger.category,
+    drift_count: result.drift.length,
+    severity: "critical",
+    reason: fullMessage,
+  });
   return {
     stdout: jsonEnvelope("deny", fullMessage),
     stderr: `${fullMessage}\nFix drift before continuing, or 'harness approve risk --reason "..."' to override.\n`,

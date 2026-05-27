@@ -30,3 +30,14 @@ export {
   type ExpectationsFile,
   type ExpectationsLoadResult,
 } from "./expectations.js";
+export {
+  AUDIT_LOG_FILENAME,
+  createJsonlAuditWriter,
+  formatAuditLine,
+  resolveDefaultAuditLogPath,
+  type AppendAudit,
+  type AuditEnvOverrides,
+  type AuditEvent,
+  type AuditEventKind,
+  type AuditSeverity,
+} from "./audit.js";

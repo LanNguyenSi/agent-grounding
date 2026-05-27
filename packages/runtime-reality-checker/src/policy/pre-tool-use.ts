@@ -13,6 +13,7 @@
 
 import { handlePolicyPreToolUse } from "./handle-pre-tool-use.js";
 import { loadExpectations } from "./expectations.js";
+import { createJsonlAuditWriter, resolveDefaultAuditLogPath } from "./audit.js";
 
 async function readStdin(): Promise<string> {
   if (process.stdin.isTTY) return "";
@@ -34,6 +35,7 @@ async function main(): Promise<void> {
   const result = handlePolicyPreToolUse(raw, process.env, {
     loadExpectations,
     probe: null,
+    appendAudit: createJsonlAuditWriter(resolveDefaultAuditLogPath(process.env)),
   });
 
   if (result.stdout) process.stdout.write(result.stdout);
