@@ -113,6 +113,9 @@ policies:
       env:
         RUNTIME_REALITY_EXPECTATIONS_DIR: ${env.HOME}/.runtime-reality/expectations
         RUNTIME_REALITY_PROBE_CMD: ${env.HOME}/.runtime-reality/probes/docker-probe.sh
+        # Optional: structured audit trail (JSONL, one line per decision).
+        # Defaults to ~/.runtime-reality/audit.log.
+        # RUNTIME_REALITY_AUDIT_LOG: ${env.HOME}/.runtime-reality/audit.log
         # Optional overrides
         # RUNTIME_REALITY_CRITICAL_AS_WARN: "1"
         # RUNTIME_REALITY_WARN_AS_BLOCK: "1"

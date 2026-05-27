@@ -89,8 +89,11 @@ Env knobs:
 | `RUNTIME_REALITY_WARN_AS_BLOCK=1` | Treat warning-tier drift as a block |
 | `RUNTIME_REALITY_CRITICAL_AS_WARN=1` | Degrade critical drift to a warn (audit only) |
 | `RUNTIME_REALITY_PROBE_FAIL_BLOCK=1` | Block when no probe is configured or the probe throws |
+| `RUNTIME_REALITY_AUDIT_LOG=<path>` | Append a JSONL audit line per decision (block, warn, skip-noprobe, probe-fail, disabled) to this file. Defaults to `~/.runtime-reality/audit.log`. |
 
 See the spec for the full trigger set, severity-to-decision matrix, and a worked VPS-compose example.
+
+The audit log is append-only and per-line atomic under POSIX append, so concurrent hook invocations interleave at line granularity. Each line carries `kind`, `iso_timestamp`, `keyword`, `tool_name`, `command`, `trigger_category`, `drift_count`, `severity` (`warning` / `critical` / `null`), `env_overrides_applied` (snapshot of every knob the handler honored on the call), and `reason`. Skip branches that only mean "not enough info to gate" (no trigger match, missing keyword, malformed payload) are intentionally not audited.
 
 ## verify_memory_reference
 
