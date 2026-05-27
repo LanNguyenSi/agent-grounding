@@ -1,6 +1,6 @@
 {
   "name": "@lannguyensi/grounding-wrapper",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Plans grounding sessions for agents (recommended tool sequence, guardrails, phases). Pure planner; enforcement is external.",
   "license": "MIT",
   "repository": {
