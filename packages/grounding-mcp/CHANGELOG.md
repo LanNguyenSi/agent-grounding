@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+## 0.3.2, 2026-05-30
+
+### Added
+
+- Solution-acceptance gate (#100): two MCP tools that make "done" earned
+  from a real preflight run rather than claimed.
+  - `solution_evaluate`: runs `preflight run <repoPath> --json` (the
+    agent-preflight lint / typecheck / test / audit / secret battery),
+    derives a verdict from its real results, and records a HEAD-pinned
+    verdict marker for an id. The check set comes from the repo's
+    committed `.preflight.json`, not from caller input, so an agent
+    cannot weaken the gate at call time (producer != solver). Fails
+    closed (writes no marker) when the `preflight` binary is unavailable;
+    override its path with `SOLUTION_PREFLIGHT_BIN`.
+  - `solution_gate`: read-only check that allows only when a ready
+    verdict exists at the current git HEAD, else returns a precise deny
+    reason (no verdict / not ready + blockers / HEAD drift / unresolvable
+    HEAD).
+  - Verdict markers live outside the agent-writable evidence-ledger at
+    `~/.local/state/agent-grounding/solution-verdicts/<id>.json`
+    (`$XDG_STATE_HOME` honored, `SOLUTION_VERDICT_DIR` overrides). The
+    HEAD pin invalidates a green verdict on any rework; a not-ready run
+    overwrites a prior green marker.
+  - Documented residual: a shell-capable agent could still hand-write the
+    marker file; closing that (a harness-owned dir checked by a PreToolUse
+    write-guard, then signing) is the harness wiring follow-up
+    (harness task `cc43c7a4`).
+
 ## 0.3.0, 2026-05-26
 
 ### Added
