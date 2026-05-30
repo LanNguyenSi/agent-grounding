@@ -41,6 +41,7 @@ import { saveSession, loadSession } from './session-store.js';
 import { ledgerDb, ledgerStatus } from './ledger-bridge.js';
 import { deriveContext } from './derive-context.js';
 import { getOrCreateStore, getStore } from './hypothesis-store.js';
+import { evaluateSolution, evaluateGate, getHeadSha } from './solution-verdict.js';
 
 // Single source of truth for the version string emitted by both the
 // MCP `name+version` handshake and the `--version` CLI short-circuit.
@@ -287,6 +288,45 @@ export function createServer(): McpServer {
       const context = deriveContext(session, summary);
       const result = evaluateClaim(claim, context, type as ClaimType | undefined);
       return jsonResponse({ ...result, derivedContext: context });
+    },
+  );
+
+  // ── Solution-acceptance gate ──────────────────────────────────────────
+  //
+  // "Done" earned from a real preflight run, not claimed. solution_evaluate
+  // RUNS preflight (producer != solver; check set from committed
+  // .preflight.json, not caller input) and records a HEAD-pinned verdict
+  // marker outside the agent-writable ledger; solution_gate passes only when a
+  // ready verdict exists at the current HEAD. See solution-verdict.ts for the
+  // anti-hacking contract and README for the marker contract harness consumes.
+
+  server.tool(
+    'solution_evaluate',
+    'Run preflight against a repo and record a HEAD-pinned solution-acceptance verdict for <id>, derived from preflight\'s real results (lint/typecheck/test/audit/secret), not from caller input, and with the check set taken from the repo\'s committed .preflight.json. Use this to earn "done" instead of claiming it. Requires the `preflight` binary (agent-preflight) on PATH or via SOLUTION_PREFLIGHT_BIN; fails closed (writes no verdict) when it is unavailable.',
+    {
+      id: z.string().min(1).describe('Identifier the verdict is scoped to, e.g. a task id.'),
+      repoPath: z
+        .string()
+        .optional()
+        .describe('Repository to evaluate. Defaults to the current working directory.'),
+    },
+    async ({ id, repoPath }) => {
+      const result = await evaluateSolution(id, repoPath ?? process.cwd());
+      return jsonResponse(result);
+    },
+  );
+
+  server.tool(
+    'solution_gate',
+    'Check the solution-acceptance gate for <id>: allowed only if a ready verdict exists at the current git HEAD. Otherwise returns a precise deny reason (no verdict / not ready + blockers / HEAD drift / unresolvable HEAD). Read-only: produce the verdict with solution_evaluate first.',
+    {
+      id: z.string().min(1),
+      repoPath: z.string().optional(),
+    },
+    async ({ id, repoPath }) => {
+      const head = await getHeadSha(repoPath ?? process.cwd());
+      const result = evaluateGate(id, head);
+      return jsonResponse(result);
     },
   );
 
