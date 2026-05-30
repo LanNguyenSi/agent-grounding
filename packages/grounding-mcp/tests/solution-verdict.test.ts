@@ -202,4 +202,25 @@ describe('evaluateSolution (producer)', () => {
     expect(res.verdict).toBeNull();
     expect(res.error).toContain('invalid verdict id');
   });
+
+  it('fails closed when preflight exits non-zero with unparseable output', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-garbage.sh',
+      '#!/bin/sh\necho "not json at all"\nexit 1\n',
+    );
+    const res = await evaluateSolution('task-1', repo);
+    expect(res.verdict).toBeNull();
+    expect(res.markerPath).toBeNull();
+    expect(res.error).toContain('not parseable JSON');
+    expect(readVerdict('task-1')).toBeNull();
+  });
+
+  it('fails closed when preflight exits non-zero with no output', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub('stub-empty.sh', '#!/bin/sh\nexit 1\n');
+    const res = await evaluateSolution('task-1', repo);
+    expect(res.verdict).toBeNull();
+    expect(res.markerPath).toBeNull();
+    expect(res.error).toContain('preflight invocation failed');
+    expect(readVerdict('task-1')).toBeNull();
+  });
 });

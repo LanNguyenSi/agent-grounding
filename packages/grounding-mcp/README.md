@@ -56,6 +56,8 @@ Anti-hacking contract:
 
 The marker lives outside the agent-writable evidence-ledger on purpose (a ledger row is forgeable via `ledger_add`). Requirements / knobs: the `preflight` binary on `PATH` (override with `SOLUTION_PREFLIGHT_BIN`); fails closed (writes no verdict) when preflight is unavailable. Documented residual: a shell-capable agent could still hand-write the marker file; closing that (signing, or a harness-owned dir checked by a PreToolUse hook) is the harness wiring follow-up. Composing additional ground-truth (CI, review, unresolved hypotheses from the session) into the verdict is the next layer.
 
+The verdict pins to the committed HEAD, so edits made after a green `solution_evaluate` do not shift HEAD: re-run it after any change. preflight's own clean-worktree check fails a dirty tree, so a fresh `solution_evaluate` on uncommitted work yields a not-ready verdict.
+
 ## Install + register
 
 ```bash
