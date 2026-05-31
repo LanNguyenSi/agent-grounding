@@ -11,7 +11,7 @@
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { GroundingSession } from '@lannguyensi/grounding-wrapper';
 
 function defaultRoot(): string {
@@ -22,8 +22,25 @@ export function sessionsRoot(): string {
   return process.env.GROUNDING_MCP_SESSIONS_DIR ?? defaultRoot();
 }
 
+/**
+ * Reduce a session id to a single safe path segment. Non-portable characters
+ * collapse to `_`, and `basename` strips any residual separator so the id can
+ * never escape `sessionsRoot()` (path-traversal guard). Empty / dot-only ids
+ * are rejected. Mirrors `sanitizeVerdictId` in solution-verdict.ts: the read
+ * verbs accept a client-controlled `sessionId`, so it must be sanitised before
+ * it reaches the filesystem.
+ */
+export function sanitizeSessionId(id: string): string {
+  const cleaned = id.replace(/[^A-Za-z0-9._-]/g, '_');
+  const base = basename(cleaned);
+  if (base === '' || base === '.' || base === '..') {
+    throw new Error(`invalid grounding session id: ${JSON.stringify(id)}`);
+  }
+  return base;
+}
+
 function pathFor(id: string): string {
-  return join(sessionsRoot(), `${id}.json`);
+  return join(sessionsRoot(), `${sanitizeSessionId(id)}.json`);
 }
 
 export function saveSession(session: GroundingSession): void {
