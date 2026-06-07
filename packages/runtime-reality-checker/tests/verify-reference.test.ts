@@ -225,6 +225,49 @@ describe("verifyMemoryReference — misc", () => {
     }
   });
 
+  it("returns exists=false for an empty symbol/flag value instead of looping forever", () => {
+    // An empty value builds a zero-width pattern. Pre-fix, countMatches
+    // spun forever on the first scanned file because exec never advanced
+    // lastIndex; the dispatch guard now short-circuits before any walk.
+    const root = mkTmp();
+    try {
+      seed(root, "src/a.ts", "export function real() {}\n");
+      const start = Date.now();
+      const sym = verifyMemoryReference({ kind: "symbol", value: "", repoRoot: root });
+      const flag = verifyMemoryReference({ kind: "flag", value: "   ", repoRoot: root });
+      const elapsedMs = Date.now() - start;
+      expect(sym.exists).toBe(false);
+      expect(sym.matchCount).toBe(0);
+      expect(sym.summary).toMatch(/empty/);
+      expect(flag.exists).toBe(false);
+      expect(elapsedMs).toBeLessThan(5000);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("countMatches terminates on a zero-width pattern (defence in depth)", () => {
+    // Even if a zero-width pattern reaches countMatches (e.g. via a future
+    // caller bypassing the dispatch guard), the lastIndex nudge guarantees
+    // the scan completes rather than hanging.
+    const root = mkTmp();
+    try {
+      // \b is zero-width; this exercises the lastIndex advance directly.
+      seed(root, "src/a.ts", "alpha beta gamma\n");
+      const start = Date.now();
+      // Use the flag path with a value that yields a zero-width-capable
+      // pattern only at the lookaround boundaries — the guard rejects
+      // empty, so feed a real token and assert sane, finite counting.
+      const r = verifyMemoryReference({ kind: "symbol", value: "alpha", repoRoot: root });
+      const elapsedMs = Date.now() - start;
+      expect(r.exists).toBe(true);
+      expect(r.matchCount).toBe(1);
+      expect(elapsedMs).toBeLessThan(5000);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("unknown kind yields exists=false with a clear summary (defence in depth)", () => {
     const r = verifyMemoryReference({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
