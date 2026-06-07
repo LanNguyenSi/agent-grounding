@@ -236,7 +236,14 @@ function countMatches(source: string, pattern: RegExp): number {
     pattern.flags.includes("g") ? pattern.flags : pattern.flags + "g",
   );
   let count = 0;
-  while (global.exec(source) !== null) count++;
+  let m: RegExpExecArray | null;
+  while ((m = global.exec(source)) !== null) {
+    count++;
+    // Zero-width matches (e.g. a pattern that can match the empty string)
+    // leave lastIndex unchanged, which would loop forever. Nudge past the
+    // empty match so the scan always makes progress.
+    if (m.index === global.lastIndex) global.lastIndex++;
+  }
   return count;
 }
 
@@ -360,6 +367,24 @@ export function verifyMemoryReference(
     includeNoExtension: options.includeNoExtension ?? false,
     extraNoExtensionNames: options.extraNoExtensionNames ?? [],
   };
+
+  // Defence in depth: an empty (or whitespace-only) value for symbol/flag
+  // builds a pattern that can match the empty string. The MCP entrypoint
+  // already guards this with zod z.string().min(1), but direct library
+  // callers don't, so refuse here instead of scanning every file for a
+  // zero-width pattern.
+  if (
+    (ref.kind === "symbol" || ref.kind === "flag") &&
+    ref.value.trim() === ""
+  ) {
+    return {
+      ref,
+      exists: false,
+      foundIn: [],
+      matchCount: 0,
+      summary: `${ref.kind} value is empty — nothing to verify`,
+    };
+  }
 
   switch (ref.kind) {
     case "path":
