@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1, 2026-06-09
+
+### Fixed
+
+- **Security (MEDIUM): infinite loop on zero-width regex matches in `countMatches`** (#38). An empty (trimmed) symbol or flag value built a pattern that matches the empty string, so `countMatches` never advanced `lastIndex` and looped forever. `countMatches` now bumps `lastIndex` on a zero-width match, and `verifyMemoryReference` rejects an empty (trimmed) symbol or flag value before any walk as defence in depth. Regression tests added.
+
 ## 0.2.0, 2026-05-26
 
 ### Added
