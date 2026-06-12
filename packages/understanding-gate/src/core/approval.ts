@@ -10,7 +10,10 @@ import type {
 } from "../schema/types.js";
 import type { ReportEntry } from "./persistence.js";
 
-export type ApproveActor = "cli" | "marker_phrase" | "force" | "agent";
+// "cli" is the only actor currently used by withApprovalStatus call sites.
+// "force" is reserved for a future force-approve path. Variants that let an
+// agent self-approve via transcript content were removed as a security fix.
+export type ApproveActor = "cli" | "force";
 
 // Pick the most recent persisted entry for `taskId`. "Most recent" prefers
 // `approvedAt` when present so a freshly approved version supersedes the

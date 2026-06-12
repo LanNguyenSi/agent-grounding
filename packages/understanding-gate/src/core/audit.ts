@@ -36,7 +36,9 @@ export type AuditEvent =
     }
   | {
       kind: "approve";
-      approvedBy: "cli" | "marker_phrase" | "agent";
+      // "force" is reserved alongside ApproveActor; the current approve
+      // path only ever emits "cli" (force bypasses land as force_bypass).
+      approvedBy: "cli" | "force";
       sessionId: string | null;
       taskId: string;
       reportPath: string;

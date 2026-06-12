@@ -9,11 +9,13 @@
 // Body of a list-typed section is a unordered/ordered list; body of a
 // paragraph-typed section is one or more lines, joined with single newlines.
 //
-// Metadata fields (taskId, mode, riskLevel, requiresHumanApproval,
-// approvalStatus, createdAt) usually come from the caller via `defaults`,
-// since the v0 prompts (full / fast_confirm / grill_me) do not ask the agent
-// to emit them. An optional `## Metadata` section in the markdown — `key: value`
-// per line — overrides defaults if present.
+// Metadata fields (taskId, mode, riskLevel, requiresHumanApproval, createdAt)
+// usually come from the caller via `defaults`, since the v0 prompts
+// (full / fast_confirm / grill_me) do not ask the agent to emit them. An
+// optional `## Metadata` section in the markdown (`key: value` per line)
+// overrides defaults if present. approvalStatus is always forced to "pending"
+// by parseReport regardless of defaults or metadata; only the operator CLI
+// approve flow (withApprovalStatus) may flip it.
 
 import Ajv, { type ErrorObject, type ValidateFunction } from "ajv";
 import addFormats from "ajv-formats";
@@ -22,7 +24,6 @@ import {
   UNDERSTANDING_REPORT_SCHEMA_FAST_CONFIRM,
 } from "../schema/report-schema.js";
 import type {
-  ApprovalStatus,
   RiskLevel,
   UnderstandingGateMode,
   UnderstandingReport,
@@ -33,7 +34,6 @@ export type ParseDefaults = {
   mode?: UnderstandingGateMode;
   riskLevel?: RiskLevel;
   requiresHumanApproval?: boolean;
-  approvalStatus?: ApprovalStatus;
   createdAt?: string;
 };
 
@@ -310,7 +310,7 @@ export function parseReport(
   }
 
   // Merge order (lowest -> highest precedence):
-  //   1. baseline (requiresHumanApproval=true, approvalStatus=pending)
+  //   1. baseline (requiresHumanApproval=true)
   //   2. caller-supplied defaults
   //   3. inline `## Metadata` block from the markdown
   //   4. parsed section bodies
@@ -318,11 +318,18 @@ export function parseReport(
   // SectionKey type-level Exclude<>, so the order is unambiguous.
   const merged: Record<string, unknown> = {
     requiresHumanApproval: true,
-    approvalStatus: "pending",
     ...stripUndefined(defaults as Record<string, unknown>),
     ...stripUndefined(metadataFromMarkdown as Record<string, unknown>),
     ...collected,
+    // parseReport output is always pending; only the operator CLI approve flow
+    // (withApprovalStatus) may flip approvalStatus to "approved". This
+    // hard-reset runs last so no spread above can override it.
+    approvalStatus: "pending",
   };
+  // approvedAt and approvedBy are operator-set fields; remove them
+  // defensively in case a dynamic caller sneaks them through via defaults.
+  delete merged["approvedAt"];
+  delete merged["approvedBy"];
 
   if (missing.length > 0) {
     return {
@@ -488,6 +495,11 @@ function normalizeParagraph(body: string): string {
 }
 
 const METADATA_LINE_RE = /^\s*([A-Za-z][A-Za-z0-9_]*)\s*:\s*(.*?)\s*$/;
+// Keys the agent may supply via an inline `## Metadata` block.
+// approvalstatus is intentionally absent: parseReport always forces
+// approvalStatus to "pending" (see merge below). Only the operator CLI
+// approve flow (withApprovalStatus) may flip the field to "approved".
+// Unrecognized keys in the block are silently ignored by parseMetadataBlock.
 const METADATA_KEYS: Record<
   string,
   { target: keyof UnderstandingReport; coerce: (v: string) => unknown }
@@ -499,7 +511,6 @@ const METADATA_KEYS: Record<
     target: "requiresHumanApproval",
     coerce: (v) => coerceBoolean(v),
   },
-  approvalstatus: { target: "approvalStatus", coerce: (v) => v },
   createdat: { target: "createdAt", coerce: (v) => v },
 };
 
