@@ -138,8 +138,9 @@ export function handleStop(
   }
 
   // Adapter-supplied defaults for fields the v0 prompts don't ask the
-  // agent to emit. The parser still treats an inline `## Metadata` block
-  // as authoritative when present.
+  // agent to emit. The parser treats an inline `## Metadata` block as
+  // authoritative for most fields; approvalStatus is always forced to
+  // "pending" by parseReport regardless of what the metadata block contains.
   const defaults: ParseDefaults = {
     taskId: input.env.UNDERSTANDING_GATE_TASK_ID || input.sessionId,
     createdAt: deps.now().toISOString(),

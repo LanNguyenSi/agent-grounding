@@ -118,7 +118,7 @@ export function decideEnforcement(input: EnforcementInput): EnforcementDecision 
       mode: "not_approved",
       reason: blockMessage(
         input.tool,
-        "the latest Understanding Report for the active session is not yet approved. Run `understanding-gate approve` once the report is correct, or paste an approval phrase ('approved' / 'go ahead') so the gate can mark it.",
+        "the latest Understanding Report for the active session is not yet approved. Ask the operator to run `understanding-gate approve` once the report is correct.",
       ),
     };
   }
