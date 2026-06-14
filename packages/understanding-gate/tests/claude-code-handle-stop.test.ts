@@ -9,7 +9,7 @@ import {
   truncateForLog,
 } from "../src/adapters/error-log.js";
 import type { UnderstandingReport } from "../src/schema/types.js";
-import type { ParseResult } from "../src/core/parser.js";
+import { parseReport, type ParseResult } from "../src/core/parser.js";
 
 const FIXED_NOW = new Date("2026-04-30T12:34:56.789Z");
 
@@ -26,6 +26,7 @@ const validReport: UnderstandingReport = {
   outOfScope: ["e"],
   risks: ["f"],
   verificationPlan: ["g"],
+  priorArt: ["h"],
   requiresHumanApproval: true,
   approvalStatus: "pending",
   createdAt: FIXED_NOW.toISOString(),
@@ -416,5 +417,117 @@ describe("handleStop: fast_confirm bullet routing", () => {
     );
     expect(out.kind).toBe("saved");
     expect(deps.parseReport).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("handleStop: never silent for a report-marker message (discovery C1)", () => {
+  // The incident shape: a `## Understanding Report` marker (so REPORT_MARKER_RE
+  // matches) with sections written as bold labels rather than `##` headings.
+  const INCIDENT_MARKDOWN = `## Understanding Report
+
+**My current understanding:**
+Fix the parser to accept bold-label sections.
+
+**Intended outcome:**
+A bold-label report parses and is saved, not dropped.
+
+**Derived todos:**
+- accept bold-label section headers
+- never leave zero artifacts
+
+**Acceptance criteria:**
+- bold-label report yields a saved report
+
+**Assumptions:**
+- bold labels use ** markers
+
+**Open questions:**
+- none
+
+**Out of scope:**
+- changing the SECTIONS list
+
+**Risks:**
+- false-positive bold promotion
+
+**Verification plan:**
+- unit tests
+
+**Prior art:**
+- no equivalent in the codebase, building new
+
+## Metadata
+taskId: incident-c1
+mode: grill_me
+riskLevel: high
+requiresHumanApproval: true
+`;
+
+  it("saves the report (kind:saved) for the bold-label incident shape", () => {
+    // Use the REAL parser so the fix is exercised end to end.
+    const deps = makeDeps({ parseReport });
+    const out = handleStop(
+      makeInput({ lastAssistantText: INCIDENT_MARKDOWN }),
+      deps,
+    );
+    expect(out.kind).toBe("saved");
+  });
+
+  it("returns parse_error (never no_report) when the marker matches but parsing fails", () => {
+    const deps = makeDeps({
+      parseReport: vi.fn(
+        (): ParseResult => ({
+          ok: false,
+          error: {
+            reason: "missing_sections",
+            missing: ["currentUnderstanding"],
+            schemaErrors: [],
+            message: "Missing required sections",
+          },
+        }),
+      ),
+    });
+    const out = handleStop(
+      makeInput({
+        lastAssistantText: "## Understanding Report\n\nno parseable sections here",
+      }),
+      deps,
+    );
+    expect(out.kind).toBe("parse_error");
+    expect(deps.writeParseErrorLog).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a stderr breadcrumb (still parse_error) when the parse-error log write throws", () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const deps = makeDeps({
+      parseReport: vi.fn(
+        (): ParseResult => ({
+          ok: false,
+          error: {
+            reason: "missing_sections",
+            missing: ["assumptions"],
+            schemaErrors: [],
+            message: "missing assumptions",
+          },
+        }),
+      ),
+      writeParseErrorLog: vi.fn(() => {
+        throw new Error("disk full");
+      }),
+    });
+    const out = handleStop(
+      makeInput({ lastAssistantText: "## Understanding Report\n\ngarbage" }),
+      deps,
+    );
+    expect(out.kind).toBe("parse_error");
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("failed to write parse-error log"),
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("disk full"),
+    );
+    consoleErrorSpy.mockRestore();
   });
 });

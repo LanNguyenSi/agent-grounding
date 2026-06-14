@@ -371,6 +371,35 @@ const HEADING_RE = /^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/;
 // Match an opening or closing fence: ``` or ~~~ (CommonMark allows 3+).
 const FENCE_RE = /^\s{0,3}(`{3,}|~{3,})/;
 
+// A line that is ONLY a bold label, e.g. `**Derived Todos:**`, with an
+// optional colon inside or outside the closing `**` and nothing else after
+// it. A line like `**Note:** some text` does NOT match because the trailing
+// content fails `\s*$`. Used so an agent that writes sections as bold labels
+// instead of `## Heading` still parses (discovery finding C1).
+const BOLD_LABEL_RE = /^\s{0,3}\*\*([^*]+?):?\*\*:?\s*$/;
+// All known section aliases (including the metadata block), lower-cased to
+// match normalizeTitle output. A bold-label line is promoted to a section
+// header ONLY when its normalized title is in this set; this guards against
+// inline bold prose whose title is not a known section (e.g. `**Note:**`)
+// splitting a section body.
+const KNOWN_ALIASES: ReadonlySet<string> = new Set([
+  ...SECTIONS.flatMap((s) => s.aliases),
+  ...METADATA_ALIASES,
+]);
+
+// Recognise a bold-label section header. Returns the title + normalized key
+// when the line is a bare bold label naming a known section, else null.
+function matchBoldLabelHeader(
+  line: string,
+): { title: string; titleKey: string } | null {
+  const m = line.match(BOLD_LABEL_RE);
+  if (!m) return null;
+  const title = m[1].replace(/:$/, "").trim();
+  const titleKey = normalizeTitle(title);
+  if (!KNOWN_ALIASES.has(titleKey)) return null;
+  return { title, titleKey };
+}
+
 function splitIntoSections(markdown: string): Section[] {
   // Strip a UTF-8 BOM if present so the first heading isn't shadowed.
   const stripped =
@@ -400,6 +429,7 @@ function splitIntoSections(markdown: string): Section[] {
       continue;
     }
     const m = line.match(HEADING_RE);
+    const boldHeader = m == null ? matchBoldLabelHeader(line) : null;
     if (m) {
       if (current) {
         sections.push({
@@ -410,6 +440,19 @@ function splitIntoSections(markdown: string): Section[] {
       }
       const title = m[2].trim();
       current = { title, titleKey: normalizeTitle(title), body: [] };
+    } else if (boldHeader) {
+      if (current) {
+        sections.push({
+          title: current.title,
+          titleKey: current.titleKey,
+          body: current.body.join("\n"),
+        });
+      }
+      current = {
+        title: boldHeader.title,
+        titleKey: boldHeader.titleKey,
+        body: [],
+      };
     } else if (current) {
       current.body.push(line);
     }

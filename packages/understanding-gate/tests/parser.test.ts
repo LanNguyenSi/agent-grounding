@@ -579,3 +579,135 @@ describe("parseReport: fast_confirm bullet parsing", () => {
     expect(r.error.missing).toContain("intendedOutcome");
   });
 });
+
+// Discovery finding C1: an agent ended a turn with a complete report whose
+// sections were bold labels (`**Derived Todos:**`) rather than `##` headings.
+// The parser must accept those as section headers so the report is saved
+// instead of dropped as "missing sections".
+const BOLD_LABEL_MARKDOWN = `# Understanding Report
+
+**My current understanding:**
+The user wants a parser for the Understanding Report.
+It should reject malformed input.
+
+**Intended outcome:**
+The parser returns a typed object validated against the schema.
+
+**Derived todos:**
+- write the parser
+- add ajv validation
+- ship under @lannguyensi/understanding-gate
+
+**Acceptance criteria:**
+- round-trip succeeds
+- missing sections detected
+- schema violations surfaced
+
+**Assumptions:**
+- ajv is available as a runtime dep
+- agent emits sections in order
+
+**Open questions:**
+- where does taskId come from?
+
+**Out of scope:**
+- LLM-assisted recovery
+
+**Risks:**
+- false negatives on heading variants
+
+**Verification plan:**
+- unit tests
+
+**Prior art:**
+- searched npm and GitHub, found nothing equivalent, building new
+`;
+
+describe("parseReport: bold-label section headers (discovery C1)", () => {
+  it("accepts a full report whose sections are bold labels", () => {
+    const r = parseReport(BOLD_LABEL_MARKDOWN, {
+      taskId: "bold-1",
+      mode: "grill_me",
+      riskLevel: "high",
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.report.currentUnderstanding).toContain("wants a parser");
+    expect(r.report.derivedTodos).toEqual([
+      "write the parser",
+      "add ajv validation",
+      "ship under @lannguyensi/understanding-gate",
+    ]);
+    expect(r.report.risks).toEqual(["false negatives on heading variants"]);
+  });
+
+  it("accepts a report mixing ## headings and bold-label sections", () => {
+    const mixed = FULL_MARKDOWN.replace(
+      "### 2. Intended outcome",
+      "**Intended outcome:**",
+    ).replace("### 8. Risks", "**Risks:**");
+    const r = parseReport(mixed);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.report.intendedOutcome).toContain("typed object");
+    expect(r.report.risks).toEqual(["false negatives on heading variants"]);
+  });
+
+  it("does NOT promote an inline bold line with trailing content (no body split)", () => {
+    const md = FULL_MARKDOWN.replace(
+      "It should reject malformed input.",
+      "It should reject malformed input.\n**Note:** this is inline emphasis, not a section.",
+    );
+    const r = parseReport(md);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // The inline bold stays in the section body, not promoted to a section.
+    expect(r.report.currentUnderstanding).toContain("inline emphasis");
+  });
+
+  it("does NOT promote a KNOWN alias appearing inline with trailing content", () => {
+    // `**Risks:** ...trailing prose` is inline emphasis, not a header: the
+    // trailing content fails the BOLD_LABEL_RE `\\s*$` guard. The inline label
+    // sits BEFORE the real `### 8. Risks`, so if it were wrongly promoted,
+    // pickSection (first-match-wins) would return the wrong Risks body.
+    const md = FULL_MARKDOWN.replace(
+      "It should reject malformed input.",
+      "It should reject malformed input.\n**Risks:** this is inline emphasis, not a section.",
+    );
+    const r = parseReport(md);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // The real Risks section is unchanged...
+    expect(r.report.risks).toEqual(["false negatives on heading variants"]);
+    // ...and the inline bold stayed in the current-understanding body.
+    expect(r.report.currentUnderstanding).toContain("inline emphasis");
+  });
+
+  it("does NOT promote a bold label whose title is not a known section alias", () => {
+    const md = FULL_MARKDOWN.replace(
+      "It should reject malformed input.",
+      "It should reject malformed input.\n**Random Heading:**\nstill part of the same section.",
+    );
+    const r = parseReport(md);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.report.currentUnderstanding).toContain("Random Heading");
+  });
+
+  it("does NOT promote a bold label inside a fenced code block", () => {
+    // A fake `**Derived todos:**` inside a fence must not shadow the real
+    // section (pickSection is first-match-wins, so a leaked fake would win).
+    const md = FULL_MARKDOWN.replace(
+      "It should reject malformed input.",
+      "It should reject malformed input.\n\n```\n**Derived todos:**\n- fake todo from inside a fence\n```",
+    );
+    const r = parseReport(md);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.report.derivedTodos).toEqual([
+      "write the parser",
+      "add ajv validation",
+      "ship under @lannguyensi/understanding-gate",
+    ]);
+  });
+});

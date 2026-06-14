@@ -181,8 +181,19 @@ export function handleStop(
   let logPath = "";
   try {
     logPath = deps.writeParseErrorLog(errorDir, payload);
-  } catch {
-    // even the log write failed; swallow per "never block the harness".
+  } catch (err) {
+    // Even the log write failed. Never throw (the harness must not be
+    // blocked by the gate's own bookkeeping), but leave a last-resort
+    // stderr breadcrumb so a completely-failed artifact write is not pure
+    // silence. Guard the breadcrumb itself: stderr can also throw (EPIPE on
+    // a closed pipe), and this function's contract is to never throw.
+    try {
+      console.error(
+        `understanding-gate: failed to write parse-error log: ${String(err)}`,
+      );
+    } catch {
+      /* stderr unavailable; nothing more we can safely do */
+    }
   }
   return { kind: "parse_error", logPath, error: result.error };
 }
