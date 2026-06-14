@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.2, 2026-06-14
+
+### Fixed: the parser accepts bold-label section headers, and the Stop hook is never silent
+
+- **The problem (discovery finding C1, live repro in session 2a7a60b1).** An agent ended a turn with a complete Understanding Report whose top heading was `## Understanding Report` (so `REPORT_MARKER_RE` matched) but whose sections were written as bold labels, e.g. `**Derived Todos:**` followed by a markdown list, instead of `##` headings. `splitIntoSections` only promoted `#`-style headings to sections, so every section read as missing, `parseReport` returned `missing_sections`, and the report was dropped. Only a parse-error log was written; the real report was never saved. This was the producer half of the C1 stale-report-adoption bug (the consumer half, the harness tolerant fallback, was fixed in harness 0.34.0).
+- **The fix.** `src/core/parser.ts` now recognizes a bare bold-label line (`**Title:**`, `**Title**:`, `**Title**`) as a section header equivalent to a `##` heading, but ONLY when the line is the whole line (no trailing content) AND its normalized title is a known section alias (`KNOWN_ALIASES`, built from `SECTIONS` aliases plus the metadata alias). The known-alias allowlist plus the `\s*$` anchor stop inline bold prose such as `**Note:** ...` from splitting a section body. Bold labels inside fenced code blocks are still treated as verbatim content. `SECTIONS`, `REPORT_MARKER_RE` and `normalizeTitle` are unchanged, so the harness `check:ug-schema-drift` mirror stays green.
+- **Never silent.** `src/adapters/claude-code/handle-stop.ts`: when even the parse-error log write fails, a guarded `console.error` breadcrumb is emitted (wrapped so it can never throw, e.g. on an EPIPE stderr). A message that carries the report marker now always yields a saved report or a parse-error, never zero artifacts.
+- **Behavior note.** A `fast_confirm` reply that contains a bare known-alias bold label now produces a section and skips the five-bullet fallback (gated on `sections.length === 0`). Low probability (the `fast_confirm` prompt emits bullets, not bold labels) and never silent.
+- **Tests.** `tests/parser.test.ts` adds bold-label accept, mixed `##`-and-bold, inline-bold-with-trailing-content (known and unknown alias) not-promoted, and fenced-bold not-promoted cases. `tests/claude-code-handle-stop.test.ts` adds an incident-shape case that parses and saves through the REAL parser end to end, a marker-plus-garbage case that yields `parse_error` (never `no_report`), and a breadcrumb-on-log-write-failure case. 484/484 vitest pass, tsc + build clean.
+
+agent-grounding task `f994e25b`, PR #108. No behaviour change for reports that already parsed.
+
 ## 0.4.1, 2026-05-24
 
 ### Fixed: parse-error log raw payload now capped at 64 KiB across both adapters
