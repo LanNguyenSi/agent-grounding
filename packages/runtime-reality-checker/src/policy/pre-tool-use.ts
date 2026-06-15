@@ -13,6 +13,7 @@
 
 import { handlePolicyPreToolUse } from "./handle-pre-tool-use.js";
 import { loadExpectations } from "./expectations.js";
+import { resolveTriggers } from "./triggers.js";
 import { createJsonlAuditWriter, resolveDefaultAuditLogPath } from "./audit.js";
 
 async function readStdin(): Promise<string> {
@@ -32,9 +33,13 @@ async function main(): Promise<void> {
     return;
   }
 
+  const resolved = resolveTriggers(process.env.RUNTIME_REALITY_TRIGGERS_FILE);
+  if (resolved.warning) process.stderr.write(`${resolved.warning}\n`);
+
   const result = handlePolicyPreToolUse(raw, process.env, {
     loadExpectations,
     probe: null,
+    triggers: resolved.triggers,
     appendAudit: createJsonlAuditWriter(resolveDefaultAuditLogPath(process.env)),
   });
 

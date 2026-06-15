@@ -3,7 +3,10 @@
 // own loadExpectations and probe so the contract is clear from the
 // test body, no shared fixtures, no hidden state.
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   handlePolicyPreToolUse,
@@ -13,8 +16,12 @@ import {
 } from "../src/policy/handle-pre-tool-use.js";
 import {
   DEFAULT_TRIGGERS,
+  MAX_TRIGGERS_BYTES,
   extractCommand,
+  loadTriggersFile,
   matchTrigger,
+  parseTriggersFile,
+  resolveTriggers,
 } from "../src/policy/triggers.js";
 import {
   parseExpectationsFile,
@@ -299,5 +306,327 @@ describe("handler decision matrix", () => {
     expect(r.decision.kind).toBe("block");
     expect(r.exitCode).toBe(2);
     expect(r.stdout).toContain("permissionDecision");
+  });
+
+  it("honors an injected custom triggers set (custom trigger gates a non-default command)", () => {
+    // Inject a trigger that matches a kubectl command (not in DEFAULT_TRIGGERS)
+    const customTrigger = {
+      category: "deploy-script" as const,
+      toolNames: ["Bash"],
+      commandPattern: /kubectl\s+delete/,
+    };
+    env.RUNTIME_REALITY_KEYWORD = "deploy-panel";
+    deps.triggers = [customTrigger];
+    deps.loadExpectations = () => expectations([{ name: "api" }]);
+    const kubectlPayload = JSON.stringify({
+      tool_name: "Bash",
+      tool_input: { command: "kubectl delete pod api-0" },
+    });
+    // With no probe, it degrades to skip; the key assertion is that the trigger matched
+    // (if it had not matched, the decision reason would be "no policy trigger matched")
+    const r = handlePolicyPreToolUse(kubectlPayload, env, deps);
+    // Trigger matched, no probe → skip with "no probe configured" reason (not "no trigger matched")
+    expect(r.decision.kind).toBe("skip");
+    if (r.decision.kind === "skip") {
+      expect(r.decision.reason).toMatch(/no probe configured/);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// triggers file loader and resolver
+// ---------------------------------------------------------------------------
+
+let tmpDir = "";
+
+afterEach(() => {
+  if (tmpDir) {
+    try {
+      rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+    tmpDir = "";
+  }
+});
+
+function writeTriggerFile(name: string, content: string): string {
+  if (!tmpDir) {
+    tmpDir = mkdtempSync(join(tmpdir(), "rrc-triggers-test-"));
+  }
+  const path = join(tmpDir, name);
+  writeFileSync(path, content, "utf8");
+  return path;
+}
+
+const VALID_TRIGGERS_JSON = JSON.stringify([
+  {
+    toolNames: ["Bash"],
+    commandPattern: "kubectl\\s+(delete|apply)\\b",
+    category: "deploy-script",
+  },
+]);
+
+describe("parseTriggersFile", () => {
+  it("parses a valid triggers array", () => {
+    const r = parseTriggersFile(VALID_TRIGGERS_JSON);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.triggers).toHaveLength(1);
+    expect(r.triggers[0]!.category).toBe("deploy-script");
+    expect(r.triggers[0]!.commandPattern).toBeInstanceOf(RegExp);
+    expect(r.triggers[0]!.toolNames).toContain("Bash");
+  });
+
+  it("parses every element of a multi-element triggers array", () => {
+    const r = parseTriggersFile(
+      JSON.stringify([
+        { toolNames: ["Bash"], commandPattern: "kubectl\\s+delete\\b", category: "deploy-script" },
+        { toolNames: ["Bash"], commandPattern: "helm\\s+uninstall\\b", category: "process-kill" },
+      ]),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.triggers).toHaveLength(2);
+    expect(r.triggers[1]!.category).toBe("process-kill");
+    expect(r.triggers[1]!.commandPattern).toBeInstanceOf(RegExp);
+  });
+
+  it("reports the offending element index for a later invalid element", () => {
+    const r = parseTriggersFile(
+      JSON.stringify([
+        { toolNames: ["Bash"], commandPattern: "kubectl\\s+delete\\b", category: "deploy-script" },
+        { toolNames: [], commandPattern: "foo", category: "process-kill" },
+      ]),
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe("invalid_shape");
+    expect(r.detail).toMatch(/\[1\]/);
+  });
+
+  it("returns invalid_json for malformed JSON", () => {
+    const r = parseTriggersFile("{not json}");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe("invalid_json");
+  });
+
+  it("returns invalid_shape when root is not an array", () => {
+    const r = parseTriggersFile(JSON.stringify({ toolNames: ["Bash"] }));
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe("invalid_shape");
+  });
+
+  it("returns invalid_shape when root is an empty array", () => {
+    const r = parseTriggersFile("[]");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe("invalid_shape");
+    expect(r.detail).toMatch(/non-empty/);
+  });
+
+  it("returns invalid_shape when toolNames is missing", () => {
+    const r = parseTriggersFile(
+      JSON.stringify([{ commandPattern: "foo", category: "process-kill" }]),
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe("invalid_shape");
+    expect(r.detail).toMatch(/toolNames/);
+  });
+
+  it("returns invalid_shape when toolNames is empty", () => {
+    const r = parseTriggersFile(
+      JSON.stringify([{ toolNames: [], commandPattern: "foo", category: "process-kill" }]),
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe("invalid_shape");
+  });
+
+  it("returns invalid_shape when a toolName element is not a string", () => {
+    const r = parseTriggersFile(
+      JSON.stringify([{ toolNames: [42], commandPattern: "foo", category: "process-kill" }]),
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe("invalid_shape");
+  });
+
+  it("returns invalid_shape when commandPattern is not a string", () => {
+    const r = parseTriggersFile(
+      JSON.stringify([{ toolNames: ["Bash"], commandPattern: 123, category: "process-kill" }]),
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe("invalid_shape");
+    expect(r.detail).toMatch(/commandPattern/);
+  });
+
+  it("returns invalid_shape when category is unknown", () => {
+    const r = parseTriggersFile(
+      JSON.stringify([
+        { toolNames: ["Bash"], commandPattern: "foo", category: "not-a-real-category" },
+      ]),
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe("invalid_shape");
+    expect(r.detail).toMatch(/not-a-real-category/);
+  });
+
+  it("returns invalid_regex for an invalid regex pattern", () => {
+    const r = parseTriggersFile(
+      JSON.stringify([{ toolNames: ["Bash"], commandPattern: "(", category: "process-kill" }]),
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe("invalid_regex");
+    expect(r.detail).toMatch(/\(/);
+  });
+
+  it("compiled commandPattern actually matches expected input", () => {
+    const r = parseTriggersFile(VALID_TRIGGERS_JSON);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const t = r.triggers[0]!;
+    expect(t.commandPattern.test("kubectl delete pod api-0")).toBe(true);
+    expect(t.commandPattern.test("kubectl get pods")).toBe(false);
+  });
+});
+
+describe("loadTriggersFile", () => {
+  it("returns not_found for a non-existent path", () => {
+    const r = loadTriggersFile("/tmp/__no_such_file_rrc_test__.json");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe("not_found");
+  });
+
+  it("returns ok and a compiled trigger set for a valid file", () => {
+    const path = writeTriggerFile("valid.json", VALID_TRIGGERS_JSON);
+    const r = loadTriggersFile(path);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.triggers).toHaveLength(1);
+    expect(r.triggers[0]!.commandPattern).toBeInstanceOf(RegExp);
+    // The loaded trigger should match with matchTrigger
+    const match = matchTrigger(
+      { toolName: "Bash", command: "kubectl apply -f k8s/" },
+      r.triggers,
+    );
+    expect(match).not.toBeNull();
+    expect(match?.category).toBe("deploy-script");
+  });
+
+  it("returns invalid_json for a file containing bad JSON", () => {
+    const path = writeTriggerFile("bad.json", "not json at all");
+    const r = loadTriggersFile(path);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe("invalid_json");
+  });
+
+  it("returns invalid_shape for a JSON file with wrong structure", () => {
+    const path = writeTriggerFile("shape.json", JSON.stringify({ foo: "bar" }));
+    const r = loadTriggersFile(path);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe("invalid_shape");
+  });
+
+  it("returns invalid_shape for an unknown category", () => {
+    const path = writeTriggerFile(
+      "cat.json",
+      JSON.stringify([{ toolNames: ["Bash"], commandPattern: "foo", category: "unknown-cat" }]),
+    );
+    const r = loadTriggersFile(path);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe("invalid_shape");
+  });
+
+  it("returns invalid_regex for a file with a bad regex pattern", () => {
+    const path = writeTriggerFile(
+      "regex.json",
+      JSON.stringify([{ toolNames: ["Bash"], commandPattern: "(", category: "process-kill" }]),
+    );
+    const r = loadTriggersFile(path);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe("invalid_regex");
+  });
+
+  it("returns io_error for a file that exceeds MAX_TRIGGERS_BYTES", () => {
+    if (!tmpDir) {
+      tmpDir = mkdtempSync(join(tmpdir(), "rrc-triggers-test-"));
+    }
+    const path = join(tmpDir, "oversize.json");
+    // Write content larger than 1 MiB
+    const oversize = "x".repeat(MAX_TRIGGERS_BYTES + 1);
+    writeFileSync(path, oversize, "utf8");
+    const r = loadTriggersFile(path);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toBe("io_error");
+    expect(r.detail).toMatch(/byte cap/);
+  });
+});
+
+describe("resolveTriggers", () => {
+  it("returns DEFAULT_TRIGGERS with no warning when path is undefined", () => {
+    const result = resolveTriggers(undefined);
+    expect(result.triggers).toBe(DEFAULT_TRIGGERS);
+    expect(result.warning).toBeUndefined();
+  });
+
+  it("returns DEFAULT_TRIGGERS with no warning when path is an empty string", () => {
+    const result = resolveTriggers("");
+    expect(result.triggers).toBe(DEFAULT_TRIGGERS);
+    expect(result.warning).toBeUndefined();
+  });
+
+  it("returns DEFAULT_TRIGGERS with no warning when path is whitespace only", () => {
+    const result = resolveTriggers("   ");
+    expect(result.triggers).toBe(DEFAULT_TRIGGERS);
+    expect(result.warning).toBeUndefined();
+  });
+
+  it("returns loaded triggers with no warning for a valid file", () => {
+    const path = writeTriggerFile("resolve-valid.json", VALID_TRIGGERS_JSON);
+    const result = resolveTriggers(path);
+    expect(result.warning).toBeUndefined();
+    expect(result.triggers).toHaveLength(1);
+    expect(result.triggers[0]!.category).toBe("deploy-script");
+  });
+
+  it("falls back to DEFAULT_TRIGGERS with a warning when the file does not exist", () => {
+    const result = resolveTriggers("/tmp/__no_such_rrc_file__.json");
+    expect(result.triggers).toBe(DEFAULT_TRIGGERS);
+    expect(result.warning).toBeDefined();
+    expect(result.warning).toMatch(/triggers file load failed/);
+    expect(result.warning).toMatch(/not_found/);
+    expect(result.warning).toMatch(/using default trigger set/);
+  });
+
+  it("falls back to DEFAULT_TRIGGERS with a warning when the file has invalid JSON", () => {
+    const path = writeTriggerFile("resolve-bad.json", "{{invalid");
+    const result = resolveTriggers(path);
+    expect(result.triggers).toBe(DEFAULT_TRIGGERS);
+    expect(result.warning).toBeDefined();
+    expect(result.warning).toMatch(/invalid_json/);
+  });
+
+  it("falls back to DEFAULT_TRIGGERS with a warning when the file has an invalid shape", () => {
+    const path = writeTriggerFile(
+      "resolve-shape.json",
+      JSON.stringify([{ toolNames: ["Bash"], commandPattern: "foo", category: "bad-cat" }]),
+    );
+    const result = resolveTriggers(path);
+    expect(result.triggers).toBe(DEFAULT_TRIGGERS);
+    expect(result.warning).toBeDefined();
+    expect(result.warning).toMatch(/invalid_shape/);
   });
 });
