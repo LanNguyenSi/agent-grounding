@@ -3,7 +3,7 @@
 // forward args into these, so testing the data layer + adapter pattern
 // is enough to catch contract drift.
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   addEvidence,
@@ -15,7 +15,7 @@ import {
   supportHypothesis,
 } from '@lannguyensi/hypothesis-tracker';
 
-import { getOrCreateStore, getStore, resetStores } from '../src/hypothesis-store.js';
+import { getOrCreateStore, getStore, resetStore, resetStores, storeCount } from '../src/hypothesis-store.js';
 
 beforeEach(() => {
   resetStores();
@@ -44,6 +44,121 @@ describe('hypothesis-store', () => {
     resetStores();
     expect(getStore('x')).toBeUndefined();
     expect(getStore('y')).toBeUndefined();
+  });
+
+  it('resetStore deletes one session and leaves a second session intact', () => {
+    getOrCreateStore('keep');
+    getOrCreateStore('drop');
+    const deleted = resetStore('drop');
+    expect(deleted).toBe(true);
+    expect(getStore('drop')).toBeUndefined();
+    expect(getStore('keep')).toBeDefined();
+    expect(storeCount()).toBe(1);
+  });
+
+  it('resetStore returns false for an unknown session', () => {
+    expect(resetStore('never-existed')).toBe(false);
+  });
+});
+
+describe('hypothesis-store LRU eviction', () => {
+  const SAVED_ENV = process.env.GROUNDING_HYPOTHESIS_MAX_SESSIONS;
+
+  afterEach(() => {
+    resetStores();
+    if (SAVED_ENV === undefined) {
+      delete process.env.GROUNDING_HYPOTHESIS_MAX_SESSIONS;
+    } else {
+      process.env.GROUNDING_HYPOTHESIS_MAX_SESSIONS = SAVED_ENV;
+    }
+  });
+
+  it('evicts the oldest session when MAX+1 sessions are created', () => {
+    process.env.GROUNDING_HYPOTHESIS_MAX_SESSIONS = '3';
+    getOrCreateStore('s1');
+    getOrCreateStore('s2');
+    getOrCreateStore('s3');
+    expect(storeCount()).toBe(3);
+
+    // Adding a 4th session should evict s1 (the LRU).
+    getOrCreateStore('s4');
+    expect(storeCount()).toBe(3);
+    expect(getStore('s1')).toBeUndefined();
+    expect(getStore('s2')).toBeDefined();
+    expect(getStore('s3')).toBeDefined();
+    expect(getStore('s4')).toBeDefined();
+  });
+
+  it('touching the oldest via getOrCreateStore before overflow protects it and evicts the next-oldest instead', () => {
+    process.env.GROUNDING_HYPOTHESIS_MAX_SESSIONS = '3';
+    getOrCreateStore('s1');
+    getOrCreateStore('s2');
+    getOrCreateStore('s3');
+
+    // Touch s1 so it becomes most-recently-used; s2 becomes the LRU.
+    getOrCreateStore('s1');
+
+    // Adding s4 should evict s2, not s1.
+    getOrCreateStore('s4');
+    expect(storeCount()).toBe(3);
+    expect(getStore('s1')).toBeDefined();
+    expect(getStore('s2')).toBeUndefined();
+    expect(getStore('s3')).toBeDefined();
+    expect(getStore('s4')).toBeDefined();
+  });
+
+  it('touching the oldest via getStore before overflow protects it and evicts the next-oldest instead', () => {
+    process.env.GROUNDING_HYPOTHESIS_MAX_SESSIONS = '3';
+    getOrCreateStore('s1');
+    getOrCreateStore('s2');
+    getOrCreateStore('s3');
+
+    // Touch s1 via getStore (read-side touch) so it becomes most-recently-used.
+    getStore('s1');
+
+    // Adding s4 should evict s2, not s1.
+    getOrCreateStore('s4');
+    expect(storeCount()).toBe(3);
+    expect(getStore('s1')).toBeDefined();
+    expect(getStore('s2')).toBeUndefined();
+    expect(getStore('s3')).toBeDefined();
+    expect(getStore('s4')).toBeDefined();
+  });
+
+  it('falls back to default cap 200 when env var is unset', () => {
+    delete process.env.GROUNDING_HYPOTHESIS_MAX_SESSIONS;
+    // Just assert no eviction for 2 sessions (cap is 200).
+    getOrCreateStore('a');
+    getOrCreateStore('b');
+    expect(storeCount()).toBe(2);
+  });
+
+  it('falls back to default cap 200 when env var is 0 or negative', () => {
+    process.env.GROUNDING_HYPOTHESIS_MAX_SESSIONS = '0';
+    // With a default of 200, two sessions should not be evicted.
+    getOrCreateStore('a');
+    getOrCreateStore('b');
+    expect(storeCount()).toBe(2);
+  });
+
+  it('falls back to default cap 200 for a non-integer env value', () => {
+    process.env.GROUNDING_HYPOTHESIS_MAX_SESSIONS = '3.9';
+    // "3.9" is not an integer, so the cap is the 200 default, not a truncated 3.
+    getOrCreateStore('a');
+    getOrCreateStore('b');
+    getOrCreateStore('c');
+    getOrCreateStore('d');
+    expect(storeCount()).toBe(4);
+  });
+
+  it('floors at cap 1: the just-created session survives an immediate overflow', () => {
+    process.env.GROUNDING_HYPOTHESIS_MAX_SESSIONS = '1';
+    getOrCreateStore('s1');
+    getOrCreateStore('s2');
+    // s2 is the active, just-created session: it must survive; s1 is evicted.
+    expect(storeCount()).toBe(1);
+    expect(getStore('s2')).toBeDefined();
+    expect(getStore('s1')).toBeUndefined();
   });
 });
 
