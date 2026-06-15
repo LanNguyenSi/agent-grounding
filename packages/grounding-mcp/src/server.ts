@@ -40,7 +40,7 @@ import {
 import { saveSession, loadSession } from './session-store.js';
 import { ledgerDb, ledgerStatus } from './ledger-bridge.js';
 import { deriveContext } from './derive-context.js';
-import { getOrCreateStore, getStore } from './hypothesis-store.js';
+import { getOrCreateStore, getStore, resetStore } from './hypothesis-store.js';
 import { evaluateSolution, evaluateGate, getHeadSha } from './solution-verdict.js';
 
 // Single source of truth for the version string emitted by both the
@@ -492,6 +492,18 @@ export function createServer(): McpServer {
         return jsonResponse({ error: 'hypothesis_not_found_or_rejected', sessionId, hypothesisId });
       }
       return jsonResponse({ sessionId, hypothesis: updated });
+    },
+  );
+
+  server.tool(
+    'hypothesis_reset',
+    'Purge all hypotheses for a session. Use this when reusing a grounding sessionId for a new debug task so stale hypotheses from the previous investigation do not leak in.',
+    {
+      sessionId: hypothesisSessionIdSchema,
+    },
+    async ({ sessionId }) => {
+      const cleared = resetStore(sessionId);
+      return jsonResponse({ sessionId, cleared });
     },
   );
 

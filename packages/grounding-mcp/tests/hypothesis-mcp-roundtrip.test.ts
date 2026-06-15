@@ -266,6 +266,46 @@ describe('hypothesis_* MCP roundtrip — schema validation', () => {
   });
 });
 
+describe('hypothesis_reset MCP roundtrip', () => {
+  it('records a hypothesis, resets the session, and hypothesis_list shows zero hypotheses', async () => {
+    const sessionId = 'gs-reset-1';
+
+    // Record a hypothesis so the store exists.
+    await client.callTool({
+      name: 'hypothesis_record',
+      arguments: { sessionId, text: 'DNS resolution is failing', requiredChecks: [] },
+    });
+
+    // Verify hypothesis_list sees it.
+    const beforeReset = parseToolResult(
+      await client.callTool({ name: 'hypothesis_list', arguments: { sessionId } }),
+    ) as { summary: { total: number } };
+    expect(beforeReset.summary.total).toBe(1);
+
+    // Call hypothesis_reset and assert cleared: true.
+    const resetResult = parseToolResult(
+      await client.callTool({ name: 'hypothesis_reset', arguments: { sessionId } }),
+    ) as { sessionId: string; cleared: boolean };
+    expect(resetResult).toEqual({ sessionId, cleared: true });
+
+    // hypothesis_list after reset shows zero hypotheses (empty-fixture path).
+    const afterReset = parseToolResult(
+      await client.callTool({ name: 'hypothesis_list', arguments: { sessionId } }),
+    ) as { summary: { total: number }; hypotheses: unknown[] };
+    expect(afterReset.summary.total).toBe(0);
+    expect(afterReset.hypotheses).toEqual([]);
+  });
+
+  it('hypothesis_reset of a never-seen session returns { cleared: false }', async () => {
+    const raw = await client.callTool({
+      name: 'hypothesis_reset',
+      arguments: { sessionId: 'gs-never-seen' },
+    });
+    const result = parseToolResult(raw) as { sessionId: string; cleared: boolean };
+    expect(result).toEqual({ sessionId: 'gs-never-seen', cleared: false });
+  });
+});
+
 describe('hypothesis_* MCP roundtrip — happy path through every verb', () => {
   it('record → list → evidence (auto-support) → check_done → reject covers the wrapper happy paths', async () => {
     const sessionId = 'gs-happy';

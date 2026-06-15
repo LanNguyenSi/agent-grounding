@@ -26,6 +26,7 @@ The other packages in this repo are CLI-first. That works fine for scripted invo
 | `hypothesis_check_done` | `hypothesis-tracker.completeCheck` | Mark a required check as done. |
 | `hypothesis_reject` | `hypothesis-tracker.rejectHypothesis` | Reject a hypothesis with a reason, the rejection is appended as an audit entry rather than a silent delete. |
 | `hypothesis_support` | `hypothesis-tracker.supportHypothesis` | Explicitly mark a hypothesis as supported. Usually `hypothesis_evidence` is enough. |
+| `hypothesis_reset` | (store purge) | Purge all hypotheses for one session. Use before reusing a grounding sessionId for a new debug task so stale hypotheses do not leak in. |
 
 ## Storage
 
@@ -132,6 +133,8 @@ mcp__grounding__claim_evaluate_from_session({
 ## Hypothesis tracking
 
 The `hypothesis_*` verbs wrap `hypothesis-tracker` so you can keep competing causes alive during a debug session and force explicit rejection instead of silent substitution. State is in-memory per server process (sessionId-namespaced); persistence is intentionally out of scope, the ledger is the durable record.
+
+**Hypothesis lifetime:** a session's hypotheses live until the process exits, until `hypothesis_reset` is called for that sessionId, or until LRU eviction when more than `GROUNDING_HYPOTHESIS_MAX_SESSIONS` (default 200) distinct sessions have been active in the same process. Use `hypothesis_reset` at the start of a new debug task that reuses an existing sessionId to avoid leaking stale hypotheses into the fresh investigation.
 
 ```jsonc
 // 1. Record both possible causes early
