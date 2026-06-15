@@ -26,9 +26,12 @@ const sampleSummary = {
   unknowns: [
     entry({ id: 4, type: "unknown", content: "When did the last deploy happen?" }),
   ],
+  policyDecisions: [
+    entry({ id: 5, type: "policy_decision", content: "Blocked rm -rf without approval", source: "risk-gate", confidence: "high" }),
+  ],
 };
 
-const emptySummary = { facts: [], hypotheses: [], rejected: [], unknowns: [] };
+const emptySummary = { facts: [], hypotheses: [], rejected: [], unknowns: [], policyDecisions: [] };
 
 describe("buildHandoffMarkdown", () => {
   it("includes all sections", () => {
@@ -42,7 +45,15 @@ describe("buildHandoffMarkdown", () => {
     expect(md).toContain("~~DNS issue~~");
     expect(md).toContain("## Open Questions");
     expect(md).toContain("When did the last deploy happen?");
+    expect(md).toContain("## Policy Decisions");
+    expect(md).toContain("Blocked rm -rf without approval");
     expect(md).toContain("## Next Steps");
+  });
+
+  it("orders Policy Decisions after Open Questions and before Next Steps", () => {
+    const md = buildHandoffMarkdown("test", sampleSummary);
+    expect(md.indexOf("## Open Questions")).toBeLessThan(md.indexOf("## Policy Decisions"));
+    expect(md.indexOf("## Policy Decisions")).toBeLessThan(md.indexOf("## Next Steps"));
   });
 
   it("includes status counts", () => {
@@ -51,12 +62,16 @@ describe("buildHandoffMarkdown", () => {
     expect(md).toContain("1 open hypotheses");
     expect(md).toContain("1 rejected hypotheses");
     expect(md).toContain("1 open questions");
+    expect(md).toContain("1 policy decisions");
   });
 
   it("handles empty summary", () => {
     const md = buildHandoffMarkdown("empty", emptySummary);
     expect(md).toContain("_None yet._");
     expect(md).toContain("All resolved — ready to close");
+    // The 5th section still renders (empty) and the status line is present.
+    expect(md).toContain("## Policy Decisions");
+    expect(md).toContain("0 policy decisions");
   });
 
   it("includes sources and confidence", () => {
@@ -75,11 +90,15 @@ describe("buildHandoffJson", () => {
     expect(json.status.hypothesesCount).toBe(1);
     expect(json.status.rejectedCount).toBe(1);
     expect(json.status.unknownsCount).toBe(1);
+    expect(json.status.policyDecisionsCount).toBe(1);
     expect(json.facts).toHaveLength(1);
     expect(json.facts[0].content).toBe("Service is down");
     expect(json.openHypotheses).toHaveLength(1);
     expect(json.rejectedHypotheses).toHaveLength(1);
     expect(json.openQuestions).toHaveLength(1);
+    expect(json.policyDecisions).toHaveLength(1);
+    expect(json.policyDecisions[0].content).toBe("Blocked rm -rf without approval");
+    expect(json.policyDecisions[0].id).toBe(5);
   });
 
   it("includes next steps", () => {
@@ -91,6 +110,8 @@ describe("buildHandoffJson", () => {
   it("handles empty summary", () => {
     const json = buildHandoffJson("empty", emptySummary);
     expect(json.status.factsCount).toBe(0);
+    expect(json.status.policyDecisionsCount).toBe(0);
+    expect(json.policyDecisions).toHaveLength(0);
     expect(json.nextSteps).toContain("All resolved — ready to close");
   });
 

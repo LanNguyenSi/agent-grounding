@@ -5,6 +5,7 @@ export interface HandoffSummary {
   hypotheses: LedgerEntry[];
   rejected: LedgerEntry[];
   unknowns: LedgerEntry[];
+  policyDecisions: LedgerEntry[];
 }
 
 export interface HandoffJson {
@@ -15,11 +16,13 @@ export interface HandoffJson {
     hypothesesCount: number;
     rejectedCount: number;
     unknownsCount: number;
+    policyDecisionsCount: number;
   };
   facts: { id: number; content: string; source: string | null; confidence: string }[];
   openHypotheses: { id: number; content: string; source: string | null; confidence: string }[];
   rejectedHypotheses: { id: number; content: string; source: string | null }[];
   openQuestions: { id: number; content: string; source: string | null }[];
+  policyDecisions: { id: number; content: string; source: string | null; confidence: string }[];
   nextSteps: string[];
 }
 
@@ -43,7 +46,8 @@ export function buildHandoffMarkdown(session: string, summary: HandoffSummary): 
   lines.push(`- ${summary.facts.length} confirmed facts`);
   lines.push(`- ${summary.hypotheses.length} open hypotheses`);
   lines.push(`- ${summary.rejected.length} rejected hypotheses`);
-  lines.push(`- ${summary.unknowns.length} open questions\n`);
+  lines.push(`- ${summary.unknowns.length} open questions`);
+  lines.push(`- ${summary.policyDecisions.length} policy decisions\n`);
 
   lines.push(`## Confirmed Facts`);
   if (summary.facts.length === 0) {
@@ -86,6 +90,16 @@ export function buildHandoffMarkdown(session: string, summary: HandoffSummary): 
     lines.push("");
   }
 
+  lines.push(`## Policy Decisions`);
+  if (summary.policyDecisions.length === 0) {
+    lines.push(`_None._\n`);
+  } else {
+    for (const e of summary.policyDecisions) {
+      lines.push(`- ${e.content} (confidence: ${e.confidence}${e.source ? `, source: ${e.source}` : ""})`);
+    }
+    lines.push("");
+  }
+
   lines.push(`## Next Steps`);
   const steps = nextSteps(summary);
   steps.forEach((s, i) => lines.push(`${i + 1}. ${s}`));
@@ -103,11 +117,13 @@ export function buildHandoffJson(session: string, summary: HandoffSummary): Hand
       hypothesesCount: summary.hypotheses.length,
       rejectedCount: summary.rejected.length,
       unknownsCount: summary.unknowns.length,
+      policyDecisionsCount: summary.policyDecisions.length,
     },
     facts: summary.facts.map((e) => ({ id: e.id, content: e.content, source: e.source, confidence: e.confidence })),
     openHypotheses: summary.hypotheses.map((e) => ({ id: e.id, content: e.content, source: e.source, confidence: e.confidence })),
     rejectedHypotheses: summary.rejected.map((e) => ({ id: e.id, content: e.content, source: e.source })),
     openQuestions: summary.unknowns.map((e) => ({ id: e.id, content: e.content, source: e.source })),
+    policyDecisions: summary.policyDecisions.map((e) => ({ id: e.id, content: e.content, source: e.source, confidence: e.confidence })),
     nextSteps: nextSteps(summary),
   };
 }

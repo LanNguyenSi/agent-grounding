@@ -6,6 +6,7 @@ const TYPE_ICONS: Record<string, string> = {
   hypothesis: "?",
   rejected: "✗",
   unknown: "~",
+  policy_decision: "⚖",
 };
 
 const TYPE_COLORS: Record<string, (s: string) => string> = {
@@ -13,6 +14,7 @@ const TYPE_COLORS: Record<string, (s: string) => string> = {
   hypothesis: chalk.yellow,
   rejected: chalk.red,
   unknown: chalk.gray,
+  policy_decision: chalk.blue,
 };
 
 const CONFIDENCE_BADGES: Record<string, string> = {
@@ -37,6 +39,7 @@ export function printSummary(
     hypotheses: LedgerEntry[];
     rejected: LedgerEntry[];
     unknowns: LedgerEntry[];
+    policyDecisions: LedgerEntry[];
   },
   session: string,
 ): void {
@@ -44,7 +47,8 @@ export function printSummary(
     summary.facts.length +
     summary.hypotheses.length +
     summary.rejected.length +
-    summary.unknowns.length;
+    summary.unknowns.length +
+    summary.policyDecisions.length;
 
   console.log();
   console.log(chalk.bold.cyan(`📋 Evidence Ledger — session: ${session}`));
@@ -72,6 +76,12 @@ export function printSummary(
   if (summary.rejected.length > 0) {
     console.log(chalk.bold.red(`✗ REJECTED (${summary.rejected.length})`));
     summary.rejected.forEach((e) => console.log(formatEntry(e)));
+    console.log();
+  }
+
+  if (summary.policyDecisions.length > 0) {
+    console.log(chalk.bold.blue(`⚖ POLICY DECISIONS (${summary.policyDecisions.length})`));
+    summary.policyDecisions.forEach((e) => console.log(formatEntry(e)));
     console.log();
   }
 
