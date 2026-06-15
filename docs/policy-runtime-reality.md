@@ -8,7 +8,30 @@ The point: today the checker is library-only. Nothing in a live Claude Code sess
 
 A `PreToolUse` event fires for every tool call. The policy is short-circuited to allow for tools that cannot affect runtime state (e.g. `Read`, `Grep`, MCP queries). The policy is engaged only when the tool call **matches a trigger**.
 
-Triggers are pattern-based on `tool_name + tool_input`. The PoC ships a hard-coded default trigger set (see `src/policy/triggers.ts`); a JSON-file-based override (`RUNTIME_REALITY_TRIGGERS_FILE`) is a follow-up, not present in the PoC.
+Triggers are pattern-based on `tool_name + tool_input`. The package ships a hard-coded default trigger set (see `src/policy/triggers.ts`) and supports operator overrides via `RUNTIME_REALITY_TRIGGERS_FILE`.
+
+### Trigger file override
+
+Set `RUNTIME_REALITY_TRIGGERS_FILE=<absolute-path>` to replace the default trigger set at startup. The file must be a JSON array of trigger objects:
+
+```json
+[
+  {
+    "toolNames": ["Bash"],
+    "commandPattern": "kubectl\\s+(delete|apply|rollout restart)\\b",
+    "category": "deploy-script"
+  }
+]
+```
+
+Each element requires:
+- `toolNames`: a non-empty array of tool name strings (case-sensitive, e.g. `"Bash"`)
+- `commandPattern`: a string compiled to a `RegExp` at load time
+- `category`: one of the four valid categories: `compose-mutation`, `systemctl-mutation`, `process-kill`, `deploy-script`
+
+The file is read once at hook startup, not hot-reloaded. The 1 MiB size cap (`MAX_TRIGGERS_BYTES`) applies. Any load, parse, shape, or regex failure causes the policy to fall back to `DEFAULT_TRIGGERS` and write a warning to stderr (fail-open). Custom categories and per-keyword trigger overrides are out of scope.
+
+Each `commandPattern` is compiled to a `RegExp` and tested synchronously against command strings inside the hook. Unlike the fixed, audited `DEFAULT_TRIGGERS`, an override pattern is operator-supplied, so keep it simple: a pathological pattern with nested quantifiers could backtrack catastrophically and stall the hook. This is the same operator-trust tier as the expectations dir, so it is an accepted residual rather than a sandboxed input.
 
 | Trigger category   | Matches when                                                                                                                                                | Rationale                                                                                                                                |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |

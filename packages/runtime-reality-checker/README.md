@@ -89,6 +89,7 @@ Env knobs:
 | `RUNTIME_REALITY_WARN_AS_BLOCK=1` | Treat warning-tier drift as a block |
 | `RUNTIME_REALITY_CRITICAL_AS_WARN=1` | Degrade critical drift to a warn (audit only) |
 | `RUNTIME_REALITY_PROBE_FAIL_BLOCK=1` | Block when no probe is configured or the probe throws |
+| `RUNTIME_REALITY_TRIGGERS_FILE=<path>` | Override the default trigger set with a JSON array of `{ toolNames, commandPattern, category }`; an unreadable or invalid file degrades to the built-in default set with a stderr warning |
 | `RUNTIME_REALITY_AUDIT_LOG=<path>` | Append a JSONL audit line per decision (block, warn, skip-noprobe, probe-fail, disabled) to this file. Defaults to `~/.runtime-reality/audit.log`. Prefer an absolute path, relative values resolve against the hook process cwd (which is operator-set, not stable across invocations). |
 
 See the spec for the full trigger set, severity-to-decision matrix, and a worked VPS-compose example.
