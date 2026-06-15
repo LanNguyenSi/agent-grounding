@@ -4,10 +4,12 @@
 // when the gate decides to block.
 //
 // Phase 2 contract: a "blocked" decision is loud (stderr message + the
-// JSON envelope). An "allowed" decision is silent (no stdout, exit 0)
-// to keep PreToolUse latency cheap on the hot path. Failures degrade
-// to "allow" (silent) so a broken gate never holds up legitimate work
-// — security-noisy by design but never a tarpit.
+// JSON envelope). A normal "allowed" decision is silent (no stdout, exit
+// 0) to keep PreToolUse latency cheap on the hot path. Failures degrade
+// to "allow" but LOUDLY — a stderr diagnostic plus a `degraded_allow`
+// audit entry — so a broken gate never holds up legitimate work yet never
+// silently manufactures false confidence (the no-silent-errors standard
+// the harness-side pack hook already meets).
 
 import type { ReportEntry } from "../../core/persistence.js";
 import {
@@ -49,7 +51,10 @@ export interface PreToolUseResult {
   stderr: string;
   exitCode: 0 | 2;
   decision: EnforcementDecision;
-  /** True if the input was malformed and we degraded to "allow + silent". */
+  /**
+   * True if the input was malformed / un-gateable and we degraded to allow.
+   * The degrade is LOUD: stderr diagnostic + a `degraded_allow` audit entry.
+   */
   degraded: boolean;
 }
 
@@ -67,30 +72,50 @@ export function handlePreToolUse(
 ): PreToolUseResult {
   const payload = parsePayload(rawStdin);
   if (!payload) {
-    // Malformed input: degrade to allow. The gate never crashes the
-    // harness; a real misuse (force flag without reason) still blocks
-    // because that path runs after we have a payload, but a broken hook
-    // input (rare) cannot be turned into a block.
+    // Malformed input: degrade to allow, but LOUDLY. The gate never
+    // crashes the harness; a real misuse (force flag without reason) still
+    // blocks because that path runs after we have a payload, but a broken
+    // hook input (rare) cannot be turned into a block. A silently-allowing
+    // gate manufactures false confidence — the worst direction for a
+    // governance hook to fail in — so we surface the degradation on stderr
+    // AND audit it (mirrors the harness-side pack-hook standard). No
+    // payload means no cwd/session, so the audit falls back to the process
+    // cwd (resolved defensively so a pathological unlinked-cwd can't throw).
+    const reason = "Malformed PreToolUse payload; gate degraded to allow.";
+    safeAudit(deps, safeCwd(), {
+      kind: "degraded_allow",
+      tool: null,
+      reason,
+      sessionId: null,
+      taskId: null,
+      adapter: "claude-code",
+    });
     return {
       ...ALLOW_SILENT,
-      decision: {
-        decision: "allow",
-        mode: "disabled",
-        reason: "Malformed PreToolUse payload; gate degraded to allow.",
-      },
+      stderr: `understanding-gate: ${reason} A broken gate input must not silently manufacture confidence.\n`,
+      decision: { decision: "allow", mode: "disabled", reason },
       degraded: true,
     };
   }
 
   const tool = payload.tool_name ?? "";
   if (!tool) {
+    // Parsed payload but no tool to gate: also a degraded allow (a real
+    // PreToolUse event always carries a tool_name), so surface + audit it
+    // rather than allowing silently.
+    const reason = "PreToolUse payload had no tool_name; nothing to gate.";
+    safeAudit(deps, safeCwd(payload.cwd), {
+      kind: "degraded_allow",
+      tool: null,
+      reason,
+      sessionId: payload.session_id ?? null,
+      taskId: null,
+      adapter: "claude-code",
+    });
     return {
       ...ALLOW_SILENT,
-      decision: {
-        decision: "allow",
-        mode: "readonly_tool",
-        reason: "PreToolUse payload had no tool_name; nothing to gate.",
-      },
+      stderr: `understanding-gate: ${reason}\n`,
+      decision: { decision: "allow", mode: "readonly_tool", reason },
       degraded: true,
     };
   }
@@ -189,5 +214,18 @@ function safeAudit(deps: PreToolUseDeps, cwd: string, event: AuditEvent): void {
     deps.appendAudit(cwd, event);
   } catch {
     // ignore: audit-write failure must never change enforcement outcome.
+  }
+}
+
+// Resolve a cwd for audit-path composition without ever throwing: a
+// preferred value (payload.cwd) wins; otherwise process.cwd(), guarded
+// against the pathological unlinked-cwd case so the never-crash contract
+// holds even on the degraded path.
+function safeCwd(preferred?: string): string {
+  if (preferred) return preferred;
+  try {
+    return process.cwd();
+  } catch {
+    return ".";
   }
 }
