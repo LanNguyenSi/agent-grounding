@@ -127,14 +127,25 @@ describe("claude-code PreToolUse binary (end-to-end)", () => {
     expect(stdout).toBe("");
   });
 
-  it("does not crash on malformed stdin JSON", () => {
+  it("does not crash on malformed stdin JSON; degrades to allow LOUDLY (stderr + audit)", () => {
     const result = spawnSync("node", [BINARY], {
       input: "garbage {{{",
       encoding: "utf8",
       env: process.env,
+      // Point cwd at the throwaway dir so the degraded audit write lands
+      // there (defaultAuditLogPath(process.cwd())) and never leaks into the
+      // package root / operator runtime.
+      cwd: tmp,
     });
-    // Malformed input → degrade to allow → exit 0.
+    // Malformed input → degrade to allow → exit 0, but LOUDLY, not silent.
     expect(result.status, result.stderr ?? "").toBe(0);
+    expect(result.stderr).not.toBe("");
+    // And the degradation is audited through the real disk wiring.
+    const auditPath = defaultAuditLogPath(tmp);
+    expect(existsSync(auditPath)).toBe(true);
+    const firstLine = JSON.parse(readFileSync(auditPath, "utf8").trim().split("\n")[0]);
+    expect(firstLine.kind).toBe("degraded_allow");
+    expect(firstLine.tool).toBeNull();
   });
 
   it("respects UNDERSTANDING_GATE_DISABLE", () => {

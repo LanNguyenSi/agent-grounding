@@ -56,6 +56,18 @@ export type AuditEvent =
       sessionId: string | null;
       taskId: string | null;
       adapter: "claude-code" | "opencode";
+    }
+  | {
+      // The gate could not evaluate the request (malformed / empty payload)
+      // and failed OPEN. Logged so the degradation is observable rather than
+      // a silent false-confidence allow. `tool` is null when the payload was
+      // unparseable (no tool_name available).
+      kind: "degraded_allow";
+      tool: string | null;
+      reason: string;
+      sessionId: string | null;
+      taskId: string | null;
+      adapter: "claude-code" | "opencode";
     };
 
 export function formatAuditLine(event: AuditEvent, now: Date = new Date()): string {

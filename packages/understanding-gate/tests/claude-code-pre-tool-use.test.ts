@@ -39,34 +39,69 @@ const PAYLOAD = (over: Record<string, unknown> = {}) =>
   });
 
 describe("handlePreToolUse: payload parsing", () => {
+  // Every degraded path still ALLOWS (never crashes / blocks legitimate
+  // work) but must do so LOUDLY — a stderr diagnostic AND a `degraded_allow`
+  // audit entry — so the degradation is observable, not a silent
+  // false-confidence allow.
   it("degrades to allow when stdin is empty", () => {
     const { deps, audits } = makeDeps();
     const r = handlePreToolUse("", {}, deps);
     expect(r.exitCode).toBe(0);
     expect(r.decision.decision).toBe("allow");
     expect(r.degraded).toBe(true);
-    expect(audits).toHaveLength(0);
+    expect(r.stderr).not.toBe("");
+    expect(audits).toHaveLength(1);
+    expect(audits[0].event.kind).toBe("degraded_allow");
   });
 
   it("degrades to allow on non-JSON stdin", () => {
-    const { deps } = makeDeps();
+    const { deps, audits } = makeDeps();
     const r = handlePreToolUse("not json", {}, deps);
     expect(r.exitCode).toBe(0);
     expect(r.degraded).toBe(true);
+    expect(r.stderr).not.toBe("");
+    expect(audits).toHaveLength(1);
+    expect(audits[0].event.kind).toBe("degraded_allow");
   });
 
   it("degrades to allow on JSON array (not an object)", () => {
-    const { deps } = makeDeps();
+    const { deps, audits } = makeDeps();
     const r = handlePreToolUse("[1,2,3]", {}, deps);
     expect(r.exitCode).toBe(0);
     expect(r.degraded).toBe(true);
+    expect(r.stderr).not.toBe("");
+    expect(audits).toHaveLength(1);
+    expect(audits[0].event.kind).toBe("degraded_allow");
   });
 
   it("degrades to allow when tool_name is missing", () => {
-    const { deps } = makeDeps();
+    const { deps, audits } = makeDeps();
     const r = handlePreToolUse(JSON.stringify({ session_id: "x" }), {}, deps);
     expect(r.exitCode).toBe(0);
     expect(r.degraded).toBe(true);
+    expect(r.stderr).not.toBe("");
+    expect(audits).toHaveLength(1);
+    expect(audits[0].event.kind).toBe("degraded_allow");
+  });
+
+  it("on a malformed payload it allows but LOUDLY (stderr + audit), not silent-allow", () => {
+    // Mirrors the harness-side pack-hook test ("allows with a LOUD
+    // diagnostic ... not silent-allow"): a governance gate that fails open
+    // must never do so silently — that manufactures false confidence.
+    const { deps, audits } = makeDeps();
+    const r = handlePreToolUse("definitely-not-json", {}, deps);
+    expect(r.exitCode).toBe(0);
+    expect(r.decision.decision).toBe("allow");
+    expect(r.degraded).toBe(true);
+    expect(r.stderr.toLowerCase()).toContain("degraded");
+    expect(audits).toHaveLength(1);
+    const ev = audits[0].event;
+    expect(ev.kind).toBe("degraded_allow");
+    if (ev.kind === "degraded_allow") {
+      expect(ev.tool).toBeNull();
+      expect(ev.reason).toMatch(/malformed/i);
+      expect(ev.adapter).toBe("claude-code");
+    }
   });
 });
 
