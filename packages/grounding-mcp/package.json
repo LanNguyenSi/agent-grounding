@@ -1,6 +1,6 @@
 {
   "name": "@lannguyensi/grounding-mcp",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "description": "MCP server exposing the agent-grounding stack (grounding-wrapper, evidence-ledger, claim-gate, hypothesis-tracker) to long-running Claude Code sessions",
   "license": "MIT",
   "repository": {
@@ -33,11 +33,11 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@lannguyensi/claim-gate": "0.3.0",
-    "@lannguyensi/evidence-ledger": "0.3.0",
-    "@lannguyensi/grounding-wrapper": "0.3.0",
-    "@lannguyensi/hypothesis-tracker": "0.3.0",
-    "@lannguyensi/runtime-reality-checker": "0.2.1",
+    "@lannguyensi/claim-gate": "0.4.0",
+    "@lannguyensi/evidence-ledger": "0.4.0",
+    "@lannguyensi/grounding-wrapper": "0.4.0",
+    "@lannguyensi/hypothesis-tracker": "0.4.0",
+    "@lannguyensi/runtime-reality-checker": "0.3.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.4.0, 2026-06-16
+
+### Added
+
+- **`hypothesis_reset` verb and a bounded LRU hypothesis store** (#113). A new MCP verb clears the recorded hypotheses for a session, and the in-memory hypothesis store is now a bounded LRU so a long-lived server cannot grow it without limit.
+
+### Changed
+
+- Re-pinned the lockstep dependencies (`claim-gate`, `evidence-ledger`, `grounding-wrapper`, `hypothesis-tracker`) to `0.4.0` and `runtime-reality-checker` to `0.3.0` to track the coordinated 0.4.0 release.
+
 ## 0.3.3, 2026-06-09
 
 ### Fixed
