@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0, 2026-06-16
+
+### Added
+
+- **`RUNTIME_REALITY_TRIGGERS_FILE` override for custom trigger sets** (#114): operators can now supply a JSON file of custom triggers via the `RUNTIME_REALITY_TRIGGERS_FILE` env var instead of being locked to `DEFAULT_TRIGGERS`. New exports: `MAX_TRIGGERS_BYTES`, `TriggersLoadResult`, `parseTriggersFile`, `loadTriggersFile`, and `resolveTriggers` (pure resolver with fail-open `DEFAULT_TRIGGERS` fallback and stderr warning). `pre-tool-use.ts` calls `resolveTriggers` at startup and forwards warnings to stderr. README and `docs/policy-runtime-reality.md` updated with trigger-file shape doc (array format, 1 MiB cap, fail-open semantics). 30 new test cases added.
+
+### Security
+
+- **Bump `tsx` to `^4.22.4`** to clear esbuild advisories GHSA-gv7w-rqvm-qjhr and GHSA-g7r4-m6w7-qqqr (#107). `tsx >=4.22.0` resolves to `esbuild ~0.28.x` (patched); `npm audit` now reports 0 vulnerabilities.
+
 ## 0.2.1, 2026-06-09
 
 ### Fixed
