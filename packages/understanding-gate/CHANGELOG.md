@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.3, 2026-06-16
+
+### Fixed: degraded-allow path in handlePreToolUse is now loud and audited
+
+- **The problem.** `handlePreToolUse` in the standalone claude-code adapter failed
+  open on a malformed or empty payload (and on a missing `tool_name`) but silently:
+  no stderr output, no audit entry, returning before the audit path. A
+  governance gate that allows silently manufactures false confidence, which is the
+  worst failure direction. The harness-side pack hook was already hardened to fail
+  open loudly (PR #112 closes the gap in the standalone package).
+- **The fix.** Both degraded paths (malformed payload, missing tool name) now emit a
+  stderr diagnostic AND write a `degraded_allow` audit entry via a new `AuditEvent`
+  kind. `cwd` for the audit write is resolved through a non-throwing `safeCwd()` so
+  the never-crash contract holds even on the degraded path.
+- **Tests.** Degraded-path tests updated to assert "not silent": a stderr diagnostic
+  is present and a `degraded_allow` line lands on disk. The malformed binary test now
+  spawns with `cwd=tmp` so the real audit write lands in a throwaway dir, not the
+  package root. Added `.gitignore` entry for `.understanding-gate/` as a backstop
+  against runtime-state leakage. 485/485 vitest pass; build clean.
+
+agent-grounding task `558635ca`, PR #112. No behaviour change on the happy path.
+
 ## 0.4.2, 2026-06-14
 
 ### Fixed: the parser accepts bold-label section headers, and the Stop hook is never silent
