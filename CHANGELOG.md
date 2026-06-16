@@ -24,6 +24,35 @@ Independently-versioned published packages (own tag, own CHANGELOG):
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-16
+
+Surfaces the `policy_decision` bucket in the `evidence-ledger` CLI display
+and handoff, and clears the esbuild build-tool advisories. The four
+version-locked packages all bump to 0.4.0; only `evidence-ledger` has new
+feature code, `claim-gate` and `evidence-ledger` also carry the security
+bump, and `grounding-wrapper` / `hypothesis-tracker` go along by repo
+convention with no code change. Pre-1.0: the public API surface continues
+to be subject to change between minor releases.
+
+Sibling packages (`grounding-mcp` 0.4.0, `grounding-sdk` 0.1.2,
+`review-claim-gate` 0.1.2) are bumped in the same commit so their pinned
+exact `0.3.0` references on the lockstep set move to `0.4.0` and the
+workspace stays drift-free. `grounding-mcp` 0.4.0 additionally ships its
+own `hypothesis_reset` verb (see its package CHANGELOG) and re-pins
+`runtime-reality-checker` to `0.3.0`.
+
+### `@lannguyensi/evidence-ledger`
+
+- **Render the `policy_decision` bucket in the CLI display and handoff**
+  (#111). The ledger CLI now surfaces `policy_decision` entries in its
+  display and handoff output, so recorded policy decisions are visible
+  alongside the existing buckets.
+
+### Security (`@lannguyensi/claim-gate`, `@lannguyensi/evidence-ledger`)
+
+- **Bump `tsx` to `^4.22.4`** to clear esbuild advisories
+  GHSA-gv7w-rqvm-qjhr and GHSA-g7r4-m6w7-qqqr (#107).
+
 ## [0.3.0] - 2026-05-27
 
 Hardens the `grounding-wrapper` public surface against degenerate input

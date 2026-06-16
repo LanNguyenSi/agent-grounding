@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2, 2026-06-16
+
+### Changed
+
+- Re-pinned the exact lockstep dependencies (`claim-gate`, `evidence-ledger`) from `0.3.0` to `0.4.0` to track the coordinated 0.4.0 release. No public API change.
+
 ## 0.1.0, 2026-05-04
 
 ### First publish under the @lannguyensi scope

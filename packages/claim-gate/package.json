@@ -1,6 +1,6 @@
 {
   "name": "@lannguyensi/claim-gate",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Policy engine that prevents agents from making strong claims without evidence",
   "license": "MIT",
   "repository": {
