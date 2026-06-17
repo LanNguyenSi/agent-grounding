@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.4, 2026-06-17
+
+### Fixed: hypothesis-tracker dependency un-pinned from the stale 0.1.0 floor
+
+- **The problem.** `package.json` declared `@lannguyensi/hypothesis-tracker: "^0.1.0"`,
+  which does not satisfy the workspace/published 0.4.0, so the workspace link never
+  engaged and npm consumers resolved the unmaintained 0.1.0 — four minors behind the
+  rest of the lockstep family (grounding-sdk / grounding-mcp pin 0.4.0 exactly).
+- **The fix.** Pin `@lannguyensi/hypothesis-tracker` to `0.4.0` (exact, matching the
+  sibling lockstep convention). The consumed surface (`createStore`, `Hypothesis`,
+  `HypothesisStore`, and the `"unverified" | "supported" | "rejected"` status union)
+  is unchanged between 0.1.0 and 0.4.0, so there is no behaviour change; typecheck
+  clean and 485/485 vitest pass against the reconciled 0.4.0 link.
+
+agent-grounding task `677a4bf2`. No happy-path behaviour change.
+
 ## 0.4.3, 2026-06-16
 
 ### Fixed: degraded-allow path in handlePreToolUse is now loud and audited
