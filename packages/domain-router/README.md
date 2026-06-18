@@ -23,6 +23,12 @@ domain-router route -k clawd-monitor -w /projects
 
 # JSON output for scripting
 domain-router route -k clawd-monitor -w /projects --json
+
+# Show which repos depend on a keyword/package (reverse lookup)
+domain-router impact -k clawd-monitor -w /projects
+
+# JSON output for scripting
+domain-router impact -k clawd-monitor -w /projects --json
 ```
 
 ## Example Output

@@ -21,7 +21,7 @@ const program = new Command();
 program
   .name('grounding-wrapper')
   .description('Plan a grounding session: recommend the agent entry path (sequence, guardrails, phases). Enforcement is external.')
-  .version('0.2.0');
+  .version('0.4.0');
 
 program
   .command('start')

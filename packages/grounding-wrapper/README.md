@@ -156,8 +156,10 @@ The contract this package does **not** owe:
 | 1 | [domain-router](../domain-router) | Scope resolution |
 | 2 | [readme-first-resolver](../readme-first-resolver) | Doc reading |
 | 3 | [debug-playbook-engine](../debug-playbook-engine) | Playbook sequencing |
-| 4 | [evidence-ledger](../evidence-ledger) | Fact tracking |
-| 5 | [claim-gate](../claim-gate) | Claim gating |
-| 6 | [runtime-reality-checker](../runtime-reality-checker) | Runtime verification |
+| 4 | [runtime-reality-checker](../runtime-reality-checker) | Runtime verification |
+| 5 | [evidence-ledger](../evidence-ledger) | Fact tracking |
+| 6 | [claim-gate](../claim-gate) | Claim gating |
 | 7 | [hypothesis-tracker](../hypothesis-tracker) | Hypothesis management |
 | **→** | **grounding-wrapper** | **Plans / recommends the entry path; enforcement is external** |
+
+`runtime-reality-checker` is inserted at position 4 only for process/service-type keywords (those containing `monitor`, `agent`, `service`, `server`, or `gateway`); for other keywords `buildMandatorySequence` omits it and `evidence-ledger`/`claim-gate` shift up. The order above matches the Example Output for a service keyword.

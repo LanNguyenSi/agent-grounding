@@ -20,7 +20,16 @@ Version-locked published packages:
 
 Independently-versioned published packages (own tag, own CHANGELOG):
 
-- `@lannguyensi/understanding-gate`: see [`packages/understanding-gate/CHANGELOG.md`](packages/understanding-gate/CHANGELOG.md). Released under tags of the form `understanding-gate-vX.Y.Z` so its cadence does not bump the four version-locked packages.
+- `@lannguyensi/understanding-gate`: see [`packages/understanding-gate/CHANGELOG.md`](packages/understanding-gate/CHANGELOG.md). Released under tags of the form `understanding-gate-vX.Y.Z` (handled by `publish-understanding-gate.yml`) so its cadence does not bump the four version-locked packages.
+- `@lannguyensi/grounding-mcp`: see [`packages/grounding-mcp/CHANGELOG.md`](packages/grounding-mcp/CHANGELOG.md).
+- `@lannguyensi/grounding-sdk`: see [`packages/grounding-sdk/CHANGELOG.md`](packages/grounding-sdk/CHANGELOG.md).
+- `@lannguyensi/review-claim-gate`: see [`packages/review-claim-gate/CHANGELOG.md`](packages/review-claim-gate/CHANGELOG.md).
+- `@lannguyensi/runtime-reality-checker`: see [`packages/runtime-reality-checker/CHANGELOG.md`](packages/runtime-reality-checker/CHANGELOG.md).
+- `@lannguyensi/debug-playbook-engine`: see [`packages/debug-playbook-engine/CHANGELOG.md`](packages/debug-playbook-engine/CHANGELOG.md).
+- `@lannguyensi/domain-router`: see [`packages/domain-router/CHANGELOG.md`](packages/domain-router/CHANGELOG.md).
+- `@lannguyensi/readme-first-resolver`: see [`packages/readme-first-resolver/CHANGELOG.md`](packages/readme-first-resolver/CHANGELOG.md).
+
+The seven packages above (other than understanding-gate) each carry their own version and CHANGELOG and are released under per-package tags of the form `<pkg>-vX.Y.Z` by `publish-libs.yml`; they move independently of the four version-locked packages.
 
 ## [Unreleased]
 
@@ -188,7 +197,7 @@ versions until v1.0.0.
   `addEntry`, `rejectHypothesis`, `getSummary`, `listEntries`,
   `pruneEntries`, plus a `ledger` CLI. Native dependency on
   `better-sqlite3`. Database path overridable via the
-  `EVIDENCE_LEDGER_DB` env var; defaults to `~/.evidence-ledger/db.sqlite`.
+  `EVIDENCE_LEDGER_DB` env var; defaults to `~/.evidence-ledger/ledger.db`.
 - `@lannguyensi/claim-gate`: deterministic policy engine that decides
   whether a claim is allowed given a `ClaimContext` (evidence presence,
   reproduction state, and similar flags). Pure functions, no IO.

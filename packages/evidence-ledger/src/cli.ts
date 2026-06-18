@@ -21,7 +21,7 @@ const program = new Command();
 program
   .name("ledger")
   .description("Evidence Ledger — track facts, hypotheses and rejections during debugging")
-  .version("0.2.0");
+  .version("0.4.0");
 
 // ── add ──────────────────────────────────────────────────────────────────────
 
