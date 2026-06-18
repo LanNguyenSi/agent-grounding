@@ -77,7 +77,7 @@ process.stderr.write(result.stderr);
 if (result.exitCode !== 0) process.exit(result.exitCode);
 ```
 
-The package binary `runtime-reality-policy-pre-tool-use` is a thin wrapper that ships without a probe (degrades to allow, or blocks if `RUNTIME_REALITY_PROBE_FAIL_BLOCK=1`). The full integration plus probe lives in the harness-side follow-up.
+The package binary `runtime-reality-policy-pre-tool-use` is a thin wrapper that ships without a probe (degrades to allow, or blocks if `RUNTIME_REALITY_PROBE_FAIL_BLOCK=1`). The full integration plus probe lives in the harness-side follow-up. The planned probe-registration knob `RUNTIME_REALITY_PROBE_CMD` (referenced in source comments and the policy spec) is **not yet read by this package**; it is reserved for that harness-side wiring, so do not rely on it today.
 
 Env knobs:
 
