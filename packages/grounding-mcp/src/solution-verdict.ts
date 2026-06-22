@@ -22,12 +22,22 @@
 // a shell-capable agent could still hand-write the marker file; closing that
 // (signing, or a harness-owned dir checked by a PreToolUse hook) is the harness
 // wiring follow-up.
+//
+// Documented residual (OW knob): the OW arm reads `.ai/solution-acceptance.json`
+// from the agent-writable working tree, so a shell-capable agent can self-serve
+// `{"orchestratorWorkflow":"off"}` to disable the OW PROCESS arm. This is bounded
+// and NOT closed: it disables only the process-completeness arm, never the
+// preflight technical floor (lint / typecheck / test / audit / secrets), which
+// still gates regardless of the knob. Parallel to the marker-forge residual
+// above; closing it would need the knob to move to a non-agent-writable source.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+
+import { readOwRunCompleteness } from './ow-run-completeness.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -217,6 +227,61 @@ function parsePreflightJson(stdout: string): PreflightJson {
   };
 }
 
+/** Orchestrator-workflow (OW) arm knob. */
+export type OwKnob = 'auto' | 'on' | 'off';
+
+/**
+ * Resolve the OW arm knob from `<repoPath>/.ai/solution-acceptance.json`
+ * (`{ "orchestratorWorkflow": "auto" | "on" | "off" }`).
+ *
+ * Fail-SAFE: a missing file, an unreadable / unparseable file, or a
+ * missing / invalid field all resolve to `'auto'` (NOT `'off'`). A malformed
+ * config must never silently disable the gate; `'auto'` still enforces when
+ * `.ai/runs/` is present.
+ */
+export function resolveOwKnob(repoPath: string): OwKnob {
+  try {
+    const raw = fs.readFileSync(path.join(repoPath, '.ai', 'solution-acceptance.json'), 'utf8');
+    const parsed = JSON.parse(raw) as { orchestratorWorkflow?: unknown };
+    const v = parsed.orchestratorWorkflow;
+    if (v === 'auto' || v === 'on' || v === 'off') return v;
+    return 'auto';
+  } catch {
+    return 'auto';
+  }
+}
+
+/**
+ * Decide the OW process-completeness blockers for a repo, given the resolved
+ * knob and the OW reader's result. Returns blocker strings already prefixed
+ * with `orchestrator-workflow: ` so a consumer's deny reason names the arm
+ * (and matches `/orchestrator-workflow/`).
+ *
+ *   - `off`  : OW never gates (`[]`).
+ *   - `auto` : enforced → gate on `!complete`; not enforced → skip (`[]`).
+ *   - `on`   : enforced → gate on `!complete`; not enforced → one explicit
+ *              "enforcement is on but no run was found" blocker.
+ *
+ * For a non-OW repo (no `.ai/runs/`, enforced=false) under the default `auto`
+ * knob this returns `[]`, keeping the produced verdict byte-identical to the
+ * pre-OW output.
+ */
+export function owBlockersFor(repoPath: string): string[] {
+  const knob = resolveOwKnob(repoPath);
+  if (knob === 'off') return [];
+
+  const ow = readOwRunCompleteness(repoPath);
+  let raw: string[];
+  if (ow.enforced) {
+    raw = ow.complete ? [] : ow.reasons;
+  } else if (knob === 'on') {
+    raw = ['enforcement is on but no .ai/runs/ run was found'];
+  } else {
+    raw = [];
+  }
+  return raw.map((r) => `orchestrator-workflow: ${r}`);
+}
+
 /**
  * Producer: run `preflight run <repoPath> --json` and record a HEAD-pinned
  * verdict for `id` derived from its result. The verb running this is the
@@ -224,6 +289,13 @@ function parsePreflightJson(stdout: string): PreflightJson {
  * (it comes from the repo's committed `.preflight.json`). preflight exits
  * non-zero when not ready but still prints its JSON, so a non-zero exit with
  * parseable stdout is a normal not-ready verdict, not a failure.
+ *
+ * The verdict also reflects OW process-completeness: after preflight is parsed,
+ * `owBlockersFor(repoPath)` is folded into `ready` and `blockers` ONLY (no new
+ * Verdict field — the 7-key shape {id, head, ready, confidence, blockers,
+ * timestamp, source} is pinned by the harness consumer). `ready` is true iff
+ * preflight is ready AND there are no OW blockers; `blockers` is the preflight
+ * blockers followed by the (prefixed) OW blockers.
  *
  * Fails closed: when preflight is absent or its output is unusable, returns an
  * `error` and writes NO marker (so the gate stays closed via "no verdict").
@@ -285,12 +357,20 @@ export async function evaluateSolution(
     }
   }
 
+  // Fold the OW process-completeness arm into ready + blockers ONLY. No new
+  // Verdict field: the consumer pins the 7-key shape, so OW state flows through
+  // the existing `ready` and `blockers`. For a non-OW repo under the default
+  // (auto) knob, owBlockers is [] and the output stays byte-identical.
+  const owBlockers = owBlockersFor(repoPath);
+  const ready = pf.ready && owBlockers.length === 0;
+  const blockers = [...pf.blockers, ...owBlockers];
+
   const verdict: Verdict = {
     id,
     head,
-    ready: pf.ready,
+    ready,
     confidence: pf.confidence,
-    blockers: pf.blockers,
+    blockers,
     timestamp: opts.timestamp ?? new Date().toISOString(),
     source: 'preflight',
   };

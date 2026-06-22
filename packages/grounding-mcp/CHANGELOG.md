@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.5.0, 2026-06-22
+
+### Added
+
+- **Orchestrator-workflow (OW) process-completeness arm in `solution_evaluate`.** The producer now folds `readOwRunCompleteness(repoPath)` (handoff accepted, review recommends accept, no unresolved high/critical findings) into the verdict's `ready` and `blockers`. OW state flows ONLY through those two existing fields, so the verdict marker keeps its pinned 7-key shape (`id`, `head`, `ready`, `confidence`, `blockers`, `timestamp`, `source`) and consumers need no change. Each OW blocker is prefixed `orchestrator-workflow: ` so a deny reason names the arm.
+  - **Knob** `<repoPath>/.ai/solution-acceptance.json` `{ "orchestratorWorkflow": "auto" | "on" | "off" }` (new `resolveOwKnob` helper). `off` never gates on OW; `auto` (default) gates only when a `.ai/runs/` run is present; `on` additionally blocks when enforcement is requested but no run exists. Fail-SAFE: a missing, unreadable, unparseable, or invalid config resolves to `auto` (never silently `off`).
+  - **Backward-compatible:** for a repo with no `.ai/runs/` under the default `auto` knob the produced verdict is byte-identical to the pre-OW output (preflight still solely decides `ready`/`blockers`).
+
 ## 0.4.0, 2026-06-16
 
 ### Added
