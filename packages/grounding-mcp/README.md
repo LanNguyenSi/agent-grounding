@@ -60,6 +60,24 @@ The marker lives outside the agent-writable evidence-ledger on purpose (a ledger
 
 The verdict pins to the committed HEAD, so edits made after a green `solution_evaluate` do not shift HEAD: re-run it after any change. preflight's own clean-worktree check fails a dirty tree, so a fresh `solution_evaluate` on uncommitted work yields a not-ready verdict.
 
+### Orchestrator-workflow (OW) process-completeness arm
+
+Beyond preflight's technical checks, `solution_evaluate` also folds in **OW process-completeness**: it reads the repo's active `.ai/runs/<date-slug>/` run and requires the handoff to be accepted, the review to recommend accept, and no unresolved high/critical findings. This flows into the **same** verdict fields, `ready` and `blockers` (each OW blocker is prefixed `orchestrator-workflow: `), so the marker keeps its pinned 7-key shape and consumers need no change. `ready` is true only when **both** preflight is ready **and** there are no OW blockers.
+
+Knob, `<repoPath>/.ai/solution-acceptance.json`:
+
+```json
+{ "orchestratorWorkflow": "auto" }
+```
+
+| Value | Behavior |
+| --- | --- |
+| `auto` (default) | Gate on OW completeness only when a `.ai/runs/` run exists; a repo with no run is unaffected. |
+| `on` | As `auto`, and additionally block when no `.ai/runs/` run exists (enforcement requested but no run found). |
+| `off` | Never gate on OW; preflight alone decides. |
+
+Fail-SAFE: a missing, unreadable, unparseable, or invalid config resolves to `auto` (never silently `off`), so a malformed file cannot disable the gate. A repo with no `.ai/runs/` under the default `auto` knob produces a verdict byte-identical to the pre-OW output.
+
 ## Install + register
 
 ```bash
