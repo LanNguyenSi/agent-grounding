@@ -6,6 +6,49 @@ Stop agents from acting on stale assumptions, making unsupported claims, or sile
 
 > Most agent tooling helps a model *talk* about a problem. `agent-grounding` makes it *prove* what it has actually checked, what it has only assumed, and what it has ruled out, before the next destructive command runs.
 
+## Architecture
+
+Agents reach the stack two ways: a **PreToolUse gate** that blocks destructive commands until claims are grounded, and **access surfaces** (MCP, SDK, CLI) over a shared evidence ledger.
+
+```mermaid
+flowchart LR
+    subgraph clients["Agent harness / MCP clients"]
+        direction TB
+        cc["Claude Code"]
+        oc["OpenCode"]
+        hn["harness"]
+    end
+
+    subgraph gate["Pre-execution gate · PreToolUse"]
+        direction TB
+        ug["understanding-gate<br/>report approved before destructive tools"]
+        rrc["runtime-reality-checker<br/>blocks compose / systemctl / kill on drift"]
+    end
+
+    subgraph core["Verification core"]
+        direction TB
+        cg["claim-gate"]
+        ht["hypothesis-tracker"]
+        helpers["grounding-wrapper · domain-router<br/>readme-first-resolver<br/>debug-playbook-engine · review-claim-gate"]
+        el[("evidence-ledger<br/>~/.evidence-ledger/ledger.db")]
+    end
+
+    subgraph surfaces["Access surfaces"]
+        direction TB
+        mcp["grounding-mcp · JSON-RPC<br/>ledger_add · ledger_summary · claim_evaluate"]
+        sdk["grounding-sdk<br/>verify / track / validate"]
+        cli["evidence-ledger CLI"]
+    end
+
+    clients --> gate
+    clients --> surfaces
+    gate --> core
+    surfaces --> core
+    cg --> el
+    ht --> el
+    helpers --> el
+```
+
 ## Try it in 60 seconds
 
 ```bash
