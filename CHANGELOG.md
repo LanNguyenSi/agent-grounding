@@ -33,6 +33,17 @@ The seven packages above (other than understanding-gate) each carry their own ve
 
 ## [Unreleased]
 
+### Security / Reliability
+
+- `evidence-ledger`: harden the SQLite store (audit findings M3, M4). The DB
+  now opens in WAL mode so concurrent hook processes read while one writes
+  instead of colliding on `SQLITE_BUSY`; the native `Database` open is
+  wrapped so a broken binding or un-creatable path throws a clear,
+  path-named error instead of a raw addon string; and `addEntry` /
+  `rejectHypothesis` run their read-modify-read in a transaction. The ledger
+  directory is created `0700` and the DB file `0600` so captured evidence is
+  not world-readable on a shared host. WAL is a no-op for `:memory:`.
+
 ## [0.4.0] - 2026-06-16
 
 Surfaces the `policy_decision` bucket in the `evidence-ledger` CLI display
