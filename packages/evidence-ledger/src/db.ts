@@ -1,12 +1,28 @@
 import Database from "better-sqlite3";
-import { existsSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { LedgerEntry, EntryType, ConfidenceLevel } from "./types.js";
 
+// The ledger can capture debug evidence, paths, and command output, so on
+// a shared host it must not be world-readable. Create the dir 0700 and the
+// DB file 0600. `0o700` has no group/other bits, so the process umask
+// cannot widen it.
+const DIR_MODE = 0o700;
+const FILE_MODE = 0o600;
+
 function getDbPath(): string {
   const dir = join(homedir(), ".evidence-ledger");
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true, mode: DIR_MODE });
+  } else {
+    // Retroactively tighten an existing install: older versions created
+    // this dir at the umask default (typically 0755). Safe to chmod every
+    // open because this path is exclusively the ledger's own dir. Custom
+    // paths are NOT chmod'd here — their parent could be a shared dir
+    // (e.g. /tmp) the caller never meant to lock down.
+    chmodSync(dir, DIR_MODE);
+  }
   return join(dir, "ledger.db");
 }
 
@@ -21,9 +37,34 @@ export function getDb(dbPath?: string): Database.Database {
   // ensure the parent dir exists so the constructor doesn't throw
   // `directory does not exist`. getDbPath() already mkdirs the default.
   const parent = dirname(resolved);
-  if (parent && !existsSync(parent)) mkdirSync(parent, { recursive: true });
-  _db = new Database(resolved);
-  migrate(_db);
+  if (parent && !existsSync(parent)) {
+    mkdirSync(parent, { recursive: true, mode: DIR_MODE });
+  }
+  try {
+    _db = new Database(resolved);
+    // WAL lets concurrent hook processes read while one writes, instead
+    // of colliding on SQLITE_BUSY. No-op for `:memory:` (stays `memory`).
+    _db.pragma("journal_mode = WAL");
+    // The dir is 0700, but the DB file inherits the default umask (0644)
+    // on creation; force it to owner-only on every open — the ledger is
+    // single-user-private by design. Skipped for `:memory:` (no file).
+    if (resolved !== ":memory:" && existsSync(resolved)) {
+      chmodSync(resolved, FILE_MODE);
+    }
+    migrate(_db);
+  } catch (err) {
+    // Any failure configuring the handle — a broken better-sqlite3 native
+    // binding, an un-creatable path, a read-only FS on the pragma/migrate,
+    // or chmod EPERM — must not leave a half-open singleton. resetDb()
+    // closes the partial handle (if any) and nulls _db, so the next call
+    // reopens cleanly. Rethrow a path-named error preserving the cause.
+    resetDb();
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `evidence-ledger: failed to open SQLite database at "${resolved}": ${reason}`,
+      { cause: err },
+    );
+  }
   return _db;
 }
 
@@ -132,18 +173,25 @@ export function addEntry(
     session?: string;
   },
 ): LedgerEntry {
-  const stmt = db.prepare(`
-    INSERT INTO entries (type, content, source, confidence, session)
-    VALUES (@type, @content, @source, @confidence, @session)
-  `);
-  const result = stmt.run({
-    type: opts.type,
-    content: opts.content,
-    source: opts.source ?? null,
-    confidence: opts.confidence ?? "medium",
-    session: opts.session ?? "default",
+  // INSERT then read-back run in one transaction so a concurrent writer
+  // (another hook process) cannot delete the just-inserted row before we
+  // re-select it. better-sqlite3 nests via savepoints, so this is safe
+  // even if a caller wraps addEntry in its own transaction.
+  const insert = db.transaction((): LedgerEntry => {
+    const stmt = db.prepare(`
+      INSERT INTO entries (type, content, source, confidence, session)
+      VALUES (@type, @content, @source, @confidence, @session)
+    `);
+    const result = stmt.run({
+      type: opts.type,
+      content: opts.content,
+      source: opts.source ?? null,
+      confidence: opts.confidence ?? "medium",
+      session: opts.session ?? "default",
+    });
+    return getEntry(db, result.lastInsertRowid as number)!;
   });
-  return getEntry(db, result.lastInsertRowid as number)!;
+  return insert();
 }
 
 export function getEntry(db: Database.Database, id: number): LedgerEntry | null {
@@ -158,18 +206,27 @@ export function rejectHypothesis(
   id: number,
   reason?: string,
 ): LedgerEntry | null {
-  const entry = getEntry(db, id);
-  if (!entry) return null;
+  // Read, UPDATE, and read-back run in one transaction so they serialize
+  // against a concurrent writer (via better-sqlite3's default 5s
+  // busy_timeout) instead of interleaving. Nests via savepoints (see
+  // addEntry).
+  const reject = db.transaction((): LedgerEntry | null => {
+    const entry = getEntry(db, id);
+    if (!entry) return null;
 
-  const newContent = reason ? `${entry.content} [rejected: ${reason}]` : entry.content;
+    const newContent = reason
+      ? `${entry.content} [rejected: ${reason}]`
+      : entry.content;
 
-  db.prepare(`
-    UPDATE entries
-    SET type = 'rejected', content = @content, updated_at = datetime('now')
-    WHERE id = @id
-  `).run({ id, content: newContent });
+    db.prepare(`
+      UPDATE entries
+      SET type = 'rejected', content = @content, updated_at = datetime('now')
+      WHERE id = @id
+    `).run({ id, content: newContent });
 
-  return getEntry(db, id);
+    return getEntry(db, id);
+  });
+  return reject();
 }
 
 export interface ListEntriesOptions {

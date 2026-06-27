@@ -3,7 +3,14 @@
 // an in-memory DB handed in directly.
 
 import { describe, expect, it, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import {
+  mkdtempSync,
+  rmSync,
+  existsSync,
+  statSync,
+  writeFileSync,
+  chmodSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getDb, resetDb, addEntry } from "../src/db.js";
@@ -45,6 +52,64 @@ describe("getDb — parent-dir creation", () => {
     const db = getDb(path);
     expect(existsSync(path)).toBe(true);
     addEntry(db, { type: "fact", content: "ok", session: "s" });
+  });
+});
+
+describe("getDb — WAL, permissions, open guard (M3/M4)", () => {
+  it("opens file-backed DBs in WAL mode", () => {
+    const path = join(mkTmp(), "wal.db");
+    const db = getDb(path);
+    expect(db.pragma("journal_mode", { simple: true })).toBe("wal");
+  });
+
+  it("leaves an in-memory DB at its default journal mode (WAL no-ops)", () => {
+    const db = getDb(":memory:");
+    expect(db.pragma("journal_mode", { simple: true })).toBe("memory");
+  });
+
+  it("creates the parent dir 0700 and the DB file 0600", () => {
+    if (process.platform === "win32") return; // POSIX permission bits only
+    const root = mkTmp();
+    const dir = join(root, "private");
+    const path = join(dir, "ledger.db");
+    getDb(path);
+    expect(statSync(dir).mode & 0o777).toBe(0o700);
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+  });
+
+  it("throws a path-named error when the database cannot be opened", () => {
+    const root = mkTmp();
+    // Put a *file* where getDb expects a parent directory, so the native
+    // open fails with ENOTDIR. The guard must rethrow naming the path
+    // rather than leaking the raw better-sqlite3 error.
+    const blocker = join(root, "blocker");
+    writeFileSync(blocker, "x");
+    const badPath = join(blocker, "ledger.db");
+    expect(() => getDb(badPath)).toThrow(/failed to open SQLite database/);
+    expect(() => getDb(badPath)).toThrow(badPath);
+  });
+
+  it("leaves no singleton behind a failed open, so the next open succeeds", () => {
+    const root = mkTmp();
+    const blocker = join(root, "blocker");
+    writeFileSync(blocker, "x");
+    expect(() => getDb(join(blocker, "bad.db"))).toThrow();
+    // The failed open must have nulled _db (not cached a half-open
+    // handle), so a fresh good path opens cleanly and is writable.
+    const good = join(root, "good.db");
+    const db = getDb(good);
+    expect(existsSync(good)).toBe(true);
+    addEntry(db, { type: "fact", content: "after failed open", session: "s" });
+  });
+
+  it("forces a pre-existing world-readable DB file down to 0600 on open", () => {
+    if (process.platform === "win32") return; // POSIX permission bits only
+    const path = join(mkTmp(), "preexisting.db");
+    // Simulate a ledger created by an older version at the umask default.
+    writeFileSync(path, "");
+    chmodSync(path, 0o644);
+    getDb(path);
+    expect(statSync(path).mode & 0o777).toBe(0o600);
   });
 });
 
