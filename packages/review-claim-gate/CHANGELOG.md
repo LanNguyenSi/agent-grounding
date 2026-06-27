@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Security
+
+- `defaultEvidenceFilePath` now contains its caller-controlled `taskId` to the evidence directory: empty, absolute, and `..`-segment ids are rejected with a clear error, backstopped by a resolved-path containment check (mirrors `runtime-reality-checker`'s `verify-reference` guard). Previously `path.join` did not neutralize `..`, so a `taskId` wired from an untrusted source (the Action sets it from the PR branch name; consumers may wire it elsewhere) could resolve the auto-detect read outside the evidence dir. Nested-slash branch ids (`feat/foo`) remain supported. Addresses audit finding H1.
+
+  Known residual limitations (out of H1's `..`-traversal scope): containment is lexical (`resolve`, not `realpath`), so a symlink committed under `.agent-grounding/evidence/` is not followed-through; and `isAbsolute` does not flag Windows drive-relative ids (`C:foo`) — immaterial on the Linux CI deployment target. Both are tracked as a follow-up.
+
 ## 0.1.2, 2026-06-16
 
 ### Changed

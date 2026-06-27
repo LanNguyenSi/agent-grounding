@@ -28,7 +28,7 @@ import {
 } from "./lib.js";
 import { getDb, resetDb, listEntries } from "@lannguyensi/evidence-ledger";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 interface CheckOptions {
   taskId: string;
@@ -59,9 +59,51 @@ interface CheckReport {
  * Convention path the Action auto-detects when `--evidence-file` is
  * not passed. Lives at the consumer-workspace root so a reviewer can
  * commit it alongside the PR.
+ *
+ * `taskId` is caller-controlled and reaches us untrusted: the Action wires
+ * it to the PR branch name (`action/README.md`), and a consuming workflow
+ * may wire it to any other input (PR title/body/label). `path.join` does
+ * NOT neutralize `..`, so without a guard a `taskId` like `../../etc/x`
+ * would resolve outside the evidence dir and turn the auto-detect read into
+ * an arbitrary-file existence probe. We reject empties, absolute paths, and
+ * `..` segments early with a clear error, then backstop with a containment
+ * check on the resolved path (mirrors runtime-reality-checker's
+ * `verify-reference` guard). Nested slashes (`feat/foo`) stay legal — they
+ * are the documented branch-name convention.
  */
 export function defaultEvidenceFilePath(taskId: string, cwd = process.cwd()): string {
-  return join(cwd, ".agent-grounding", "evidence", `${taskId}.jsonl`);
+  if (!taskId || !taskId.trim()) {
+    throw new Error("task id must be a non-empty string");
+  }
+  if (isAbsolute(taskId)) {
+    throw new Error(
+      `task id '${taskId}' must be relative, not an absolute path`,
+    );
+  }
+  if (taskId.split(/[/\\]/).includes("..")) {
+    throw new Error(
+      `task id '${taskId}' must not contain '..' path segments`,
+    );
+  }
+  const evidenceDir = join(cwd, ".agent-grounding", "evidence");
+  const full = join(evidenceDir, `${taskId}.jsonl`);
+  // Defense-in-depth backstop. After the three lexical guards above, no
+  // input can escape the evidence dir on POSIX, so this branch is
+  // unreachable today — it is kept (and uses `+ sep` to avoid the
+  // `/x/evidence` vs `/x/evidence-evil` sibling-prefix collision) so a
+  // future refactor that loosens an early guard still cannot silently
+  // leak a traversal. Mirrors runtime-reality-checker's verify-reference.
+  const resolvedBase = resolve(evidenceDir);
+  const resolvedFull = resolve(full);
+  if (
+    resolvedFull !== resolvedBase &&
+    !resolvedFull.startsWith(resolvedBase + sep)
+  ) {
+    throw new Error(
+      `task id '${taskId}' escapes the evidence directory (resolved to ${resolvedFull})`,
+    );
+  }
+  return full;
 }
 
 function countEvidenceFileLines(path: string): number {
@@ -156,7 +198,6 @@ export function runCheck(opts: CheckOptions): CheckReport {
     // non-existent path is an error (the reviewer named it; we should
     // not silently fall back).
     const explicitFile = opts.evidenceFile;
-    const autoFile = defaultEvidenceFilePath(opts.taskId);
     if (explicitFile) {
       if (!existsSync(explicitFile)) {
         throw new Error(
@@ -166,13 +207,20 @@ export function runCheck(opts: CheckOptions): CheckReport {
       evidenceEntries = countEvidenceFileLines(explicitFile);
       evidenceSource = "file";
       evidenceFilePath = explicitFile;
-    } else if (existsSync(autoFile)) {
-      evidenceEntries = countEvidenceFileLines(autoFile);
-      evidenceSource = "file";
-      evidenceFilePath = autoFile;
     } else {
-      evidenceEntries = deriveEvidenceLogged(opts.taskId, opts.ledgerDb);
-      evidenceSource = "ledger";
+      // No explicit file: derive the convention path from taskId. This is
+      // the only place taskId is used as a filesystem path, so the
+      // traversal guard in defaultEvidenceFilePath is scoped here — an
+      // explicit --evidence-file never routes taskId through the path.
+      const autoFile = defaultEvidenceFilePath(opts.taskId);
+      if (existsSync(autoFile)) {
+        evidenceEntries = countEvidenceFileLines(autoFile);
+        evidenceSource = "file";
+        evidenceFilePath = autoFile;
+      } else {
+        evidenceEntries = deriveEvidenceLogged(opts.taskId, opts.ledgerDb);
+        evidenceSource = "ledger";
+      }
     }
   }
 
