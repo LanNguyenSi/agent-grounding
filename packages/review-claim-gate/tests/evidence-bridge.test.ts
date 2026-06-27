@@ -203,6 +203,53 @@ describe("defaultEvidenceFilePath", () => {
       "/repo/.agent-grounding/evidence/feat/foo.jsonl",
     );
   });
+
+  // Audit H1: taskId is caller-controlled (Action wires it to the PR
+  // branch name; consumers may wire it to other untrusted fields), so a
+  // traversal must not escape the evidence dir. The guard rejects rather
+  // than silently reading an out-of-tree file.
+  it("rejects a parent-dir traversal that escapes the evidence dir", () => {
+    expect(() => defaultEvidenceFilePath("../escape", "/repo")).toThrow(
+      /'\.\.'/,
+    );
+  });
+
+  it("rejects a deep traversal that escapes the repo root", () => {
+    expect(() => defaultEvidenceFilePath("../../tmp/x", "/repo")).toThrow(
+      /'\.\.'/,
+    );
+  });
+
+  it("rejects a mixed-separator '..' segment", () => {
+    // The split is on both / and \, so a backslash-style segment is
+    // caught too even on POSIX.
+    expect(() => defaultEvidenceFilePath("..\\..\\x", "/repo")).toThrow(
+      /'\.\.'/,
+    );
+  });
+
+  it("rejects a bare '..' task id", () => {
+    expect(() => defaultEvidenceFilePath("..", "/repo")).toThrow(/'\.\.'/);
+  });
+
+  it("rejects an absolute-path task id", () => {
+    expect(() => defaultEvidenceFilePath("/etc/passwd", "/repo")).toThrow(
+      /absolute/,
+    );
+  });
+
+  it("rejects an empty task id", () => {
+    expect(() => defaultEvidenceFilePath("", "/repo")).toThrow(/non-empty/);
+    expect(() => defaultEvidenceFilePath("   ", "/repo")).toThrow(/non-empty/);
+  });
+
+  it("allows dots that are not a '..' path segment", () => {
+    // a legitimate id may contain dots mid-token; only `..` *segments* are
+    // a traversal risk.
+    expect(defaultEvidenceFilePath("v1.2.3", "/repo")).toBe(
+      "/repo/.agent-grounding/evidence/v1.2.3.jsonl",
+    );
+  });
 });
 
 describe("CLI export — black-box via spawnSync", () => {
