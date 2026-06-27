@@ -172,6 +172,29 @@ describe("deriveContextFromSession", () => {
     expect(ctx.readme_read).toBe(false);
     expect(ctx.process_checked).toBe(false);
   });
+
+  it("collapses process/config/health onto the single runtime-inspection phase (M2)", () => {
+    // Documented intentional mapping: the phase model has ONE runtime
+    // phase, so the three runtime signals move together. Pinning this keeps
+    // the coarse contract honest and would catch an accidental divergence
+    // (e.g. config_checked silently rewired to a different phase).
+    const session = mkSession();
+    let ctx = deriveContextFromSession(session);
+    expect([ctx.process_checked, ctx.config_checked, ctx.health_checked]).toEqual([
+      false,
+      false,
+      false,
+    ]);
+
+    (session.phase_status as Record<string, string>)["runtime-inspection"] =
+      "done";
+    ctx = deriveContextFromSession(session);
+    expect([ctx.process_checked, ctx.config_checked, ctx.health_checked]).toEqual([
+      true,
+      true,
+      true,
+    ]);
+  });
 });
 
 describe("end-to-end: track → verify → validate", () => {

@@ -161,7 +161,7 @@ describe('hypothesis_* MCP roundtrip — wrapper error branches', () => {
     });
   });
 
-  it('hypothesis_support after rejection returns { error: "hypothesis_not_found_or_rejected" }', async () => {
+  it('hypothesis_support after rejection returns { error: "hypothesis_not_found_rejected_or_checks_pending" }', async () => {
     const recorded = parseToolResult(
       await client.callTool({
         name: 'hypothesis_record',
@@ -189,7 +189,7 @@ describe('hypothesis_* MCP roundtrip — wrapper error branches', () => {
       },
     });
     expect(parseToolResult(raw)).toEqual({
-      error: 'hypothesis_not_found_or_rejected',
+      error: 'hypothesis_not_found_rejected_or_checks_pending',
       sessionId: 'gs-support-1',
       hypothesisId: recorded.hypothesis.id,
     });

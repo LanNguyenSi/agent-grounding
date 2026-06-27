@@ -163,6 +163,16 @@ export function deriveContextFromSession(
   session: GroundingSession,
   summary?: LedgerSummary,
 ): ClaimContext {
+  // process/config/health_checked intentionally all derive from the single
+  // `runtime-inspection` phase: the grounding-wrapper phase model has ONE
+  // runtime phase, not three, so phase progress cannot distinguish a
+  // process check from a config or health check. A guardrail like
+  // `no-token-claim-before-config-check` is therefore satisfied by any
+  // completed runtime inspection. This is a deliberate coarse mapping, not
+  // an oversight (audit finding M2): a true per-check signal would require
+  // splitting the runtime phase across grounding-wrapper + this SDK + the
+  // grounding-mcp copy, tracked as a separate follow-up. Keep these three
+  // lines in sync with grounding-mcp/src/derive-context.ts.
   return {
     readme_read: phaseSatisfied(session, "doc-reading"),
     process_checked: phaseSatisfied(session, "runtime-inspection"),

@@ -44,6 +44,16 @@ The seven packages above (other than understanding-gate) each carry their own ve
   directory is created `0700` and the DB file `0600` so captured evidence is
   not world-readable on a shared host. WAL is a no-op for `:memory:`.
 
+### Changed
+
+- `hypothesis-tracker`: `importStore` now validates the parsed shape (audit
+  finding M7) and throws a clear, field-named error instead of a bare
+  `JSON.parse(...) as HypothesisStore` that crashed downstream on a non-array.
+  `supportHypothesis` now refuses to confirm a hypothesis while its own
+  declared `required_checks` are still pending (returns null); evidence stays
+  optional by design, since support is the manual escape hatch for
+  out-of-band evidence.
+
 ## [0.4.0] - 2026-06-16
 
 Surfaces the `policy_decision` bucket in the `evidence-ledger` CLI display

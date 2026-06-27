@@ -489,7 +489,13 @@ export function createServer(): McpServer {
       }
       const updated = supportHypothesis(store, hypothesisId);
       if (!updated) {
-        return jsonResponse({ error: 'hypothesis_not_found_or_rejected', sessionId, hypothesisId });
+        // null also covers a hypothesis whose required_checks are still
+        // pending — supportHypothesis refuses to confirm until they are done.
+        return jsonResponse({
+          error: 'hypothesis_not_found_rejected_or_checks_pending',
+          sessionId,
+          hypothesisId,
+        });
       }
       return jsonResponse({ sessionId, hypothesis: updated });
     },
