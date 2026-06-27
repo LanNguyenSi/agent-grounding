@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- `deriveContextFromSession` now documents why `process_checked`, `config_checked`, and `health_checked` all derive from the single `runtime-inspection` phase (audit finding M2): the grounding-wrapper phase model has one runtime phase, so the three move together. A regression test pins the coarse mapping. A true per-check distinction needs a phase-model change and is tracked as a follow-up. No behavior change.
+
 ## 0.1.2, 2026-06-16
 
 ### Changed

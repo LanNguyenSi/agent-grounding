@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- `hypothesis_support` now returns `error: "hypothesis_not_found_rejected_or_checks_pending"` (was `hypothesis_not_found_or_rejected`) to reflect the hypothesis-tracker change that refuses to confirm a hypothesis while its declared `required_checks` are still pending (audit finding M7).
+
 ## 0.5.0, 2026-06-22
 
 ### Added

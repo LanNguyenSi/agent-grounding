@@ -101,6 +101,15 @@ describe("addEvidence", () => {
   it("returns null for unknown id", () => {
     expect(addEvidence(store, "bad-id", "some evidence")).toBeNull();
   });
+
+  it("auto-promotes even with required checks still pending (by-design asymmetry)", () => {
+    // addEvidence promotes on first evidence regardless of checks; only the
+    // manual supportHypothesis path gates on pending required_checks. This
+    // pins that deliberate asymmetry so it isn't "fixed" by accident.
+    const h = addHypothesis(store, "the cache is cold", ["inspect the cache"]);
+    const updated = addEvidence(store, h.id, "cache hit rate is 0%");
+    expect(updated!.status).toBe("supported");
+  });
 });
 
 describe("completeCheck", () => {
@@ -165,6 +174,27 @@ describe("supportHypothesis", () => {
   it("returns null for unknown id", () => {
     expect(supportHypothesis(store, "bad")).toBeNull();
   });
+
+  it("refuses to support while a required check is still pending", () => {
+    const h = addHypothesis(store, "test", ["verify the fix"]);
+    expect(supportHypothesis(store, h.id)).toBeNull();
+    expect(findHypothesis(store, h.id)!.status).toBe("unverified");
+  });
+
+  it("supports once every required check is done", () => {
+    const h = addHypothesis(store, "test", ["check one", "check two"]);
+    completeCheck(store, h.id, 0);
+    completeCheck(store, h.id, 1);
+    expect(supportHypothesis(store, h.id)).not.toBeNull();
+    expect(findHypothesis(store, h.id)!.status).toBe("supported");
+  });
+
+  it("still refuses with a mix of done and pending checks", () => {
+    const h = addHypothesis(store, "test", ["check one", "check two"]);
+    completeCheck(store, h.id, 0); // only one of two
+    expect(supportHypothesis(store, h.id)).toBeNull();
+    expect(findHypothesis(store, h.id)!.status).toBe("unverified");
+  });
 });
 
 describe("getSummary", () => {
@@ -207,5 +237,104 @@ describe("exportStore / importStore", () => {
     expect(imported.session).toBe("test-session");
     expect(imported.hypotheses).toHaveLength(1);
     expect(imported.hypotheses[0]!.text).toBe("test hypothesis");
+  });
+
+  it("rejects input that is not valid JSON", () => {
+    // Assert the wrapper's own prefix, not the bare V8 SyntaxError (whose
+    // message coincidentally also contains "is not valid JSON").
+    expect(() => importStore("not json at all")).toThrow(
+      /importStore: input is not valid JSON/,
+    );
+  });
+
+  it("rejects a JSON value that is not an object", () => {
+    expect(() => importStore("[]")).toThrow(/expected a JSON object/);
+  });
+
+  it("rejects a missing or non-string session", () => {
+    expect(() => importStore(JSON.stringify({ hypotheses: [] }))).toThrow(
+      /`session` must be a string/,
+    );
+  });
+
+  it("rejects a non-array hypotheses", () => {
+    expect(() =>
+      importStore(JSON.stringify({ session: "s", hypotheses: {} })),
+    ).toThrow(/`hypotheses` must be an array/);
+  });
+
+  it("rejects a hypothesis with an out-of-enum status", () => {
+    const bad = {
+      session: "s",
+      hypotheses: [
+        {
+          id: "a",
+          text: "t",
+          status: "maybe",
+          evidence: [],
+          required_checks: [],
+          createdAt: "x",
+          updatedAt: "y",
+        },
+      ],
+    };
+    expect(() => importStore(JSON.stringify(bad))).toThrow(/status must be one of/);
+  });
+
+  it("rejects a hypothesis missing its id", () => {
+    const bad = {
+      session: "s",
+      hypotheses: [
+        {
+          text: "t",
+          status: "unverified",
+          evidence: [],
+          required_checks: [],
+          createdAt: "x",
+          updatedAt: "y",
+        },
+      ],
+    };
+    expect(() => importStore(JSON.stringify(bad))).toThrow(/\.id must be a string/);
+  });
+
+  it("rejects a malformed evidence element", () => {
+    const bad = {
+      session: "s",
+      hypotheses: [
+        {
+          id: "a",
+          text: "t",
+          status: "supported",
+          evidence: [{ text: 1 }],
+          required_checks: [],
+          createdAt: "x",
+          updatedAt: "y",
+        },
+      ],
+    };
+    expect(() => importStore(JSON.stringify(bad))).toThrow(
+      /evidence\[0\] must be/,
+    );
+  });
+
+  it("rejects a malformed required_checks element", () => {
+    const bad = {
+      session: "s",
+      hypotheses: [
+        {
+          id: "a",
+          text: "t",
+          status: "unverified",
+          evidence: [],
+          required_checks: [{ description: "x" }],
+          createdAt: "x",
+          updatedAt: "y",
+        },
+      ],
+    };
+    expect(() => importStore(JSON.stringify(bad))).toThrow(
+      /required_checks\[0\] must be/,
+    );
   });
 });
