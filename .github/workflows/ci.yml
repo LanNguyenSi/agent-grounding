@@ -45,3 +45,10 @@ jobs:
 
       - name: Test
         run: npm run test --workspaces --if-present
+
+      - name: Coverage gate
+        # Runs the per-package `test:ci` (test runner + --coverage) only where
+        # defined, so each package's declared coverageThreshold actually gates
+        # the build. Previously these thresholds (4 jest packages + grounding-mcp)
+        # were declared but never evaluated because CI only ran plain `test`.
+        run: npm run test:ci --workspaces --if-present
