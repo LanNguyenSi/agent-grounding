@@ -232,7 +232,10 @@ describe('grounding_guardrail_check — MCP roundtrip', () => {
     };
     expect(result.sessionId).toBe(started.sessionId);
     expect(result.guardrail).toBe('no-root-cause-before-readme');
-    expect(typeof result.active).toBe('boolean');
+    // Pin the VALUE, not just the type: this guardrail is in the active set
+    // for a fresh agent-tasks session. Inverting the handler's `active` result
+    // (security-relevant — guardrails gate premature claims) must fail here.
+    expect(result.active).toBe(true);
   });
 
   it('schema rejects an invalid guardrail enum value', async () => {

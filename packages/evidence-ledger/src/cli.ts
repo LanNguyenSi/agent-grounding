@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { fileURLToPath } from "node:url";
+import { realpathSync } from "node:fs";
 import { Command } from "commander";
 import chalk from "chalk";
 import {
@@ -244,7 +245,20 @@ export function buildProgram(): Command {
   return program;
 }
 
-// Only run when executed directly as a script (not when imported in tests)
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// Only run when executed directly as a script (not when imported in tests).
+// realpathSync resolves the node_modules/.bin/ledger symlink so the published
+// bin still triggers the CLI: node leaves process.argv[1] as the symlink path
+// but resolves import.meta.url to the realpath, so a naive `===` compares false
+// and the bin silently no-ops. Mirrors packages/grounding-mcp/src/server.ts.
+function resolveArgv1(): string | undefined {
+  const argv1 = process.argv[1];
+  if (typeof argv1 !== "string") return undefined;
+  try {
+    return realpathSync(argv1);
+  } catch {
+    return argv1;
+  }
+}
+if (resolveArgv1() === fileURLToPath(import.meta.url)) {
   buildProgram().parse();
 }
