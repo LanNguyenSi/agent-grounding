@@ -64,6 +64,8 @@ The verdict pins to the committed HEAD, so edits made after a green `solution_ev
 
 Beyond preflight's technical checks, `solution_evaluate` also folds in **OW process-completeness**: it reads the repo's active `.ai/runs/<date-slug>/` run and requires the handoff to be accepted, the review to recommend accept, and no unresolved high/critical findings. This flows into the **same** verdict fields, `ready` and `blockers` (each OW blocker is prefixed `orchestrator-workflow: `), so the marker keeps its pinned 7-key shape and consumers need no change. `ready` is true only when **both** preflight is ready **and** there are no OW blockers.
 
+The active run must also **claim the current change** (0.6.0): a run whose `00-goal.md` carries a `<!-- solution-acceptance: run-base = <sha> -->` marker (the repo HEAD at run creation) binds precisely — the recorded base must resolve, be an ancestor of the current HEAD, and not lie behind the fork point of the current change (merge-base with the remote default branch). A legacy run without the marker is downgraded tolerantly to a day-granular date check: it blocks only when the run dir's date prefix is older than the author date of the first commit of the current change. Either way a stale accepted run can no longer keep the gate green for later, unrelated work; the fail directions and residuals (same-day staleness for legacy runs, no fork-point check without a remote) are documented on `owBindingBlockers` in `src/solution-verdict.ts`.
+
 Knob, `<repoPath>/.ai/solution-acceptance.json`:
 
 ```json
