@@ -9,6 +9,8 @@
   - **Legacy runs without the marker (tolerant downgrade, decided fail direction):** day-granular date heuristic — blocks only when the run dir's `YYYY-MM-DD` prefix is strictly older than the author date of the oldest commit since the fork point (fallback: HEAD's author date). A same-day stale run passes (documented residual); a multi-day run does not false-block because it is compared against the FIRST commit of the change.
   - All binding state flows through the existing `blockers[]` strings (prefix `orchestrator-workflow: `); the verdict marker keeps its pinned 7-key shape.
   - `readOwRunCompleteness` now also returns `runName` and the raw `runBase` marker value; `owBlockersFor` is async.
+  - **Marker producer status:** the orchestrator-workflow kit (agent-dx) does not emit the `run-base` marker yet — sibling task `ow-review-2026-07-01/run-binding-kit` adds it to the `00-goal.md` template. Until that kit version ships, every run takes the legacy heuristic path; this is the tolerant-by-design rollout order (reader first).
+  - **Pre-merge by design:** evaluating at an already-pushed default-branch tip (fork point == HEAD) false-blocks on both paths; deliberate fail-closed direction, pinned by a test. Evaluate before pushing (the normal ship-flow order) or start a new run.
 
 ### Changed
 

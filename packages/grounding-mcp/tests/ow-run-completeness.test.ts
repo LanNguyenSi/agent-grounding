@@ -469,6 +469,15 @@ describe('readOwRunCompleteness — run-base binding marker extraction', () => {
     });
     expect(readOwRunCompleteness(repo).runBase).toBe('not-a-sha');
   });
+
+  it('extracts the run-base marker from a CRLF 00-goal.md', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDoc({ recommendationMarker: 'accept' }),
+      goal: ['# Goal', '', `<!-- solution-acceptance: run-base = ${SHA} -->`, ''].join('\r\n'),
+    });
+    expect(readOwRunCompleteness(repo).runBase).toBe(SHA);
+  });
 });
 
 describe('readOwRunCompleteness — CRLF fixtures (Fix 4)', () => {

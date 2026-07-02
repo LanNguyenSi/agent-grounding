@@ -170,6 +170,19 @@ describe('owBlockersFor — legacy date heuristic (no run-base marker)', () => {
     expect(blockers).toHaveLength(1);
     expect(blockers[0]).toContain('no OW run claims this change');
   });
+
+  it('author-date skew: the heuristic compares against the true MINIMUM author date, not log order', async () => {
+    const { repo } = makeClonedRepo();
+    // Rebuild the change so the NEWER commit (by topology) carries the OLDER
+    // author date (cherry-pick/rebase skew). git log lists w2 first, w1 last;
+    // taking the last line would read 2026-06-15 and false-block the
+    // 2026-06-12 run. The true minimum (2026-06-11) must win → no block.
+    git(repo, ['reset', '-q', '--hard', 'origin/master']);
+    commit(repo, 'w1.txt', 'w1', '2026-06-15T09:00:00 +0000');
+    commit(repo, 'w2.txt', 'w2', '2026-06-11T09:00:00 +0000');
+    makeRun(repo, '2026-06-12-run');
+    await expect(owBlockersFor(repo)).resolves.toEqual([]);
+  });
 });
 
 describe('owBlockersFor — run-base marker binding', () => {
@@ -229,6 +242,41 @@ describe('owBlockersFor — run-base marker binding', () => {
     const blockers = await owBlockersFor(repo);
     expect(blockers).toHaveLength(1);
     expect(blockers[0]).toContain('no OW run claims this change');
+  });
+
+  it('an abbreviated (8-hex) resolvable run-base is accepted', async () => {
+    const { repo, m } = makeClonedRepo();
+    makeRun(repo, '2000-01-02-run', { runBase: m.slice(0, 8) });
+    await expect(owBlockersFor(repo)).resolves.toEqual([]);
+  });
+
+  it('an UPPERCASE run-base sha is normalized and accepted', async () => {
+    const { repo, head } = makeLocalRepo();
+    makeRun(repo, '2000-01-02-run', { runBase: head.toUpperCase() });
+    await expect(owBlockersFor(repo)).resolves.toEqual([]);
+  });
+
+  it('pinned fail direction: evaluating at an already-pushed default-branch tip false-blocks an older marker', async () => {
+    // HEAD == origin/master tip (fork point == HEAD): a base recorded before
+    // the tip is then strictly behind the fork point. Deliberately fail-closed
+    // — the gate is pre-merge by design; skipping here would reopen the
+    // staleness hole for post-push evaluation.
+    const { repo, o } = makeClonedRepo();
+    git(repo, ['checkout', '-q', 'master']);
+    makeRun(repo, '2000-01-02-run', { runBase: o });
+    const blockers = await owBlockersFor(repo);
+    expect(blockers).toHaveLength(1);
+    expect(blockers[0]).toContain('predates the current change');
+  });
+
+  it('pinned fail direction: a dangling origin/HEAD skips the fork-point check (no crash, no block)', async () => {
+    // origin/HEAD still points at refs/remotes/origin/master, but that ref is
+    // gone → merge-base fails → fork point unresolvable → check 3 skipped,
+    // consistent with the no-remote downgrade.
+    const { repo, o } = makeClonedRepo();
+    git(repo, ['update-ref', '-d', 'refs/remotes/origin/master']);
+    makeRun(repo, '2000-01-02-run', { runBase: o });
+    await expect(owBlockersFor(repo)).resolves.toEqual([]);
   });
 });
 

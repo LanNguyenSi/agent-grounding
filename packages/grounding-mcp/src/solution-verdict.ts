@@ -327,9 +327,15 @@ const RUN_BASE_SHA = /^[0-9a-f]{7,40}$/i;
  * never false-blocks because its FIRST change commit is not older than the
  * run's creation date. False-positive story: cherry-picked commits keep
  * older author dates than the run dir → they read as run-newer-than-commits
- * and pass (no false block); a local-only repo evaluated at an already-pushed
- * default-branch tip compares against HEAD's author date and may block a
- * multi-day legacy run — cured by the marker.
+ * and pass (no false block).
+ *
+ * Pre-merge by design (BOTH paths): evaluating at an already-pushed
+ * default-branch tip (fork == HEAD) false-blocks — the marker path because a
+ * legitimately-recorded base is then strictly behind the fork point, the
+ * legacy path because it falls back to HEAD's author date. That direction is
+ * deliberate (fail-closed beats reopening the staleness hole for post-push
+ * evaluation) and pinned by a test; the remedy in the blocker text — start a
+ * new run — matches the ship-flow, which evaluates before pushing.
  */
 async function owBindingBlockers(repoPath: string, ow: OwRunCompleteness): Promise<string[]> {
   if (ow.runName === null) return [];
@@ -340,7 +346,9 @@ async function owBindingBlockers(repoPath: string, ow: OwRunCompleteness): Promi
         `run '${ow.runName}' has a malformed run-base marker (${JSON.stringify(ow.runBase)} is not a commit sha); fix the marker or start a new OW run for this change`,
       ];
     }
-    const base = await revParseCommit(repoPath, ow.runBase);
+    // Normalize case first: the regex accepts uppercase hex, git object names
+    // are lowercase.
+    const base = await revParseCommit(repoPath, ow.runBase.toLowerCase());
     if (base === null) {
       return [
         `run '${ow.runName}' run-base ${ow.runBase} does not resolve to a commit in this repository (run created in a different repo/worktree?); start a new OW run for this change`,
@@ -355,6 +363,11 @@ async function owBindingBlockers(repoPath: string, ow: OwRunCompleteness): Promi
         `run '${ow.runName}' run-base ${base.slice(0, 7)} is not an ancestor of HEAD ${head.slice(0, 7)} (run belongs to a different branch history); start a new OW run for this change`,
       ];
     }
+    // Deliberate asymmetry: the HEAD-ancestry check above fails CLOSED on a
+    // git error (block), while this fork-point staleness probe fails OPEN
+    // (skip) — consistent with skipping the check entirely when no remote
+    // default ref resolves. Both commits are already validated at this point,
+    // so an error here means the fork-point signal itself is unavailable.
     const fork = await forkPointSha(repoPath, head);
     if (fork !== null && fork !== base && (await isAncestor(repoPath, base, fork))) {
       return [
@@ -468,8 +481,10 @@ async function oldestChangeAuthorDate(repoPath: string): Promise<string | null> 
         { cwd: repoPath, maxBuffer: 16 * 1024 * 1024 },
       );
       const lines = stdout.trim().split('\n').filter(Boolean);
-      // git log lists newest first; the last line is the oldest change commit.
-      if (lines.length > 0) return lines[lines.length - 1];
+      // Take the true minimum: with merge commits or author/commit-date skew
+      // (rebases, cherry-picks) git log's listing order does not guarantee the
+      // last line is the oldest AUTHOR date. `YYYY-MM-DD` sorts lexicographically.
+      if (lines.length > 0) return lines.reduce((min, d) => (d < min ? d : min));
     } catch {
       // fall through to the HEAD fallback
     }
