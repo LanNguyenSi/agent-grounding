@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.6.0, 2026-07-02
+
+### Added
+
+- **OW run-to-change binding (staleness fail-open fix).** A process-complete OW run now also has to CLAIM the current change; before, the newest `.ai/runs/` dir was judged with no linkage to HEAD/branch/date, so one old accepted run kept the gate green for every later change in the repo.
+  - **Marker path (new kit):** `00-goal.md` may carry `<!-- solution-acceptance: run-base = <sha> -->` (the repo HEAD recorded at run creation). The arm blocks when the recorded base does not resolve to a commit, is not an ancestor of the current HEAD, or lies strictly behind the fork point of the current change (merge-base of HEAD with the remote default branch). Marker values are validated as 7-40 hex before any git call (argv-injection guard). Without a resolvable remote default ref the fork-point check is skipped (documented residual for local-only linear history).
+  - **Legacy runs without the marker (tolerant downgrade, decided fail direction):** day-granular date heuristic — blocks only when the run dir's `YYYY-MM-DD` prefix is strictly older than the author date of the oldest commit since the fork point (fallback: HEAD's author date). A same-day stale run passes (documented residual); a multi-day run does not false-block because it is compared against the FIRST commit of the change.
+  - All binding state flows through the existing `blockers[]` strings (prefix `orchestrator-workflow: `); the verdict marker keeps its pinned 7-key shape.
+  - `readOwRunCompleteness` now also returns `runName` and the raw `runBase` marker value; `owBlockersFor` is async.
 
 ### Changed
 

@@ -30,6 +30,14 @@
 // preflight technical floor (lint / typecheck / test / audit / secrets), which
 // still gates regardless of the knob. Parallel to the marker-forge residual
 // above; closing it would need the knob to move to a non-agent-writable source.
+//
+// OW change binding (staleness fix): a complete run only satisfies the OW arm
+// when it also CLAIMS the current change. New-kit runs bind via a `run-base`
+// sha marker in `00-goal.md` (ancestor-of-HEAD + not-behind-fork-point);
+// legacy runs without the marker fall back tolerantly to a day-granular date
+// heuristic (run dir date vs oldest change commit author date). Fail
+// direction, downgrade, and false-positive story are documented on
+// `owBindingBlockers`.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -37,7 +45,7 @@ import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-import { readOwRunCompleteness } from './ow-run-completeness.js';
+import { readOwRunCompleteness, type OwRunCompleteness } from './ow-run-completeness.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -258,28 +266,225 @@ export function resolveOwKnob(repoPath: string): OwKnob {
  * (and matches `/orchestrator-workflow/`).
  *
  *   - `off`  : OW never gates (`[]`).
- *   - `auto` : enforced → gate on `!complete`; not enforced → skip (`[]`).
- *   - `on`   : enforced → gate on `!complete`; not enforced → one explicit
- *              "enforcement is on but no run was found" blocker.
+ *   - `auto` : enforced → gate on `!complete` + change binding; not enforced
+ *              → skip (`[]`).
+ *   - `on`   : enforced → gate on `!complete` + change binding; not enforced
+ *              → one explicit "enforcement is on but no run was found" blocker.
+ *
+ * Change binding (staleness fail-open fix): completeness alone lets one old
+ * accepted run keep the gate green for every later change. When enforced, the
+ * active run must also CLAIM the current change — see `owBindingBlockers`.
  *
  * For a non-OW repo (no `.ai/runs/`, enforced=false) under the default `auto`
  * knob this returns `[]`, keeping the produced verdict byte-identical to the
  * pre-OW output.
  */
-export function owBlockersFor(repoPath: string): string[] {
+export async function owBlockersFor(repoPath: string): Promise<string[]> {
   const knob = resolveOwKnob(repoPath);
   if (knob === 'off') return [];
 
   const ow = readOwRunCompleteness(repoPath);
   let raw: string[];
   if (ow.enforced) {
-    raw = ow.complete ? [] : ow.reasons;
+    raw = ow.complete ? [] : [...ow.reasons];
+    raw.push(...(await owBindingBlockers(repoPath, ow)));
   } else if (knob === 'on') {
     raw = ['enforcement is on but no .ai/runs/ run was found'];
   } else {
     raw = [];
   }
   return raw.map((r) => `orchestrator-workflow: ${r}`);
+}
+
+// `run-base` marker values must be plain (possibly abbreviated) commit shas.
+// Strict validation BEFORE any git call: the value comes from an
+// agent-writable file, so this doubles as an argv-injection guard (a value
+// starting with `-` can never reach git).
+const RUN_BASE_SHA = /^[0-9a-f]{7,40}$/i;
+
+/**
+ * Verify that the active OW run is bound to the CURRENT change. Two paths:
+ *
+ * Marker path (new kit): `00-goal.md` carries
+ * `<!-- solution-acceptance: run-base = <sha> -->`, the repo HEAD recorded at
+ * run creation. The run claims the current change iff the recorded base
+ *   1. resolves to a commit in this repository,
+ *   2. is an ancestor of (or equal to) the current HEAD, and
+ *   3. is NOT strictly behind the fork point of the current change (the
+ *      merge-base of HEAD with the remote default branch) — an old merged
+ *      base IS an ancestor of every later HEAD, so ancestry alone cannot
+ *      catch staleness; the fork point marks where this unit of work began.
+ * When no remote default ref resolves (local-only repo), check 3 is skipped:
+ * in linear local history a stale base is topologically indistinguishable
+ * from a legitimate run-start base, and blocking would false-positive every
+ * direct-to-default workflow. Documented residual.
+ *
+ * Heuristic path (legacy runs without the marker, tolerant downgrade): block
+ * only when the run dir's `YYYY-MM-DD` prefix is strictly older than the
+ * author date of the oldest commit since the fork point (fallback: HEAD's
+ * author date). Day granularity: a same-day stale run passes (documented
+ * residual; the reported scenario is "days later"), and a multi-day run
+ * never false-blocks because its FIRST change commit is not older than the
+ * run's creation date. False-positive story: cherry-picked commits keep
+ * older author dates than the run dir → they read as run-newer-than-commits
+ * and pass (no false block); a local-only repo evaluated at an already-pushed
+ * default-branch tip compares against HEAD's author date and may block a
+ * multi-day legacy run — cured by the marker.
+ */
+async function owBindingBlockers(repoPath: string, ow: OwRunCompleteness): Promise<string[]> {
+  if (ow.runName === null) return [];
+
+  if (ow.runBase !== null) {
+    if (!RUN_BASE_SHA.test(ow.runBase)) {
+      return [
+        `run '${ow.runName}' has a malformed run-base marker (${JSON.stringify(ow.runBase)} is not a commit sha); fix the marker or start a new OW run for this change`,
+      ];
+    }
+    const base = await revParseCommit(repoPath, ow.runBase);
+    if (base === null) {
+      return [
+        `run '${ow.runName}' run-base ${ow.runBase} does not resolve to a commit in this repository (run created in a different repo/worktree?); start a new OW run for this change`,
+      ];
+    }
+    const head = await getHeadSha(repoPath);
+    if (head === null) {
+      return [`cannot resolve the current git HEAD to verify run '${ow.runName}' run-base binding`];
+    }
+    if (!(await isAncestor(repoPath, base, head))) {
+      return [
+        `run '${ow.runName}' run-base ${base.slice(0, 7)} is not an ancestor of HEAD ${head.slice(0, 7)} (run belongs to a different branch history); start a new OW run for this change`,
+      ];
+    }
+    const fork = await forkPointSha(repoPath, head);
+    if (fork !== null && fork !== base && (await isAncestor(repoPath, base, fork))) {
+      return [
+        `run '${ow.runName}' predates the current change (run-base ${base.slice(0, 7)} is behind the fork point ${fork.slice(0, 7)}); start a new OW run for this change`,
+      ];
+    }
+    return [];
+  }
+
+  // Legacy run without a run-base marker: day-granular date heuristic.
+  const runDate = ow.runName.slice(0, 10);
+  const changeDate = await oldestChangeAuthorDate(repoPath);
+  if (changeDate !== null && runDate < changeDate) {
+    return [
+      `newest run '${ow.runName}' has no run-base marker and predates the current change's commits (${changeDate}); no OW run claims this change — start a new OW run`,
+    ];
+  }
+  return [];
+}
+
+/** Resolve `value` to a full commit sha in `repoPath`, or null. */
+async function revParseCommit(repoPath: string, value: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['rev-parse', '--verify', '--quiet', `${value}^{commit}`],
+      { cwd: repoPath },
+    );
+    const sha = stdout.trim();
+    return /^[0-9a-f]{40}$/.test(sha) ? sha : null;
+  } catch {
+    return null;
+  }
+}
+
+/** True iff `ancestor` is an ancestor of (or equal to) `descendant`. */
+async function isAncestor(repoPath: string, ancestor: string, descendant: string): Promise<boolean> {
+  try {
+    await execFileAsync('git', ['merge-base', '--is-ancestor', ancestor, descendant], {
+      cwd: repoPath,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The remote default-branch ref (`refs/remotes/origin/<default>`), resolved
+ * from `origin/HEAD` first, then the conventional master/main candidates.
+ * Null when none resolves (no remote / never fetched).
+ */
+async function remoteDefaultRef(repoPath: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD'],
+      { cwd: repoPath },
+    );
+    const ref = stdout.trim();
+    if (ref.length > 0) return ref;
+  } catch {
+    // fall through to the conventional candidates
+  }
+  for (const candidate of ['refs/remotes/origin/master', 'refs/remotes/origin/main']) {
+    try {
+      await execFileAsync('git', ['rev-parse', '--verify', '--quiet', candidate], {
+        cwd: repoPath,
+      });
+      return candidate;
+    } catch {
+      // try the next candidate
+    }
+  }
+  return null;
+}
+
+/**
+ * The fork point of the current change: merge-base of HEAD with the remote
+ * default branch. Null when no remote default ref resolves or the merge-base
+ * fails (unrelated histories).
+ */
+async function forkPointSha(repoPath: string, head: string): Promise<string | null> {
+  const ref = await remoteDefaultRef(repoPath);
+  if (ref === null) return null;
+  try {
+    const { stdout } = await execFileAsync('git', ['merge-base', head, ref], { cwd: repoPath });
+    const sha = stdout.trim();
+    return /^[0-9a-f]{40}$/.test(sha) ? sha : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * `YYYY-MM-DD` author date (commit-local timezone, matching how run dirs are
+ * named on the authoring machine) of the OLDEST commit since the fork point,
+ * i.e. the first commit of the current change. Falls back to HEAD's author
+ * date when the fork point is unresolvable or the range is empty. Null only
+ * when even HEAD's date cannot be read.
+ */
+async function oldestChangeAuthorDate(repoPath: string): Promise<string | null> {
+  const head = await getHeadSha(repoPath);
+  if (head === null) return null;
+  const fork = await forkPointSha(repoPath, head);
+  if (fork !== null && fork !== head) {
+    try {
+      const { stdout } = await execFileAsync(
+        'git',
+        ['log', '--format=%ad', '--date=format:%Y-%m-%d', `${fork}..${head}`],
+        { cwd: repoPath, maxBuffer: 16 * 1024 * 1024 },
+      );
+      const lines = stdout.trim().split('\n').filter(Boolean);
+      // git log lists newest first; the last line is the oldest change commit.
+      if (lines.length > 0) return lines[lines.length - 1];
+    } catch {
+      // fall through to the HEAD fallback
+    }
+  }
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['log', '-1', '--format=%ad', '--date=format:%Y-%m-%d', head],
+      { cwd: repoPath },
+    );
+    const date = stdout.trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -361,7 +566,7 @@ export async function evaluateSolution(
   // Verdict field: the consumer pins the 7-key shape, so OW state flows through
   // the existing `ready` and `blockers`. For a non-OW repo under the default
   // (auto) knob, owBlockers is [] and the output stays byte-identical.
-  const owBlockers = owBlockersFor(repoPath);
+  const owBlockers = await owBlockersFor(repoPath);
   const ready = pf.ready && owBlockers.length === 0;
   const blockers = [...pf.blockers, ...owBlockers];
 

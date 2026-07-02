@@ -252,10 +252,10 @@ describe('evaluateSolution (producer) — orchestrator-workflow arm', () => {
     return p;
   }
 
-  /** Write an OW run dir (handoff + review) into the repo working tree. */
+  /** Write an OW run dir (handoff + review + goal) into the repo working tree. */
   function makeRun(
     runName: string,
-    files: { handoff?: string; review?: string },
+    files: { handoff?: string; review?: string; goal?: string },
   ): void {
     const dir = path.join(repo, '.ai', 'runs', runName);
     fs.mkdirSync(dir, { recursive: true });
@@ -265,6 +265,23 @@ describe('evaluateSolution (producer) — orchestrator-workflow arm', () => {
     if (files.review !== undefined) {
       fs.writeFileSync(path.join(dir, '05-review-findings.md'), files.review, 'utf8');
     }
+    if (files.goal !== undefined) {
+      fs.writeFileSync(path.join(dir, '00-goal.md'), files.goal, 'utf8');
+    }
+  }
+
+  /**
+   * Run dir name dated to the fixture repo's HEAD commit author date, so the
+   * legacy date heuristic reads the run as created alongside the change
+   * (timezone-safe: both dates come from the same commit).
+   */
+  function freshRunName(): string {
+    const date = execFileSync('git', ['log', '-1', '--format=%ad', '--date=format:%Y-%m-%d'], {
+      cwd: repo,
+    })
+      .toString()
+      .trim();
+    return `${date}-run`;
   }
 
   function handoff(finalStatus: string): string {
@@ -297,9 +314,9 @@ describe('evaluateSolution (producer) — orchestrator-workflow arm', () => {
     ].join('\n');
   }
 
-  /** A complete OW run: accepted handoff + accept review + no armed findings. */
+  /** A complete, freshly-dated OW run: accepted handoff + accept review. */
   function makeCompleteRun(): void {
-    makeRun('2026-06-22-run', { handoff: handoff('accepted'), review: review('accept') });
+    makeRun(freshRunName(), { handoff: handoff('accepted'), review: review('accept') });
   }
 
   function writeKnob(value: string): void {
@@ -348,7 +365,7 @@ describe('evaluateSolution (producer) — orchestrator-workflow arm', () => {
 
   it('OW run present + green preflight + blocked handoff → not ready, OW blocker surfaced', async () => {
     process.env.SOLUTION_PREFLIGHT_BIN = writeStub('stub-green.sh', GREEN_STUB);
-    makeRun('2026-06-22-run', { handoff: handoff('blocked'), review: review('accept') });
+    makeRun(freshRunName(), { handoff: handoff('blocked'), review: review('accept') });
     const res = await evaluateSolution('task-1', repo);
     expect(res.error).toBeUndefined();
     expect(res.verdict?.ready).toBe(false);
@@ -367,7 +384,7 @@ describe('evaluateSolution (producer) — orchestrator-workflow arm', () => {
 
   it("knob 'off' + green preflight + blocked handoff → ready (OW never gates)", async () => {
     process.env.SOLUTION_PREFLIGHT_BIN = writeStub('stub-green.sh', GREEN_STUB);
-    makeRun('2026-06-22-run', { handoff: handoff('blocked'), review: review('fix_required') });
+    makeRun(freshRunName(), { handoff: handoff('blocked'), review: review('fix_required') });
     writeKnob('off');
     const res = await evaluateSolution('task-1', repo);
     expect(res.error).toBeUndefined();
@@ -399,7 +416,7 @@ describe('evaluateSolution (producer) — orchestrator-workflow arm', () => {
 
   it('valid knob JSON with a bogus value fails SAFE to auto (still gates when a run is present)', async () => {
     process.env.SOLUTION_PREFLIGHT_BIN = writeStub('stub-green.sh', GREEN_STUB);
-    makeRun('2026-06-22-run', { handoff: handoff('blocked'), review: review('accept') });
+    makeRun(freshRunName(), { handoff: handoff('blocked'), review: review('accept') });
     // valid JSON, but orchestratorWorkflow is not one of auto/on/off → must
     // resolve to 'auto' (fail-safe), NOT silently disable the OW arm.
     writeKnob('nonsense');
@@ -411,7 +428,7 @@ describe('evaluateSolution (producer) — orchestrator-workflow arm', () => {
 
   it('malformed knob file fails SAFE to auto (still gates when a run is present)', async () => {
     process.env.SOLUTION_PREFLIGHT_BIN = writeStub('stub-green.sh', GREEN_STUB);
-    makeRun('2026-06-22-run', { handoff: handoff('blocked'), review: review('accept') });
+    makeRun(freshRunName(), { handoff: handoff('blocked'), review: review('accept') });
     fs.mkdirSync(path.join(repo, '.ai'), { recursive: true });
     fs.writeFileSync(path.join(repo, '.ai', 'solution-acceptance.json'), '{ not json', 'utf8');
     const res = await evaluateSolution('task-1', repo);
@@ -419,9 +436,37 @@ describe('evaluateSolution (producer) — orchestrator-workflow arm', () => {
     expect(res.verdict?.blockers.some((b) => /orchestrator-workflow/.test(b))).toBe(true);
   });
 
+  it('staleness repro (fail-open fix): old COMPLETE run + new commits, no new run → not ready', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub('stub-green.sh', GREEN_STUB);
+    // The run is complete and was legitimately accepted once — but it is dated
+    // before the current change's commits and carries no run-base binding, so
+    // no OW run claims THIS change. Pre-fix this produced ready:true forever.
+    makeRun('2026-06-20-old', { handoff: handoff('accepted'), review: review('accept') });
+    const res = await evaluateSolution('task-1', repo);
+    expect(res.error).toBeUndefined();
+    expect(res.verdict?.ready).toBe(false);
+    const blocker = res.verdict?.blockers.find((b) => /orchestrator-workflow/.test(b));
+    expect(blocker).toBeDefined();
+    expect(blocker).toContain('no OW run claims this change');
+    expect(evaluateGate('task-1', head).allowed).toBe(false);
+  });
+
+  it('a run-base marker bound to HEAD beats the date heuristic (old dir name, valid marker → ready)', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub('stub-green.sh', GREEN_STUB);
+    makeRun('2026-06-20-old', {
+      handoff: handoff('accepted'),
+      review: review('accept'),
+      goal: `# Goal\n\n<!-- solution-acceptance: run-base = ${head} -->\n`,
+    });
+    const res = await evaluateSolution('task-1', repo);
+    expect(res.error).toBeUndefined();
+    expect(res.verdict?.ready).toBe(true);
+    expect(res.verdict?.blockers).toEqual([]);
+  });
+
   it('parity guard: the verdict still carries exactly the 7 pinned keys', async () => {
     process.env.SOLUTION_PREFLIGHT_BIN = writeStub('stub-green.sh', GREEN_STUB);
-    makeRun('2026-06-22-run', { handoff: handoff('blocked'), review: review('accept') });
+    makeRun(freshRunName(), { handoff: handoff('blocked'), review: review('accept') });
     const res = await evaluateSolution('task-1', repo);
     expect(res.verdict).not.toBeNull();
     expect(Object.keys(res.verdict as object).sort()).toEqual(VERDICT_KEYS);
