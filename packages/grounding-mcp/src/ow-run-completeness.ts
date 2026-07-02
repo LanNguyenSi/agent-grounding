@@ -15,7 +15,13 @@
 //     marker, so we fall back to the prose `## ...` value line. An unfilled
 //     placeholder (the pipe-joined enum legend), a `TODO` sentinel, a missing
 //     line, or a missing file all resolve to "not accepted" — never to a
-//     silent pass.
+//     silent pass. A marker still carrying the template's `TODO` placeholder
+//     surfaces its OWN reason (never the misleading "no marker" one) and never
+//     falls back to prose. Acceptance markers capture only word-shaped enum
+//     values, so sloppy spacing (`= accepted-->`) cannot swallow the comment
+//     terminator. First marker match wins; a quoted mention of marker syntax
+//     earlier in the file shadowing the real marker is a known non-goal (run
+//     files are agent-authored, honor-system).
 //   - The shipped review template seeds the Findings table with a legend /
 //     placeholder row whose Severity and Decision cells are slash-lists
 //     (`low/medium/high/critical`, `accepted/fix/defer/reject`). That row is
@@ -26,9 +32,12 @@
 //     ARMS the gate (blocks) UNLESS its Decision is explicitly resolved
 //     ({accepted, defer}). So fix, reject, blank, `open`, `TODO`, and any
 //     unrecognized decision all BLOCK — an undecided high/critical never passes.
-//   - The findings table is located by anchoring on the table HEADER ROW (cells
+//   - The findings tables are located by anchoring on table HEADER ROWS (cells
 //     include both `Severity` and `Decision`), not the `## Findings` heading
 //     text, so a drifted heading (`## Findings (summary)`) cannot fail open.
+//     ALL such tables are parsed (a second review round may append a new
+//     table); a findings section with content but no table anywhere yields an
+//     explicit format blocker instead of silently reporting zero findings.
 //   - Change binding: the reader also EXTRACTS the `run-base` marker from the
 //     run's `00-goal.md` (raw string, `TODO` → absent) and the run dir name.
 //     Verifying that binding against the current git change (ancestry, fork
@@ -96,30 +105,43 @@ export function readOwRunCompleteness(repoPath: string): OwRunCompleteness {
   const goal = readFileOrNull(path.join(activeRun, '00-goal.md'));
   const reasons: string[] = [];
 
-  const finalStatus = resolveMarkerOrProse(handoff, 'final-status', 'Final Status');
-  if (finalStatus === null) {
+  const finalStatus = resolveAcceptanceValue(handoff, 'final-status', 'Final Status');
+  if (finalStatus.kind === 'todo') {
+    reasons.push(
+      'handoff final-status marker is still TODO (replace it with the chosen enum value)',
+    );
+  } else if (finalStatus.kind === 'missing') {
     reasons.push(
       "handoff final-status is unset (no solution-acceptance marker and no filled '## Final Status')",
     );
-  } else if (!ACCEPTED_FINAL_STATUS.has(finalStatus.toLowerCase())) {
-    reasons.push(`handoff final-status is '${finalStatus}'`);
+  } else if (!ACCEPTED_FINAL_STATUS.has(finalStatus.value.toLowerCase())) {
+    reasons.push(`handoff final-status is '${finalStatus.value}'`);
   }
 
-  const recommendation = resolveMarkerOrProse(
+  const recommendation = resolveAcceptanceValue(
     review,
     'acceptance-recommendation',
     'Acceptance Recommendation',
   );
-  if (recommendation === null) {
+  if (recommendation.kind === 'todo') {
+    reasons.push(
+      'review recommendation marker is still TODO (replace it with the chosen enum value)',
+    );
+  } else if (recommendation.kind === 'missing') {
     reasons.push(
       "review recommendation is unset (no solution-acceptance marker and no filled '## Acceptance Recommendation')",
     );
-  } else if (!ACCEPT_RECOMMENDATION.has(recommendation.toLowerCase())) {
-    reasons.push(`review recommendation is '${recommendation}'`);
+  } else if (!ACCEPT_RECOMMENDATION.has(recommendation.value.toLowerCase())) {
+    reasons.push(`review recommendation is '${recommendation.value}'`);
   }
 
   for (const f of findUnresolvedFindings(review)) {
     reasons.push(`unresolved ${f.severity} finding: ${f.description} (Decision=${f.decision})`);
+  }
+
+  const formatBlocker = findingsFormatBlocker(review);
+  if (formatBlocker !== null) {
+    reasons.push(formatBlocker);
   }
 
   return {
@@ -139,7 +161,11 @@ export function readOwRunCompleteness(repoPath: string): OwRunCompleteness {
  */
 function resolveRunBase(goal: string | null): string | null {
   if (goal === null) return null;
-  const marker = matchMarker(goal, 'run-base');
+  // Raw \S+ capture on purpose: sha values may start with a digit (the enum
+  // charset would reject them), and a malformed value must reach the verdict
+  // layer's hex guard so it blocks explicitly instead of downgrading silently
+  // to the date heuristic.
+  const marker = matchMarker(goal, 'run-base', '\\S+');
   return marker === null || marker === 'TODO' ? null : marker;
 }
 
@@ -174,27 +200,59 @@ function findActiveRun(repoPath: string): string | null {
 }
 
 /**
- * Resolve an acceptance value marker-first, then fail-closed prose fallback.
- * Returns the concrete value string, or null when it cannot be resolved to a
- * filled value (file missing, marker `TODO`, prose placeholder legend, prose
- * `TODO`, or no value line at all).
+ * Discriminated marker/prose resolution so the caller can name the actual
+ * failure: `todo` (a marker exists but still carries the template's TODO
+ * placeholder; prose is deliberately NOT consulted, marker-first fail-closed)
+ * vs `missing` (no marker and no filled prose value).
  */
-function resolveMarkerOrProse(
+type AcceptanceValue =
+  | { kind: 'value'; value: string }
+  | { kind: 'todo' }
+  | { kind: 'missing' };
+
+/**
+ * Resolve an acceptance value marker-first, then fail-closed prose fallback.
+ * A `TODO` marker never falls back to prose: the marker is the machine
+ * channel, and an unfilled machine channel must surface as exactly that.
+ */
+function resolveAcceptanceValue(
   content: string | null,
   markerField: string,
   proseHeading: string,
-): string | null {
-  if (content === null) return null;
+): AcceptanceValue {
+  if (content === null) return { kind: 'missing' };
 
   const marker = matchMarker(content, markerField);
-  if (marker !== null) return marker === 'TODO' ? null : marker;
+  if (marker !== null) {
+    return marker === 'TODO' ? { kind: 'todo' } : { kind: 'value', value: marker };
+  }
 
-  return resolveProseValue(content, proseHeading);
+  const prose = resolveProseValue(content, proseHeading);
+  return prose === null ? { kind: 'missing' } : { kind: 'value', value: prose };
 }
 
-/** Match `<!-- solution-acceptance: <field> = <value> -->`, returning the value. */
-function matchMarker(content: string, field: string): string | null {
-  const re = new RegExp(`solution-acceptance:\\s*${escapeRegExp(field)}\\s*=\\s*(\\S+)`);
+// Acceptance enum values are word-shaped (`accepted_with_notes`). Capturing
+// exactly that charset keeps sloppy spacing (`= accepted-->`) from swallowing
+// the comment terminator into the value. A value that does not even start
+// word-shaped fails the match entirely and resolves like a missing marker
+// (prose fallback, fail-closed).
+const ENUM_VALUE_PATTERN = '[A-Za-z][A-Za-z0-9_]*';
+
+/**
+ * Match `<!-- solution-acceptance: <field> = <value> -->`, returning the value.
+ * `valuePattern` bounds the capture; callers with non-enum values (the
+ * `run-base` sha binding, validated downstream by a strict hex guard) pass a
+ * raw `\S+` so malformed values still surface as explicit blockers instead of
+ * silently degrading. First match wins; a quoted mention of marker syntax
+ * earlier in the file can shadow the real marker (known non-goal: run files
+ * are agent-authored, see the honor-system residual).
+ */
+function matchMarker(
+  content: string,
+  field: string,
+  valuePattern: string = ENUM_VALUE_PATTERN,
+): string | null {
+  const re = new RegExp(`solution-acceptance:\\s*${escapeRegExp(field)}\\s*=\\s*(${valuePattern})`);
   const m = content.match(re);
   return m ? m[1].trim() : null;
 }
@@ -243,56 +301,106 @@ function findUnresolvedFindings(content: string | null): UnresolvedFinding[] {
   if (content === null) return [];
   const lines = content.split(/\r?\n/);
 
-  let headerIdx = -1;
-  let severityIdx = -1;
-  let decisionIdx = -1;
-  let descriptionIdx = -1;
-  for (let i = 0; i < lines.length; i++) {
-    const t = lines[i].trim();
-    if (!t.startsWith('|')) continue;
-    const cells = splitTableRow(t);
-    const sIdx = cells.findIndex((c) => c.toLowerCase() === 'severity');
-    const dIdx = cells.findIndex((c) => c.toLowerCase() === 'decision');
-    if (sIdx !== -1 && dIdx !== -1) {
-      headerIdx = i;
-      severityIdx = sIdx;
-      decisionIdx = dIdx;
-      descriptionIdx = cells.findIndex((c) => c.toLowerCase() === 'description');
-      break;
-    }
-  }
-  if (headerIdx === -1) return [];
-
   const out: UnresolvedFinding[] = [];
-  for (let i = headerIdx + 1; i < lines.length; i++) {
-    const t = lines[i].trim();
-    if (t === '') break; // blank line ends the table
-    if (!t.startsWith('|')) break; // non-table line ends the table
-    const cells = splitTableRow(t);
-    if (isSeparatorRow(cells)) continue; // the |---| separator row
-    if (severityIdx >= cells.length) continue; // no severity cell to classify
+  let i = 0;
+  while (i < lines.length) {
+    const header = parseFindingsHeaderRow(lines[i]);
+    if (header === null) {
+      i++;
+      continue;
+    }
 
-    const severity = (cells[severityIdx] ?? '').toLowerCase();
-    // Real-finding test: SEVERITY must be a single concrete value. The legend
-    // row's slash-list severity fails this and is skipped.
-    if (!CONCRETE_SEVERITIES.has(severity)) continue;
-    if (!ARMING_SEVERITIES.has(severity)) continue; // low/medium never arm
+    // Data rows of THIS table, until a blank or non-table line ends it. The
+    // outer loop then keeps scanning: a later table (e.g. a second review
+    // round appended below the first) is parsed too — before this, only the
+    // FIRST table was read and later high/critical findings were invisible
+    // (fail-open on append).
+    let j = i + 1;
+    for (; j < lines.length; j++) {
+      const t = lines[j].trim();
+      if (t === '' || !t.startsWith('|')) break;
+      const cells = splitTableRow(t);
+      if (isSeparatorRow(cells)) continue; // the |---| separator row
+      if (header.severityIdx >= cells.length) continue; // no severity cell to classify
 
-    // A missing decision cell reads as blank → unset → arms (fail-closed).
-    const decision = (cells[decisionIdx] ?? '').toLowerCase();
-    if (RESOLVED_DECISIONS.has(decision)) continue; // accepted/defer → resolved
+      const severity = (cells[header.severityIdx] ?? '').toLowerCase();
+      // Real-finding test: SEVERITY must be a single concrete value. The legend
+      // row's slash-list severity fails this and is skipped.
+      if (!CONCRETE_SEVERITIES.has(severity)) continue;
+      if (!ARMING_SEVERITIES.has(severity)) continue; // low/medium never arm
 
-    const description =
-      descriptionIdx !== -1 && descriptionIdx < cells.length
-        ? cells[descriptionIdx]
-        : cells.filter((_, idx) => idx !== severityIdx && idx !== decisionIdx).join(' | ');
-    out.push({
-      severity,
-      description,
-      decision: decision === '' ? 'unset' : decision,
-    });
+      // A missing decision cell reads as blank → unset → arms (fail-closed).
+      const decision = (cells[header.decisionIdx] ?? '').toLowerCase();
+      if (RESOLVED_DECISIONS.has(decision)) continue; // accepted/defer → resolved
+
+      const description =
+        header.descriptionIdx !== -1 && header.descriptionIdx < cells.length
+          ? cells[header.descriptionIdx]
+          : cells
+              .filter((_, idx) => idx !== header.severityIdx && idx !== header.decisionIdx)
+              .join(' | ');
+      out.push({
+        severity,
+        description,
+        decision: decision === '' ? 'unset' : decision,
+      });
+    }
+    i = j;
   }
   return out;
+}
+
+interface FindingsHeader {
+  severityIdx: number;
+  decisionIdx: number;
+  descriptionIdx: number;
+}
+
+/** Parse a line as a findings-table HEADER ROW (cells include Severity and Decision). */
+function parseFindingsHeaderRow(line: string): FindingsHeader | null {
+  const t = line.trim();
+  if (!t.startsWith('|')) return null;
+  const cells = splitTableRow(t);
+  const severityIdx = cells.findIndex((c) => c.toLowerCase() === 'severity');
+  const decisionIdx = cells.findIndex((c) => c.toLowerCase() === 'decision');
+  if (severityIdx === -1 || decisionIdx === -1) return null;
+  return {
+    severityIdx,
+    decisionIdx,
+    descriptionIdx: cells.findIndex((c) => c.toLowerCase() === 'description'),
+  };
+}
+
+/**
+ * Fail-closed on findings-format drift: a `## Findings`-style section that
+ * carries content but NO findings-table header row anywhere in the file means
+ * findings were recorded in a shape the reader cannot verify (e.g. a bullet
+ * list). Silently reporting zero findings there would fail open, so this
+ * yields an explicit blocker instead. Residual: once ANY table header exists,
+ * extra non-table findings elsewhere stay invisible (tables are the machine
+ * channel; drift beyond that is out of reach for a line parser).
+ */
+function findingsFormatBlocker(content: string | null): string | null {
+  if (content === null) return null;
+  const lines = content.split(/\r?\n/);
+
+  if (lines.some((l) => parseFindingsHeaderRow(l) !== null)) return null;
+
+  const headingIdx = lines.findIndex((l) => /^#{1,6}\s*findings\b/i.test(l.trim()));
+  if (headingIdx === -1) return null;
+
+  for (let i = headingIdx + 1; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (/^#{1,6}\s/.test(t)) break; // next section ends the findings section
+    if (t === '') continue;
+    if (t.startsWith('<!--')) continue; // template placeholder comments
+    return (
+      'review findings are present but not in the expected table format ' +
+      '(header row with Severity and Decision columns); rewrite them as the ' +
+      'findings table so they can be verified'
+    );
+  }
+  return null;
 }
 
 /** Split a `| a | b | ... |` row into trimmed cell strings. */
