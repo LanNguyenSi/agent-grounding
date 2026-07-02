@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.5, 2026-07-02
+
+### Changed
+
+- Re-pinned `@lannguyensi/hypothesis-tracker` to `0.5.0` to track the
+  coordinated 0.5.0 release (M7: `supportHypothesis` refuses to confirm
+  while declared `required_checks` are pending).
+- Note: 0.4.4 below was prepared on 2026-06-17 but its tag was never pushed;
+  0.4.5 is the first published version carrying both changes.
+
 ## 0.4.4, 2026-06-17
 
 ### Fixed: hypothesis-tracker dependency un-pinned from the stale 0.1.0 floor

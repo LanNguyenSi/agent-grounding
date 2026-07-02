@@ -25,6 +25,7 @@
 ### Changed
 
 - `hypothesis_support` now returns `error: "hypothesis_not_found_rejected_or_checks_pending"` (was `hypothesis_not_found_or_rejected`) to reflect the hypothesis-tracker change that refuses to confirm a hypothesis while its declared `required_checks` are still pending (audit finding M7).
+- Re-pinned the lockstep dependencies (`claim-gate`, `evidence-ledger`, `grounding-wrapper`, `hypothesis-tracker`) to `0.5.0` (the release that actually ships the M7 gating and the evidence-ledger WAL/perms hardening).
 
 ## 0.5.0, 2026-06-22
 
