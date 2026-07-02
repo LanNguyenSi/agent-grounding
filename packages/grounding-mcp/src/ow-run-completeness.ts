@@ -29,6 +29,11 @@
 //   - The findings table is located by anchoring on the table HEADER ROW (cells
 //     include both `Severity` and `Decision`), not the `## Findings` heading
 //     text, so a drifted heading (`## Findings (summary)`) cannot fail open.
+//   - Change binding: the reader also EXTRACTS the `run-base` marker from the
+//     run's `00-goal.md` (raw string, `TODO` → absent) and the run dir name.
+//     Verifying that binding against the current git change (ancestry, fork
+//     point, date heuristic) is the verdict layer's job — this module stays
+//     free of subprocess calls.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -40,6 +45,15 @@ export interface OwRunCompleteness {
   complete: boolean;
   /** One specific message per failed condition (empty when complete). */
   reasons: string[];
+  /** Basename of the active run dir (e.g. `2026-07-02-slug`), null when not enforced. */
+  runName: string | null;
+  /**
+   * `run-base` binding marker from the run's `00-goal.md` (the repo HEAD sha
+   * recorded at run creation), or null when the marker is absent or still the
+   * `TODO` placeholder. The reader only EXTRACTS the value; git verification
+   * against the current change happens in solution-verdict.ts.
+   */
+  runBase: string | null;
 }
 
 interface UnresolvedFinding {
@@ -68,11 +82,18 @@ const DATED_RUN_PREFIX = /^\d{4}-\d{2}-\d{2}-/;
 export function readOwRunCompleteness(repoPath: string): OwRunCompleteness {
   const activeRun = findActiveRun(repoPath);
   if (activeRun === null) {
-    return { enforced: false, complete: false, reasons: ['no .ai/runs/ run directory found'] };
+    return {
+      enforced: false,
+      complete: false,
+      reasons: ['no .ai/runs/ run directory found'],
+      runName: null,
+      runBase: null,
+    };
   }
 
   const handoff = readFileOrNull(path.join(activeRun, '06-handoff.md'));
   const review = readFileOrNull(path.join(activeRun, '05-review-findings.md'));
+  const goal = readFileOrNull(path.join(activeRun, '00-goal.md'));
   const reasons: string[] = [];
 
   const finalStatus = resolveMarkerOrProse(handoff, 'final-status', 'Final Status');
@@ -101,7 +122,25 @@ export function readOwRunCompleteness(repoPath: string): OwRunCompleteness {
     reasons.push(`unresolved ${f.severity} finding: ${f.description} (Decision=${f.decision})`);
   }
 
-  return { enforced: true, complete: reasons.length === 0, reasons };
+  return {
+    enforced: true,
+    complete: reasons.length === 0,
+    reasons,
+    runName: path.basename(activeRun),
+    runBase: resolveRunBase(goal),
+  };
+}
+
+/**
+ * The `run-base` binding marker value from a run's `00-goal.md` content, or
+ * null when the file/marker is missing or the marker is the `TODO`
+ * placeholder. No validation happens here — the raw value is handed to the
+ * verdict layer, which validates it (strict hex) BEFORE any git invocation.
+ */
+function resolveRunBase(goal: string | null): string | null {
+  if (goal === null) return null;
+  const marker = matchMarker(goal, 'run-base');
+  return marker === null || marker === 'TODO' ? null : marker;
 }
 
 /**

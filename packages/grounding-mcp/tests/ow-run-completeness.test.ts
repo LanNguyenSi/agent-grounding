@@ -24,6 +24,7 @@ afterEach(() => {
 interface RunFiles {
   handoff?: string;
   review?: string;
+  goal?: string;
 }
 
 function makeRun(runName: string, files: RunFiles): string {
@@ -34,6 +35,9 @@ function makeRun(runName: string, files: RunFiles): string {
   }
   if (files.review !== undefined) {
     fs.writeFileSync(path.join(dir, '05-review-findings.md'), files.review, 'utf8');
+  }
+  if (files.goal !== undefined) {
+    fs.writeFileSync(path.join(dir, '00-goal.md'), files.goal, 'utf8');
   }
   return dir;
 }
@@ -107,6 +111,8 @@ describe('readOwRunCompleteness — enforcement', () => {
       enforced: false,
       complete: false,
       reasons: ['no .ai/runs/ run directory found'],
+      runName: null,
+      runBase: null,
     });
   });
 
@@ -160,7 +166,13 @@ describe('readOwRunCompleteness — completeness verdict', () => {
       review: reviewDoc({ recommendationMarker: 'accept' }),
     });
     const r = readOwRunCompleteness(repo);
-    expect(r).toEqual({ enforced: true, complete: true, reasons: [] });
+    expect(r).toEqual({
+      enforced: true,
+      complete: true,
+      reasons: [],
+      runName: '2026-06-22-run',
+      runBase: null,
+    });
   });
 
   it('accepted_with_notes + accept_with_notes also count as accepted', () => {
@@ -274,7 +286,13 @@ describe('readOwRunCompleteness — fail-closed fallback', () => {
     ].join('\n');
     makeRun('2026-06-22-run', { handoff, review });
     const r = readOwRunCompleteness(repo);
-    expect(r).toEqual({ enforced: true, complete: true, reasons: [] });
+    expect(r).toEqual({
+      enforced: true,
+      complete: true,
+      reasons: [],
+      runName: '2026-06-22-run',
+      runBase: null,
+    });
   });
 
   it('TODO marker is never a valid acceptance value', () => {
@@ -392,6 +410,73 @@ describe('readOwRunCompleteness — active-run selection requires a date prefix 
     const r = readOwRunCompleteness(repo);
     expect(r.enforced).toBe(false);
     expect(r.complete).toBe(false);
+  });
+});
+
+describe('readOwRunCompleteness — run-base binding marker extraction', () => {
+  const SHA = '7872f3c4e266786ba3d60f6200f20b45ac47e193';
+
+  function goalWithMarker(value: string): string {
+    return ['# Goal', '', `<!-- solution-acceptance: run-base = ${value} -->`, '', '## Goal', ''].join(
+      '\n',
+    );
+  }
+
+  it('extracts the run-base marker value and the run dir basename', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDoc({ recommendationMarker: 'accept' }),
+      goal: goalWithMarker(SHA),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.runName).toBe('2026-06-22-run');
+    expect(r.runBase).toBe(SHA);
+  });
+
+  it('returns runBase null when 00-goal.md is missing (legacy run)', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDoc({ recommendationMarker: 'accept' }),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.runName).toBe('2026-06-22-run');
+    expect(r.runBase).toBeNull();
+  });
+
+  it('returns runBase null when 00-goal.md has no run-base marker', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDoc({ recommendationMarker: 'accept' }),
+      goal: '# Goal\n\n## Goal\n\nsome goal text\n',
+    });
+    expect(readOwRunCompleteness(repo).runBase).toBeNull();
+  });
+
+  it('treats a TODO run-base placeholder as absent', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDoc({ recommendationMarker: 'accept' }),
+      goal: goalWithMarker('TODO'),
+    });
+    expect(readOwRunCompleteness(repo).runBase).toBeNull();
+  });
+
+  it('hands a malformed marker value through raw (validation is the verdict layer)', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDoc({ recommendationMarker: 'accept' }),
+      goal: goalWithMarker('not-a-sha'),
+    });
+    expect(readOwRunCompleteness(repo).runBase).toBe('not-a-sha');
+  });
+
+  it('extracts the run-base marker from a CRLF 00-goal.md', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDoc({ recommendationMarker: 'accept' }),
+      goal: ['# Goal', '', `<!-- solution-acceptance: run-base = ${SHA} -->`, ''].join('\r\n'),
+    });
+    expect(readOwRunCompleteness(repo).runBase).toBe(SHA);
   });
 });
 
