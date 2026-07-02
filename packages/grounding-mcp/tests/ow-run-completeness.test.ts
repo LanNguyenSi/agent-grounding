@@ -573,6 +573,91 @@ describe('readOwRunCompleteness — multi-table and non-table findings', () => {
     expect(r.reasons).toEqual([]);
   });
 
+  it('a malformed marker value + filled accepted prose still BLOCKS (no prose override)', () => {
+    // The machine channel is present but broken; a filled prose line must not
+    // silently win. Before this fix the failed enum match fell through to the
+    // prose fallback and the gate passed.
+    const handoff = [
+      '# Operator Handoff',
+      '',
+      '## Final Status',
+      '',
+      '<!-- solution-acceptance: final-status = 1accepted -->',
+      'accepted',
+      '',
+    ].join('\n');
+    makeRun('2026-06-22-run', {
+      handoff,
+      review: reviewDoc({ recommendationMarker: 'accept' }),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    const reason = r.reasons.find((x) => x.includes('final-status'));
+    expect(reason).toContain("handoff final-status marker value '1accepted' is malformed");
+  });
+
+  it('a multi-line HTML comment in the findings section raises no spurious format blocker', () => {
+    const review = [
+      '## Findings',
+      '',
+      '<!-- one row per finding,',
+      'spanning multiple lines -->',
+      '',
+      '## Acceptance Recommendation',
+      '',
+      '<!-- solution-acceptance: acceptance-recommendation = accept -->',
+      'accept',
+      '',
+    ].join('\n');
+    makeRun('2026-06-22-run', { handoff: handoffMarker('accepted'), review });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('list content under a SECOND findings heading still raises the format blocker', () => {
+    const review = [
+      '## Findings',
+      '',
+      '## Findings (round 2)',
+      '',
+      '- critical: hidden list finding (fix)',
+      '',
+      '## Acceptance Recommendation',
+      '',
+      '<!-- solution-acceptance: acceptance-recommendation = accept -->',
+      'accept',
+      '',
+    ].join('\n');
+    makeRun('2026-06-22-run', { handoff: handoffMarker('accepted'), review });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons.some((x) => x.includes('not in the expected table format'))).toBe(true);
+  });
+
+  it('pins the live-convention drift: a Decision-less table (Severity/Finding/Resolution) blocks', () => {
+    // Some reviewer outputs in the wild use `| Severity | Finding | Resolution |`.
+    // That header cannot be verified (no Decision column), so the fail-closed
+    // format blocker fires; converging the convention is a kit concern.
+    const review = [
+      '## Findings',
+      '',
+      '| Severity | Finding | Resolution |',
+      '|---|---|---|',
+      '| high | leak | rotated |',
+      '',
+      '## Acceptance Recommendation',
+      '',
+      '<!-- solution-acceptance: acceptance-recommendation = accept -->',
+      'accept',
+      '',
+    ].join('\n');
+    makeRun('2026-06-22-run', { handoff: handoffMarker('accepted'), review });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons.some((x) => x.includes('not in the expected table format'))).toBe(true);
+  });
+
   it('an EMPTY findings section (comments/blank only) raises no format blocker', () => {
     const review = [
       '## Findings',

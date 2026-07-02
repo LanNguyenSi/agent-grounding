@@ -110,6 +110,10 @@ export function readOwRunCompleteness(repoPath: string): OwRunCompleteness {
     reasons.push(
       'handoff final-status marker is still TODO (replace it with the chosen enum value)',
     );
+  } else if (finalStatus.kind === 'malformed') {
+    reasons.push(
+      `handoff final-status marker value '${finalStatus.raw}' is malformed (replace it with one of the enum values)`,
+    );
   } else if (finalStatus.kind === 'missing') {
     reasons.push(
       "handoff final-status is unset (no solution-acceptance marker and no filled '## Final Status')",
@@ -126,6 +130,10 @@ export function readOwRunCompleteness(repoPath: string): OwRunCompleteness {
   if (recommendation.kind === 'todo') {
     reasons.push(
       'review recommendation marker is still TODO (replace it with the chosen enum value)',
+    );
+  } else if (recommendation.kind === 'malformed') {
+    reasons.push(
+      `review recommendation marker value '${recommendation.raw}' is malformed (replace it with one of the enum values)`,
     );
   } else if (recommendation.kind === 'missing') {
     reasons.push(
@@ -208,12 +216,16 @@ function findActiveRun(repoPath: string): string | null {
 type AcceptanceValue =
   | { kind: 'value'; value: string }
   | { kind: 'todo' }
+  | { kind: 'malformed'; raw: string }
   | { kind: 'missing' };
 
 /**
  * Resolve an acceptance value marker-first, then fail-closed prose fallback.
  * A `TODO` marker never falls back to prose: the marker is the machine
- * channel, and an unfilled machine channel must surface as exactly that.
+ * channel, and an unfilled machine channel must surface as exactly that. The
+ * same holds for a `malformed` marker (field present, value not word-shaped,
+ * e.g. `= 1accepted`): a present-but-broken machine channel must block, never
+ * be silently overridden by a filled prose line.
  */
 function resolveAcceptanceValue(
   content: string | null,
@@ -226,6 +238,11 @@ function resolveAcceptanceValue(
   if (marker !== null) {
     return marker === 'TODO' ? { kind: 'todo' } : { kind: 'value', value: marker };
   }
+
+  // The enum-shaped match failed. Distinguish "field absent" (prose fallback
+  // is legitimate) from "field present with a non-enum-shaped value" (block).
+  const raw = matchMarker(content, markerField, '\\S+');
+  if (raw !== null) return { kind: 'malformed', raw };
 
   const prose = resolveProseValue(content, proseHeading);
   return prose === null ? { kind: 'missing' } : { kind: 'value', value: prose };
@@ -382,23 +399,28 @@ function parseFindingsHeaderRow(line: string): FindingsHeader | null {
  */
 function findingsFormatBlocker(content: string | null): string | null {
   if (content === null) return null;
-  const lines = content.split(/\r?\n/);
+  if (content.split(/\r?\n/).some((l) => parseFindingsHeaderRow(l) !== null)) return null;
 
-  if (lines.some((l) => parseFindingsHeaderRow(l) !== null)) return null;
+  // Strip HTML comments BEFORE the content scan so a template placeholder
+  // spanning multiple lines is not mistaken for findings content. An
+  // unterminated comment is left in place (counts as content, fail-closed).
+  const lines = content.replace(/<!--[\s\S]*?-->/g, '').split(/\r?\n/);
 
-  const headingIdx = lines.findIndex((l) => /^#{1,6}\s*findings\b/i.test(l.trim()));
-  if (headingIdx === -1) return null;
-
-  for (let i = headingIdx + 1; i < lines.length; i++) {
-    const t = lines[i].trim();
-    if (/^#{1,6}\s/.test(t)) break; // next section ends the findings section
-    if (t === '') continue;
-    if (t.startsWith('<!--')) continue; // template placeholder comments
-    return (
-      'review findings are present but not in the expected table format ' +
-      '(header row with Severity and Decision columns); rewrite them as the ' +
-      'findings table so they can be verified'
-    );
+  // Scan EVERY findings-style heading, mirroring the all-tables scan: list
+  // content under a second findings heading must not hide behind an empty
+  // first one.
+  for (let h = 0; h < lines.length; h++) {
+    if (!/^#{1,6}\s*findings\b/i.test(lines[h].trim())) continue;
+    for (let i = h + 1; i < lines.length; i++) {
+      const t = lines[i].trim();
+      if (/^#{1,6}\s/.test(t)) break; // next section ends this findings section
+      if (t === '') continue;
+      return (
+        'review findings are present but not in the expected table format ' +
+        '(header row with Severity and Decision columns); rewrite them as the ' +
+        'findings table so they can be verified'
+      );
+    }
   }
   return null;
 }

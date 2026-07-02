@@ -18,7 +18,9 @@
   - A marker still carrying the template's `TODO` placeholder now blocks with its own reason ("marker is still TODO, replace it with the chosen enum value") instead of the misleading "no solution-acceptance marker" message, and still never falls back to prose.
   - Acceptance-marker values capture only the word-shaped enum charset, so sloppy spacing (`= accepted-->`) resolves to `accepted` instead of blocking on `accepted-->`. The `run-base` binding marker keeps its raw capture (shas may start with digits; malformed values must reach the hex guard and block explicitly).
   - ALL findings tables are parsed, not just the first: a second review round appending its own table no longer hides new high/critical findings (fail-open closed).
-  - A findings section with content but no findings table anywhere now yields an explicit "not in the expected table format" blocker instead of silently reporting zero findings (fail-closed on format drift).
+  - A findings section with content but no findings table anywhere now yields an explicit "not in the expected table format" blocker instead of silently reporting zero findings (fail-closed on format drift). All findings-style headings are scanned; multi-line HTML comments do not count as content.
+  - A PRESENT acceptance marker whose value is not word-shaped (e.g. `= 1accepted`) now blocks as malformed instead of falling back to prose — a broken machine channel must never be overridden by a filled prose line.
+  - **Adoption note:** the format blocker anchors on the `Severity` + `Decision` header from the shipped review template. Review files written with a Decision-less convention (e.g. `| Severity | Finding | Resolution |`, seen in live runs) will surface the blocker until they converge on the template header; the merge gate consuming this verdict is advisory.
 
 ### Changed
 
