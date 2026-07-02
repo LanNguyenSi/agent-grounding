@@ -49,10 +49,10 @@ The seven packages above (other than understanding-gate) each carry their own ve
 - `hypothesis-tracker`: `importStore` now validates the parsed shape (audit
   finding M7) and throws a clear, field-named error instead of a bare
   `JSON.parse(...) as HypothesisStore` that crashed downstream on a non-array.
-  `supportHypothesis` now refuses to confirm a hypothesis while its own
-  declared `required_checks` are still pending (returns null); evidence stays
-  optional by design, since support is the manual escape hatch for
-  out-of-band evidence.
+  **BREAKING (pre-1.0):** `supportHypothesis` now refuses to confirm a
+  hypothesis while its own declared `required_checks` are still pending
+  (returns null where it previously confirmed); evidence stays optional by
+  design, since support is the manual escape hatch for out-of-band evidence.
 - `grounding-wrapper` / `claim-gate`: CLI entrypoints refactored for direct
   test coverage (#130); no behavior change.
 
