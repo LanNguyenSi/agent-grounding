@@ -295,14 +295,83 @@ describe('readOwRunCompleteness — fail-closed fallback', () => {
     });
   });
 
-  it('TODO marker is never a valid acceptance value', () => {
+  it('TODO marker is never a valid acceptance value and names itself in the reason', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('TODO'),
       review: reviewDoc({ recommendationMarker: 'accept' }),
     });
     const r = readOwRunCompleteness(repo);
     expect(r.complete).toBe(false);
-    expect(r.reasons.some((x) => x.includes('final-status') && x.includes('unset'))).toBe(true);
+    const reason = r.reasons.find((x) => x.includes('final-status'));
+    expect(reason).toBeDefined();
+    expect(reason).toContain('handoff final-status marker is still TODO');
+  });
+
+  it('TODO marker + FILLED prose still blocks with the TODO reason, not the misleading unset one', () => {
+    // The marker is the machine channel; a TODO marker must never silently
+    // fall back to the (filled) prose value, and the reason must name the
+    // actual problem instead of claiming there is no marker at all.
+    const handoff = [
+      '# Operator Handoff',
+      '',
+      '## Final Status',
+      '',
+      '<!-- solution-acceptance: final-status = TODO -->',
+      'accepted',
+      '',
+    ].join('\n');
+    makeRun('2026-06-22-run', {
+      handoff,
+      review: reviewDoc({ recommendationMarker: 'accept' }),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    const reason = r.reasons.find((x) => x.includes('final-status'));
+    expect(reason).toContain('handoff final-status marker is still TODO');
+    expect(reason).not.toContain('unset');
+  });
+
+  it('TODO recommendation marker names itself too', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDoc({ recommendationMarker: 'TODO' }),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(
+      r.reasons.some((x) => x.includes('review recommendation marker is still TODO')),
+    ).toBe(true);
+  });
+
+  it('sloppy marker spacing (`= accepted-->`) resolves to the enum value', () => {
+    const handoff = [
+      '# Operator Handoff',
+      '',
+      '## Final Status',
+      '',
+      '<!-- solution-acceptance: final-status = accepted-->',
+      'accepted',
+      '',
+    ].join('\n');
+    const review = [
+      '# Review Findings',
+      '',
+      '## Findings',
+      '',
+      '| Severity | Category | Description | Suggested Fix | Decision |',
+      '|---|---|---|---|---|',
+      '| low/medium/high/critical | x | <!-- finding --> | <!-- fix --> | accepted/fix/defer/reject |',
+      '',
+      '## Acceptance Recommendation',
+      '',
+      '<!-- solution-acceptance: acceptance-recommendation = accept-->',
+      'accept',
+      '',
+    ].join('\n');
+    makeRun('2026-06-22-run', { handoff, review });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
   });
 
   it('missing handoff and review files → not complete (fail-closed)', () => {
@@ -410,6 +479,201 @@ describe('readOwRunCompleteness — active-run selection requires a date prefix 
     const r = readOwRunCompleteness(repo);
     expect(r.enforced).toBe(false);
     expect(r.complete).toBe(false);
+  });
+});
+
+describe('readOwRunCompleteness — multi-table and non-table findings', () => {
+  it('an unresolved critical in a SECOND appended table arms the gate', () => {
+    // A second review round appended its own table below the first. Before
+    // the multi-table fix only the first table was parsed (fail-open).
+    const review = [
+      '# Review Findings',
+      '',
+      '## Findings',
+      '',
+      '| Severity | Category | Description | Suggested Fix | Decision |',
+      '|---|---|---|---|---|',
+      '| low/medium/high/critical | x | <!-- finding --> | <!-- fix --> | accepted/fix/defer/reject |',
+      '| high | security | round-one leak | rotate | accepted |',
+      '',
+      '## Findings (round 2)',
+      '',
+      '| Severity | Category | Description | Suggested Fix | Decision |',
+      '|---|---|---|---|---|',
+      '| critical | correctness | round-two data loss | add guard | fix |',
+      '',
+      '## Acceptance Recommendation',
+      '',
+      '<!-- solution-acceptance: acceptance-recommendation = accept -->',
+      'accept',
+      '',
+    ].join('\n');
+    makeRun('2026-06-22-run', { handoff: handoffMarker('accepted'), review });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(
+      r.reasons.some((x) => x.includes('critical') && x.includes('round-two data loss')),
+    ).toBe(true);
+  });
+
+  it('findings from BOTH tables are collected', () => {
+    const review = [
+      '## Findings',
+      '',
+      '| Severity | Category | Description | Suggested Fix | Decision |',
+      '|---|---|---|---|---|',
+      '| high | security | first-table leak | rotate | fix |',
+      '',
+      '| Severity | Category | Description | Suggested Fix | Decision |',
+      '|---|---|---|---|---|',
+      '| critical | correctness | second-table crash | guard | reject |',
+      '',
+      '## Acceptance Recommendation',
+      '',
+      '<!-- solution-acceptance: acceptance-recommendation = accept -->',
+      'accept',
+      '',
+    ].join('\n');
+    makeRun('2026-06-22-run', { handoff: handoffMarker('accepted'), review });
+    const r = readOwRunCompleteness(repo);
+    expect(r.reasons.some((x) => x.includes('first-table leak'))).toBe(true);
+    expect(r.reasons.some((x) => x.includes('second-table crash'))).toBe(true);
+  });
+
+  it('list-format findings with NO table anywhere yield an explicit format blocker', () => {
+    const review = [
+      '# Review Findings',
+      '',
+      '## Findings',
+      '',
+      '- critical: silent data loss on save (decision: fix)',
+      '',
+      '## Acceptance Recommendation',
+      '',
+      '<!-- solution-acceptance: acceptance-recommendation = accept -->',
+      'accept',
+      '',
+    ].join('\n');
+    makeRun('2026-06-22-run', { handoff: handoffMarker('accepted'), review });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons.some((x) => x.includes('not in the expected table format'))).toBe(true);
+  });
+
+  it('must-pass pair: a proper table with resolved findings raises no format blocker', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDoc({
+        recommendationMarker: 'accept',
+        findingRows: ['| high | security | handled leak | rotated | accepted |'],
+      }),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('a malformed marker value + filled accepted prose still BLOCKS (no prose override)', () => {
+    // The machine channel is present but broken; a filled prose line must not
+    // silently win. Before this fix the failed enum match fell through to the
+    // prose fallback and the gate passed.
+    const handoff = [
+      '# Operator Handoff',
+      '',
+      '## Final Status',
+      '',
+      '<!-- solution-acceptance: final-status = 1accepted -->',
+      'accepted',
+      '',
+    ].join('\n');
+    makeRun('2026-06-22-run', {
+      handoff,
+      review: reviewDoc({ recommendationMarker: 'accept' }),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    const reason = r.reasons.find((x) => x.includes('final-status'));
+    expect(reason).toContain("handoff final-status marker value '1accepted' is malformed");
+  });
+
+  it('a multi-line HTML comment in the findings section raises no spurious format blocker', () => {
+    const review = [
+      '## Findings',
+      '',
+      '<!-- one row per finding,',
+      'spanning multiple lines -->',
+      '',
+      '## Acceptance Recommendation',
+      '',
+      '<!-- solution-acceptance: acceptance-recommendation = accept -->',
+      'accept',
+      '',
+    ].join('\n');
+    makeRun('2026-06-22-run', { handoff: handoffMarker('accepted'), review });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('list content under a SECOND findings heading still raises the format blocker', () => {
+    const review = [
+      '## Findings',
+      '',
+      '## Findings (round 2)',
+      '',
+      '- critical: hidden list finding (fix)',
+      '',
+      '## Acceptance Recommendation',
+      '',
+      '<!-- solution-acceptance: acceptance-recommendation = accept -->',
+      'accept',
+      '',
+    ].join('\n');
+    makeRun('2026-06-22-run', { handoff: handoffMarker('accepted'), review });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons.some((x) => x.includes('not in the expected table format'))).toBe(true);
+  });
+
+  it('pins the live-convention drift: a Decision-less table (Severity/Finding/Resolution) blocks', () => {
+    // Some reviewer outputs in the wild use `| Severity | Finding | Resolution |`.
+    // That header cannot be verified (no Decision column), so the fail-closed
+    // format blocker fires; converging the convention is a kit concern.
+    const review = [
+      '## Findings',
+      '',
+      '| Severity | Finding | Resolution |',
+      '|---|---|---|',
+      '| high | leak | rotated |',
+      '',
+      '## Acceptance Recommendation',
+      '',
+      '<!-- solution-acceptance: acceptance-recommendation = accept -->',
+      'accept',
+      '',
+    ].join('\n');
+    makeRun('2026-06-22-run', { handoff: handoffMarker('accepted'), review });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons.some((x) => x.includes('not in the expected table format'))).toBe(true);
+  });
+
+  it('an EMPTY findings section (comments/blank only) raises no format blocker', () => {
+    const review = [
+      '## Findings',
+      '',
+      '<!-- one row per finding -->',
+      '',
+      '## Acceptance Recommendation',
+      '',
+      '<!-- solution-acceptance: acceptance-recommendation = accept -->',
+      'accept',
+      '',
+    ].join('\n');
+    makeRun('2026-06-22-run', { handoff: handoffMarker('accepted'), review });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
   });
 });
 
