@@ -31,7 +31,7 @@ Independently-versioned published packages (own tag, own CHANGELOG):
 
 The seven packages above (other than understanding-gate) each carry their own version and CHANGELOG and are released under per-package tags of the form `<pkg>-vX.Y.Z` by `publish-libs.yml`; they move independently of the four version-locked packages.
 
-## [Unreleased]
+## [0.5.0] - 2026-07-02
 
 ### Security / Reliability
 
@@ -53,6 +53,8 @@ The seven packages above (other than understanding-gate) each carry their own ve
   declared `required_checks` are still pending (returns null); evidence stays
   optional by design, since support is the manual escape hatch for
   out-of-band evidence.
+- `grounding-wrapper` / `claim-gate`: CLI entrypoints refactored for direct
+  test coverage (#130); no behavior change.
 
 ## [0.4.0] - 2026-06-16
 

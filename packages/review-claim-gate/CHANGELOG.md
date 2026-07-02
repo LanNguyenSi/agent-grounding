@@ -1,6 +1,11 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.3] - 2026-07-02
+
+### Changed
+
+- Re-pinned `claim-gate` and `evidence-ledger` to `0.5.0` to track the
+  coordinated 0.5.0 release.
 
 ### Security
 

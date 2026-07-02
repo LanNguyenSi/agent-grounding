@@ -1,8 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.1.3, 2026-07-02
 
 ### Changed
+
+- Re-pinned the lockstep dependencies (`claim-gate`, `evidence-ledger`,
+  `grounding-wrapper`, `hypothesis-tracker`) to `0.5.0` to track the
+  coordinated 0.5.0 release (evidence-ledger WAL/perms hardening,
+  hypothesis-tracker M7 gating).
 
 - `deriveContextFromSession` now documents why `process_checked`, `config_checked`, and `health_checked` all derive from the single `runtime-inspection` phase (audit finding M2): the grounding-wrapper phase model has one runtime phase, so the three move together. A regression test pins the coarse mapping. A true per-check distinction needs a phase-model change and is tracked as a follow-up. No behavior change.
 
