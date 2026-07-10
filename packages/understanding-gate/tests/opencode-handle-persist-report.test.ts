@@ -158,9 +158,12 @@ describe("handlePersistReport: save path", () => {
     const deps = makeDeps();
     const out = handlePersistReport(makeInput(), deps);
     expect(out.kind).toBe("saved");
-    expect(deps.saveReport).toHaveBeenCalledWith(validReport, {
-      cwd: "/tmp/work",
-    });
+    // Session binding comes from the runtime, in lockstep with the
+    // Claude Code adapter (handle-stop.ts).
+    expect(deps.saveReport).toHaveBeenCalledWith(
+      { ...validReport, sessionId: "oc-session-xyz" },
+      { cwd: "/tmp/work" },
+    );
   });
 
   it("passes empty SaveOptions when UNDERSTANDING_GATE_REPORT_DIR is set", () => {
@@ -169,7 +172,10 @@ describe("handlePersistReport: save path", () => {
       makeInput({ env: { UNDERSTANDING_GATE_REPORT_DIR: "/anywhere" } }),
       deps,
     );
-    expect(deps.saveReport).toHaveBeenCalledWith(validReport, {});
+    expect(deps.saveReport).toHaveBeenCalledWith(
+      { ...validReport, sessionId: "oc-session-xyz" },
+      {},
+    );
   });
 });
 

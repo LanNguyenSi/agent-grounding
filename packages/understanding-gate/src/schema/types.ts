@@ -37,4 +37,10 @@ export interface UnderstandingReport {
   createdAt?: string;
   approvedAt?: string;
   approvedBy?: string;
+  /**
+   * Session that produced the report. Set by the adapters from the
+   * runtime's session id, never from agent-authored markdown. Absent on
+   * reports written before v0.4.6.
+   */
+  sessionId?: string;
 }

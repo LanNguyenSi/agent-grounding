@@ -340,3 +340,62 @@ describe("saveReport: atomicity", () => {
 // keep imports referenced for environments with aggressive tree-shaking on
 // test files (vitest uses esbuild; this pin is harmless either way).
 void utimesSync;
+
+describe("sessionId persistence (task 0a3227fe)", () => {
+  it("round-trips sessionId through saveReport → loadReport → listReports", () => {
+    const report: UnderstandingReport = {
+      ...baseReport,
+      taskId: "ug-session-1",
+      sessionId: "sess-abc-123",
+    };
+    const { path } = saveReport(report, { dir: tmpDir });
+
+    // On disk, not just in memory: harness reads the raw JSON field.
+    const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    expect(raw.sessionId).toBe("sess-abc-123");
+
+    const loaded = loadReport(path, { dir: tmpDir });
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    expect(loaded.report.sessionId).toBe("sess-abc-123");
+
+    const listed = listReports({ dir: tmpDir });
+    expect(listed).toHaveLength(1);
+    expect(listed[0]!.sessionId).toBe("sess-abc-123");
+  });
+
+  it("omits sessionId entirely when the adapter could not attribute the report", () => {
+    const { path } = saveReport({ ...baseReport, taskId: "ug-session-2" }, { dir: tmpDir });
+    const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    expect("sessionId" in raw).toBe(false);
+
+    // Pre-v0.4.6 reports stay listable; consumers must tolerate the gap.
+    const listed = listReports({ dir: tmpDir });
+    expect(listed[0]!.sessionId).toBeUndefined();
+  });
+
+  it("keeps sessionId inside the schema-declared key order (canonical JSON is not stripped)", () => {
+    // The regression this guards: canonicalJSON serialises only keys in
+    // UNDERSTANDING_REPORT_SCHEMA.properties, so a field missing from the
+    // schema is silently dropped on write, which is exactly how the
+    // session binding was lost before this task.
+    expect(Object.keys(UNDERSTANDING_REPORT_SCHEMA.properties)).toContain("sessionId");
+    expect(UNDERSTANDING_REPORT_SCHEMA.required).not.toContain("sessionId");
+  });
+
+  it("two reports differing only by sessionId are distinct files (hash covers the binding)", () => {
+    const a = saveReport({ ...baseReport, taskId: "ug-session-3", sessionId: "sess-a" }, { dir: tmpDir });
+    const b = saveReport({ ...baseReport, taskId: "ug-session-3", sessionId: "sess-b" }, { dir: tmpDir });
+    expect(a.path).not.toBe(b.path);
+    expect(a.written).toBe(true);
+    expect(b.written).toBe(true);
+  });
+
+  it("re-saving the identical session-bound report stays idempotent", () => {
+    const report: UnderstandingReport = { ...baseReport, taskId: "ug-session-4", sessionId: "sess-x" };
+    const first = saveReport(report, { dir: tmpDir });
+    const second = saveReport(report, { dir: tmpDir });
+    expect(second.path).toBe(first.path);
+    expect(second.written).toBe(false);
+  });
+});

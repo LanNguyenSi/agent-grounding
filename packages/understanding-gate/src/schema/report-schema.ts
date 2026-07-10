@@ -96,6 +96,19 @@ export const UNDERSTANDING_REPORT_SCHEMA = {
     createdAt: { type: "string", format: "date-time" },
     approvedAt: { type: "string", format: "date-time" },
     approvedBy: { type: "string" },
+    // Identity of the agent session that produced this report. Written
+    // by the adapters from the runtime's own session id, never parsed
+    // out of agent-authored markdown (the `## Metadata` block cannot
+    // set it), so a report can never claim to belong to a session that
+    // did not produce it. Optional: reports persisted before v0.4.6
+    // carry no sessionId, and consumers must keep tolerating that.
+    //
+    // Consumers bind approvals to it: `harness approve understanding`
+    // strict-matches the report whose sessionId equals the approving
+    // session, and adopts a sessionId-less report only through a
+    // bounded-age fallback. Without this field that strict path can
+    // never fire for package-produced reports.
+    sessionId: { type: "string", minLength: 1 },
   },
 } as const;
 

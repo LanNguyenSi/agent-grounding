@@ -711,3 +711,43 @@ describe("parseReport: bold-label section headers (discovery C1)", () => {
     ]);
   });
 });
+
+
+describe("parseReport: sessionId is not agent-settable (task 0a3227fe)", () => {
+  it("ignores a `sessionId` key in the Metadata block", () => {
+    // Session binding is written by the adapters from the runtime's own
+    // session id. If markdown could set it, an agent could aim its
+    // report at another session's pending approval.
+    // A well-formed Metadata block (taskId/mode/riskLevel are mandatory)
+    // that additionally tries to set the session binding, in both the
+    // camelCase and the lowercased form the metadata reader normalises to.
+    const withForgedSession = FULL_MARKDOWN.replace(
+      "# Understanding Report",
+      [
+        "# Understanding Report",
+        "",
+        "## Metadata",
+        "",
+        "taskId: t-1",
+        "mode: grill_me",
+        "riskLevel: low",
+        "sessionId: attacker-session",
+        "sessionid: attacker-session",
+      ].join("\n"),
+    );
+    const result = parseReport(withForgedSession, { taskId: "t-1" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.report.sessionId).toBeUndefined();
+  });
+
+  it("accepts a report object that already carries a sessionId (schema allows the optional field)", () => {
+    const result = parseReport(FULL_MARKDOWN, { taskId: "t-1" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The adapter adds the binding after parsing; the enriched object
+    // must still satisfy the schema (additionalProperties: false).
+    const enriched = { ...result.report, sessionId: "sess-1" };
+    expect(enriched.sessionId).toBe("sess-1");
+  });
+});

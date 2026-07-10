@@ -71,6 +71,50 @@ export function looksLikeFastConfirmAttempt(text: string): boolean {
   return false;
 }
 
+/** True when `text` is worth handing to the parser at all. */
+export function looksLikeReportAttempt(text: string): boolean {
+  if (typeof text !== "string" || text.length === 0) return false;
+  return REPORT_MARKER_RE.test(text) || looksLikeFastConfirmAttempt(text);
+}
+
+/**
+ * Decide which text the Stop hook feeds to the parser.
+ *
+ * `last_assistant_message` (0.2.1) is race-free but carries ONLY the
+ * final assistant message. An agent that writes its Report and then
+ * keeps working (the normal flow: report, tool calls, closing sentence)
+ * ends the turn on that closing sentence, so preferring the payload
+ * unconditionally meant the transcript walk — which collects the whole
+ * trailing assistant run and WOULD find the report — was unreachable,
+ * and no report was ever persisted.
+ *
+ * So: prefer the payload only when it actually looks like a report.
+ * That keeps the race fix for the case it was written for (a report as
+ * the final message, e.g. under `claude -p`, where the transcript may
+ * not have been flushed yet) and reaches for the transcript otherwise.
+ * When neither source looks like a report, return whatever text exists
+ * so the caller can still take its usual `no_report` exit.
+ *
+ * Caveat worth knowing: some Claude Code builds do not persist mid-turn
+ * assistant text to the transcript at all, in which case no source has
+ * the report and nothing can be captured here. The reliable channel is
+ * then the operator's approve command (harness task 61fd36db).
+ */
+export function selectReportText(
+  payloadText: string,
+  readTranscript: () => string,
+): { text: string; source: "payload" | "transcript" | "none" } {
+  if (looksLikeReportAttempt(payloadText)) {
+    return { text: payloadText, source: "payload" };
+  }
+  const transcriptText = readTranscript();
+  if (looksLikeReportAttempt(transcriptText)) {
+    return { text: transcriptText, source: "transcript" };
+  }
+  const text = payloadText.length > 0 ? payloadText : transcriptText;
+  return { text, source: "none" };
+}
+
 export interface StopHookDeps {
   parseReport: (markdown: string, defaults?: ParseDefaults) => ParseResult;
   saveReport: (report: UnderstandingReport, opts?: SaveOptions) => SaveResult;
@@ -152,13 +196,22 @@ export function handleStop(
 
   const result = deps.parseReport(text, defaults);
   if (result.ok) {
+    // Bind the report to the session that produced it. The value comes
+    // from the hook payload, never from the agent's markdown (the
+    // parser's metadata whitelist has no `sessionid` key), so a report
+    // cannot claim a session it did not come from. Consumers strict-match
+    // on this to decide which report an approval flips.
+    const report: UnderstandingReport =
+      input.sessionId.length > 0
+        ? { ...result.report, sessionId: input.sessionId }
+        : result.report;
     const saveOpts = saveOptionsFromInput(input);
-    const saved = deps.saveReport(result.report, saveOpts);
+    const saved = deps.saveReport(report, saveOpts);
     return {
       kind: "saved",
       path: saved.path,
       written: saved.written,
-      report: result.report,
+      report,
     };
   }
 

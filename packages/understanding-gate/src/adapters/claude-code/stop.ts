@@ -13,7 +13,7 @@ import {
   writeStampedLog,
 } from "../error-log.js";
 import { runSyncAndLog } from "../sync-and-log.js";
-import { handleStop, type StopHookEnv } from "./handle-stop.js";
+import { handleStop, selectReportText, type StopHookEnv } from "./handle-stop.js";
 import { extractLastAssistantText } from "./transcript.js";
 
 interface StopHookPayload {
@@ -44,20 +44,19 @@ async function main(): Promise<void> {
   const cwd = payload.cwd ?? process.cwd();
   const sessionId = payload.session_id ?? "claude-code-session";
 
-  // Prefer the in-payload text (race-free); fall back to reading the
-  // transcript file for harnesses that don't ship the field yet.
-  // Treats `last_assistant_message: ""` as "field not provided" and
-  // falls through to the transcript: an empty string is more likely
-  // a harness shipping the key with no content yet than an explicit
-  // "persist nothing" signal. The `if (!lastAssistantText) return;`
-  // below still short-circuits if neither source has content.
-  const lastAssistantText =
-    (typeof payload.last_assistant_message === "string" &&
-    payload.last_assistant_message.length > 0
+  // Source selection (see selectReportText): the payload's
+  // `last_assistant_message` wins only when it looks like a report, so
+  // a report written mid-turn is still found by walking the transcript.
+  // The transcript is read lazily, so the race-free payload fast path
+  // costs no file IO. `last_assistant_message: ""` is treated as "field
+  // not provided" rather than "persist nothing".
+  const payloadText =
+    typeof payload.last_assistant_message === "string"
       ? payload.last_assistant_message
-      : payload.transcript_path
-        ? extractLastAssistantText(payload.transcript_path)
-        : "");
+      : "";
+  const { text: lastAssistantText } = selectReportText(payloadText, () =>
+    payload.transcript_path ? extractLastAssistantText(payload.transcript_path) : "",
+  );
   if (!lastAssistantText) return;
 
   const env: StopHookEnv = {

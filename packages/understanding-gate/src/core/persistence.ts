@@ -46,6 +46,8 @@ export type ReportEntry = {
   approvalStatus: UnderstandingReport["approvalStatus"];
   createdAt: string;
   approvedAt?: string;
+  /** Absent on reports written before v0.4.6, and on any report an adapter could not attribute. */
+  sessionId?: string;
 };
 
 export type ListOptions = { dir?: string; cwd?: string };
@@ -109,6 +111,7 @@ export function listReports(opts: ListOptions = {}): ReportEntry[] {
       approvalStatus: parsed.approvalStatus,
       createdAt: parsed.createdAt ?? "",
       approvedAt: parsed.approvedAt,
+      ...(parsed.sessionId !== undefined ? { sessionId: parsed.sessionId } : {}),
     });
   }
   entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
