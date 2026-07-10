@@ -175,19 +175,12 @@ This doc does not assert harness internals; the contract this repo guarantees is
 marker's location (`verdictDir()`), its pinned 7-key shape, and the `solution_gate`
 allow/deny semantics. How the harness wires those into a gate lives out of this repo.
 
----
+## Where the `run-base` marker comes from
 
-## DISCREPANCIES (lead corrected against source)
-
-- **The task lead said "grounding-mcp/README.md ~line 67 claims [the run-base marker is]
-  not [emitted yet]." The README does NOT say that.** README line 67 states the opposite
-  polarity: *"The `run-base` marker is written by the orchestrator-workflow kit starting
-  with agent-dx task `ow-review-2026-07-01/run-binding-kit`; markerless runs stay on the
-  heuristic path."* So the README asserts the marker *is* emitted, by an **external
-  (agent-dx) kit task**, and treats markerless runs as the legacy/heuristic path — it does
-  not claim non-emission. The accurate statement of the coupling: emission of `run-base`
-  is entirely cross-repo. `agent-grounding` only *reads and verifies* it; it ships **no**
-  `00-goal.md` template that emits the marker (confirmed: no `00-goal.md` template exists
-  anywhere in this repo, and the only `run-base = <sha>` mentions are in README.md and
-  CHANGELOG.md prose, not a template). CHANGELOG.md line 8 hedges with "`00-goal.md` *may*
-  carry" the marker, consistent with emission being an external, opt-in kit behavior.
+The `run-base` marker this module verifies is **not emitted by this repo**. It is
+written into `00-goal.md` by the orchestrator-workflow kit (agent-dx); this repo
+ships no `00-goal.md` template and only *reads and verifies* the marker
+(`grounding-mcp/README.md`). Runs that predate the kit change carry no marker and
+fall back to the day-granular date heuristic. Treat marker emission as a
+cross-repo contract owned by agent-dx, and the verification semantics above as
+owned here.

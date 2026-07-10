@@ -150,16 +150,3 @@ If you need hypothesis state to persist, it must be routed through understanding
 store; the grounding-mcp Map is volatile by design. And in either consumer, do not assume
 `required_checks` gate promotion — they gate only `hypothesis_support` / `supportHypothesis`,
 never `hypothesis_evidence` / `addEvidence`.
-```
-
----
-
-No discrepancies. Every claim in the lead was confirmed at source:
-- `lib.ts` is persistence-free; the two disagreeing gates are exactly `supportHypothesis` (checks-gated, lib.ts:128) vs `addEvidence` (auto-promote, no check gate, lib.ts:86-88).
-- grounding-mcp is a non-persisted in-process `Map` with `GROUNDING_HYPOTHESIS_MAX_SESSIONS` **default 200** (as believed), min 1.
-- understanding-gate path is `resolve(reportDir, "..", "hypotheses.json")` → confirmed the "`<reportRoot>/../hypotheses.json`" description (reportRoot = the report dir, typically `.understanding-gate/reports/`, so the file lands at `.understanding-gate/hypotheses.json`).
-- Statuses are exactly the three-value union.
-- grounding-mcp exposes 7 hypothesis tools, listed by name.
-- The Stop-hook side effect registering report `assumptions` + `openQuestions` is real and lives in `hypothesis-sync.ts` / `hypothesis-bridge.ts`.
-
-Note: `sources` paths are repo-root-relative to the `agent-grounding` repo (root = `/Users/lannguyensi/git/pandora/agent-grounding`); all six files exist and were read/grepped.

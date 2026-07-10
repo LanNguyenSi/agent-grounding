@@ -167,17 +167,3 @@ fresh `labeled`/`unlabeled`/`synchronize` event. `concurrency` is keyed per PR
 number with `cancel-in-progress: true` (`merge-approval.yml:19-21`), so the
 newest event's run supersedes any in-flight one. (Re-trigger claim verified
 against the `on:` block: `labeled`/`unlabeled`/`synchronize` are all present.)
-```
-
----
-
-Every fact was verified at source; no discrepancies. Key confirmations:
-
-- All five label names verbatim at `merge-approval.yml:40-44` and cross-checked against `README.md:28-34` and `merge-approval-rollout.md:15-21`.
-- `task-id: ${{ github.event.pull_request.head.ref }}` at `merge-approval.yml:49` — PR head branch name, confirmed by `merge-approval-rollout.md:27-28`.
-- SHA pin `@62faca5b4ad7f9b9072fdad284287a351a114097` to `packages/review-claim-gate/action` at `merge-approval.yml:47`; action dir exists (`action.yml`, `README.md`).
-- Five prerequisites at `README.md:26-37`; evidence-source precedence forced > committed file > ledger at `README.md:69-80`.
-- Hard-gate-once-required end state at `merge-approval-rollout.md:3-8`, labels `12-21`.
-- `on:` types include `labeled`/`unlabeled`/`synchronize` (`merge-approval.yml:4-11`), supporting the re-trigger claim.
-
-The only fact I could not independently verify at file:line is the live branch-protection state (gh not authed in this environment); I carried it as the orchestrator's stated 2026-07-10 API finding (a trusted instruction) and gave the operator the exact `gh api` command to confirm which state is live. Sources are all repo-root-relative and exist.
