@@ -28,11 +28,23 @@
   `listReports` surfaces the field; reports written before 0.4.6 carry no
   `sessionId` and remain valid.
 
-### Note for consumers
+### Notes for consumers
 
-`sessionId` is additive and optional; nothing that read 0.4.5 reports breaks.
-Consumers that want the strict binding should treat a missing `sessionId` as
-"unattributed" rather than as a match.
+- `sessionId` is additive and optional; nothing that read 0.4.5 reports breaks.
+  Consumers that want the strict binding should treat a missing `sessionId` as
+  "unattributed" rather than as a match.
+- The report schema gained one optional property. It still declares
+  `additionalProperties: false`, so downstream schema consumers that pin an
+  older copy of the schema will reject 0.4.6-produced reports until they
+  update. This is why the field is optional and why the bump stays a patch:
+  the intent is a bug fix that `^0.4.5` consumers pick up automatically.
+- One-time duplicate after upgrade: the content hash in a report's filename
+  now covers `sessionId`, so a report that already sat on disk unstamped is
+  written once more in its session-bound form rather than being recognised as
+  identical. Nothing is overwritten, and the newer bound copy supersedes the
+  old one for consumers that sort by recency.
+- Two sessions that emit byte-identical report text now produce two files
+  instead of deduplicating into one. That is the point of the binding.
 
 ## 0.4.5, 2026-07-02
 

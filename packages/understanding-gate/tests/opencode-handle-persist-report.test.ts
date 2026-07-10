@@ -252,3 +252,35 @@ describe("handlePersistReport: parse_error path", () => {
     expect(out.logPath).toBe("");
   });
 });
+
+
+describe("handlePersistReport: session binding cannot be forged (task 0a3227fe)", () => {
+  it("stamps the sessionId from the runtime, not from a `sessionId` the agent wrote in Metadata", () => {
+    const deps = makeDeps();
+    handlePersistReport(
+      makeInput({
+        sessionId: "oc-real-session",
+        lastAssistantText: [
+          "## Understanding Report",
+          "",
+          "**Metadata**",
+          "",
+          "taskId: task-1",
+          "sessionId: attacker-session",
+          "mode: fast_confirm",
+          "riskLevel: low",
+        ].join("\n"),
+      }),
+      deps,
+    );
+    const [saved] = (deps.saveReport as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(saved.sessionId).toBe("oc-real-session");
+  });
+
+  it("leaves sessionId unset when the runtime supplies no session id", () => {
+    const deps = makeDeps();
+    handlePersistReport(makeInput({ sessionId: "" }), deps);
+    const [saved] = (deps.saveReport as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect("sessionId" in saved).toBe(false);
+  });
+});

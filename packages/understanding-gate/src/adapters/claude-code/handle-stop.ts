@@ -201,8 +201,11 @@ export function handleStop(
     // parser's metadata whitelist has no `sessionid` key), so a report
     // cannot claim a session it did not come from. Consumers strict-match
     // on this to decide which report an approval flips.
+    // saveReport does not re-validate, so guard the field's schema
+    // contract (string, minLength 1) here rather than persist a value
+    // that the schema would reject.
     const report: UnderstandingReport =
-      input.sessionId.length > 0
+      typeof input.sessionId === "string" && input.sessionId.length > 0
         ? { ...result.report, sessionId: input.sessionId }
         : result.report;
     const saveOpts = saveOptionsFromInput(input);

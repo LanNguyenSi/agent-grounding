@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { parseReport } from "../src/core/parser.js";
+import Ajv from "ajv";
+import addFormats from "ajv-formats";
+import { UNDERSTANDING_REPORT_SCHEMA } from "../src/schema/report-schema.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PARSER_SOURCE = readFileSync(
@@ -741,13 +744,28 @@ describe("parseReport: sessionId is not agent-settable (task 0a3227fe)", () => {
     expect(result.report.sessionId).toBeUndefined();
   });
 
-  it("accepts a report object that already carries a sessionId (schema allows the optional field)", () => {
+  it("accepts a report object that already carries a sessionId (ajv, additionalProperties:false)", () => {
     const result = parseReport(FULL_MARKDOWN, { taskId: "t-1" });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // The adapter adds the binding after parsing; the enriched object
-    // must still satisfy the schema (additionalProperties: false).
-    const enriched = { ...result.report, sessionId: "sess-1" };
-    expect(enriched.sessionId).toBe("sess-1");
+
+    // The adapters stamp the binding AFTER parsing, so the enriched
+    // object must still satisfy the schema. Validate for real: the
+    // schema sets additionalProperties:false, so this fails the moment
+    // `sessionId` is not a declared property. Asserting only
+    // `enriched.sessionId === "sess-1"` would be inert (it checks a
+    // plain JS spread, not the schema).
+    const ajv = new Ajv({ strict: true, allErrors: true });
+    addFormats(ajv);
+    const validate = ajv.compile(UNDERSTANDING_REPORT_SCHEMA);
+
+    expect(validate({ ...result.report, sessionId: "sess-1" })).toBe(true);
+
+    // And the constraints on the field actually bite.
+    expect(validate({ ...result.report, sessionId: "" })).toBe(false);
+    expect(validate({ ...result.report, sessionId: 42 })).toBe(false);
+    // A genuinely unknown property is still rejected, i.e. we widened
+    // the schema by exactly one field and no more.
+    expect(validate({ ...result.report, notAField: "x" })).toBe(false);
   });
 });

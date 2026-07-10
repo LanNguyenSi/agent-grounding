@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   readdirSync,
   rmSync,
   writeFileSync,
@@ -223,5 +224,95 @@ describe("claude-code Stop binary (end-to-end)", () => {
     expect(
       readdirSync(reportDir).filter((n) => n.endsWith(".json")),
     ).toEqual([]);
+  });
+});
+
+
+// Wiring coverage for stop.ts itself (task 0a3227fe). selectReportText is
+// unit-tested in isolation; these assert the binary actually feeds it the
+// payload field and a lazy transcript closure, which a unit test cannot see.
+describe("claude-code Stop binary: source selection + session binding (task 0a3227fe)", () => {
+  /** A transcript where the report is mid-turn and the LAST assistant text is a closing sentence. */
+  function writeMidTurnTranscript(reportText: string): void {
+    const lines = [
+      { type: "user", message: { role: "user", content: [{ type: "text", text: "go" }] } },
+      { type: "assistant", message: { role: "assistant", content: [{ type: "text", text: reportText }] } },
+      { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", name: "Bash", input: {} }] } },
+      { type: "user", toolUseResult: { ok: true }, message: { role: "user", content: [{ type: "tool_result" }] } },
+      { type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Done. Tests pass." }] } },
+    ].map((l) => JSON.stringify(l));
+    writeFileSync(transcriptPath, `${lines.join("\n")}\n`, "utf8");
+  }
+
+  function onlyReport(): Record<string, unknown> {
+    const files = readdirSync(join(tmp, "reports")).filter((n) => n.endsWith(".json"));
+    expect(files).toHaveLength(1);
+    return JSON.parse(readFileSync(join(tmp, "reports", files[0]!), "utf8")) as Record<string, unknown>;
+  }
+
+  // The regression: the agent wrote the report, then kept working. The
+  // payload's last_assistant_message is the closing sentence, so the old
+  // code fed the parser that sentence and persisted nothing.
+  it("persists a MID-TURN report even though last_assistant_message is a closing sentence", () => {
+    writeMidTurnTranscript(FULL_REPORT_TEXT);
+    const { code, stderr } = runStopHook({
+      session_id: "session-midturn",
+      transcript_path: transcriptPath,
+      cwd: tmp,
+      hook_event_name: "Stop",
+      last_assistant_message: "Done. Tests pass.",
+    });
+    expect(code, stderr).toBe(0);
+    const report = onlyReport();
+    expect(report.sessionId).toBe("session-midturn");
+    expect(report.approvalStatus).toBe("pending");
+  });
+
+  // The 0.2.1 race fix: a report delivered as the final message must be
+  // taken from the payload WITHOUT touching the transcript, which under
+  // `claude -p` may not be flushed. An unreadable path proves the read
+  // never happened.
+  it("takes the report from the payload without reading the transcript (race fix preserved)", () => {
+    const { code, stderr } = runStopHook({
+      session_id: "session-race",
+      transcript_path: join(tmp, "does-not-exist.jsonl"),
+      cwd: tmp,
+      hook_event_name: "Stop",
+      last_assistant_message: FULL_REPORT_TEXT,
+    });
+    expect(code, stderr).toBe(0);
+    expect(onlyReport().sessionId).toBe("session-race");
+  });
+
+  it("stamps the session from the payload, not from a sessionId the agent wrote in Metadata", () => {
+    const forged = FULL_REPORT_TEXT.replace(
+      "# Understanding Report",
+      // fast_confirm: FULL_REPORT_TEXT has no Prior Art section, which
+      // grill_me would require. The point of the test is the forged
+      // `sessionId` line, not the mode.
+      ["# Understanding Report", "", "## Metadata", "", "taskId: t-1", "mode: fast_confirm", "riskLevel: low", "sessionId: attacker-session"].join("\n"),
+    );
+    const { code, stderr } = runStopHook({
+      session_id: "real-session",
+      transcript_path: transcriptPath,
+      cwd: tmp,
+      hook_event_name: "Stop",
+      last_assistant_message: forged,
+    });
+    expect(code, stderr).toBe(0);
+    expect(onlyReport().sessionId).toBe("real-session");
+  });
+
+  it("still exits 0 and writes nothing when neither source carries a report", () => {
+    writeTranscript("nothing here");
+    const { code } = runStopHook({
+      session_id: "session-none",
+      transcript_path: transcriptPath,
+      cwd: tmp,
+      hook_event_name: "Stop",
+      last_assistant_message: "also nothing here",
+    });
+    expect(code).toBe(0);
+    expect(readdirSync(join(tmp, "reports")).filter((n) => n.endsWith(".json"))).toHaveLength(0);
   });
 });
