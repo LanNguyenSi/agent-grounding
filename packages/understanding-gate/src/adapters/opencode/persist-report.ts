@@ -102,13 +102,24 @@ export function handlePersistReport(
 
   const result = deps.parseReport(text, defaults);
   if (result.ok) {
+    // Same session binding as the Claude Code adapter (handle-stop.ts):
+    // taken from the runtime, never from the agent's markdown. Kept in
+    // lockstep so a consumer's strict sessionId match behaves the same
+    // under both runtimes.
+    // saveReport does not re-validate, so guard the field's schema
+    // contract (string, minLength 1) here rather than persist a value
+    // that the schema would reject.
+    const report: UnderstandingReport =
+      typeof input.sessionId === "string" && input.sessionId.length > 0
+        ? { ...result.report, sessionId: input.sessionId }
+        : result.report;
     const saveOpts = saveOptionsFromInput(input);
-    const saved = deps.saveReport(result.report, saveOpts);
+    const saved = deps.saveReport(report, saveOpts);
     return {
       kind: "saved",
       path: saved.path,
       written: saved.written,
-      report: result.report,
+      report,
     };
   }
 

@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { parseReport } from "../src/core/parser.js";
+import Ajv from "ajv";
+import addFormats from "ajv-formats";
+import { UNDERSTANDING_REPORT_SCHEMA } from "../src/schema/report-schema.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PARSER_SOURCE = readFileSync(
@@ -709,5 +712,60 @@ describe("parseReport: bold-label section headers (discovery C1)", () => {
       "add ajv validation",
       "ship under @lannguyensi/understanding-gate",
     ]);
+  });
+});
+
+
+describe("parseReport: sessionId is not agent-settable (task 0a3227fe)", () => {
+  it("ignores a `sessionId` key in the Metadata block", () => {
+    // Session binding is written by the adapters from the runtime's own
+    // session id. If markdown could set it, an agent could aim its
+    // report at another session's pending approval.
+    // A well-formed Metadata block (taskId/mode/riskLevel are mandatory)
+    // that additionally tries to set the session binding, in both the
+    // camelCase and the lowercased form the metadata reader normalises to.
+    const withForgedSession = FULL_MARKDOWN.replace(
+      "# Understanding Report",
+      [
+        "# Understanding Report",
+        "",
+        "## Metadata",
+        "",
+        "taskId: t-1",
+        "mode: grill_me",
+        "riskLevel: low",
+        "sessionId: attacker-session",
+        "sessionid: attacker-session",
+      ].join("\n"),
+    );
+    const result = parseReport(withForgedSession, { taskId: "t-1" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.report.sessionId).toBeUndefined();
+  });
+
+  it("accepts a report object that already carries a sessionId (ajv, additionalProperties:false)", () => {
+    const result = parseReport(FULL_MARKDOWN, { taskId: "t-1" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // The adapters stamp the binding AFTER parsing, so the enriched
+    // object must still satisfy the schema. Validate for real: the
+    // schema sets additionalProperties:false, so this fails the moment
+    // `sessionId` is not a declared property. Asserting only
+    // `enriched.sessionId === "sess-1"` would be inert (it checks a
+    // plain JS spread, not the schema).
+    const ajv = new Ajv({ strict: true, allErrors: true });
+    addFormats(ajv);
+    const validate = ajv.compile(UNDERSTANDING_REPORT_SCHEMA);
+
+    expect(validate({ ...result.report, sessionId: "sess-1" })).toBe(true);
+
+    // And the constraints on the field actually bite.
+    expect(validate({ ...result.report, sessionId: "" })).toBe(false);
+    expect(validate({ ...result.report, sessionId: 42 })).toBe(false);
+    // A genuinely unknown property is still rejected, i.e. we widened
+    // the schema by exactly one field and no more.
+    expect(validate({ ...result.report, notAField: "x" })).toBe(false);
   });
 });

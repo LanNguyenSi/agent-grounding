@@ -196,9 +196,13 @@ describe("handleStop: save path", () => {
     if (out.kind !== "saved") return;
     expect(out.path).toMatch(/task-1\.json$/);
     expect(out.written).toBe(true);
-    expect(deps.saveReport).toHaveBeenCalledWith(validReport, {
-      cwd: "/tmp/work",
-    });
+    // The persisted report is the parsed one plus the session binding
+    // taken from the hook payload (never from the agent's markdown).
+    expect(deps.saveReport).toHaveBeenCalledWith(
+      { ...validReport, sessionId: "session-xyz" },
+      { cwd: "/tmp/work" },
+    );
+    expect(out.report.sessionId).toBe("session-xyz");
   });
 
   it("passes an empty SaveOptions when UNDERSTANDING_GATE_REPORT_DIR is set (lets persistence read env)", () => {
@@ -207,7 +211,10 @@ describe("handleStop: save path", () => {
       makeInput({ env: { UNDERSTANDING_GATE_REPORT_DIR: "/anywhere" } }),
       deps,
     );
-    expect(deps.saveReport).toHaveBeenCalledWith(validReport, {});
+    expect(deps.saveReport).toHaveBeenCalledWith(
+      { ...validReport, sessionId: "session-xyz" },
+      {},
+    );
   });
 });
 
@@ -529,5 +536,43 @@ requiresHumanApproval: true
       expect.stringContaining("disk full"),
     );
     consoleErrorSpy.mockRestore();
+  });
+});
+
+
+describe("handleStop: session binding cannot be forged (task 0a3227fe)", () => {
+  it("stamps the sessionId from the hook payload, ignoring any `sessionId` the agent wrote in Metadata", () => {
+    // The parser's METADATA_KEYS whitelist has no `sessionid` entry, so
+    // agent markdown cannot reach the field. Assert the end-to-end
+    // consequence: the persisted binding is the runtime's session, not
+    // the one the report claims. A forged binding would let an agent
+    // aim its report at another session's approval.
+    const deps = makeDeps();
+    handleStop(
+      makeInput({
+        sessionId: "real-session",
+        lastAssistantText: [
+          "## Understanding Report",
+          "",
+          "**Metadata**",
+          "",
+          "taskId: task-1",
+          "sessionId: attacker-session",
+          "mode: grill_me",
+          "riskLevel: low",
+        ].join("\n"),
+      }),
+      deps,
+    );
+    const [saved] = (deps.saveReport as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(saved.sessionId).toBe("real-session");
+  });
+
+  it("leaves sessionId unset when the payload carries no session id", () => {
+    const deps = makeDeps();
+    const out = handleStop(makeInput({ sessionId: "" }), deps);
+    expect(out.kind).toBe("saved");
+    const [saved] = (deps.saveReport as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect("sessionId" in saved).toBe(false);
   });
 });

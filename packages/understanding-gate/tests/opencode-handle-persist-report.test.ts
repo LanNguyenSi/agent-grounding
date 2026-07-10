@@ -158,9 +158,12 @@ describe("handlePersistReport: save path", () => {
     const deps = makeDeps();
     const out = handlePersistReport(makeInput(), deps);
     expect(out.kind).toBe("saved");
-    expect(deps.saveReport).toHaveBeenCalledWith(validReport, {
-      cwd: "/tmp/work",
-    });
+    // Session binding comes from the runtime, in lockstep with the
+    // Claude Code adapter (handle-stop.ts).
+    expect(deps.saveReport).toHaveBeenCalledWith(
+      { ...validReport, sessionId: "oc-session-xyz" },
+      { cwd: "/tmp/work" },
+    );
   });
 
   it("passes empty SaveOptions when UNDERSTANDING_GATE_REPORT_DIR is set", () => {
@@ -169,7 +172,10 @@ describe("handlePersistReport: save path", () => {
       makeInput({ env: { UNDERSTANDING_GATE_REPORT_DIR: "/anywhere" } }),
       deps,
     );
-    expect(deps.saveReport).toHaveBeenCalledWith(validReport, {});
+    expect(deps.saveReport).toHaveBeenCalledWith(
+      { ...validReport, sessionId: "oc-session-xyz" },
+      {},
+    );
   });
 });
 
@@ -244,5 +250,37 @@ describe("handlePersistReport: parse_error path", () => {
     expect(out.kind).toBe("parse_error");
     if (out.kind !== "parse_error") return;
     expect(out.logPath).toBe("");
+  });
+});
+
+
+describe("handlePersistReport: session binding cannot be forged (task 0a3227fe)", () => {
+  it("stamps the sessionId from the runtime, not from a `sessionId` the agent wrote in Metadata", () => {
+    const deps = makeDeps();
+    handlePersistReport(
+      makeInput({
+        sessionId: "oc-real-session",
+        lastAssistantText: [
+          "## Understanding Report",
+          "",
+          "**Metadata**",
+          "",
+          "taskId: task-1",
+          "sessionId: attacker-session",
+          "mode: fast_confirm",
+          "riskLevel: low",
+        ].join("\n"),
+      }),
+      deps,
+    );
+    const [saved] = (deps.saveReport as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(saved.sessionId).toBe("oc-real-session");
+  });
+
+  it("leaves sessionId unset when the runtime supplies no session id", () => {
+    const deps = makeDeps();
+    handlePersistReport(makeInput({ sessionId: "" }), deps);
+    const [saved] = (deps.saveReport as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect("sessionId" in saved).toBe(false);
   });
 });

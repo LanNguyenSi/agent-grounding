@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.4.6, 2026-07-10
+
+### Fixed
+
+- **The Claude Code Stop hook can finally see a report written mid-turn.**
+  `stop.ts` preferred the payload's `last_assistant_message` whenever it was
+  non-empty (the 0.2.1 race fix). That field carries only the FINAL assistant
+  message, so in the normal agent flow (report, then tool calls, then a
+  closing sentence) the hook always looked at the closing sentence, and the
+  transcript walk that would have found the report was unreachable. Source
+  selection is now marker-aware (`selectReportText`): the payload wins only
+  when it actually looks like a report, otherwise the transcript is walked.
+  The race fix is preserved for the case it was written for, a report
+  delivered as the final message, and the transcript is read lazily so that
+  fast path still does no file IO. Root-caused via harness task `61fd36db`.
+- **Persisted reports now carry the session that produced them.**
+  `saveReport`'s canonical serializer only emits keys declared in
+  `UNDERSTANDING_REPORT_SCHEMA.properties`, so the session binding was
+  silently stripped on write. `sessionId` is now an optional schema property,
+  stamped by both adapters from the runtime's session id and never from
+  agent-authored markdown (the parser's metadata whitelist has no `sessionid`
+  key, so a report cannot claim a session it did not come from). Without this
+  a consumer's strict sessionId match, e.g. the one in
+  `harness approve understanding`, could never fire for package-produced
+  reports, and its freshest-pending-report fallback was structurally dead.
+  `listReports` surfaces the field; reports written before 0.4.6 carry no
+  `sessionId` and remain valid.
+
+### Notes for consumers
+
+- `sessionId` is additive and optional; nothing that read 0.4.5 reports breaks.
+  Consumers that want the strict binding should treat a missing `sessionId` as
+  "unattributed" rather than as a match.
+- The report schema gained one optional property. It still declares
+  `additionalProperties: false`, so downstream schema consumers that pin an
+  older copy of the schema will reject 0.4.6-produced reports until they
+  update. This is why the field is optional and why the bump stays a patch:
+  the intent is a bug fix that `^0.4.5` consumers pick up automatically.
+- One-time duplicate after upgrade: the content hash in a report's filename
+  now covers `sessionId`, so a report that already sat on disk unstamped is
+  written once more in its session-bound form rather than being recognised as
+  identical. Nothing is overwritten, and the newer bound copy supersedes the
+  old one for consumers that sort by recency.
+- Two sessions that emit byte-identical report text now produce two files
+  instead of deduplicating into one. That is the point of the binding.
+
 ## 0.4.5, 2026-07-02
 
 ### Changed
