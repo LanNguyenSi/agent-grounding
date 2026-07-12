@@ -6,6 +6,7 @@
  * that --json vs human output branches work, and that process.exit(1) is
  * called when a claim is blocked.
  */
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── module mocks ─────────────────────────────────────────────────────────────
@@ -218,6 +219,21 @@ describe("check command — output", () => {
     expect(() => parse(["check", "root cause is DB"])).toThrow("EXIT:1");
     const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
     expect(allLogs).toContain("BLOCKED");
+  });
+});
+
+// ── --version ────────────────────────────────────────────────────────────────
+// Regression test for a version desync: the CLI used to hardcode a version
+// string separate from package.json, so a release bump could silently leave
+// `claim-gate --version` printing a stale number. The version must be
+// derived from package.json, not duplicated.
+
+describe("--version", () => {
+  it("reports the version from package.json", () => {
+    const pkg = JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ) as { version: string };
+    expect(buildProgram().version()).toBe(pkg.version);
   });
 });
 
