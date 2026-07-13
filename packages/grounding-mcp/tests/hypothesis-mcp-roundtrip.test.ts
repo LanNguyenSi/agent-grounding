@@ -52,6 +52,7 @@ function parseToolResult(raw: unknown): unknown {
 let tmpRoot: string;
 let prevSessionsDir: string | undefined;
 let prevLedgerDb: string | undefined;
+let prevHypothesesDir: string | undefined;
 let client: Client;
 let close: () => Promise<void>;
 
@@ -59,8 +60,10 @@ beforeEach(async () => {
   tmpRoot = mkdtempSync(join(tmpdir(), 'grounding-mcp-hypothesis-'));
   prevSessionsDir = process.env.GROUNDING_MCP_SESSIONS_DIR;
   prevLedgerDb = process.env.EVIDENCE_LEDGER_DB;
+  prevHypothesesDir = process.env.GROUNDING_MCP_HYPOTHESES_DIR;
   process.env.GROUNDING_MCP_SESSIONS_DIR = join(tmpRoot, 'sessions');
   process.env.EVIDENCE_LEDGER_DB = join(tmpRoot, 'ledger.db');
+  process.env.GROUNDING_MCP_HYPOTHESES_DIR = join(tmpRoot, 'hypotheses');
   resetLedgerDb();
   resetStores();
 
@@ -85,6 +88,8 @@ afterEach(async () => {
   else process.env.GROUNDING_MCP_SESSIONS_DIR = prevSessionsDir;
   if (prevLedgerDb === undefined) delete process.env.EVIDENCE_LEDGER_DB;
   else process.env.EVIDENCE_LEDGER_DB = prevLedgerDb;
+  if (prevHypothesesDir === undefined) delete process.env.GROUNDING_MCP_HYPOTHESES_DIR;
+  else process.env.GROUNDING_MCP_HYPOTHESES_DIR = prevHypothesesDir;
   rmSync(tmpRoot, { recursive: true, force: true });
 });
 
@@ -395,5 +400,121 @@ describe('hypothesis_* MCP roundtrip — happy path through every verb', () => {
       pending_checks: 0,
     });
     expect(listed.hypotheses).toEqual([]);
+  });
+});
+
+describe('hypothesis_* MCP roundtrip — survives a simulated grounding-mcp restart', () => {
+  // `resetStores()` drops the in-process Map without touching disk — the
+  // same starting state a fresh grounding-mcp process has after Claude
+  // Code restarts it. Every hypothesis_* verb that mutates a store saves
+  // it to GROUNDING_MCP_HYPOTHESES_DIR (see hypothesis-store.ts); these
+  // tests pin that the data is actually there afterwards, not just that
+  // saveStore was called.
+
+  it('hypothesis_list returns a previously-recorded hypothesis after the in-process cache is cleared', async () => {
+    const sessionId = 'gs-restart-list';
+    const recorded = parseToolResult(
+      await client.callTool({
+        name: 'hypothesis_record',
+        arguments: {
+          sessionId,
+          text: 'DNS resolution is failing',
+          requiredChecks: ['Run dig'],
+        },
+      }),
+    ) as { hypothesis: { id: string } };
+
+    resetStores(); // simulated restart
+
+    const afterRestart = parseToolResult(
+      await client.callTool({ name: 'hypothesis_list', arguments: { sessionId } }),
+    ) as { summary: { total: number }; hypotheses: { id: string; text: string }[] };
+    expect(afterRestart.summary.total).toBe(1);
+    expect(afterRestart.hypotheses[0]?.id).toBe(recorded.hypothesis.id);
+    expect(afterRestart.hypotheses[0]?.text).toBe('DNS resolution is failing');
+  });
+
+  it('a mutation made after one restart is still visible after a second restart', async () => {
+    const sessionId = 'gs-restart-evidence';
+    const recorded = parseToolResult(
+      await client.callTool({
+        name: 'hypothesis_record',
+        arguments: { sessionId, text: 'firewall blocks 443', requiredChecks: [] },
+      }),
+    ) as { hypothesis: { id: string } };
+
+    resetStores(); // restart #1 — hypothesis_evidence below must hydrate first
+
+    await client.callTool({
+      name: 'hypothesis_evidence',
+      arguments: {
+        sessionId,
+        hypothesisId: recorded.hypothesis.id,
+        evidence: 'iptables shows DROP on 443',
+        source: 'iptables -L',
+      },
+    });
+
+    resetStores(); // restart #2 — the evidence write above must have persisted
+
+    const listed = parseToolResult(
+      await client.callTool({ name: 'hypothesis_list', arguments: { sessionId } }),
+    ) as { summary: { total: number; supported: number }; hypotheses: { status: string; evidence: unknown[] }[] };
+    expect(listed.summary).toEqual(expect.objectContaining({ total: 1, supported: 1 }));
+    expect(listed.hypotheses[0]?.status).toBe('supported');
+    expect(listed.hypotheses[0]?.evidence).toHaveLength(1);
+  });
+
+  it('hypothesis_support success path persists the supported status across a restart', async () => {
+    const sessionId = 'gs-restart-support';
+    const recorded = parseToolResult(
+      await client.callTool({
+        name: 'hypothesis_record',
+        arguments: {
+          sessionId,
+          text: 'race condition on startup',
+          requiredChecks: ['inspect logs'],
+        },
+      }),
+    ) as { hypothesis: { id: string } };
+
+    await client.callTool({
+      name: 'hypothesis_check_done',
+      arguments: { sessionId, hypothesisId: recorded.hypothesis.id, checkIndex: 0 },
+    });
+    const supported = parseToolResult(
+      await client.callTool({
+        name: 'hypothesis_support',
+        arguments: { sessionId, hypothesisId: recorded.hypothesis.id },
+      }),
+    ) as { hypothesis: { status: string } };
+    expect(supported.hypothesis.status).toBe('supported');
+
+    resetStores(); // simulated restart
+
+    const listed = parseToolResult(
+      await client.callTool({ name: 'hypothesis_list', arguments: { sessionId } }),
+    ) as { hypotheses: { status: string }[] };
+    expect(listed.hypotheses[0]?.status).toBe('supported');
+  });
+
+  it('hypothesis_reset purges the on-disk file so a later restart does not resurrect the session', async () => {
+    const sessionId = 'gs-restart-reset';
+    await client.callTool({
+      name: 'hypothesis_record',
+      arguments: { sessionId, text: 'stale route entry', requiredChecks: [] },
+    });
+
+    const resetResult = parseToolResult(
+      await client.callTool({ name: 'hypothesis_reset', arguments: { sessionId } }),
+    ) as { cleared: boolean };
+    expect(resetResult.cleared).toBe(true);
+
+    resetStores(); // simulated restart after the reset
+
+    const listed = parseToolResult(
+      await client.callTool({ name: 'hypothesis_list', arguments: { sessionId } }),
+    ) as { summary: { total: number } };
+    expect(listed.summary.total).toBe(0);
   });
 });

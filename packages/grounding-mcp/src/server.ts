@@ -40,7 +40,7 @@ import {
 import { saveSession, loadSession } from './session-store.js';
 import { ledgerDb, ledgerStatus } from './ledger-bridge.js';
 import { deriveContext } from './derive-context.js';
-import { getOrCreateStore, getStore, resetStore } from './hypothesis-store.js';
+import { getOrCreateStore, getStore, resetStore, saveStore } from './hypothesis-store.js';
 import { evaluateSolution, evaluateGate, getHeadSha } from './solution-verdict.js';
 
 // Single source of truth for the version string emitted by both the
@@ -348,10 +348,12 @@ export function createServer(): McpServer {
   // ── Hypothesis tracker ────────────────────────────────────────────────
   //
   // Scratch-pad for competing hypotheses during a debug session. Distinct
-  // from the ledger (which is the durable evidence record): hypotheses
-  // here live only in-process and are meant to be churned through as the
-  // agent reasons. Use them to force yourself to keep alternatives alive
-  // instead of silently replacing one wrong guess with another.
+  // from the ledger (which is the durable evidence record), but — like the
+  // ledger and the grounding session — persisted to disk (see
+  // hypothesis-store.ts) so it survives a grounding-mcp restart at parity
+  // with the rest of the session state. Use it to force yourself to keep
+  // alternatives alive instead of silently replacing one wrong guess with
+  // another.
   //
   // Error shape: unlike the grounding/ledger verbs (which let loadSession
   // throw and propagate as an MCP tool error), these verbs return a
@@ -374,6 +376,7 @@ export function createServer(): McpServer {
     async ({ sessionId, text, requiredChecks }) => {
       const store = getOrCreateStore(sessionId);
       const hypothesis = addHypothesis(store, text, requiredChecks);
+      saveStore(sessionId, store);
       return jsonResponse({ sessionId, hypothesis });
     },
   );
@@ -419,6 +422,7 @@ export function createServer(): McpServer {
       if (!updated) {
         return jsonResponse({ error: 'hypothesis_not_found', sessionId, hypothesisId });
       }
+      saveStore(sessionId, store);
       return jsonResponse({ sessionId, hypothesis: updated });
     },
   );
@@ -450,6 +454,7 @@ export function createServer(): McpServer {
         });
       }
       const updated = completeCheck(store, hypothesisId, checkIndex);
+      saveStore(sessionId, store);
       return jsonResponse({ sessionId, hypothesis: updated });
     },
   );
@@ -471,6 +476,7 @@ export function createServer(): McpServer {
       if (!updated) {
         return jsonResponse({ error: 'hypothesis_not_found', sessionId, hypothesisId });
       }
+      saveStore(sessionId, store);
       return jsonResponse({ sessionId, hypothesis: updated });
     },
   );
@@ -497,6 +503,7 @@ export function createServer(): McpServer {
           hypothesisId,
         });
       }
+      saveStore(sessionId, store);
       return jsonResponse({ sessionId, hypothesis: updated });
     },
   );

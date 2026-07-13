@@ -153,9 +153,9 @@ mcp__grounding__claim_evaluate_from_session({
 
 ## Hypothesis tracking
 
-The `hypothesis_*` verbs wrap `hypothesis-tracker` so you can keep competing causes alive during a debug session and force explicit rejection instead of silent substitution. State is in-memory per server process (sessionId-namespaced); persistence is intentionally out of scope, the ledger is the durable record.
+The `hypothesis_*` verbs wrap `hypothesis-tracker` so you can keep competing causes alive during a debug session and force explicit rejection instead of silent substitution. State is cached in-memory per server process (sessionId-namespaced) and persisted to disk under `~/.grounding-mcp/hypotheses/<sessionId>.json` (override with `GROUNDING_MCP_HYPOTHESES_DIR`), at parity with the grounding session and the evidence ledger, so it survives a grounding-mcp restart.
 
-**Hypothesis lifetime:** a session's hypotheses live until the process exits, until `hypothesis_reset` is called for that sessionId, or until LRU eviction when more than `GROUNDING_HYPOTHESIS_MAX_SESSIONS` (default 200) distinct sessions have been active in the same process. Use `hypothesis_reset` at the start of a new debug task that reuses an existing sessionId to avoid leaking stale hypotheses into the fresh investigation.
+**Hypothesis lifetime:** a session's hypotheses live until `hypothesis_reset` purges them (in-memory and on disk) for that sessionId, or until LRU eviction when more than `GROUNDING_HYPOTHESIS_MAX_SESSIONS` (default 200) distinct sessions have been active in the same process — eviction only drops the in-process cache entry, the on-disk file is re-hydrated on the next access. Use `hypothesis_reset` at the start of a new debug task that reuses an existing sessionId to avoid leaking stale hypotheses into the fresh investigation.
 
 ```jsonc
 // 1. Record both possible causes early
