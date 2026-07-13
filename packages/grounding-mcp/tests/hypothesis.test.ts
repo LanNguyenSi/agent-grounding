@@ -440,3 +440,60 @@ describe('hypothesis-store disk persistence', () => {
     expect(existsSync(join(hypothesesRoot(), 'gs-purge-2.json'))).toBe(false);
   });
 });
+
+describe('hypothesis-store raw-vs-sanitized sessionId identity', () => {
+  // Two raw ids that sanitize to the same path segment ('a/b' and 'a_b'
+  // both -> 'a_b.json') must resolve to ONE store, in-process AND on disk.
+  // Before this was fixed, the Map was keyed by the raw id, so 'a/b' and
+  // 'a_b' were two separate in-memory entries that happened to collide
+  // only on disk (last writer wins on save, and after a restart both
+  // raw ids would silently rehydrate from that single shared file) —
+  // in-memory and on-disk identity disagreed.
+
+  it('resolves the same store pre-restart regardless of which raw id is used first', () => {
+    const a = getOrCreateStore('a/b');
+    addHypothesis(a, 'shared session identity', []);
+    saveStore('a/b', a);
+
+    const b = getOrCreateStore('a_b');
+    expect(b).toBe(a); // same in-process cache entry, not a shadow copy
+    expect(b.hypotheses).toHaveLength(1);
+
+    // getStore must agree too, from either raw spelling.
+    expect(getStore('a/b')).toBe(a);
+    expect(getStore('a_b')).toBe(a);
+  });
+
+  it('resolves the same store post-restart regardless of which raw id is used first', () => {
+    const seed = getOrCreateStore('a/b');
+    addHypothesis(seed, 'shared session identity', []);
+    saveStore('a/b', seed);
+
+    resetStores(); // simulated restart: drop the in-process cache, disk stays
+
+    // Hydrate via one spelling first...
+    const aAfter = getOrCreateStore('a/b');
+    expect(aAfter.hypotheses).toHaveLength(1);
+    expect(aAfter.hypotheses[0]?.text).toBe('shared session identity');
+
+    // ...then the other spelling must hit the SAME cache entry, not
+    // trigger a second, independent disk read that could diverge.
+    const bAfter = getStore('a_b');
+    expect(bAfter).toBe(aAfter);
+  });
+
+  it('resetStore via either raw spelling purges the one shared disk file', () => {
+    const store = getOrCreateStore('a/b');
+    addHypothesis(store, 'x', []);
+    saveStore('a/b', store);
+
+    const path = join(hypothesesRoot(), 'a_b.json');
+    expect(existsSync(path)).toBe(true);
+
+    expect(resetStore('a_b')).toBe(true);
+    expect(existsSync(path)).toBe(false);
+
+    resetStores();
+    expect(getStore('a/b')).toBeUndefined();
+  });
+});

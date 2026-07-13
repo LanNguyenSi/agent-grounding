@@ -89,6 +89,18 @@ const hypothesisSessionIdSchema = z
   .string()
   .min(1)
   .max(256)
+  .regex(/^[A-Za-z0-9._-]+$/, 'session id may only contain letters, digits, ".", "_", or "-"')
+  // The charset regex alone still admits '.' and '..' (both chars are in
+  // the allowed set); reject those two reserved segments explicitly so
+  // every string that passes this schema is guaranteed safe to pass to
+  // hypothesis-store.ts's sanitizeHypothesisSessionId without throwing.
+  // Without this, sessionId='.' passed zod (min(1)/max(256) don't exclude
+  // it) but threw inside the handler, surfacing as an uncaught-exception
+  // MCP isError envelope instead of the same clean "Invalid arguments for
+  // tool X" validation envelope every other malformed sessionId gets.
+  .refine((id) => id !== '.' && id !== '..', {
+    message: 'session id must not be "." or ".." (reserved path segments)',
+  })
   .describe('Session id, namespaces the hypothesis store. Use the same id as your grounding session.');
 
 const hypothesisIdSchema = z

@@ -239,6 +239,40 @@ describe('hypothesis_* MCP roundtrip — schema validation', () => {
     expectValidationError(raw, 'hypothesis_record', 'sessionId');
   });
 
+  // Before hypothesisSessionIdSchema grew a charset regex + refine, '.' and
+  // '..' passed this schema (min(1)/max(256) don't exclude them) and only
+  // failed later inside the handler, when hypothesis-store.ts's
+  // sanitizeHypothesisSessionId threw on the reserved path segment — an
+  // uncaught throw that surfaced as an ad-hoc isError envelope, not the
+  // same well-formed "Invalid arguments for tool X" envelope every other
+  // malformed sessionId gets. These three pin that '.', '..', and
+  // out-of-charset ids now all fail at the schema boundary instead, before
+  // any handler code (and therefore any sanitize/disk call) runs.
+
+  it('rejects sessionId = "." with an MCP InvalidParams envelope', async () => {
+    const raw = await client.callTool({
+      name: 'hypothesis_record',
+      arguments: { sessionId: '.', text: 'whatever', requiredChecks: [] },
+    });
+    expectValidationError(raw, 'hypothesis_record', 'sessionId');
+  });
+
+  it('rejects sessionId = ".." with an MCP InvalidParams envelope', async () => {
+    const raw = await client.callTool({
+      name: 'hypothesis_record',
+      arguments: { sessionId: '..', text: 'whatever', requiredChecks: [] },
+    });
+    expectValidationError(raw, 'hypothesis_record', 'sessionId');
+  });
+
+  it('rejects a sessionId containing a path separator with an MCP InvalidParams envelope', async () => {
+    const raw = await client.callTool({
+      name: 'hypothesis_record',
+      arguments: { sessionId: 'a/b', text: 'whatever', requiredChecks: [] },
+    });
+    expectValidationError(raw, 'hypothesis_record', 'sessionId');
+  });
+
   it('rejects text longer than 4096 chars with an MCP InvalidParams envelope', async () => {
     const tooLong = 'x'.repeat(4097);
     const raw = await client.callTool({

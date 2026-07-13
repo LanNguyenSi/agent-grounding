@@ -195,9 +195,10 @@ function getMaxSessions(): number {
   return parsed;
 }
 
-/** Insert/refresh `sessionId` as most-recently-used and evict over the cap. */
-function cacheAndEvict(sessionId: string, store: HypothesisStore): HypothesisStore {
-  stores.set(sessionId, store);
+/** Insert/refresh `key` (already sanitized) as most-recently-used and evict
+ * over the cap. */
+function cacheAndEvict(key: string, store: HypothesisStore): HypothesisStore {
+  stores.set(key, store);
   const cap = getMaxSessions();
   while (stores.size > cap) {
     const lruKey = stores.keys().next().value as string;
@@ -206,34 +207,46 @@ function cacheAndEvict(sessionId: string, store: HypothesisStore): HypothesisSto
   return store;
 }
 
+// Entry points key the Map by the SANITIZED id, not the raw one. Disk
+// identity is always sanitized (pathForSession sanitizes internally), so
+// two raw ids that sanitize to the same segment (e.g. 'a/b' and 'a_b', both
+// -> 'a_b.json') must also share ONE in-process cache entry — otherwise the
+// Map treats them as distinct sessions while disk silently collapses them
+// into a single file, and after a restart both raw ids would rehydrate
+// from that one file anyway. Sanitizing once here (rather than leaving
+// each function to key by whatever the caller passed) makes in-memory and
+// on-disk identity agree at every stage: hit, miss, and eviction.
+
 export function getOrCreateStore(sessionId: string): HypothesisStore {
-  const existing = stores.get(sessionId);
+  const key = sanitizeHypothesisSessionId(sessionId);
+  const existing = stores.get(key);
   if (existing) {
     // Touch: delete then re-set so this key becomes most-recently-used.
-    stores.delete(sessionId);
-    stores.set(sessionId, existing);
+    stores.delete(key);
+    stores.set(key, existing);
     return existing;
   }
   // Cache miss: hydrate from disk (e.g. right after a restart) before
   // falling back to a brand-new store.
-  const store = loadStoreFromDisk(sessionId) ?? createStore(sessionId);
-  return cacheAndEvict(sessionId, store);
+  const store = loadStoreFromDisk(key) ?? createStore(sessionId);
+  return cacheAndEvict(key, store);
 }
 
 export function getStore(sessionId: string): HypothesisStore | undefined {
-  const store = stores.get(sessionId);
+  const key = sanitizeHypothesisSessionId(sessionId);
+  const store = stores.get(key);
   if (store) {
     // Touch on read so reads count toward recency (true LRU semantics).
-    stores.delete(sessionId);
-    stores.set(sessionId, store);
+    stores.delete(key);
+    stores.set(key, store);
     return store;
   }
   // Cache miss: try hydrating from disk without inventing a session that
   // was never recorded — mirrors the pre-persistence "list before record"
   // behavior, now also true across a restart.
-  const fromDisk = loadStoreFromDisk(sessionId);
+  const fromDisk = loadStoreFromDisk(key);
   if (!fromDisk) return undefined;
-  return cacheAndEvict(sessionId, fromDisk);
+  return cacheAndEvict(key, fromDisk);
 }
 
 /** Purge the hypothesis store for a single session, in-process AND on disk.
@@ -242,8 +255,9 @@ export function getStore(sessionId: string): HypothesisStore | undefined {
  * sessionId for a new debug task so stale hypotheses do not leak into the
  * fresh investigation, or resurrect from disk after a later restart. */
 export function resetStore(sessionId: string): boolean {
-  const existedInMemory = stores.delete(sessionId);
-  const existedOnDisk = deleteStoreFromDisk(sessionId);
+  const key = sanitizeHypothesisSessionId(sessionId);
+  const existedInMemory = stores.delete(key);
+  const existedOnDisk = deleteStoreFromDisk(key);
   return existedInMemory || existedOnDisk;
 }
 
