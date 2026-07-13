@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { fileURLToPath } from "node:url";
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { Command } from "commander";
 import chalk from "chalk";
 import {
@@ -18,13 +18,30 @@ import { printSummary, printEntry, formatEntry } from "./display.js";
 import type { EntryType, ConfidenceLevel } from "./types.js";
 import { buildHandoffMarkdown, buildHandoffJson } from "./handoff.js";
 
+// Reads the version from package.json instead of hardcoding it, so the CLI
+// can never desync from the published version on a release bump. Resolved
+// relative to this module so it works both from src/ (dev, via tsx) and from
+// the built dist/ layout (dist/cli.js sits one level below the package root,
+// same as src/cli.ts), and package.json is always included in the npm
+// tarball via the `files` field.
+function readVersion(): string {
+  try {
+    const url = new URL("../package.json", import.meta.url);
+    const text = readFileSync(url, "utf8");
+    const pkg = JSON.parse(text) as { version?: string };
+    return pkg.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
 export function buildProgram(): Command {
   const program = new Command();
 
   program
     .name("ledger")
     .description("Evidence Ledger — track facts, hypotheses and rejections during debugging")
-    .version("0.4.0");
+    .version(readVersion());
 
   // ── add ──────────────────────────────────────────────────────────────────────
 

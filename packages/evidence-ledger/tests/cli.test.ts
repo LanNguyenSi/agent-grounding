@@ -8,6 +8,7 @@
  * process.exit is mocked globally so destructive commands (clear, prune, reject)
  * don't abort the test process.
  */
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── module mocks (hoisted) ───────────────────────────────────────────────────
@@ -379,5 +380,20 @@ describe("export command", () => {
     const parsed = JSON.parse(raw);
     expect(parsed).toHaveProperty("session", "default");
     expect(parsed).toHaveProperty("exportedAt");
+  });
+});
+
+// ── --version ────────────────────────────────────────────────────────────────
+// Regression test for a version desync: the CLI used to hardcode a version
+// string separate from package.json, so a release bump could silently leave
+// `ledger --version` printing a stale number. The version must be derived
+// from package.json, not duplicated.
+
+describe("--version", () => {
+  it("reports the version from package.json", () => {
+    const pkg = JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ) as { version: string };
+    expect(buildProgram().version()).toBe(pkg.version);
   });
 });
