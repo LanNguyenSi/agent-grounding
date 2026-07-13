@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { Command } from 'commander';
 import chalk from 'chalk';
 import {
@@ -16,13 +18,28 @@ const GUARDRAIL_LABELS: Record<GuardrailId, string> = {
   'no-step-skipping': 'Mandatory steps cannot be skipped',
 };
 
+// Reads the version from package.json instead of hardcoding it, so the CLI
+// can never desync from the published version on a release bump. __dirname
+// resolves relative to this module so it works both from src/ (dev, via
+// ts-node) and from the built dist/ layout (dist/index.js sits one level
+// below the package root, same as src/index.ts).
+function readVersion(): string {
+  try {
+    const text = readFileSync(join(__dirname, '../package.json'), 'utf8');
+    const pkg = JSON.parse(text) as { version?: string };
+    return pkg.version ?? '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
+
 export function buildProgram(): Command {
   const program = new Command();
 
   program
     .name('grounding-wrapper')
     .description('Plan a grounding session: recommend the agent entry path (sequence, guardrails, phases). Enforcement is external.')
-    .version('0.4.0');
+    .version(readVersion());
 
   program
     .command('start')

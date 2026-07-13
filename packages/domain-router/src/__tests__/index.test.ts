@@ -18,6 +18,8 @@ jest.mock('../lib', () => ({
   findEntrypointReference: jest.fn(() => null),
 }));
 
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { buildProgram } from '../index';
 import * as lib from '../lib';
 
@@ -118,5 +120,20 @@ describe('impact command', () => {
     parse(['impact', '-k', 'unknown', '-w', '/workspace']);
     const allLogs = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join('\n');
     expect(allLogs).toContain('No dependents found');
+  });
+});
+
+// ── --version ────────────────────────────────────────────────────────────────
+// Regression test for a version desync: the CLI used to hardcode a version
+// string separate from package.json, so a release bump could silently leave
+// `domain-router --version` printing a stale number. The version must be
+// derived from package.json, not duplicated.
+
+describe('--version', () => {
+  it('reports the version from package.json', () => {
+    const pkg = JSON.parse(
+      readFileSync(join(__dirname, '../../package.json'), 'utf8'),
+    ) as { version: string };
+    expect(buildProgram().version()).toBe(pkg.version);
   });
 });

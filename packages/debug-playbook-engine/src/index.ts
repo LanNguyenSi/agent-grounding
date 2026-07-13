@@ -1,9 +1,26 @@
 #!/usr/bin/env node
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { getPlaybook, initRun, getCurrentStep, recordStep, getRemainingMandatory } from './lib.js';
 
 export * from './lib.js';
+
+// Reads the version from package.json instead of hardcoding it, so the CLI
+// can never desync from the published version on a release bump. __dirname
+// resolves relative to this module so it works both from src/ (dev, via
+// ts-node) and from the built dist/ layout (dist/index.js sits one level
+// below the package root, same as src/index.ts).
+function readVersion(): string {
+  try {
+    const text = readFileSync(join(__dirname, '../package.json'), 'utf8');
+    const pkg = JSON.parse(text) as { version?: string };
+    return pkg.version ?? '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
 
 export function buildProgram(): Command {
   const program = new Command();
@@ -11,7 +28,7 @@ export function buildProgram(): Command {
   program
     .name('debug-playbook')
     .description('Run domain-specific diagnostic playbooks step-by-step')
-    .version('0.1.0');
+    .version(readVersion());
 
   program
     .command('run')
