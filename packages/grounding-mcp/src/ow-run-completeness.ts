@@ -24,7 +24,9 @@
 //     files are agent-authored, honor-system).
 //   - The shipped review template seeds the Findings table with a legend /
 //     placeholder row whose Severity and Decision cells are slash-lists
-//     (`low/medium/high/critical`, `accepted/fix/defer/reject`). That row is
+//     (`low/medium/high/critical`, `accepted/defer` since OW kit 0.7.4, which
+//     narrowed the Decision legend to the two resolved values; every other
+//     decision arms the gate, see the next note). That row is
 //     not a real finding; we decide whether a row is a real finding by its
 //     SEVERITY cell carrying a single concrete value (the slash-list legend is
 //     therefore skipped), and only then judge the Decision.
