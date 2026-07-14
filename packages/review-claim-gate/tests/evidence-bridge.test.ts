@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+  existsSync,
+  readFileSync,
+  symlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -249,6 +257,80 @@ describe("defaultEvidenceFilePath", () => {
     expect(defaultEvidenceFilePath("v1.2.3", "/repo")).toBe(
       "/repo/.agent-grounding/evidence/v1.2.3.jsonl",
     );
+  });
+
+  // Audit H1 follow-up (agent-tasks 2878a962), residual #2: on Windows,
+  // `path.win32.isAbsolute("C:foo")` is false — that form is
+  // drive-relative, not absolute — so it slipped past the `isAbsolute`
+  // guard. Assert the explicit reject regardless of host platform (the
+  // regex check does not depend on `path.win32`).
+  it("rejects a Windows drive-relative task id", () => {
+    expect(() => defaultEvidenceFilePath("C:foo", "/repo")).toThrow(
+      /drive-relative/,
+    );
+    expect(() => defaultEvidenceFilePath("c:evil", "/repo")).toThrow(
+      /drive-relative/,
+    );
+  });
+
+  // Audit H1 follow-up, residual #1: `resolve()` used for containment is
+  // lexical only and does not follow symlinks. A PR author who controls
+  // the committed tree could commit a symlink *inside* the evidence dir
+  // that points outside it, then pick a taskId that walks through it.
+  describe("symlink escape (realpath containment)", () => {
+    let tmp: string;
+    let outside: string;
+    let symlinkUnsupported = false;
+
+    beforeEach(() => {
+      tmp = mkdtempSync(join(tmpdir(), "review-claim-gate-symlink-"));
+      outside = mkdtempSync(join(tmpdir(), "review-claim-gate-outside-"));
+      writeFileSync(
+        join(outside, "secret.jsonl"),
+        '{"type":"fact","content":"leak","session":"x"}\n',
+      );
+      const evidenceDir = join(tmp, ".agent-grounding", "evidence");
+      mkdirSync(evidenceDir, { recursive: true });
+      try {
+        symlinkSync(outside, join(evidenceDir, "link"), "dir");
+      } catch (err) {
+        // Some sandboxes (or Windows without dev-mode/admin) refuse
+        // symlink creation. Skip cleanly rather than failing the suite
+        // on an environment limitation unrelated to the guard itself.
+        if ((err as NodeJS.ErrnoException).code === "EPERM") {
+          symlinkUnsupported = true;
+        } else {
+          throw err;
+        }
+      }
+    });
+
+    afterEach(() => {
+      rmSync(tmp, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    });
+
+    it("rejects a taskId that reaches an out-of-tree target through a symlinked directory", () => {
+      if (symlinkUnsupported) return;
+      expect(() => defaultEvidenceFilePath("link/secret", tmp)).toThrow(
+        /escapes the evidence directory via a symlink/,
+      );
+    });
+  });
+
+  it("does not throw when the evidence dir does not exist yet (fresh workspace)", () => {
+    // ENOENT-handling decision: realpathSync on a non-existent base/full
+    // path must not surface as an escape — there is nothing on disk to
+    // leak through. Uses a real (but otherwise empty) tmp dir so this is
+    // exercised against the actual filesystem, not just "/repo".
+    const tmp = mkdtempSync(join(tmpdir(), "review-claim-gate-fresh-"));
+    try {
+      expect(defaultEvidenceFilePath("t-1", tmp)).toBe(
+        join(tmp, ".agent-grounding", "evidence", "t-1.jsonl"),
+      );
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
 

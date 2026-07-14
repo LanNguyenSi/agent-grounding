@@ -27,7 +27,7 @@ import {
   type ReviewContext,
 } from "./lib.js";
 import { getDb, resetDb, listEntries } from "@lannguyensi/evidence-ledger";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 interface CheckOptions {
@@ -65,11 +65,13 @@ interface CheckReport {
  * may wire it to any other input (PR title/body/label). `path.join` does
  * NOT neutralize `..`, so without a guard a `taskId` like `../../etc/x`
  * would resolve outside the evidence dir and turn the auto-detect read into
- * an arbitrary-file existence probe. We reject empties, absolute paths, and
- * `..` segments early with a clear error, then backstop with a containment
- * check on the resolved path (mirrors runtime-reality-checker's
- * `verify-reference` guard). Nested slashes (`feat/foo`) stay legal — they
- * are the documented branch-name convention.
+ * an arbitrary-file existence probe. We reject empties, absolute paths,
+ * Windows drive-relative paths, and `..` segments early with a clear
+ * error, then backstop with a lexical containment check AND a
+ * symlink-aware (realpath) containment check on the resolved path
+ * (mirrors runtime-reality-checker's `verify-reference` guard). Nested
+ * slashes (`feat/foo`) stay legal — they are the documented branch-name
+ * convention.
  */
 export function defaultEvidenceFilePath(taskId: string, cwd = process.cwd()): string {
   if (!taskId || !taskId.trim()) {
@@ -80,6 +82,19 @@ export function defaultEvidenceFilePath(taskId: string, cwd = process.cwd()): st
       `task id '${taskId}' must be relative, not an absolute path`,
     );
   }
+  // Audit H1 residual (agent-tasks 2878a962): `path.win32.isAbsolute` only
+  // treats a drive letter as absolute when followed by a separator
+  // (`C:\foo`), NOT a bare `C:foo` — that form is "drive-relative", it
+  // resolves against the CWD of drive C. So on Windows a taskId like
+  // `C:foo` slips past the `isAbsolute` check above and could resolve
+  // outside the evidence dir entirely (against drive C's CWD, not `cwd`).
+  // Reject the drive-letter prefix outright rather than trying to special
+  // case it; POSIX task ids never legitimately start with `<letter>:`.
+  if (/^[a-z]:/i.test(taskId)) {
+    throw new Error(
+      `task id '${taskId}' must not use a Windows drive-relative prefix`,
+    );
+  }
   if (taskId.split(/[/\\]/).includes("..")) {
     throw new Error(
       `task id '${taskId}' must not contain '..' path segments`,
@@ -87,9 +102,9 @@ export function defaultEvidenceFilePath(taskId: string, cwd = process.cwd()): st
   }
   const evidenceDir = join(cwd, ".agent-grounding", "evidence");
   const full = join(evidenceDir, `${taskId}.jsonl`);
-  // Defense-in-depth backstop. After the three lexical guards above, no
-  // input can escape the evidence dir on POSIX, so this branch is
-  // unreachable today — it is kept (and uses `+ sep` to avoid the
+  // Defense-in-depth backstop #1: lexical containment. After the guards
+  // above, no input can escape the evidence dir on POSIX via `..`, so this
+  // branch is unreachable today — it is kept (and uses `+ sep` to avoid the
   // `/x/evidence` vs `/x/evidence-evil` sibling-prefix collision) so a
   // future refactor that loosens an early guard still cannot silently
   // leak a traversal. Mirrors runtime-reality-checker's verify-reference.
@@ -103,7 +118,53 @@ export function defaultEvidenceFilePath(taskId: string, cwd = process.cwd()): st
       `task id '${taskId}' escapes the evidence directory (resolved to ${resolvedFull})`,
     );
   }
+  // Defense-in-depth backstop #2: symlink-aware containment (audit H1
+  // residual). `resolve()` above is purely lexical, it does NOT follow
+  // symlinks. A PR author controls both the committed tree and the taskId
+  // (it's wired to the branch name), so they could commit a symlink
+  // *inside* the evidence dir that points outside it (e.g.
+  // `.agent-grounding/evidence/link -> /some/other/dir`) plus a taskId
+  // like `link/x`. The lexical check above passes (the symlink's own path
+  // is inside the dir) while the eventual `readFileSync` would actually
+  // escape through it. `realpathSync` canonicalizes symlinks, so re-check
+  // containment against the *real* paths.
+  //
+  // Decision: both realpathSync calls require their target to already
+  // exist, and throw ENOENT otherwise. We treat that as "nothing to check"
+  // rather than an error: the evidence dir legitimately does not exist yet
+  // in a fresh workspace (nothing committed under
+  // `.agent-grounding/evidence/` so far), and the per-task file usually
+  // does not exist either (the common caller path is "check existsSync,
+  // fall back to the ledger if not" — see `runCheck`). If nothing on disk
+  // resolves, there is nothing to read and therefore nothing to escape
+  // through, so we skip this check rather than throwing on an ordinary
+  // missing-file/missing-dir case. We do NOT realpath just the base dir in
+  // isolation and reuse it when `full` doesn't exist (e.g. via a
+  // dirname-of-full walk) — that widens scope beyond the reported residual
+  // and existsSync-then-read at the call site already re-derives a fresh
+  // path, so a symlinked-but-otherwise-empty tree has nothing to leak.
+  const realBase = resolveRealOrNull(evidenceDir);
+  const realFull = resolveRealOrNull(full);
+  if (
+    realBase !== null &&
+    realFull !== null &&
+    realFull !== realBase &&
+    !realFull.startsWith(realBase + sep)
+  ) {
+    throw new Error(
+      `task id '${taskId}' escapes the evidence directory via a symlink (resolved to ${realFull})`,
+    );
+  }
   return full;
+}
+
+/** realpathSync, but null (not throw) when the path does not exist. */
+function resolveRealOrNull(path: string): string | null {
+  try {
+    return realpathSync(path);
+  } catch {
+    return null;
+  }
 }
 
 function countEvidenceFileLines(path: string): number {
