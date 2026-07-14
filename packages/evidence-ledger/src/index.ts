@@ -6,6 +6,8 @@
 
 export type { LedgerEntry, EntryType, ConfidenceLevel, LedgerSummary, AddEntryOptions } from "./types.js";
 
+export type { PruneResult } from "./db.js";
+
 export {
   getDb,
   resetDb,
@@ -16,4 +18,6 @@ export {
   getSummary,
   clearSession,
   listSessions,
+  parseDuration,
+  pruneEntries,
 } from "./db.js";

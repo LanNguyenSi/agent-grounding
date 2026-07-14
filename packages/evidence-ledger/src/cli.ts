@@ -209,37 +209,61 @@ export function buildProgram(): Command {
     .description("Delete ledger entries older than a given age")
     .requiredOption("--older-than <duration>", "age cutoff, e.g. 30d, 24h, 15m, 3600s")
     .option("--dry-run", "count what would be deleted, leave the DB untouched")
+    .option(
+      "--include-policy-decisions",
+      "also prune policy_decision (audit trail) rows; excluded by default",
+    )
     .option("--json", "emit a structured JSON result on stdout")
-    .action((opts: { olderThan: string; dryRun?: boolean; json?: boolean }) => {
-      let olderThanMs: number;
-      try {
-        olderThanMs = parseDuration(opts.olderThan);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (opts.json) {
-          console.log(JSON.stringify({ error: msg }));
-        } else {
-          console.error(chalk.red(msg));
+    .action(
+      (opts: {
+        olderThan: string;
+        dryRun?: boolean;
+        includePolicyDecisions?: boolean;
+        json?: boolean;
+      }) => {
+        let olderThanMs: number;
+        try {
+          olderThanMs = parseDuration(opts.olderThan);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (opts.json) {
+            console.log(JSON.stringify({ error: msg }));
+          } else {
+            console.error(chalk.red(msg));
+          }
+          process.exit(1);
         }
-        process.exit(1);
-      }
 
-      const db = getDb();
-      const result = pruneEntries(db, { olderThanMs, dryRun: opts.dryRun });
+        const db = getDb();
+        const result = pruneEntries(db, {
+          olderThanMs,
+          dryRun: opts.dryRun,
+          includePolicyDecisions: opts.includePolicyDecisions,
+        });
 
-      if (opts.json) {
-        console.log(JSON.stringify(result));
-        return;
-      }
+        if (opts.json) {
+          console.log(JSON.stringify(result));
+          return;
+        }
 
-      const verb = result.dryRun ? "would delete" : "deleted";
-      console.log();
-      console.log(
-        chalk.cyan(`Prune ${result.dryRun ? "(dry-run) " : ""}— cutoff ${result.cutoff} UTC`),
-      );
-      console.log(chalk.dim(`   scanned ${result.scanned} entries, ${verb} ${result.deleted}`));
-      console.log();
-    });
+        const verb = result.dryRun ? "would delete" : "deleted";
+        console.log();
+        console.log(
+          chalk.cyan(`Prune ${result.dryRun ? "(dry-run) " : ""}— cutoff ${result.cutoff} UTC`),
+        );
+        console.log(chalk.dim(`   scanned ${result.scanned} entries, ${verb} ${result.deleted}`));
+        if (result.exemptedPolicyDecisions > 0) {
+          console.log(
+            chalk.dim(
+              `   exempted ${result.exemptedPolicyDecisions} policy_decision ${
+                result.exemptedPolicyDecisions === 1 ? "entry" : "entries"
+              } (audit trail; use --include-policy-decisions to override)`,
+            ),
+          );
+        }
+        console.log();
+      },
+    );
 
   // ── handoff ─────────────────────────────────────────────────────────────────
 
