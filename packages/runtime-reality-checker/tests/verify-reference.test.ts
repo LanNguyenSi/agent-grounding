@@ -78,6 +78,94 @@ describe("verifyMemoryReference — kind: path", () => {
   });
 });
 
+// Parity follow-up (agent-tasks e4c970b2): review-claim-gate's
+// evidence-path guard (agent-tasks 2878a962) was hardened with a
+// realpath-based containment backstop because lexical `resolve()`
+// alone does not follow symlinks. verifyPath's containment check had
+// the same gap — a committed symlink inside repoRoot pointing outside
+// it, combined with a relative ref.value that walks through it, passed
+// the lexical check while `statSync` actually escaped.
+describe("verifyMemoryReference — kind: path symlink escape (realpath containment)", () => {
+  it("refuses a relative path that only escapes repoRoot through a symlinked directory", () => {
+    const root = mkdtempSync(join(tmpdir(), "rrc-verify-ref-symlink-"));
+    const outside = mkdtempSync(join(tmpdir(), "rrc-verify-ref-outside-"));
+    let symlinkUnsupported = false;
+    try {
+      writeFileSync(join(outside, "secret.txt"), "leak\n");
+      try {
+        symlinkSync(outside, join(root, "link"), "dir");
+      } catch (err) {
+        // Some sandboxes (or Windows without dev-mode/admin) refuse
+        // symlink creation. Skip cleanly rather than failing the suite
+        // on an environment limitation unrelated to the guard itself.
+        if ((err as NodeJS.ErrnoException).code === "EPERM") {
+          symlinkUnsupported = true;
+        } else {
+          throw err;
+        }
+      }
+      if (symlinkUnsupported) return;
+
+      // Lexical resolve() alone would pass this (the symlink's own
+      // path, "link", is inside root) — only the realpath backstop
+      // catches that it actually points at `outside`.
+      const r = verifyMemoryReference({
+        kind: "path",
+        value: "link/secret.txt",
+        repoRoot: root,
+      });
+      expect(r.exists).toBe(false);
+      expect(r.summary).toMatch(/escapes repoRoot via a symlink/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("does not throw for a dangling symlink (ENOENT-safe)", () => {
+    // Locks in the deliberate ENOENT-is-not-an-escape decision: a
+    // symlink whose target doesn't exist must resolve like any other
+    // missing path (exists:false), not throw and not report an escape.
+    const root = mkdtempSync(join(tmpdir(), "rrc-verify-ref-dangling-"));
+    let symlinkUnsupported = false;
+    try {
+      try {
+        symlinkSync(
+          join(root, "does-not-exist-target"),
+          join(root, "dangling-link"),
+        );
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "EPERM") {
+          symlinkUnsupported = true;
+        } else {
+          throw err;
+        }
+      }
+      if (symlinkUnsupported) return;
+
+      const r = verifyMemoryReference({
+        kind: "path",
+        value: "dangling-link",
+        repoRoot: root,
+      });
+      expect(r.exists).toBe(false);
+      expect(r.summary).toMatch(/does not exist/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not throw when repoRoot itself does not exist yet (fresh workspace)", () => {
+    const r = verifyMemoryReference({
+      kind: "path",
+      value: "some/file.ts",
+      repoRoot: join(tmpdir(), "rrc-verify-ref-does-not-exist-root-xyz"),
+    });
+    expect(r.exists).toBe(false);
+    expect(r.summary).toMatch(/does not exist/);
+  });
+});
+
 describe("verifyMemoryReference — kind: symbol", () => {
   let root: string;
   beforeEach(() => {

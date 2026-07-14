@@ -151,6 +151,27 @@ function resolveReal(path: string): string | null {
   }
 }
 
+/**
+ * realpathSync, but null (not throw) on ENOENT — and only ENOENT.
+ * Distinct from `resolveReal` above: that helper is walk()'s
+ * cycle-detection aid and deliberately swallows every error (a
+ * transient stat failure there just means "treat as unvisited", not a
+ * security boundary). This one backstops `verifyPath`'s containment
+ * check, so it fails CLOSED on anything other than "doesn't exist yet"
+ * — an unexpected filesystem state (EACCES, ENOTDIR, ELOOP from a
+ * symlink cycle, ...) should surface as an error rather than silently
+ * disabling the check. Mirrors review-claim-gate's
+ * `resolveRealOrNull` (agent-tasks 2878a962 / e4c970b2).
+ */
+function resolveRealOrNull(path: string): string | null {
+  try {
+    return realpathSync(path);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+}
+
 function walk(root: string, cfg: WalkConfig): WalkResult {
   const files: string[] = [];
   let truncated = false;
@@ -255,6 +276,18 @@ function verifyPath(
   // (caller may legitimately want to check a shared tool outside the
   // repo). `isAbsolute` is platform-aware so Windows drive letters and
   // POSIX `/foo` both behave.
+  //
+  // Decision (agent-tasks e4c970b2, bringing this to parity with
+  // review-claim-gate's evidence-path guard / agent-tasks 2878a962):
+  // the realpath containment hardening added below applies ONLY to the
+  // relative-value branch. The absolute-path pass-through above is
+  // intentional, pre-existing, by-design behaviour — this tool has no
+  // absolute-reject (unlike review-claim-gate's evidence-path guard,
+  // which rejects absolute taskIds outright), so that guard's
+  // drive-relative-prefix reject does not transfer here either: it only
+  // makes sense next to an absolute-path reject, and this function
+  // deliberately keeps absolute paths passing through unchanged. NOT
+  // revisited in this change — see the task's stated out-of-scope.
   const full = isAbsolute(ref.value) ? ref.value : join(root, ref.value);
 
   // Containment check: when the value is *relative*, the resolved path
@@ -276,6 +309,41 @@ function verifyPath(
         foundIn: [],
         matchCount: 0,
         summary: `path '${ref.value}' escapes repoRoot (resolved to ${resolvedFull}) — refusing to check`,
+      };
+    }
+
+    // Symlink-aware backstop (agent-tasks e4c970b2, parity with
+    // review-claim-gate's realpath containment / agent-tasks 2878a962):
+    // `resolve()` above is purely lexical and does not follow symlinks.
+    // A committed symlink inside repoRoot that points outside it (e.g.
+    // `linked-dir -> /elsewhere`) plus a ref.value like
+    // `linked-dir/secret` passes the lexical check above (its own path
+    // is inside repoRoot) while the `statSync` below would actually
+    // escape through it and disclose the outside path's existence/mtime.
+    // Re-check containment against the *real* (symlink-resolved) paths.
+    //
+    // ENOENT-safe: `resolveRealOrNull` returns null (not throw) when
+    // repoRoot or the resolved value doesn't exist yet — a fresh
+    // repoRoot, or the ordinary "does this path still exist" case where
+    // it doesn't, are not escapes. When either side is unresolvable we
+    // skip this check; the `statSync` below still correctly reports
+    // exists:false for a genuinely missing path either way, so nothing
+    // is leaked by skipping.
+    const realRoot = resolveRealOrNull(resolvedRoot);
+    const realFull = resolveRealOrNull(resolvedFull);
+    if (
+      realRoot !== null &&
+      realFull !== null &&
+      realFull !== realRoot &&
+      !realFull.startsWith(realRoot + "/") &&
+      !realFull.startsWith(realRoot + "\\")
+    ) {
+      return {
+        ref,
+        exists: false,
+        foundIn: [],
+        matchCount: 0,
+        summary: `path '${ref.value}' escapes repoRoot via a symlink (resolved to ${realFull}) — refusing to check`,
       };
     }
   }
