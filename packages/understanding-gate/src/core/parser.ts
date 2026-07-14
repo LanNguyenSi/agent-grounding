@@ -13,9 +13,12 @@
 // usually come from the caller via `defaults`, since the v0 prompts
 // (full / fast_confirm / grill_me) do not ask the agent to emit them. An
 // optional `## Metadata` section in the markdown (`key: value` per line)
-// overrides defaults if present. approvalStatus is always forced to "pending"
-// by parseReport regardless of defaults or metadata; only the operator CLI
-// approve flow (withApprovalStatus) may flip it.
+// overrides defaults if present, EXCEPT taskId: a caller-supplied
+// defaults.taskId always wins over the markdown's `taskid` key (see the
+// merge-order comment below and agent-grounding e2e065e6). approvalStatus is
+// always forced to "pending" by parseReport regardless of defaults or
+// metadata; only the operator CLI approve flow (withApprovalStatus) may
+// flip it.
 
 import Ajv, { type ErrorObject, type ValidateFunction } from "ajv";
 import addFormats from "ajv-formats";
@@ -309,13 +312,46 @@ export function parseReport(
     metadataFromMarkdown = parsed.value;
   }
 
+  // taskId binding (agent-grounding e2e065e6, block-direction integrity
+  // finding from the adversarial review of the C1 self-approval fix,
+  // agent-tasks 3a994d92). Unlike every other Metadata-block field, a
+  // caller-supplied defaults.taskId always wins over an agent-authored
+  // `taskid` key: the Claude Code and opencode adapters (handle-stop.ts /
+  // persist-report.ts) always pass defaults.taskId derived from
+  // UNDERSTANDING_GATE_TASK_ID or the runtime's own session id, so in
+  // production this makes the persisted taskId fully adapter/session-bound.
+  //
+  // Without this, an agent-emitted `## Metadata\ntaskid: <other task>`
+  // could park its own (always-forced-pending) report under ANOTHER task's
+  // id. findLatestForTask (core/approval.ts) picks the most recently
+  // created/approved entry matching a taskId, so a newer forged pending
+  // entry would outrank that other task's already-approved entry and
+  // downgrade it back to pending. This is a denial-of-service / integrity
+  // break, never an allow-bypass: PreToolUse enforcement
+  // (handle-pre-tool-use.ts) looks up the active task strictly by
+  // env.UNDERSTANDING_GATE_TASK_ID || sessionId, never by a report's own
+  // taskId field, so this metadata value can never grant a write it
+  // shouldn't.
+  //
+  // The markdown's `taskid` key is left live as a fallback ONLY when the
+  // caller supplies no default at all (defaults.taskId === undefined).
+  // That keeps `parseReport(markdown)` — used throughout this package's own
+  // parser tests with no adapter in front of it — working without having to
+  // thread an explicit taskId through every call site that isn't testing
+  // this binding.
+  if (defaults.taskId !== undefined) {
+    delete (metadataFromMarkdown as Record<string, unknown>)["taskId"];
+  }
+
   // Merge order (lowest -> highest precedence):
   //   1. baseline (requiresHumanApproval=true)
   //   2. caller-supplied defaults
   //   3. inline `## Metadata` block from the markdown
   //   4. parsed section bodies
   // Section keys (collected) and metadata keys never overlap thanks to the
-  // SectionKey type-level Exclude<>, so the order is unambiguous.
+  // SectionKey type-level Exclude<>, so the order is unambiguous, EXCEPT
+  // taskId, which was stripped from metadataFromMarkdown above whenever the
+  // caller supplied a default — see the taskId binding comment above.
   const merged: Record<string, unknown> = {
     requiresHumanApproval: true,
     ...stripUndefined(defaults as Record<string, unknown>),

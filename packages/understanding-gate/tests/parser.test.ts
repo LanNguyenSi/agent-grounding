@@ -115,15 +115,21 @@ describe("parseReport: full round-trip", () => {
     expect(r.report.approvalStatus).toBe("pending");
   });
 
-  it("metadata block overrides defaults", () => {
+  it("metadata block overrides defaults, EXCEPT taskId (agent-grounding e2e065e6)", () => {
+    // mode/riskLevel: the markdown's Metadata block still wins over
+    // caller-supplied defaults, unchanged.
+    // taskId: a caller-supplied default now always wins over the
+    // markdown's `taskId` key (FULL_MARKDOWN's Metadata block says
+    // "taskId: ug-test-1"), so the report is bound to the caller's
+    // identity, never the agent's.
     const r = parseReport(FULL_MARKDOWN, {
-      taskId: "should-be-overridden",
+      taskId: "from-caller",
       mode: "fast_confirm",
       riskLevel: "low",
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.report.taskId).toBe("ug-test-1");
+    expect(r.report.taskId).toBe("from-caller");
     expect(r.report.mode).toBe("grill_me");
     expect(r.report.riskLevel).toBe("high");
   });
@@ -767,5 +773,43 @@ describe("parseReport: sessionId is not agent-settable (task 0a3227fe)", () => {
     // A genuinely unknown property is still rejected, i.e. we widened
     // the schema by exactly one field and no more.
     expect(validate({ ...result.report, notAField: "x" })).toBe(false);
+  });
+});
+
+describe("parseReport: taskId is not agent-settable when a caller default is present (agent-grounding e2e065e6)", () => {
+  // Block-direction integrity finding from the adversarial review of the
+  // C1 self-approval fix (agent-tasks 3a994d92). An agent's Understanding
+  // Report is always forced to approvalStatus: pending, so it can never
+  // self-approve (security-self-approval.test.ts). But before this fix,
+  // an agent could still forge `taskid: <other task>` in its Metadata
+  // block and have parseReport honour it over the caller-supplied
+  // (adapter/env-derived) default, letting a forced-pending report be
+  // filed under ANOTHER task's id. Since findLatestForTask picks the most
+  // recently created/approved entry per taskId, a newer forged pending
+  // entry would then outrank that other task's already-approved entry,
+  // downgrading it back to pending. See security-taskid-binding.test.ts
+  // for the end-to-end persistence + findLatestForTask regression.
+  it("prefers the caller-supplied default over `taskid` in the Metadata block", () => {
+    const forgedTaskId = FULL_MARKDOWN.replace(
+      "taskId: ug-test-1",
+      "taskId: victim-task",
+    );
+    const result = parseReport(forgedTaskId, { taskId: "attacker-own-task" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.report.taskId).toBe("attacker-own-task");
+    expect(result.report.taskId).not.toBe("victim-task");
+  });
+
+  it("still reads `taskid` from the Metadata block when the caller supplies no default at all", () => {
+    // This is the pre-existing, still-legitimate use: this package's own
+    // parser tests call parseReport(markdown) directly with no adapter in
+    // front of it. Real adapters (handle-stop.ts / persist-report.ts)
+    // always pass a defaults.taskId, so this fallback path is never live
+    // in production.
+    const r = parseReport(FULL_MARKDOWN);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.report.taskId).toBe("ug-test-1");
   });
 });
