@@ -332,6 +332,67 @@ describe("defaultEvidenceFilePath", () => {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
+
+  it("returns the path without throwing for a dangling symlink (target does not exist)", () => {
+    // Locks in the deliberate ALLOW-on-missing decision: resolveRealOrNull
+    // treats ENOENT (and only ENOENT) as "nothing to check", not an escape.
+    // A dangling symlink resolves to ENOENT the same way a plain missing
+    // file does, so it must be let through here too — the downstream
+    // existsSync/readFileSync in runCheck will find nothing to read
+    // either way, so there is nothing to leak.
+    const tmp = mkdtempSync(join(tmpdir(), "review-claim-gate-dangling-"));
+    const evidenceDir = join(tmp, ".agent-grounding", "evidence");
+    mkdirSync(evidenceDir, { recursive: true });
+    try {
+      symlinkSync(
+        join(tmp, "does-not-exist-target.jsonl"),
+        join(evidenceDir, "t-dangling.jsonl"),
+      );
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "EPERM") {
+        rmSync(tmp, { recursive: true, force: true });
+        return;
+      }
+      throw err;
+    }
+
+    try {
+      expect(defaultEvidenceFilePath("t-dangling", tmp)).toBe(
+        join(evidenceDir, "t-dangling.jsonl"),
+      );
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("throws (fail-closed) on a self-referencing symlink cycle (ELOOP) instead of silently allowing it", () => {
+    // resolveRealOrNull only special-cases ENOENT; every other errno
+    // (EACCES, ENOTDIR, ELOOP, ...) is rethrown rather than treated as
+    // "nothing to check". A symlink pointing at itself is an easy,
+    // portable way to force ELOOP without needing root/special perms.
+    const tmp = mkdtempSync(join(tmpdir(), "review-claim-gate-loop-"));
+    const evidenceDir = join(tmp, ".agent-grounding", "evidence");
+    mkdirSync(evidenceDir, { recursive: true });
+    const loopPath = join(evidenceDir, "t-loop.jsonl");
+    try {
+      symlinkSync(loopPath, loopPath);
+    } catch (err) {
+      // EPERM (no symlink perms) or an environment where a self-target
+      // symlink can't be created at all: skip cleanly, this is a platform
+      // limitation unrelated to the guard.
+      if ((err as NodeJS.ErrnoException).code === "EPERM") {
+        rmSync(tmp, { recursive: true, force: true });
+        return;
+      }
+      throw err;
+    }
+
+    try {
+      expect(() => defaultEvidenceFilePath("t-loop", tmp)).toThrow();
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("CLI export — black-box via spawnSync", () => {

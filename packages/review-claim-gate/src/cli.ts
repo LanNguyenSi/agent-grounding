@@ -158,12 +158,20 @@ export function defaultEvidenceFilePath(taskId: string, cwd = process.cwd()): st
   return full;
 }
 
-/** realpathSync, but null (not throw) when the path does not exist. */
+/**
+ * realpathSync, but null (not throw) when the path does not exist
+ * (ENOENT). Fail-closed for every other errno: a broken/inaccessible
+ * filesystem state (EACCES, ENOTDIR, or ELOOP from a symlink cycle) is
+ * NOT "nothing to check" — it's an unexpected condition that should
+ * surface as an error rather than silently disable the symlink backstop
+ * above.
+ */
 function resolveRealOrNull(path: string): string | null {
   try {
     return realpathSync(path);
-  } catch {
-    return null;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
   }
 }
 
