@@ -51,6 +51,7 @@ vi.mock("../src/db.js", () => ({
     cutoff: "2026-01-01T00:00:00.000Z",
     scanned: 10,
     deleted: 3,
+    exemptedPolicyDecisions: 0,
   })),
 }));
 
@@ -265,6 +266,55 @@ describe("prune command", () => {
     expect(() => parse(["prune", "--older-than", "bad", "--json"])).toThrow("EXIT:1");
     const logged = logSpy.mock.calls[0]?.[0] as string;
     expect(JSON.parse(logged)).toEqual({ error: "bad duration" });
+  });
+
+  it("does not set includePolicyDecisions when the flag is absent", () => {
+    parse(["prune", "--older-than", "1d"]);
+    expect(dbMod.pruneEntries).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ includePolicyDecisions: undefined }),
+    );
+  });
+
+  it("passes includePolicyDecisions=true when --include-policy-decisions is set", () => {
+    parse(["prune", "--older-than", "1d", "--include-policy-decisions"]);
+    expect(dbMod.pruneEntries).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ includePolicyDecisions: true }),
+    );
+  });
+
+  it("reports exempted policy_decision rows in human output", () => {
+    vi.mocked(dbMod.pruneEntries).mockReturnValueOnce({
+      dryRun: false,
+      cutoff: "2026-01-01 00:00:00",
+      scanned: 10,
+      deleted: 3,
+      exemptedPolicyDecisions: 2,
+    });
+    parse(["prune", "--older-than", "1d"]);
+    const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(allLogs).toContain("exempted 2 policy_decision");
+    expect(allLogs).toContain("--include-policy-decisions");
+  });
+
+  it("omits the exemption line when exemptedPolicyDecisions is 0", () => {
+    parse(["prune", "--older-than", "1d"]);
+    const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(allLogs).not.toContain("exempted");
+  });
+
+  it("includes exemptedPolicyDecisions in --json output", () => {
+    vi.mocked(dbMod.pruneEntries).mockReturnValueOnce({
+      dryRun: false,
+      cutoff: "2026-01-01 00:00:00",
+      scanned: 10,
+      deleted: 3,
+      exemptedPolicyDecisions: 2,
+    });
+    parse(["prune", "--older-than", "1d", "--json"]);
+    const logged = logSpy.mock.calls[0]?.[0] as string;
+    expect(JSON.parse(logged)).toMatchObject({ exemptedPolicyDecisions: 2 });
   });
 });
 

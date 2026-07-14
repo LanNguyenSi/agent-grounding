@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Database from "better-sqlite3";
 import {
   addEntry,
@@ -482,12 +482,32 @@ describe("pruneEntries", () => {
     ).run({ content, session, createdAt });
   }
 
+  function insertTypedWithDate(
+    type: string,
+    session: string,
+    content: string,
+    createdAt: string,
+  ): void {
+    db.prepare(
+      `INSERT INTO entries (type, content, session, created_at, updated_at)
+       VALUES (@type, @content, @session, @createdAt, @createdAt)`,
+    ).run({ type, content, session, createdAt });
+  }
+
   function daysAgo(n: number): string {
     return new Date(Date.now() - n * 86_400_000)
       .toISOString()
       .slice(0, 19)
       .replace("T", " ");
   }
+
+  it("no-ops on an empty database", () => {
+    const result = pruneEntries(db, { olderThanMs: 30 * 86_400_000 });
+    expect(result.deleted).toBe(0);
+    expect(result.scanned).toBe(0);
+    expect(result.exemptedPolicyDecisions).toBe(0);
+    expect(listEntries(db)).toHaveLength(0);
+  });
 
   it("deletes entries older than the cutoff and keeps younger ones", () => {
     insertWithDate("old", "40d old", daysAgo(40));
@@ -542,5 +562,103 @@ describe("pruneEntries", () => {
       /non-negative finite/,
     );
     expect(() => pruneEntries(db, { olderThanMs: -1 })).toThrow(/non-negative finite/);
+  });
+
+  // Pins the boundary semantics documented on pruneEntries in db.ts:
+  // "older than N days" is a STRICT inequality (created_at < cutoff). An
+  // entry whose age is exactly N days at the instant prune runs is kept,
+  // not deleted. System time is frozen so "exactly N days old" is exact,
+  // not approximate (avoids a flaky race across a second boundary between
+  // building the fixture and pruneEntries computing its own cutoff).
+  describe("boundary semantics — entry exactly N days old", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("keeps an entry whose age is exactly olderThanMs, deletes one 1s older", () => {
+      const fixedNow = new Date("2026-06-15T12:00:00Z");
+      vi.useFakeTimers();
+      vi.setSystemTime(fixedNow);
+
+      const olderThanMs = 30 * 86_400_000; // 30 days
+      const exactlyAtCutoff = new Date(fixedNow.getTime() - olderThanMs)
+        .toISOString()
+        .slice(0, 19)
+        .replace("T", " ");
+      const oneSecondOlder = new Date(fixedNow.getTime() - olderThanMs - 1_000)
+        .toISOString()
+        .slice(0, 19)
+        .replace("T", " ");
+
+      insertWithDate("boundary", "exactly 30d old", exactlyAtCutoff);
+      insertWithDate("boundary", "30d + 1s old", oneSecondOlder);
+
+      const result = pruneEntries(db, { olderThanMs });
+
+      expect(result.deleted).toBe(1);
+      expect(result.scanned).toBe(2);
+
+      const remaining = listEntries(db, { session: "boundary" });
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0]!.content).toBe("exactly 30d old");
+    });
+
+    // Mutation-test evidence (manual, not run in CI): flipping the `<` to
+    // `<=` in pruneEntries' WHERE clauses (db.ts) was checked against this
+    // test. With `<=`, the exactly-30d-old row (created_at == cutoff) also
+    // satisfies the WHERE clause and gets deleted, so `result.deleted`
+    // becomes 2 instead of 1 and both the `deleted` and `remaining`
+    // assertions above fail. This confirms the test actually pins the
+    // strict-inequality boundary rather than passing vacuously.
+  });
+
+  describe("policy_decision exemption (audit trail preservation)", () => {
+    it("exempts policy_decision rows from deletion by default", () => {
+      insertTypedWithDate("policy_decision", "audit", "old policy decision", daysAgo(40));
+      insertWithDate("audit", "old fact", daysAgo(40));
+
+      const result = pruneEntries(db, { olderThanMs: 30 * 86_400_000 });
+
+      expect(result.deleted).toBe(1); // only the fact
+      expect(result.exemptedPolicyDecisions).toBe(1);
+
+      const remaining = listEntries(db, { session: "audit" });
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0]!.type).toBe("policy_decision");
+    });
+
+    it("dry-run reports the exemption without deleting anything", () => {
+      insertTypedWithDate("policy_decision", "audit", "old policy decision", daysAgo(40));
+
+      const result = pruneEntries(db, { olderThanMs: 30 * 86_400_000, dryRun: true });
+
+      expect(result.deleted).toBe(0);
+      expect(result.exemptedPolicyDecisions).toBe(1);
+      expect(listEntries(db, { session: "audit" })).toHaveLength(1);
+    });
+
+    it("prunes policy_decision rows when includePolicyDecisions=true", () => {
+      insertTypedWithDate("policy_decision", "audit", "old policy decision", daysAgo(40));
+      insertWithDate("audit", "old fact", daysAgo(40));
+
+      const result = pruneEntries(db, {
+        olderThanMs: 30 * 86_400_000,
+        includePolicyDecisions: true,
+      });
+
+      expect(result.deleted).toBe(2);
+      expect(result.exemptedPolicyDecisions).toBe(0);
+      expect(listEntries(db, { session: "audit" })).toHaveLength(0);
+    });
+
+    it("does not count recent policy_decision rows as exempted", () => {
+      insertTypedWithDate("policy_decision", "audit", "recent policy decision", daysAgo(1));
+
+      const result = pruneEntries(db, { olderThanMs: 30 * 86_400_000 });
+
+      expect(result.deleted).toBe(0);
+      expect(result.exemptedPolicyDecisions).toBe(0);
+      expect(listEntries(db, { session: "audit" })).toHaveLength(1);
+    });
   });
 });

@@ -351,11 +351,18 @@ export interface PruneResult {
   scanned: number;
   cutoff: string;
   dryRun: boolean;
+  /**
+   * Count of `policy_decision` rows older than `cutoff` that were left in
+   * place because `includePolicyDecisions` was not set. Always 0 when
+   * `includePolicyDecisions: true` (nothing to exempt) or when no
+   * `policy_decision` rows are past the cutoff.
+   */
+  exemptedPolicyDecisions: number;
 }
 
 export function pruneEntries(
   db: Database.Database,
-  opts: { olderThanMs: number; dryRun?: boolean },
+  opts: { olderThanMs: number; dryRun?: boolean; includePolicyDecisions?: boolean },
 ): PruneResult {
   // Defensive guard for library consumers. The CLI's parseDuration
   // already rejects these, but a direct caller passing NaN / Infinity
@@ -368,10 +375,25 @@ export function pruneEntries(
     );
   }
 
+  // policy_decision rows are the orchestrator's audit trail (see
+  // types.ts / Phase 5 #4): allow/deny/warn decisions a harness gate
+  // made. Pruning them by default would quietly erase the evidence an
+  // audit or incident review needs, so age-based prune EXEMPTS them
+  // unless the caller explicitly opts in via includePolicyDecisions.
+  const includePolicyDecisions = opts.includePolicyDecisions ?? false;
+  const typeFilter = includePolicyDecisions ? "" : "AND type != 'policy_decision'";
+
   // SQLite's `datetime('now')` writes `YYYY-MM-DD HH:MM:SS` in UTC.
   // Build a cutoff in the same shape so lexicographic comparison in
   // SQL is correct. (ISO's `T` and trailing `Z` would otherwise sort
   // adjacent to but not equal to SQLite's space-separated form.)
+  //
+  // Boundary semantics: an entry is eligible only when created_at is
+  // STRICTLY earlier than cutoff (`<`, not `<=`). An entry whose age is
+  // exactly `olderThanMs` at the instant prune runs is therefore KEPT —
+  // "older than N days" means age > N days, matching the CLI flag name.
+  // See tests/ledger.test.ts "pruneEntries boundary semantics" for the
+  // pinned behavior and its mutation-test note.
   const cutoff = new Date(Date.now() - opts.olderThanMs).toISOString().slice(0, 19).replace("T", " ");
 
   // Run both statements inside an IMMEDIATE transaction so a concurrent
@@ -381,22 +403,33 @@ export function pruneEntries(
     const scanned = (
       db.prepare("SELECT COUNT(*) AS n FROM entries").get() as { n: number }
     ).n;
+
+    const exemptedPolicyDecisions = includePolicyDecisions
+      ? 0
+      : (
+          db
+            .prepare(
+              "SELECT COUNT(*) AS n FROM entries WHERE created_at < @cutoff AND type = 'policy_decision'",
+            )
+            .get({ cutoff }) as { n: number }
+        ).n;
+
     let deleted = 0;
     if (opts.dryRun) {
       deleted = (
         db
-          .prepare("SELECT COUNT(*) AS n FROM entries WHERE created_at < @cutoff")
+          .prepare(`SELECT COUNT(*) AS n FROM entries WHERE created_at < @cutoff ${typeFilter}`)
           .get({ cutoff }) as { n: number }
       ).n;
     } else {
       const result = db
-        .prepare("DELETE FROM entries WHERE created_at < @cutoff")
+        .prepare(`DELETE FROM entries WHERE created_at < @cutoff ${typeFilter}`)
         .run({ cutoff });
       deleted = result.changes;
     }
-    return { deleted, scanned };
+    return { deleted, scanned, exemptedPolicyDecisions };
   });
 
-  const { deleted, scanned } = run.immediate();
-  return { deleted, scanned, cutoff, dryRun: opts.dryRun ?? false };
+  const { deleted, scanned, exemptedPolicyDecisions } = run.immediate();
+  return { deleted, scanned, cutoff, dryRun: opts.dryRun ?? false, exemptedPolicyDecisions };
 }
