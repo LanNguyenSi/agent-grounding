@@ -151,6 +151,36 @@ function resolveReal(path: string): string | null {
   }
 }
 
+/**
+ * realpathSync, but null (not throw) when the path structurally
+ * doesn't exist: ENOENT ("no such file/dir") or ENOTDIR (a path
+ * segment that must be a directory turned out to be a plain file,
+ * e.g. `config.json/child` when `config.json` is a file — there is no
+ * symlink to resolve through, so this is "not there", not an escape
+ * signal). Distinct from `resolveReal` above: that helper is walk()'s
+ * cycle-detection aid and deliberately swallows every error (a
+ * transient stat failure there just means "treat as unvisited", not a
+ * security boundary). This one backstops `verifyPath`'s containment
+ * check and rethrows anything else (EACCES, ELOOP from a symlink
+ * cycle, ...) as a genuinely unexpected filesystem state — the caller
+ * (verifyPath) is responsible for turning that into a fail-closed
+ * RESULT rather than letting it propagate, since
+ * `verifyMemoryReference` is designed to never throw. Mirrors
+ * review-claim-gate's `resolveRealOrNull` (agent-tasks 2878a962 /
+ * e4c970b2), narrowed further to fold in the ENOTDIR case that
+ * verifyPath's absolute-path pass-through and free-form ref.value can
+ * hit but review-claim-gate's taskId shape cannot.
+ */
+function resolveRealOrNull(path: string): string | null {
+  try {
+    return realpathSync(path);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return null;
+    throw err;
+  }
+}
+
 function walk(root: string, cfg: WalkConfig): WalkResult {
   const files: string[] = [];
   let truncated = false;
@@ -255,6 +285,18 @@ function verifyPath(
   // (caller may legitimately want to check a shared tool outside the
   // repo). `isAbsolute` is platform-aware so Windows drive letters and
   // POSIX `/foo` both behave.
+  //
+  // Decision (agent-tasks e4c970b2, bringing this to parity with
+  // review-claim-gate's evidence-path guard / agent-tasks 2878a962):
+  // the realpath containment hardening added below applies ONLY to the
+  // relative-value branch. The absolute-path pass-through above is
+  // intentional, pre-existing, by-design behaviour — this tool has no
+  // absolute-reject (unlike review-claim-gate's evidence-path guard,
+  // which rejects absolute taskIds outright), so that guard's
+  // drive-relative-prefix reject does not transfer here either: it only
+  // makes sense next to an absolute-path reject, and this function
+  // deliberately keeps absolute paths passing through unchanged. NOT
+  // revisited in this change — see the task's stated out-of-scope.
   const full = isAbsolute(ref.value) ? ref.value : join(root, ref.value);
 
   // Containment check: when the value is *relative*, the resolved path
@@ -276,6 +318,72 @@ function verifyPath(
         foundIn: [],
         matchCount: 0,
         summary: `path '${ref.value}' escapes repoRoot (resolved to ${resolvedFull}) — refusing to check`,
+      };
+    }
+
+    // Symlink-aware backstop (agent-tasks e4c970b2, parity with
+    // review-claim-gate's realpath containment / agent-tasks 2878a962):
+    // `resolve()` above is purely lexical and does not follow symlinks.
+    // A committed symlink inside repoRoot that points outside it (e.g.
+    // `linked-dir -> /elsewhere`) plus a ref.value like
+    // `linked-dir/secret` passes the lexical check above (its own path
+    // is inside repoRoot) while the `statSync` below would actually
+    // escape through it and disclose the outside path's existence/mtime.
+    // Re-check containment against the *real* (symlink-resolved) paths.
+    //
+    // ENOENT/ENOTDIR-safe: `resolveRealOrNull` returns null (not throw)
+    // when repoRoot or the resolved value doesn't exist yet, or when a
+    // path segment along the way is structurally not a directory — a
+    // fresh repoRoot, or the ordinary "does this path still exist" case
+    // where it doesn't, are not escapes. When either side is
+    // unresolvable we skip this check; the `statSync` below still
+    // correctly reports exists:false for a genuinely missing path
+    // either way, so nothing is leaked by skipping.
+    //
+    // Review follow-up (agent-tasks e4c970b2, MEDIUM): `verifyPath` —
+    // and `verifyMemoryReference` as a whole — is designed to always
+    // return a result and never throw (callers such as grounding-mcp's
+    // tool handler do not wrap this call in a try/catch). But
+    // `resolveRealOrNull` deliberately rethrows any errno other than
+    // ENOENT/ENOTDIR (EACCES, ELOOP from a symlink cycle, ...) instead
+    // of silently disabling the containment check. Catch that here and
+    // convert it into a fail-closed RESULT instead of letting it
+    // propagate out of `verifyMemoryReference` — totality is preserved,
+    // and "cannot verify" is exactly as fail-closed as throwing would
+    // have been, without breaking the tool's no-throw contract.
+    try {
+      const realRoot = resolveRealOrNull(resolvedRoot);
+      const realFull = resolveRealOrNull(resolvedFull);
+      if (
+        realRoot !== null &&
+        realFull !== null &&
+        realFull !== realRoot &&
+        !realFull.startsWith(realRoot + "/") &&
+        !realFull.startsWith(realRoot + "\\")
+      ) {
+        return {
+          ref,
+          exists: false,
+          foundIn: [],
+          matchCount: 0,
+          // Decision (LOW finding, kept for parity with the lexical
+          // escape summary above and with review-claim-gate's
+          // equivalent message): this embeds the canonical outside
+          // path. The caller already controls the committed symlink
+          // that makes this reachable, so it does not disclose
+          // anything beyond what they set up themselves; consistency
+          // with the sibling lexical-escape summary (and grep-ability
+          // across both) outweighs trimming it here.
+          summary: `path '${ref.value}' escapes repoRoot via a symlink (resolved to ${realFull}) — refusing to check`,
+        };
+      }
+    } catch {
+      return {
+        ref,
+        exists: false,
+        foundIn: [],
+        matchCount: 0,
+        summary: `path '${ref.value}' cannot be verified — unexpected filesystem state while checking symlink containment`,
       };
     }
   }
