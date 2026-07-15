@@ -1,6 +1,6 @@
 {
   "name": "@lannguyensi/readme-first-resolver",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Forces agents to read primary docs before any analysis",
   "license": "MIT",
   "repository": {

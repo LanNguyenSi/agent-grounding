@@ -27,6 +27,20 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Pin consistency check
+        # Asserts every internal @lannguyensi/* dependency pin across
+        # packages/*/package.json is satisfiable by the sibling workspace's
+        # current version. Catches a stale pin left behind after a version
+        # bump; the per-tag version guard only checks the tagged package's
+        # own version field, not what it pins.
+        run: npm run check:pins
+
+      - name: Pin consistency checker unit tests
+        # Fixture-based unit tests for the checker function itself
+        # (including a negative control), run against in-memory fixtures,
+        # never the real manifests.
+        run: npm run test:check-pins
+
       - name: Build
         # Uses the root `build` script (which topo-orders the wrapped libs
         # before everything else). A bare `npm run build --workspaces`
