@@ -3,7 +3,7 @@ type: invariant
 title: Evidence-ledger session keys — one opaque column, two conventions
 description: The ledger `session` is a single opaque TEXT column; grounding-mcp keys it by a generated `gs-*` id while the merge-approval CI Action keys it by the PR head branch name, so evidence written under one key is invisible to a reader expecting the other.
 tags: [evidence-ledger, sessions, keys, ci, mcp]
-timestamp: 2026-07-10T01:40:00.436303Z
+timestamp: 2026-07-16T02:31:52Z
 sources:
   - packages/evidence-ledger/src/types.ts
   - packages/evidence-ledger/src/db.ts
@@ -19,7 +19,7 @@ The evidence ledger stores who-owns-this-row in a single opaque column, `session
 
 Two conventions exist, and they do not agree:
 
-- **grounding-mcp keys by a generated `gs-*` id.** `ledger_add` documents its `sessionId` param as "Session id — used as the ledger session namespace" (`packages/grounding-mcp/src/server.ts:177`) and passes it verbatim as `session` into `addEntry` (`server.ts:184-190`). The id that flows through here is minted by `generateSessionId(keyword)` = `` `gs-${slug}-${ts}` `` (`packages/grounding-wrapper/src/lib.ts:58-61`), where `slug` is the keyword lowercased, non-alphanumerics collapsed to `-`, truncated to 16 chars, and `ts` is `Date.now().toString(36)`. Shape: `gs-<keyword-slug>-<base36-timestamp>` (e.g. `gs-agent-grounding-<ts>`).
+- **grounding-mcp keys by a generated `gs-*` id.** `ledger_add` documents its `sessionId` param as "Session id — used as the ledger session namespace" (`packages/grounding-mcp/src/server.ts:189`) and passes it verbatim as `session` into `addEntry` (`server.ts:196-202`). The id that flows through here is minted by `generateSessionId(keyword)` = `` `gs-${slug}-${ts}` `` (`packages/grounding-wrapper/src/lib.ts:58-61`), where `slug` is the keyword lowercased, non-alphanumerics collapsed to `-`, truncated to 16 chars, and `ts` is `Date.now().toString(36)`. Shape: `gs-<keyword-slug>-<base36-timestamp>` (e.g. `gs-agent-grounding-<ts>`).
 
 - **The merge-approval CI Action keys by the PR head branch name.** `.github/workflows/merge-approval.yml:49` passes `task-id: ${{ github.event.pull_request.head.ref }}` into the `review-claim-gate/action`. `head.ref` is the **PR HEAD BRANCH NAME**, not a task UUID. This correction is load-bearing: any mental model that assumes CI reads evidence under a task UUID is wrong — it reads under the literal branch string.
 
@@ -35,7 +35,7 @@ A separate structural guard keeps decision rows from polluting evidence reads: `
 
 - **Column + read API (the opaque key):** `packages/evidence-ledger/src/db.ts:105` (`session TEXT` def), `:135` (rebuild copy), `:259-262` (`listEntries` equality filter), `:303-322` (`getSummary`, including the `policy_decision` bucket split at `:320`).
 - **Type bucket:** `packages/evidence-ledger/src/types.ts:9-14` (`EntryType`), `:41` (`policyDecisions` on `LedgerSummary`).
-- **Writer convention (`gs-*`):** `packages/grounding-mcp/src/server.ts:177` (param doc), `:184-190` (write-through); id shape `packages/grounding-wrapper/src/lib.ts:58-61`.
+- **Writer convention (`gs-*`):** `packages/grounding-mcp/src/server.ts:189` (param doc), `:196-202` (write-through); id shape `packages/grounding-wrapper/src/lib.ts:58-61`.
 - **CI reader convention (branch name):** `.github/workflows/merge-approval.yml:49` (`task-id: …head.ref`), consumed by the action pinned at `:47`.
 - **Precedence + bridge:** `packages/review-claim-gate/README.md:69-73` (source precedence), `:75-80` (export bridge + round-trip), `:59-63` (export CLI signature).
 

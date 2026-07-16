@@ -3,7 +3,7 @@ type: runbook
 title: Merge-approval gate — labels, keys, and when it actually blocks
 description: How the merge-approval Check-Run maps five review:* PR labels to merge_approval booleans, keys evidence by the PR HEAD BRANCH NAME, and blocks only when required in branch protection — which on agent-grounding master it is not, so it is advisory in fact today.
 tags: [merge-approval, review-claim-gate, ci, runbook, labels]
-timestamp: 2026-07-10T01:40:00.436303Z
+timestamp: 2026-07-16T02:31:52Z
 sources:
   - .github/workflows/merge-approval.yml
   - packages/review-claim-gate/README.md
@@ -133,7 +133,7 @@ Do the review, then add each label only when its dimension is genuinely met
 3. No unresolved review comments → `review:comments-resolved`.
 4. Diff stays inside task scope → `review:scope-matches-task`.
 5. Log ≥1 evidence-ledger entry under `session = <branch-name>` (e.g.
-   `ledger add --session feat/foo --type fact --content "…"`), or in iteration 2
+   `ledger fact "…" --session feat/foo`), or in iteration 2
    commit `.agent-grounding/evidence/<branch-name>.jsonl` → `review:evidence-logged`.
 
 The Check-Run flips to ALLOWED once all five labels are present.
