@@ -3,7 +3,7 @@ type: invariant
 title: Solution-acceptance verdict contract — why the marker lives outside the ledger
 description: A "done" verdict is derived from a real preflight+OW run, HEAD-pinned, and written to an XDG state marker outside the agent-writable evidence-ledger because ledger rows are forgeable via ledger_add.
 tags: [solution-acceptance, verdicts, anti-hacking, trust-boundary]
-timestamp: 2026-07-10T01:40:00.436303Z
+timestamp: 2026-07-16T02:31:52Z
 sources:
   - packages/grounding-mcp/src/solution-verdict.ts
   - packages/grounding-mcp/src/ow-run-completeness.ts
@@ -88,10 +88,10 @@ into `ready`/`blockers` only; they do NOT add fields.
 
 ### The two MCP tools (server.ts, `PACKAGE_VERSION = '0.6.0'` at line 49)
 
-- **`solution_evaluate`** (registered line 303) — the producer. Runs preflight against
+- **`solution_evaluate`** (registered line 316) — the producer. Runs preflight against
   the repo, records a HEAD-pinned verdict for `id`. Args: `id` (min 1), optional
   `repoPath` (defaults to cwd). Calls `evaluateSolution(id, repoPath ?? process.cwd())`.
-- **`solution_gate`** (registered line 319) — read-only checker. Resolves current HEAD
+- **`solution_gate`** (registered line 332) — read-only checker. Resolves current HEAD
   via `getHeadSha`, then `evaluateGate(id, head)`. Deny reasons are precise: no verdict /
   not ready + blockers / HEAD drift / unresolvable HEAD.
 
@@ -112,24 +112,24 @@ Each OW blocker is prefixed `orchestrator-workflow: ` (line 296).
 mutation — comment lines 7-9). Given a `repoPath`, it reads a *third* repo's OW run files
 under `<repoPath>/.ai/runs/`:
 
-- **Active run selection** (`findActiveRun`, lines 190-208): newest dated dir, only dirs
+- **Active run selection** (`findActiveRun`, lines 192-210): newest dated dir, only dirs
   matching `/^\d{4}-\d{2}-\d{2}-/` are eligible; name-descending sort, mtime tiebreak.
-- **`06-handoff.md`** → `final-status` marker (`resolveAcceptanceValue`, line 108); must
-  be in `{accepted, accepted_with_notes}` (line 74).
-- **`05-review-findings.md`** → `acceptance-recommendation` marker (line 125); must be in
-  `{accept, accept_with_notes}` (line 75). Plus the **findings table**: rows are located
+- **`06-handoff.md`** → `final-status` marker (`resolveAcceptanceValue`, line 110); must
+  be in `{accepted, accepted_with_notes}` (line 76).
+- **`05-review-findings.md`** → `acceptance-recommendation` marker (line 127); must be in
+  `{accept, accept_with_notes}` (line 77). Plus the **findings table**: rows are located
   by anchoring on a header row whose cells include both `Severity` and `Decision`
-  (`parseFindingsHeaderRow`, line 377), not by the `## Findings` heading text. A concrete
+  (`parseFindingsHeaderRow`, line 379), not by the `## Findings` heading text. A concrete
   `high`/`critical` severity row ARMS the gate UNLESS its Decision is explicitly in
-  `{accepted, defer}` (`RESOLVED_DECISIONS`, line 80) — fix, reject, blank, `open`,
+  `{accepted, defer}` (`RESOLVED_DECISIONS`, line 82) — fix, reject, blank, `open`,
   `TODO`, unknown all block (fail-closed). All tables are parsed (appended second-round
   tables count); a findings section with content but no table yields an explicit format
-  blocker (`findingsFormatBlocker`, line 400).
-- **`00-goal.md`** → the `run-base` marker (`resolveRunBase`, line 170), raw `\S+`
+  blocker (`findingsFormatBlocker`, line 402).
+- **`00-goal.md`** → the `run-base` marker (`resolveRunBase`, line 172), raw `\S+`
   capture, `TODO` → absent. This module only *extracts* it; git verification happens in
   the verdict layer.
 
-**Marker-first, prose fallback** throughout (`resolveAcceptanceValue`, lines 230-249): the
+**Marker-first, prose fallback** throughout (`resolveAcceptanceValue`, lines 232-251): the
 machine-readable `<!-- solution-acceptance: <field> = <value> -->` marker wins; only when
 the field is entirely absent does it fall back to the `## <heading>` prose value. A `TODO`
 or malformed marker surfaces its own blocker and never silently falls back (fail-closed).
