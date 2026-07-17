@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.4, 2026-07-17
+
+### Changed
+
+- Re-pin `claim-gate`, `evidence-ledger`, `grounding-wrapper` and
+  `hypothesis-tracker` to 0.5.1. Picks up the evidence-ledger
+  `better-sqlite3` `^12.9.0` bump (Node 26 install fix). No behavior
+  changes.
+
 ## 0.1.3, 2026-07-02
 
 ### Changed

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.1, 2026-07-17
+
+### Changed
+
+- Re-pin the four version-locked libs (`claim-gate`, `evidence-ledger`,
+  `grounding-wrapper`, `hypothesis-tracker`) to 0.5.1. Picks up the
+  evidence-ledger `better-sqlite3` `^12.9.0` bump, which unbreaks
+  `npm i -g @lannguyensi/grounding-mcp` on Node 26 (9.x has no Node 26
+  prebuilds and no longer compiles from source). No behavior changes.
+
 ## 0.6.0, 2026-07-02
 
 ### Added

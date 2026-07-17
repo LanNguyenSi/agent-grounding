@@ -31,6 +31,24 @@ Independently-versioned published packages (own tag, own CHANGELOG):
 
 The seven packages above (other than understanding-gate) each carry their own version and CHANGELOG and are released under per-package tags of the form `<pkg>-vX.Y.Z` by `publish-libs.yml`; they move independently of the four version-locked packages.
 
+## [0.5.1] - 2026-07-17
+
+### Fixed
+
+- `evidence-ledger`: bump `better-sqlite3` from `^9.4.3` to `^12.9.0`. The 9.x
+  series ships no prebuilds for Node 26 and fails to compile from source
+  because the Node 26 headers require C++20 while better-sqlite3 9.x builds
+  with C++17 — this broke every registry install of a consumer (first hit:
+  `harness init --interactive` installing `@lannguyensi/grounding-mcp` on
+  Node 26.5.0, darwin x64). `^12.9.0` matches the pin agent-memory's
+  memory-router already uses; 12.x installs a working Node 26 prebuild. No
+  API changes in the ledger itself.
+
+### Changed
+
+- `grounding-wrapper`, `claim-gate`, `hypothesis-tracker`: version-locked
+  ride-along bumps, no code changes.
+
 ## [0.5.0] - 2026-07-02
 
 ### Security / Reliability
