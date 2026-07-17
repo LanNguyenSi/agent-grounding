@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.7, 2026-07-17
+
+### Changed
+
+- Re-pin `hypothesis-tracker` to 0.5.1 (version-locked train v0.5.1; the
+  substantive change in that train is evidence-ledger's `better-sqlite3`
+  `^12.9.0` Node 26 install fix). No behavior changes in the gate itself.
+
 ## 0.4.6, 2026-07-10
 
 ### Fixed
