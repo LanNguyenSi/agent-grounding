@@ -54,8 +54,8 @@ The seven packages above (other than understanding-gate) each carry their own ve
 
 - Retroactive correction in the `[0.1.0]` notes below: `evidence-ledger`
   has never read the `EVIDENCE_LEDGER_DB` environment variable — that
-  variable belongs to the `grounding-mcp`/`review-claim-gate` CLI layer,
-  which passes an explicit `dbPath`. The 0.1.0 release note claimed
+  variable belongs to the caller layer (`grounding-mcp` bridge and the
+  `review-claim-gate` CLI), which passes an explicit `dbPath`. The 0.1.0 release note claimed
   otherwise and has carried the error since; see the correction note there
   and the clarified `evidence-ledger` README.
 

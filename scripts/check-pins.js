@@ -137,7 +137,9 @@ function collectPinViolations(workspacePackages) {
  *  2. Uniformity — every declared `engines.node` value (published or not)
  *     must be identical. `expected` is the modal (most common) declared
  *     value, so the violation message points at the actual outlier, not
- *     at whichever package happens to sort first.
+ *     at whichever package happens to sort first. On an even split there
+ *     is no true majority; the tie breaks to the first-declared value —
+ *     arbitrary, but any split is real drift and fails the gate either way.
  *
  * Violations:
  *   { reason: 'engines-missing', consumer }
