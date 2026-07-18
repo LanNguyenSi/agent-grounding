@@ -1,6 +1,6 @@
 {
   "name": "@lannguyensi/hypothesis-tracker",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Track competing hypotheses during debugging, no silent replacements",
   "license": "MIT",
   "engines": {

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.5] - 2026-07-18
+
+### Changed
+
+- Re-pin `claim-gate` and `evidence-ledger` to 0.6.0. Picks up the
+  evidence-ledger `getDb` guard fix and the uniform `engines >=20` baseline.
+  No behavior changes.
+
 ## [0.1.4] - 2026-07-17
 
 ### Changed

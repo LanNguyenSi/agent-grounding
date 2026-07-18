@@ -33,6 +33,8 @@ The seven packages above (other than understanding-gate) each carry their own ve
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-18
+
 ### Fixed
 
 - `evidence-ledger`: `getDb(dbPath?)` no longer silently ignores an explicit

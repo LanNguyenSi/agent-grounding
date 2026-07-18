@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.8, 2026-07-18
+
+### Changed
+
+- Re-pin `hypothesis-tracker` to 0.6.0 (version-locked train v0.6.0; the
+  substantive changes in that train are evidence-ledger's `getDb` guard fix
+  and the uniform `engines >=20` baseline). No behavior changes in the gate
+  itself.
+
 ## 0.4.7, 2026-07-17
 
 ### Changed

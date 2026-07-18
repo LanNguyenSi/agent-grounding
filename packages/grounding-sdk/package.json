@@ -1,6 +1,6 @@
 {
   "name": "@lannguyensi/grounding-sdk",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Ergonomic facade over agent-grounding: verify claims, track hypotheses, validate sessions",
   "license": "MIT",
   "engines": {
@@ -29,10 +29,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@lannguyensi/claim-gate": "0.5.1",
-    "@lannguyensi/evidence-ledger": "0.5.1",
-    "@lannguyensi/grounding-wrapper": "0.5.1",
-    "@lannguyensi/hypothesis-tracker": "0.5.1"
+    "@lannguyensi/claim-gate": "0.6.0",
+    "@lannguyensi/evidence-ledger": "0.6.0",
+    "@lannguyensi/grounding-wrapper": "0.6.0",
+    "@lannguyensi/hypothesis-tracker": "0.6.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",

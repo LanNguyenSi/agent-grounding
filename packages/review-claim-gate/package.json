@@ -1,6 +1,6 @@
 {
   "name": "@lannguyensi/review-claim-gate",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Claim-gate consumer for PR-review subagents, enforces a merge_approval policy backed by evidence-ledger evidence",
   "license": "MIT",
   "engines": {
@@ -33,8 +33,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@lannguyensi/claim-gate": "0.5.1",
-    "@lannguyensi/evidence-ledger": "0.5.1",
+    "@lannguyensi/claim-gate": "0.6.0",
+    "@lannguyensi/evidence-ledger": "0.6.0",
     "commander": "^12.0.0"
   },
   "devDependencies": {
