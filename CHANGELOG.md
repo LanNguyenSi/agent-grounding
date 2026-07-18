@@ -31,6 +31,17 @@ Independently-versioned published packages (own tag, own CHANGELOG):
 
 The seven packages above (other than understanding-gate) each carry their own version and CHANGELOG and are released under per-package tags of the form `<pkg>-vX.Y.Z` by `publish-libs.yml`; they move independently of the four version-locked packages.
 
+## [Unreleased]
+
+### Added
+
+- All four version-locked packages plus `grounding-mcp`, `grounding-sdk`,
+  `review-claim-gate`, and `understanding-gate` now declare
+  `engines: { node: ">=20" }`. `better-sqlite3` `^12.9` effectively requires
+  Node >= 20 already; without the declaration, older Nodes fail late during
+  the native build with opaque C++ errors instead of early and clearly at
+  `npm install`. (Reviewer follow-up from the 0.5.1 train, PR #147.)
+
 ## [0.5.1] - 2026-07-17
 
 ### Fixed
@@ -170,6 +181,20 @@ Pre-1.0: the public API surface continues to be subject to change
 between minor releases.
 
 ### `@lannguyensi/evidence-ledger`
+
+#### Removed
+
+- *(retroactive addendum, added 2026-07-18)* The `EVIDENCE_LEDGER_DB`
+  environment-variable override for the database path, supported in 0.1.x,
+  was removed in this release without a changelog note at the time. Since
+  0.2.0 the module resolves `~/.evidence-ledger/ledger.db` unless a path is
+  passed to `getDb(dbPath)` explicitly. External writers still honoring the
+  variable diverge silently from readers using the default path (reads
+  soft-degrade rather than fail). Decision 2026-07-18: the override stays
+  removed — path control belongs to the caller/CLI layer (as in
+  `grounding-mcp`, onto which harness projects an env var of the same name);
+  a module-level env override would reintroduce exactly the ambiguity the
+  removal eliminated.
 
 #### Added
 

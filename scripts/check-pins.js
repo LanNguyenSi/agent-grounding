@@ -63,6 +63,7 @@ function loadWorkspacePackages(rootDir) {
     workspaces.push({
       name: pkg.name,
       version: pkg.version,
+      engines: pkg.engines || null,
       dependencies: pkg.dependencies || {},
       devDependencies: pkg.devDependencies || {},
       peerDependencies: pkg.peerDependencies || {},
@@ -125,7 +126,37 @@ function collectPinViolations(workspacePackages) {
   return violations;
 }
 
+/**
+ * Engines-drift guard: every workspace package that declares
+ * `engines.node` must declare the SAME value. Presence is not required
+ * (packages without a native-build dependency chain may legitimately omit
+ * it), but a mixed set of values across the monorepo is always a mistake —
+ * the lockstep release train ships them together.
+ *
+ * Violations: { reason: 'engines-drift', consumer, enginesNode, expected }
+ * where `expected` is the value used by the majority-first declaring package.
+ */
+function collectEnginesViolations(workspacePackages) {
+  const declaring = workspacePackages.filter((pkg) => pkg.engines && pkg.engines.node);
+  if (declaring.length === 0) return [];
+  const expected = declaring[0].engines.node;
+  return declaring
+    .filter((pkg) => pkg.engines.node !== expected)
+    .map((pkg) => ({
+      reason: 'engines-drift',
+      consumer: pkg.name,
+      enginesNode: pkg.engines.node,
+      expected,
+    }));
+}
+
 function formatViolation(violation) {
+  if (violation.reason === 'engines-drift') {
+    return (
+      `  - ${violation.consumer} declares engines.node "${violation.enginesNode}", ` +
+      `but other workspace packages declare "${violation.expected}" — keep the value uniform.`
+    );
+  }
   const location = `${violation.consumer} (${violation.field})`;
   if (violation.reason === 'unknown-workspace') {
     return (
@@ -156,7 +187,7 @@ function main() {
     return;
   }
 
-  const violations = collectPinViolations(workspaces);
+  const violations = [...collectPinViolations(workspaces), ...collectEnginesViolations(workspaces)];
 
   if (violations.length > 0) {
     console.error(`Pin consistency check failed (${violations.length} violation(s)):\n`);
@@ -177,7 +208,7 @@ function main() {
   );
 }
 
-module.exports = { loadWorkspacePackages, collectPinViolations };
+module.exports = { loadWorkspacePackages, collectPinViolations, collectEnginesViolations };
 
 if (require.main === module) {
   main();

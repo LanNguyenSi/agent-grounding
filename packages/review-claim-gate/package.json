@@ -3,6 +3,9 @@
   "version": "0.1.4",
   "description": "Claim-gate consumer for PR-review subagents, enforces a merge_approval policy backed by evidence-ledger evidence",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/LanNguyenSi/agent-grounding.git",

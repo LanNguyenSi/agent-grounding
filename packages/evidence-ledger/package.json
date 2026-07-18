@@ -3,6 +3,9 @@
   "version": "0.5.1",
   "description": "Structured evidence tracking for agent debugging sessions",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/LanNguyenSi/agent-grounding.git",

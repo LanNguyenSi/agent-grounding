@@ -3,6 +3,9 @@
   "version": "0.4.7",
   "description": "Pre-execution gate that asks AI agents to produce an Understanding Report before acting",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/LanNguyenSi/agent-grounding.git",

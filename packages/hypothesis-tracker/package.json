@@ -3,6 +3,9 @@
   "version": "0.5.1",
   "description": "Track competing hypotheses during debugging, no silent replacements",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/LanNguyenSi/agent-grounding.git",

@@ -12,7 +12,31 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { collectPinViolations, loadWorkspacePackages } = require('./check-pins');
+const { collectPinViolations, collectEnginesViolations, loadWorkspacePackages } = require('./check-pins');
+
+test('engines-drift guard: passes when all declaring packages agree (non-declaring ignored)', () => {
+  const workspaces = [
+    { name: '@lannguyensi/a', version: '1.0.0', engines: { node: '>=20' } },
+    { name: '@lannguyensi/b', version: '1.0.0', engines: { node: '>=20' } },
+    { name: '@lannguyensi/c', version: '1.0.0', engines: null },
+  ];
+  assert.deepEqual(collectEnginesViolations(workspaces), []);
+});
+
+test('engines-drift guard: negative control — a diverging engines.node value is flagged', () => {
+  const workspaces = [
+    { name: '@lannguyensi/a', version: '1.0.0', engines: { node: '>=20' } },
+    { name: '@lannguyensi/b', version: '1.0.0', engines: { node: '>=22' } },
+  ];
+  const violations = collectEnginesViolations(workspaces);
+  assert.equal(violations.length, 1);
+  assert.deepEqual(violations[0], {
+    reason: 'engines-drift',
+    consumer: '@lannguyensi/b',
+    enginesNode: '>=22',
+    expected: '>=20',
+  });
+});
 
 test('passes when every internal pin exactly matches the workspace version', () => {
   const workspaces = [

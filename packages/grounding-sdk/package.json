@@ -3,6 +3,9 @@
   "version": "0.1.4",
   "description": "Ergonomic facade over agent-grounding: verify claims, track hypotheses, validate sessions",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/LanNguyenSi/agent-grounding.git",
