@@ -2,9 +2,18 @@
 
 ## Unreleased
 
+## 0.7.0, 2026-07-18
+
 ### Fixed
 
 - **OW reader: close the mixed-state findings-table bypass.** `readOwRunCompleteness` previously reported a run as `complete` whenever the solution-acceptance markers were set to an accepted value, even if the Findings table still carried the shipped review template's untouched placeholder/legend row and no concrete finding row had ever been added — an operator could flip the markers to `accepted`/`accept` without ever transferring the reviewer's findings into the table. The reader now recognizes that placeholder row by a byte-exact match of the COMPLETE shipped row (every cell, not just the Severity slash-list) and blocks with `complete: false` when it survives untouched AND no row anywhere carries a concrete severity, naming both escape hatches in the reason (transfer the findings, or delete the placeholder row for a genuine zero-findings review). Unaffected: a header row with no data rows at all (the placeholder already deleted) stays `complete: true`, and a concrete finding row sitting next to a left-behind placeholder row is still valid, as before. Lockstep with agent-dx's `packages/orchestrator-workflow/assets/templates/05-review-findings.md` placeholder row and its `test/template-markers.test.ts` pin; the exact row text is exported as `OW_FINDINGS_PLACEHOLDER_ROW` and pinned by a reciprocal test on this side.
+
+### Changed
+
+- Re-pin the four version-locked libs (`claim-gate`, `evidence-ledger`,
+  `grounding-wrapper`, `hypothesis-tracker`) to 0.6.0. Picks up the
+  evidence-ledger `getDb` guard fix and the uniform `engines >=20` baseline.
+  No behavior changes from the re-pin itself.
 
 ## 0.6.1, 2026-07-17
 
