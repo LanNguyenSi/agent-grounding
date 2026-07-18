@@ -3,6 +3,9 @@
   "version": "0.1.1",
   "description": "Routes a keyword/problem to the correct repos, components and docs scope",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/LanNguyenSi/agent-grounding.git",

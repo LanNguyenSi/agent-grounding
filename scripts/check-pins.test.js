@@ -14,19 +14,20 @@ const os = require('node:os');
 const path = require('node:path');
 const { collectPinViolations, collectEnginesViolations, loadWorkspacePackages } = require('./check-pins');
 
-test('engines-drift guard: passes when all declaring packages agree (non-declaring ignored)', () => {
+test('engines guard: passes when all published packages declare the same value (private may omit)', () => {
   const workspaces = [
-    { name: '@lannguyensi/a', version: '1.0.0', engines: { node: '>=20' } },
-    { name: '@lannguyensi/b', version: '1.0.0', engines: { node: '>=20' } },
-    { name: '@lannguyensi/c', version: '1.0.0', engines: null },
+    { name: '@lannguyensi/a', version: '1.0.0', private: false, engines: { node: '>=20' } },
+    { name: '@lannguyensi/b', version: '1.0.0', private: false, engines: { node: '>=20' } },
+    { name: '@lannguyensi/c', version: '1.0.0', private: true, engines: null },
   ];
   assert.deepEqual(collectEnginesViolations(workspaces), []);
 });
 
-test('engines-drift guard: negative control — a diverging engines.node value is flagged', () => {
+test('engines guard: negative control — a diverging engines.node value is flagged as the outlier', () => {
   const workspaces = [
-    { name: '@lannguyensi/a', version: '1.0.0', engines: { node: '>=20' } },
-    { name: '@lannguyensi/b', version: '1.0.0', engines: { node: '>=22' } },
+    { name: '@lannguyensi/a', version: '1.0.0', private: false, engines: { node: '>=20' } },
+    { name: '@lannguyensi/b', version: '1.0.0', private: false, engines: { node: '>=22' } },
+    { name: '@lannguyensi/c', version: '1.0.0', private: false, engines: { node: '>=20' } },
   ];
   const violations = collectEnginesViolations(workspaces);
   assert.equal(violations.length, 1);
@@ -36,6 +37,35 @@ test('engines-drift guard: negative control — a diverging engines.node value i
     enginesNode: '>=22',
     expected: '>=20',
   });
+});
+
+test('engines guard: modal reference — the outlier is flagged even when it sorts FIRST', () => {
+  const workspaces = [
+    { name: '@lannguyensi/a', version: '1.0.0', private: false, engines: { node: '>=22' } },
+    { name: '@lannguyensi/b', version: '1.0.0', private: false, engines: { node: '>=20' } },
+    { name: '@lannguyensi/c', version: '1.0.0', private: false, engines: { node: '>=20' } },
+  ];
+  const violations = collectEnginesViolations(workspaces);
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].consumer, '@lannguyensi/a');
+  assert.equal(violations[0].expected, '>=20');
+});
+
+test('engines guard: a published package without engines.node is flagged as missing', () => {
+  const workspaces = [
+    { name: '@lannguyensi/a', version: '1.0.0', private: false, engines: { node: '>=20' } },
+    { name: '@lannguyensi/b', version: '1.0.0', private: false, engines: null },
+    // engines object present but no .node key counts as missing too
+    { name: '@lannguyensi/c', version: '1.0.0', private: false, engines: {} },
+  ];
+  const violations = collectEnginesViolations(workspaces);
+  assert.deepEqual(
+    violations.map((v) => [v.reason, v.consumer]),
+    [
+      ['engines-missing', '@lannguyensi/b'],
+      ['engines-missing', '@lannguyensi/c'],
+    ],
+  );
 });
 
 test('passes when every internal pin exactly matches the workspace version', () => {

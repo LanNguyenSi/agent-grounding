@@ -63,6 +63,7 @@ function loadWorkspacePackages(rootDir) {
     workspaces.push({
       name: pkg.name,
       version: pkg.version,
+      private: pkg.private === true,
       engines: pkg.engines || null,
       dependencies: pkg.dependencies || {},
       devDependencies: pkg.devDependencies || {},
@@ -127,34 +128,66 @@ function collectPinViolations(workspacePackages) {
 }
 
 /**
- * Engines-drift guard: every workspace package that declares
- * `engines.node` must declare the SAME value. Presence is not required
- * (packages without a native-build dependency chain may legitimately omit
- * it), but a mixed set of values across the monorepo is always a mistake —
- * the lockstep release train ships them together.
+ * Engines policy guard (decision 2026-07-18, uniform baseline):
  *
- * Violations: { reason: 'engines-drift', consumer, enginesNode, expected }
- * where `expected` is the value used by the majority-first declaring package.
+ *  1. Presence — every PUBLISHED workspace package (`private` !== true)
+ *     must declare `engines.node`. The monorepo releases packages
+ *     together; a published package without the baseline silently drops
+ *     the supported-Node signal for its consumers.
+ *  2. Uniformity — every declared `engines.node` value (published or not)
+ *     must be identical. `expected` is the modal (most common) declared
+ *     value, so the violation message points at the actual outlier, not
+ *     at whichever package happens to sort first.
+ *
+ * Violations:
+ *   { reason: 'engines-missing', consumer }
+ *   { reason: 'engines-drift', consumer, enginesNode, expected }
  */
 function collectEnginesViolations(workspacePackages) {
+  const violations = [];
+
+  for (const pkg of workspacePackages) {
+    if (!pkg.private && !(pkg.engines && pkg.engines.node)) {
+      violations.push({ reason: 'engines-missing', consumer: pkg.name });
+    }
+  }
+
   const declaring = workspacePackages.filter((pkg) => pkg.engines && pkg.engines.node);
-  if (declaring.length === 0) return [];
-  const expected = declaring[0].engines.node;
-  return declaring
-    .filter((pkg) => pkg.engines.node !== expected)
-    .map((pkg) => ({
-      reason: 'engines-drift',
-      consumer: pkg.name,
-      enginesNode: pkg.engines.node,
-      expected,
-    }));
+  if (declaring.length === 0) return violations;
+
+  const counts = new Map();
+  for (const pkg of declaring) {
+    counts.set(pkg.engines.node, (counts.get(pkg.engines.node) || 0) + 1);
+  }
+  let expected = declaring[0].engines.node;
+  for (const [value, count] of counts) {
+    if (count > counts.get(expected)) expected = value;
+  }
+
+  for (const pkg of declaring) {
+    if (pkg.engines.node !== expected) {
+      violations.push({
+        reason: 'engines-drift',
+        consumer: pkg.name,
+        enginesNode: pkg.engines.node,
+        expected,
+      });
+    }
+  }
+  return violations;
 }
 
 function formatViolation(violation) {
+  if (violation.reason === 'engines-missing') {
+    return (
+      `  - ${violation.consumer} is published (not private) but declares no engines.node — ` +
+      `every published package carries the uniform supported-Node baseline.`
+    );
+  }
   if (violation.reason === 'engines-drift') {
     return (
       `  - ${violation.consumer} declares engines.node "${violation.enginesNode}", ` +
-      `but other workspace packages declare "${violation.expected}" — keep the value uniform.`
+      `but the workspace baseline is "${violation.expected}" — keep the value uniform.`
     );
   }
   const location = `${violation.consumer} (${violation.field})`;

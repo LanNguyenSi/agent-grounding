@@ -35,12 +35,29 @@ The seven packages above (other than understanding-gate) each carry their own ve
 
 ### Added
 
-- All four version-locked packages plus `grounding-mcp`, `grounding-sdk`,
-  `review-claim-gate`, and `understanding-gate` now declare
-  `engines: { node: ">=20" }`. `better-sqlite3` `^12.9` effectively requires
-  Node >= 20 already; without the declaration, older Nodes fail late during
-  the native build with opaque C++ errors instead of early and clearly at
-  `npm install`. (Reviewer follow-up from the 0.5.1 train, PR #147.)
+- All twelve published workspace packages now declare
+  `engines: { node: ">=20" }` as a uniform supported-Node baseline
+  (policy decision 2026-07-18: uniform across the monorepo rather than
+  native-chain-only, because the packages release together and a mixed
+  policy invites drift). Motivated by `better-sqlite3` `^12.9`, which
+  effectively requires Node >= 20. Note `engines` is advisory under
+  npm's defaults (an `EBADENGINE` warning; installs still proceed unless
+  the consumer sets `engine-strict=true`) — it surfaces the requirement
+  clearly above the eventual native-build failure rather than hard-stopping
+  it. `scripts/check-pins.js` now guards the policy: every published
+  package must declare `engines.node`, and all declared values must agree.
+  Per-package CHANGELOGs of the independently-versioned packages pick this
+  note up at their next release, per existing convention. (Reviewer
+  follow-up from the 0.5.1 train, PR #147.)
+
+### Documentation
+
+- Retroactive correction in the `[0.1.0]` notes below: `evidence-ledger`
+  has never read the `EVIDENCE_LEDGER_DB` environment variable — that
+  variable belongs to the `grounding-mcp`/`review-claim-gate` CLI layer,
+  which passes an explicit `dbPath`. The 0.1.0 release note claimed
+  otherwise and has carried the error since; see the correction note there
+  and the clarified `evidence-ledger` README.
 
 ## [0.5.1] - 2026-07-17
 
@@ -182,20 +199,6 @@ between minor releases.
 
 ### `@lannguyensi/evidence-ledger`
 
-#### Removed
-
-- *(retroactive addendum, added 2026-07-18)* The `EVIDENCE_LEDGER_DB`
-  environment-variable override for the database path, supported in 0.1.x,
-  was removed in this release without a changelog note at the time. Since
-  0.2.0 the module resolves `~/.evidence-ledger/ledger.db` unless a path is
-  passed to `getDb(dbPath)` explicitly. External writers still honoring the
-  variable diverge silently from readers using the default path (reads
-  soft-degrade rather than fail). Decision 2026-07-18: the override stays
-  removed — path control belongs to the caller/CLI layer (as in
-  `grounding-mcp`, onto which harness projects an env var of the same name);
-  a module-level env override would reintroduce exactly the ambiguity the
-  removal eliminated.
-
 #### Added
 
 - **`policy_decision` first-class entry type** (Phase 5 #4 / harness PR
@@ -264,6 +267,14 @@ versions until v1.0.0.
   `pruneEntries`, plus a `ledger` CLI. Native dependency on
   `better-sqlite3`. Database path overridable via the
   `EVIDENCE_LEDGER_DB` env var; defaults to `~/.evidence-ledger/ledger.db`.
+  *(Retroactive correction, added 2026-07-18: the env-var sentence above
+  was wrong when written — no version of `evidence-ledger` has ever read
+  `EVIDENCE_LEDGER_DB` (or any env var); `getDb(dbPath?)` resolves
+  `~/.evidence-ledger/ledger.db` unless a path is passed explicitly.
+  The variable is honored one layer up, by `grounding-mcp`
+  (`ledger-bridge`) and `review-claim-gate`, which read it and pass an
+  explicit `dbPath` down. Left in place with this note rather than
+  rewritten, so the historical record of the error is preserved.)*
 - `@lannguyensi/claim-gate`: deterministic policy engine that decides
   whether a claim is allowed given a `ClaimContext` (evidence presence,
   reproduction state, and similar flags). Pure functions, no IO.
