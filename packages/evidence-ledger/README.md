@@ -140,6 +140,18 @@ const db = getDb(); // persists to ~/.evidence-ledger/ledger.db
 // explicit path to getDb(dbPath) instead. EVIDENCE_LEDGER_DB is honored
 // one layer up by grounding-mcp and review-claim-gate, which forward it
 // as an explicit dbPath.
+//
+// getDb caches one open handle per process. Calling it again with no
+// argument, or with a path naming the same database (relative and
+// absolute forms are equivalent; ':memory:' is compared literally),
+// returns that handle. Calling it with a DIFFERENT explicit path while
+// a handle is open throws ("ledger already open at X, requested Y —
+// call resetDb() first to switch to a different path.") instead of
+// silently returning the wrong database; call resetDb() to re-point.
+// Identity is fixed at open time (a relative path is resolved against
+// the cwd of the opening call) and compared textually after path
+// resolution: symlinked spellings of the same file, or case variants on
+// a case-insensitive filesystem, count as different paths and throw.
 
 addEntry(db, { type: 'fact', content: 'port 3000 is closed', source: 'netstat', confidence: 'high' });
 addEntry(db, { type: 'hypothesis', content: 'firewall blocking', session: 'debug-session' });
