@@ -2,7 +2,9 @@
 //
 // Pure, side-effect-free read of a repo's OW run files. It answers one
 // question: is the *active* OW run process-complete (handoff accepted, review
-// recommended accept, no unresolved high/critical findings)?
+// recommended accept, no unresolved high/critical findings, and findings
+// actually transferred into the table — or the placeholder row deleted for a
+// genuine zero-findings review)?
 //
 // This module only READS. It is consumed later (separate slice) by
 // solution-verdict.ts to add an OW-process arm to the acceptance gate; nothing
@@ -30,6 +32,29 @@
 //     not a real finding; we decide whether a row is a real finding by its
 //     SEVERITY cell carrying a single concrete value (the slash-list legend is
 //     therefore skipped), and only then judge the Decision.
+//   - Mixed-state bypass guard: the placeholder row above is not itself a
+//     finding, but its untouched presence with NO concrete-severity finding
+//     row anywhere is a signal that findings were never transferred — an
+//     operator can flip the solution-acceptance markers to an accepted value
+//     without ever touching the table, and the marker checks above alone
+//     would pass it. The reader recognizes the placeholder row by a
+//     byte-exact match of the COMPLETE shipped row (every cell, including the
+//     Category legend and the two HTML-comment cells — not just the Severity
+//     slash-list, so a differently worded legend, e.g. a stale pre-0.7.4
+//     fixture, does not match and is handled by the skip-path above as
+//     before). Normalization is bounded to what any table row already gets
+//     (whole-line trim, split on `|`, per-cell trim) — nothing extra. When
+//     the placeholder row survives AND no row anywhere carries a concrete
+//     severity, the run is `complete: false` with a reason naming both escape
+//     hatches: transfer the reviewer's findings into the table, or delete the
+//     placeholder row for a genuine zero-findings review. A header row with no
+//     data rows at all (the row already deleted) stays `complete: true`, and a
+//     concrete finding row sitting next to a left-behind placeholder row is
+//     unaffected (still valid, as before). Lockstep: the exact row text is
+//     exported as `OW_FINDINGS_PLACEHOLDER_ROW` and pinned by a reciprocal
+//     test against agent-dx's
+//     packages/orchestrator-workflow/assets/templates/05-review-findings.md
+//     and its test/template-markers.test.ts.
 //   - Fail-closed findings arming: a row with a concrete high/critical severity
 //     ARMS the gate (blocks) UNLESS its Decision is explicitly resolved
 //     ({accepted, defer}). So fix, reject, blank, `open`, `TODO`, and any
@@ -82,6 +107,26 @@ const ARMING_SEVERITIES = new Set(['high', 'critical']);
 const RESOLVED_DECISIONS = new Set(['accepted', 'defer']);
 // Run dirs must carry an ISO date prefix to be eligible as the active run.
 const DATED_RUN_PREFIX = /^\d{4}-\d{2}-\d{2}-/;
+
+/**
+ * The exact literal text of the shipped review template's placeholder /
+ * legend row (agent-dx repo,
+ * packages/orchestrator-workflow/assets/templates/05-review-findings.md).
+ * Exported ONLY so tests can pin it directly against the known template
+ * string (see this package's ow-run-completeness.test.ts reciprocal pinning
+ * test) and, by hand, against agent-dx's own
+ * packages/orchestrator-workflow/test/template-markers.test.ts pin — the two
+ * repos are lockstep-coupled on this row and must be kept in sync manually.
+ */
+export const OW_FINDINGS_PLACEHOLDER_ROW =
+  '| low/medium/high/critical | correctness/architecture/security/tests/maintainability/performance/docs | <!-- finding --> | <!-- fix --> | accepted/defer |';
+
+// Cells derived via splitTableRow() itself (not a hand-written duplicate) so
+// the placeholder-row match uses EXACTLY the same normalization any table row
+// already gets (whole-line trim, split on `|`, per-cell trim) — no more, no
+// less. splitTableRow is a hoisted function declaration, so it is already
+// defined at this point in module evaluation.
+const PLACEHOLDER_ROW_CELLS = splitTableRow(OW_FINDINGS_PLACEHOLDER_ROW);
 
 /**
  * Read the active OW run for `repoPath` and report process-completeness.
@@ -145,8 +190,21 @@ export function readOwRunCompleteness(repoPath: string): OwRunCompleteness {
     reasons.push(`review recommendation is '${recommendation.value}'`);
   }
 
-  for (const f of findUnresolvedFindings(review)) {
+  const scan = scanFindings(review);
+  for (const f of scan.unresolved) {
     reasons.push(`unresolved ${f.severity} finding: ${f.description} (Decision=${f.decision})`);
+  }
+
+  // Mixed-state bypass guard: the shipped placeholder row survived AND no
+  // concrete-severity row exists anywhere — findings were never transferred,
+  // regardless of what the acceptance markers say. See the module docstring.
+  if (scan.placeholderRowSeen && !scan.concreteRowSeen) {
+    reasons.push(
+      'findings table still contains the shipped template placeholder row with no ' +
+        'concrete finding row anywhere in the file — transfer the reviewer\'s findings ' +
+        'into the table (replacing the placeholder row), or delete the placeholder row ' +
+        'if this is genuinely a zero-findings review',
+    );
   }
 
   const formatBlocker = findingsFormatBlocker(review);
@@ -298,8 +356,21 @@ function resolveProseValue(content: string, heading: string): string | null {
   return null;
 }
 
+interface FindingsScan {
+  /** Unresolved arming findings (unchanged semantics, see below). */
+  unresolved: UnresolvedFinding[];
+  /** The shipped placeholder/legend row was seen anywhere (byte-exact match). */
+  placeholderRowSeen: boolean;
+  /** At least one row anywhere carries a real concrete severity value. */
+  concreteRowSeen: boolean;
+}
+
 /**
- * Findings rows that arm the gate.
+ * Scan every findings table for unresolved arming findings AND for the two
+ * presence flags the mixed-state bypass guard needs (see the module
+ * docstring): whether the shipped placeholder row survives untouched, and
+ * whether any row anywhere carries a real concrete severity (i.e. findings
+ * were actually transferred).
  *
  * Location (Fix 1): the table is found by anchoring on its HEADER ROW — the
  * first markdown table row whose cells include both `Severity` and `Decision`
@@ -309,6 +380,13 @@ function resolveProseValue(content: string, heading: string): string | null {
  * read after the `|---|` separator until the table ends (blank or non-table
  * line).
  *
+ * Placeholder detection (mixed-state bypass guard): a row is the shipped
+ * placeholder only when ALL of its cells byte-exactly match
+ * `PLACEHOLDER_ROW_CELLS` — not merely "Severity is a slash-list" — so a
+ * differently worded legend row falls through to the arming check below
+ * (where its non-concrete Severity cell causes it to be skipped, unchanged
+ * from before this guard existed).
+ *
  * Arming (Fix 2): whether a row is a real finding is decided by the SEVERITY
  * cell carrying a single concrete value — the slash-list legend row
  * (`low/medium/high/critical`), the separator, and the header are all skipped
@@ -316,11 +394,11 @@ function resolveProseValue(content: string, heading: string): string | null {
  * is explicitly resolved ({accepted, defer}); fix, reject, blank, `open`,
  * `TODO`, and any unrecognized decision all block (fail-closed).
  */
-function findUnresolvedFindings(content: string | null): UnresolvedFinding[] {
-  if (content === null) return [];
+function scanFindings(content: string | null): FindingsScan {
+  const scan: FindingsScan = { unresolved: [], placeholderRowSeen: false, concreteRowSeen: false };
+  if (content === null) return scan;
   const lines = content.split(/\r?\n/);
 
-  const out: UnresolvedFinding[] = [];
   let i = 0;
   while (i < lines.length) {
     const header = parseFindingsHeaderRow(lines[i]);
@@ -340,12 +418,19 @@ function findUnresolvedFindings(content: string | null): UnresolvedFinding[] {
       if (t === '' || !t.startsWith('|')) break;
       const cells = splitTableRow(t);
       if (isSeparatorRow(cells)) continue; // the |---| separator row
+
+      if (isPlaceholderRow(cells)) {
+        scan.placeholderRowSeen = true;
+        continue; // the shipped legend row is never itself a finding
+      }
+
       if (header.severityIdx >= cells.length) continue; // no severity cell to classify
 
       const severity = (cells[header.severityIdx] ?? '').toLowerCase();
-      // Real-finding test: SEVERITY must be a single concrete value. The legend
+      // Real-finding test: SEVERITY must be a single concrete value. A legend
       // row's slash-list severity fails this and is skipped.
       if (!CONCRETE_SEVERITIES.has(severity)) continue;
+      scan.concreteRowSeen = true;
       if (!ARMING_SEVERITIES.has(severity)) continue; // low/medium never arm
 
       // A missing decision cell reads as blank → unset → arms (fail-closed).
@@ -358,7 +443,7 @@ function findUnresolvedFindings(content: string | null): UnresolvedFinding[] {
           : cells
               .filter((_, idx) => idx !== header.severityIdx && idx !== header.decisionIdx)
               .join(' | ');
-      out.push({
+      scan.unresolved.push({
         severity,
         description,
         decision: decision === '' ? 'unset' : decision,
@@ -366,7 +451,19 @@ function findUnresolvedFindings(content: string | null): UnresolvedFinding[] {
     }
     i = j;
   }
-  return out;
+  return scan;
+}
+
+/**
+ * True when `cells` (already normalized the way splitTableRow() normalizes
+ * any table row) are byte-identical, cell by cell, to the shipped
+ * placeholder row's cells — the FULL row, not just the Severity slash-list.
+ */
+function isPlaceholderRow(cells: string[]): boolean {
+  return (
+    cells.length === PLACEHOLDER_ROW_CELLS.length &&
+    cells.every((c, idx) => c === PLACEHOLDER_ROW_CELLS[idx])
+  );
 }
 
 interface FindingsHeader {
