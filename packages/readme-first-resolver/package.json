@@ -3,6 +3,9 @@
   "version": "0.1.1",
   "description": "Forces agents to read primary docs before any analysis",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/LanNguyenSi/agent-grounding.git",

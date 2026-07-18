@@ -3,6 +3,9 @@
   "version": "0.6.1",
   "description": "MCP server exposing the agent-grounding stack (grounding-wrapper, evidence-ledger, claim-gate, hypothesis-tracker) to long-running Claude Code sessions",
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/LanNguyenSi/agent-grounding.git",

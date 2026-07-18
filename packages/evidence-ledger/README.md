@@ -135,6 +135,11 @@ Only age-based pruning is implemented. Tag-based and task-id-based keep-lists (`
 import { getDb, addEntry, rejectHypothesis, getSummary } from '@lannguyensi/evidence-ledger';
 
 const db = getDb(); // persists to ~/.evidence-ledger/ledger.db
+// Path resolution: the default is always ~/.evidence-ledger/ledger.db.
+// The module reads NO environment variable (and never has) — pass an
+// explicit path to getDb(dbPath) instead. EVIDENCE_LEDGER_DB is honored
+// one layer up by grounding-mcp and review-claim-gate, which forward it
+// as an explicit dbPath.
 
 addEntry(db, { type: 'fact', content: 'port 3000 is closed', source: 'netstat', confidence: 'high' });
 addEntry(db, { type: 'hypothesis', content: 'firewall blocking', session: 'debug-session' });
