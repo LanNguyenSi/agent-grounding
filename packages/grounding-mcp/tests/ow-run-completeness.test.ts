@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { readOwRunCompleteness } from '../src/ow-run-completeness.js';
+import { OW_FINDINGS_PLACEHOLDER_ROW, readOwRunCompleteness } from '../src/ow-run-completeness.js';
 
 let repo: string;
 
@@ -74,13 +74,22 @@ interface ReviewOpts {
   findingRows?: string[];
 }
 
-/** Review file with the shipped placeholder legend row plus any extra rows. */
+/**
+ * Review file with the shipped placeholder legend row plus any extra rows.
+ * The legend row is the byte-exact current template row (see
+ * `OW_FINDINGS_PLACEHOLDER_ROW` in the reader): with NO `findingRows`, this
+ * reproduces the mixed-state bypass shape (placeholder present, nothing
+ * transferred) — tests that want a genuinely complete review must pass a
+ * concrete `findingRows` entry or use `reviewDocNoFindings()` instead.
+ */
 function reviewDoc(opts: ReviewOpts = {}): string {
   const rows = [
     '| Severity | Category | Description | Suggested Fix | Decision |',
     '|---|---|---|---|---|',
-    // The shipped template's legend / placeholder row — must be skipped.
-    '| low/medium/high/critical | correctness/architecture/security | <!-- finding --> | <!-- fix --> | accepted/fix/defer/reject |',
+    // The shipped template's legend / placeholder row — must be skipped as a
+    // finding, but its untouched presence with no concrete row anywhere is
+    // itself the mixed-state bypass this test file also covers below.
+    OW_FINDINGS_PLACEHOLDER_ROW,
     ...(opts.findingRows ?? []),
   ];
   const recommendationBlock =
@@ -96,6 +105,37 @@ function reviewDoc(opts: ReviewOpts = {}): string {
     '## Findings',
     '',
     ...rows,
+    '',
+    '## Acceptance Recommendation',
+    '',
+    ...recommendationBlock,
+    '',
+  ].join('\n');
+}
+
+/**
+ * Review file for a genuine zero-findings review: header + separator, NO
+ * placeholder row and no data rows (the operator deleted the placeholder row
+ * per its documented escape hatch). Used by tests whose point is the overall
+ * acceptance flow, not the findings table itself, so they are not entangled
+ * with the mixed-state bypass guard covered separately below.
+ */
+function reviewDocNoFindings(opts: ReviewOpts = {}): string {
+  const recommendationBlock =
+    opts.recommendationMarker !== undefined
+      ? [
+          `<!-- solution-acceptance: acceptance-recommendation = ${opts.recommendationMarker} -->`,
+          opts.recommendationMarker,
+        ]
+      : ['accept | accept_with_notes | fix_required | reject'];
+  return [
+    '# Review Findings',
+    '',
+    '## Findings',
+    '',
+    '| Severity | Category | Description | Suggested Fix | Decision |',
+    '|---|---|---|---|---|',
+    ...(opts.findingRows ?? []),
     '',
     '## Acceptance Recommendation',
     '',
@@ -135,7 +175,7 @@ describe('readOwRunCompleteness — newest-run selection', () => {
     });
     makeRun('2026-06-22-new', {
       handoff: handoffMarker('accepted'),
-      review: reviewDoc({ recommendationMarker: 'accept' }),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
     });
     const r = readOwRunCompleteness(repo);
     expect(r.enforced).toBe(true);
@@ -163,7 +203,7 @@ describe('readOwRunCompleteness — completeness verdict', () => {
   it('happy path: accepted handoff + accept review + no high/critical-fix → complete', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
-      review: reviewDoc({ recommendationMarker: 'accept' }),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
     });
     const r = readOwRunCompleteness(repo);
     expect(r).toEqual({
@@ -178,7 +218,7 @@ describe('readOwRunCompleteness — completeness verdict', () => {
   it('accepted_with_notes + accept_with_notes also count as accepted', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted_with_notes'),
-      review: reviewDoc({ recommendationMarker: 'accept_with_notes' }),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept_with_notes' }),
     });
     const r = readOwRunCompleteness(repo);
     expect(r.complete).toBe(true);
@@ -463,7 +503,7 @@ describe('readOwRunCompleteness — active-run selection requires a date prefix 
     });
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
-      review: reviewDoc({ recommendationMarker: 'accept' }),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
     });
     const r = readOwRunCompleteness(repo);
     expect(r.enforced).toBe(true);
@@ -783,5 +823,199 @@ describe('readOwRunCompleteness — CRLF fixtures (Fix 4)', () => {
         (x) => x.includes('critical') && x.includes('crlf data loss') && x.includes('Decision=fix'),
       ),
     ).toBe(true);
+  });
+
+  it('the mixed-state bypass guard fires under CRLF line endings too (exact placeholder row, no concrete row)', () => {
+    const handoff = [
+      '# Operator Handoff',
+      '',
+      '## Final Status',
+      '',
+      '<!-- solution-acceptance: final-status = accepted -->',
+      'accepted',
+      '',
+    ].join('\r\n');
+    const review = [
+      '# Review Findings',
+      '',
+      '## Findings',
+      '',
+      '| Severity | Category | Description | Suggested Fix | Decision |',
+      '|---|---|---|---|---|',
+      OW_FINDINGS_PLACEHOLDER_ROW,
+      '',
+      '## Acceptance Recommendation',
+      '',
+      '<!-- solution-acceptance: acceptance-recommendation = accept -->',
+      'accept',
+      '',
+    ].join('\r\n');
+    makeRun('2026-06-22-run', { handoff, review });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(
+      r.reasons.some(
+        (x) =>
+          x.includes('placeholder row') &&
+          x.includes('transfer') &&
+          x.includes('zero-findings review'),
+      ),
+    ).toBe(true);
+  });
+});
+
+describe('readOwRunCompleteness — mixed-state findings-table bypass guard', () => {
+  /**
+   * Byte-identical to a real shipped run's `05-review-findings.md`
+   * (`.ai/runs/2026-07-17-better-sqlite3-node26-release/05-review-findings.md`
+   * in this workspace, itself byte-identical to the agent-dx
+   * orchestrator-workflow template of that vintage) except for the trailing
+   * `acceptance-recommendation` marker value, which each test below
+   * substitutes explicitly — this is the exact repro pair from the run plan
+   * (repro-a: TODO marker; repro-b: marker flipped to `accept`, table never
+   * touched).
+   */
+  function belegRunReview(recommendationValue: string): string {
+    return [
+      '# Review Findings',
+      '',
+      '## Review Summary',
+      '',
+      '<!-- Short summary. -->',
+      '',
+      '## Findings',
+      '',
+      '<!-- The Severity and Decision column headers below are load-bearing: the orchestrator-workflow completeness reader locates this table by its header row and verifies unresolved findings from those two columns. Do not rename or drop them. -->',
+      "<!-- Decision legend: a high/critical finding counts as RESOLVED (the completeness gate passes) only when its Decision is `accepted` (finding addressed or consciously accepted) or `defer` (recorded as a tracked follow-up). Every other value (`fix`, `reject`, blank, `open`, `TODO`) leaves the finding unresolved and ARMS the gate until you change the Decision to `accepted`/`defer` or drop the finding. This mirrors grounding-mcp's RESOLVED_DECISIONS = {accepted, defer}; keep the two in sync. -->",
+      '| Severity | Category | Description | Suggested Fix | Decision |',
+      '|---|---|---|---|---|',
+      OW_FINDINGS_PLACEHOLDER_ROW,
+      '',
+      '## Missing Tests',
+      '',
+      '- <!-- missing test -->',
+      '',
+      '## Residual Risks',
+      '',
+      '- <!-- risk -->',
+      '',
+      '## Acceptance Recommendation',
+      '',
+      'accept | accept_with_notes | fix_required | reject',
+      '',
+      `<!-- solution-acceptance: acceptance-recommendation = ${recommendationValue} -->`,
+      '',
+    ].join('\n');
+  }
+
+  it('repro-a: the byte-identical untouched template (TODO marker) still blocks via the TODO reason', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: belegRunReview('TODO'),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(
+      r.reasons.some((x) => x.includes('review recommendation marker is still TODO')),
+    ).toBe(true);
+  });
+
+  it('repro-b (the mixed-state bypass): marker flipped to accept, findings table left as the untouched placeholder → still blocks', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: belegRunReview('accept'),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(
+      r.reasons.some(
+        (x) =>
+          x.includes('placeholder row') &&
+          x.includes('transfer') &&
+          x.includes('zero-findings review'),
+      ),
+    ).toBe(true);
+  });
+
+  it('a header row with NO data rows at all (placeholder already deleted) → complete', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('a concrete resolved finding row with NO placeholder row left behind → complete (findings transferred, placeholder deleted)', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({
+        recommendationMarker: 'accept',
+        findingRows: ['| low | tests | flaky test noted, no fix needed | n/a | accepted |'],
+      }),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('a concrete resolved finding row NEXT TO a left-behind placeholder row → still complete (unaffected, as before)', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDoc({
+        recommendationMarker: 'accept',
+        findingRows: ['| low | tests | flaky test noted, no fix needed | n/a | accepted |'],
+      }),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('fail-open boundary: a NON-EXACT (pre-0.7.4) legend row with no concrete row does NOT arm the bypass guard', () => {
+    // Pins the byte-exact match from the fail-open side: this legend row is
+    // structurally the same kind of thing (slash-list Severity, comment
+    // cells) but is NOT the current shipped placeholder text (older 4-value
+    // Decision legend, narrower Category list), so isPlaceholderRow() must
+    // NOT recognize it — the mixed-state bypass guard stays silent and prior
+    // (pre-guard) behavior is preserved for this row.
+    const review = [
+      '# Review Findings',
+      '',
+      '## Findings',
+      '',
+      '| Severity | Category | Description | Suggested Fix | Decision |',
+      '|---|---|---|---|---|',
+      '| low/medium/high/critical | correctness/architecture/security | <!-- finding --> | <!-- fix --> | accepted/fix/defer/reject |',
+      '',
+      '## Acceptance Recommendation',
+      '',
+      '<!-- solution-acceptance: acceptance-recommendation = accept -->',
+      'accept',
+      '',
+    ].join('\n');
+    makeRun('2026-06-22-run', { handoff: handoffMarker('accepted'), review });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+});
+
+/**
+ * Reciprocal pinning test: this package's `OW_FINDINGS_PLACEHOLDER_ROW` must
+ * stay byte-identical to the placeholder row shipped in agent-dx's
+ * packages/orchestrator-workflow/assets/templates/05-review-findings.md,
+ * which agent-dx pins on its side in
+ * packages/orchestrator-workflow/test/template-markers.test.ts ("carries the
+ * exact placeholder row grounding-mcp's completeness reader matches
+ * literally"). The two repos have no shared build step, so this is a
+ * deliberate manual lockstep: if either literal changes, update both.
+ */
+describe('OW_FINDINGS_PLACEHOLDER_ROW — reciprocal template lockstep pin', () => {
+  it('matches the known agent-dx 05-review-findings.md template placeholder row byte-exactly', () => {
+    expect(OW_FINDINGS_PLACEHOLDER_ROW).toBe(
+      '| low/medium/high/critical | correctness/architecture/security/tests/maintainability/performance/docs | <!-- finding --> | <!-- fix --> | accepted/defer |',
+    );
   });
 });
