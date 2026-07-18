@@ -3,7 +3,7 @@ type: invariant
 title: Evidence-ledger session keys — one opaque column, two conventions
 description: The ledger `session` is a single opaque TEXT column; grounding-mcp keys it by a generated `gs-*` id while the merge-approval CI Action keys it by the PR head branch name, so evidence written under one key is invisible to a reader expecting the other.
 tags: [evidence-ledger, sessions, keys, ci, mcp]
-timestamp: 2026-07-16T02:31:52Z
+timestamp: 2026-07-18T05:08:08Z
 sources:
   - packages/evidence-ledger/src/types.ts
   - packages/evidence-ledger/src/db.ts
@@ -15,7 +15,7 @@ sources:
 
 ## The invariant
 
-The evidence ledger stores who-owns-this-row in a single opaque column, `session TEXT NOT NULL DEFAULT 'default'`, defined once in the `entries` table (`packages/evidence-ledger/src/db.ts:105`, mirrored in the `entries_new` rebuild at `:135`). The schema draws no distinction between the two kinds of value that get written into it: a grounding/Claude session id and a PR-scoped task/branch id are the same type, indexed the same way (`idx_session`, `db.ts:110`). The read API is a plain equality match — `listEntries` filters `session = @session` (`db.ts:259-262`) and `getSummary(db, session = "default", …)` (`db.ts:303-314`) delegates straight to it. There is no fallback, no aliasing, no normalization: **a reader keyed by string X sees only rows whose `session` column equals X exactly.** Both writers and readers are therefore bound by an out-of-band naming convention, not by anything the schema enforces.
+The evidence ledger stores who-owns-this-row in a single opaque column, `session TEXT NOT NULL DEFAULT 'default'`, defined once in the `entries` table (`packages/evidence-ledger/src/db.ts:149`, mirrored in the `entries_new` rebuild at `:179`). The schema draws no distinction between the two kinds of value that get written into it: a grounding/Claude session id and a PR-scoped task/branch id are the same type, indexed the same way (`idx_session`, `db.ts:154`). The read API is a plain equality match — `listEntries` filters `session = @session` (`db.ts:303-306`) and `getSummary(db, session = "default", …)` (`db.ts:347-358`) delegates straight to it. There is no fallback, no aliasing, no normalization: **a reader keyed by string X sees only rows whose `session` column equals X exactly.** Both writers and readers are therefore bound by an out-of-band naming convention, not by anything the schema enforces.
 
 Two conventions exist, and they do not agree:
 
@@ -29,11 +29,11 @@ Two conventions exist, and they do not agree:
 
 The bridge is real. `review-claim-gate export --task-id <branch-name> --from-session <gs-id>` re-emits a grounding session's rows into an evidence file under the branch/task naming convention, so the reviewer avoids re-logging (`README.md:59-63`, `:75-78`; reviewer-template usage `:161`). Because export writes to the same auto-detect path the `check` step reads (`README.md:80`), the intended round-trip is **export → commit → check** (evidence-source `"file"`, not `"ledger"`).
 
-A separate structural guard keeps decision rows from polluting evidence reads: `EntryType` makes `policy_decision` a first-class type alongside `fact`/`hypothesis`/`rejected`/`unknown` (`packages/evidence-ledger/src/types.ts:9-14`), and `getSummary` buckets it into its own `policyDecisions` array (`db.ts:320`), disjoint from the four evidence buckets. This is deliberate: the header comment (`types.ts:1-8`) records that harness's `filterEntriesByTag` was matching past `policy_decision:` payloads as substring hits for their own ledger tag; the dedicated bucket means a `policy_decision` row cannot contaminate a tag-substring evidence filter.
+A separate structural guard keeps decision rows from polluting evidence reads: `EntryType` makes `policy_decision` a first-class type alongside `fact`/`hypothesis`/`rejected`/`unknown` (`packages/evidence-ledger/src/types.ts:9-14`), and `getSummary` buckets it into its own `policyDecisions` array (`db.ts:364`), disjoint from the four evidence buckets. This is deliberate: the header comment (`types.ts:1-8`) records that harness's `filterEntriesByTag` was matching past `policy_decision:` payloads as substring hits for their own ledger tag; the dedicated bucket means a `policy_decision` row cannot contaminate a tag-substring evidence filter.
 
 ## Where it's enforced
 
-- **Column + read API (the opaque key):** `packages/evidence-ledger/src/db.ts:105` (`session TEXT` def), `:135` (rebuild copy), `:259-262` (`listEntries` equality filter), `:303-322` (`getSummary`, including the `policy_decision` bucket split at `:320`).
+- **Column + read API (the opaque key):** `packages/evidence-ledger/src/db.ts:149` (`session TEXT` def), `:179` (rebuild copy), `:303-306` (`listEntries` equality filter), `:347-366` (`getSummary`, including the `policy_decision` bucket split at `:364`).
 - **Type bucket:** `packages/evidence-ledger/src/types.ts:9-14` (`EntryType`), `:41` (`policyDecisions` on `LedgerSummary`).
 - **Writer convention (`gs-*`):** `packages/grounding-mcp/src/server.ts:189` (param doc), `:196-202` (write-through); id shape `packages/grounding-wrapper/src/lib.ts:58-61`.
 - **CI reader convention (branch name):** `.github/workflows/merge-approval.yml:49` (`task-id: …head.ref`), consumed by the action pinned at `:47`.
@@ -44,7 +44,7 @@ A separate structural guard keeps decision rows from polluting evidence reads: `
 - **Assuming CI keys the ledger by a task UUID.** It keys by `head.ref`, the branch name. Log review evidence under the exact branch, or bridge it there with `export --task-id <branch> --from-session <gs-id>`, or the fallback finds nothing.
 - **Logging under a `gs-*` session and expecting merge-approval to see it.** The two keys never coincide by accident (`gs-<slug>-<ts>` vs a branch name). Without the export bridge + a committed evidence file, `evidence_logged` reads false and the gate blocks.
 - **Widening `getSummary`'s type filters** so `policy_decision` rows leak back into the evidence buckets — that reintroduces the exact substring-contamination bug the separate bucket was added to fix (`types.ts:1-8`).
-- **Treating `session` matching as fuzzy.** It is strict SQL equality (`db.ts:261`). Case, hyphenation, and truncation of the `gs-*` slug are all significant; a near-miss returns zero rows silently.
+- **Treating `session` matching as fuzzy.** It is strict SQL equality (`db.ts:304`). Case, hyphenation, and truncation of the `gs-*` slug are all significant; a near-miss returns zero rows silently.
 
 ## Out-of-repo boundary
 

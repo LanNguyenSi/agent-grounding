@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { LedgerEntry, EntryType, ConfidenceLevel } from "./types.js";
 
 // The ledger can capture debug evidence, paths, and command output, so on
@@ -27,9 +27,51 @@ function getDbPath(): string {
 }
 
 let _db: Database.Database | null = null;
+// The exact string passed to `new Database()` for the currently-open
+// singleton (or null when no singleton is open). Used only in the
+// "already open" error message; it never affects how a path is opened.
+let _dbPath: string | null = null;
+// Identity of the open singleton, frozen at open time as
+// normalizeForComparison(resolved). Later requests are compared against
+// this frozen key instead of re-normalizing _dbPath per call: a caller
+// that opened a RELATIVE path and has since chdir'd would otherwise have
+// both operands re-resolved against the new cwd, silently conflating two
+// different databases (or spuriously splitting one) — the exact footgun
+// this guard exists to prevent.
+let _dbPathKey: string | null = null;
+
+// `:memory:` is SQLite's special in-memory sentinel, not a filesystem
+// path — path.resolve(":memory:") would turn it into
+// "<cwd>/:memory:", silently breaking "the same :memory: request is the
+// same database". Compare it literally; resolve everything else so a
+// relative and an equivalent absolute path are recognized as the same
+// database. This normalization is for comparison only — the value handed
+// to `new Database()` is always the raw `resolved` from below, untouched.
+function normalizeForComparison(path: string): string {
+  return path === ":memory:" ? path : resolve(path);
+}
 
 export function getDb(dbPath?: string): Database.Database {
-  if (_db) return _db;
+  if (_db) {
+    // No explicit path: callers relying on "just give me the handle"
+    // keep getting it, unconditionally, exactly as before this guard
+    // existed.
+    if (dbPath === undefined) return _db;
+    // An explicit path that names the same database (after resolving
+    // relative/absolute equivalence, judged against the open-time
+    // identity key) is a no-op re-open — return the existing handle
+    // rather than throwing.
+    if (normalizeForComparison(dbPath) === _dbPathKey) {
+      return _db;
+    }
+    // A caller asking for a genuinely different database while one is
+    // already open would otherwise silently keep writing to the first
+    // path — a footgun for tests and CLI tools that re-point the
+    // singleton mid-process. Fail loudly and name both paths instead.
+    throw new Error(
+      `evidence-ledger: ledger already open at "${_dbPath}", requested "${dbPath}" — call resetDb() first to switch to a different path.`,
+    );
+  }
   const resolved = dbPath ?? getDbPath();
   // better-sqlite3 creates the DB file itself but refuses to create
   // intermediate directories. When a caller passes a custom path (e.g.
@@ -52,12 +94,17 @@ export function getDb(dbPath?: string): Database.Database {
       chmodSync(resolved, FILE_MODE);
     }
     migrate(_db);
+    _dbPath = resolved;
+    _dbPathKey = normalizeForComparison(resolved);
   } catch (err) {
     // Any failure configuring the handle — a broken better-sqlite3 native
     // binding, an un-creatable path, a read-only FS on the pragma/migrate,
     // or chmod EPERM — must not leave a half-open singleton. resetDb()
-    // closes the partial handle (if any) and nulls _db, so the next call
-    // reopens cleanly. Rethrow a path-named error preserving the cause.
+    // closes the partial handle (if any) and nulls _db (and the
+    // remembered _dbPath — see resetDb below), so the next call reopens
+    // cleanly instead of tripping the "already open" guard against a
+    // path whose open actually failed. Rethrow a path-named error
+    // preserving the cause.
     resetDb();
     const reason = err instanceof Error ? err.message : String(err);
     throw new Error(
@@ -86,6 +133,14 @@ export function resetDb(): void {
     }
   }
   _db = null;
+  // Drop the remembered path + identity key along with the handle.
+  // Defensive invariant-keeping ("_dbPath/_dbPathKey are set iff _db is
+  // set"): the guard only ever consults them while _db is truthy, and
+  // every successful open overwrites both, so a stale value is not
+  // observable through the public API — but the invariant should hold
+  // regardless of how resetDb was reached.
+  _dbPath = null;
+  _dbPathKey = null;
 }
 
 // SQL fragment for the canonical entries-table CHECK constraint. Kept

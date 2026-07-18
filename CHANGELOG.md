@@ -33,6 +33,23 @@ The seven packages above (other than understanding-gate) each carry their own ve
 
 ## [Unreleased]
 
+### Fixed
+
+- `evidence-ledger`: `getDb(dbPath?)` no longer silently ignores an explicit
+  `dbPath` while the singleton is open. Previously `if (_db) return _db;`
+  returned the existing handle regardless of the argument, so a caller
+  re-pointing the ledger mid-process (tests, CLI tools with `--ledger-db`)
+  could write to the wrong database without any indication. `getDb` now
+  throws `evidence-ledger: ledger already open at "<current>", requested
+  "<new>" — call resetDb() first to switch to a different path.` when the
+  requested path names a different database. Calls with no argument, or
+  with a path equivalent to the open one (relative vs. absolute resolve to
+  the same file; `:memory:` compared literally, never through
+  `path.resolve`), still return the existing handle unchanged. `resetDb()`
+  continues to allow switching paths cleanly, and a failed open no longer
+  leaves a stale remembered path behind. (Platform task `56e26999`; found
+  in the agent-tasks backend 0.5.1-upgrade review, PR #408 there.)
+
 ### Added
 
 - All twelve published workspace packages now declare

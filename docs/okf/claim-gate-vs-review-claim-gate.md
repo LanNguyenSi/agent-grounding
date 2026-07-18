@@ -3,7 +3,7 @@ type: invariant
 title: claim-gate vs review-claim-gate — same word, opposite trust models
 description: Two sibling packages both gate on "evidence" but claim-gate trusts a caller-supplied boolean (self-discipline) while review-claim-gate reads a store (CI gate) — never treat them as interchangeable.
 tags: [claim-gate, review-claim-gate, evidence, trust-boundary]
-timestamp: 2026-07-16T02:31:52Z
+timestamp: 2026-07-18T05:08:08Z
 sources:
   - packages/claim-gate/src/lib.ts
   - packages/claim-gate/src/cli.ts

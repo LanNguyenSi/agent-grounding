@@ -2,6 +2,14 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-07-18T05:08:08Z, ride-along re-verify (task 56e26999, getDb path
+  guard): evidence-ledger-session-key-shapes re-stamped with db.ts line
+  refs shifted +44 by the new singleton path guard (guard changes no
+  session-key semantics); claim-gate-vs-review-claim-gate re-stamped
+  unchanged (its db.ts claims — `listEntries(getDb(dbPath))` ledger
+  fallback — still hold; the CLI's `resetDb()`-before-`getDb` hygiene
+  predates the guard).
+
 - 2026-07-16T02:31:52Z, re-verification sweep (task de7982e2): 5 stale docs re-checked
   against current sources. Substantive: grounding-mcp hypothesis state is
   disk-backed since PR #139 (doc premise inverted); review-claim-gate's
