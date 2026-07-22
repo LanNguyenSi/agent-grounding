@@ -356,6 +356,11 @@ export function parseReport(
   // tests with no adapter in front of it — working without having to
   // thread an explicit boundTaskId through every call site that isn't
   // testing this binding.
+  // The unconditional override below (merged["taskId"] = boundTaskId) is the
+  // load-bearing protection; this strip is a fail-closed backstop — if the
+  // override ever regresses, a forged markdown `taskid` becomes a missing
+  // taskId (schema violation, report not persisted) instead of a silent
+  // victim-id persist.
   if (defaults.boundTaskId !== undefined) {
     delete (metadataFromMarkdown as Record<string, unknown>)["taskId"];
   }
