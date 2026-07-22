@@ -115,13 +115,28 @@ describe("parseReport: full round-trip", () => {
     expect(r.report.approvalStatus).toBe("pending");
   });
 
-  it("metadata block overrides defaults, EXCEPT taskId (agent-grounding e2e065e6)", () => {
-    // mode/riskLevel: the markdown's Metadata block still wins over
-    // caller-supplied defaults, unchanged.
-    // taskId: a caller-supplied default now always wins over the
-    // markdown's `taskId` key (FULL_MARKDOWN's Metadata block says
-    // "taskId: ug-test-1"), so the report is bound to the caller's
-    // identity, never the agent's.
+  it("consumer regression: markdown taskid wins over defaults.taskId gap-fill (agent-tasks 2078873e)", () => {
+    // harness's stdin-report.ts passes `taskId: sessionId` purely as a
+    // gap-filler per the documented contract ("metadata overrides defaults
+    // if present"). 0.4.7-0.4.8 (PR #143) broke this: a caller-supplied
+    // defaults.taskId always won over the markdown's `taskid` key, so the
+    // sessionId gap-filler stamped over the real task binding from the
+    // report. This must be RED before the fix (parseReport currently
+    // returns "sess-1", not "t-x").
+    const md = FULL_MARKDOWN.replace("taskId: ug-test-1", "taskid: t-x");
+    const r = parseReport(md, { taskId: "sess-1" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.report.taskId).toBe("t-x");
+  });
+
+  it("metadata block overrides defaults, including taskId gap-fill (agent-tasks 2078873e)", () => {
+    // mode/riskLevel/taskId: the markdown's Metadata block wins over
+    // caller-supplied defaults uniformly. defaults.taskId is gap-fill
+    // only (FULL_MARKDOWN's Metadata block says "taskId: ug-test-1", so
+    // the markdown wins and the caller-supplied default is never used).
+    // Use `defaults.boundTaskId` instead to bind regardless of the
+    // markdown (see the dedicated boundTaskId describe block below).
     const r = parseReport(FULL_MARKDOWN, {
       taskId: "from-caller",
       mode: "fast_confirm",
@@ -129,7 +144,7 @@ describe("parseReport: full round-trip", () => {
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.report.taskId).toBe("from-caller");
+    expect(r.report.taskId).toBe("ug-test-1");
     expect(r.report.mode).toBe("grill_me");
     expect(r.report.riskLevel).toBe("high");
   });
@@ -776,37 +791,72 @@ describe("parseReport: sessionId is not agent-settable (task 0a3227fe)", () => {
   });
 });
 
-describe("parseReport: taskId is not agent-settable when a caller default is present (agent-grounding e2e065e6)", () => {
+describe("parseReport: taskId is not agent-settable when a caller boundTaskId is present (agent-grounding e2e065e6, agent-tasks 2078873e)", () => {
   // Block-direction integrity finding from the adversarial review of the
   // C1 self-approval fix (agent-tasks 3a994d92). An agent's Understanding
   // Report is always forced to approvalStatus: pending, so it can never
-  // self-approve (security-self-approval.test.ts). But before this fix,
-  // an agent could still forge `taskid: <other task>` in its Metadata
-  // block and have parseReport honour it over the caller-supplied
-  // (adapter/env-derived) default, letting a forced-pending report be
+  // self-approve (security-self-approval.test.ts). But without this
+  // binding, an agent could still forge `taskid: <other task>` in its
+  // Metadata block and have parseReport honour it over the caller-supplied
+  // (adapter/env-derived) binding, letting a forced-pending report be
   // filed under ANOTHER task's id. Since findLatestForTask picks the most
   // recently created/approved entry per taskId, a newer forged pending
   // entry would then outrank that other task's already-approved entry,
   // downgrading it back to pending. See security-taskid-binding.test.ts
   // for the end-to-end persistence + findLatestForTask regression.
-  it("prefers the caller-supplied default over `taskid` in the Metadata block", () => {
+  //
+  // 0.4.7-0.4.8 (PR #143) implemented this security property by making
+  // ANY caller-supplied defaults.taskId win, which broke the documented
+  // gap-fill contract for legitimate callers (see the "consumer
+  // regression" test above). agent-tasks 2078873e moved the winning
+  // behaviour to the dedicated defaults.boundTaskId field instead;
+  // defaults.taskId reverted to gap-fill.
+  it("prefers boundTaskId over `taskid` in the Metadata block", () => {
     const forgedTaskId = FULL_MARKDOWN.replace(
       "taskId: ug-test-1",
       "taskId: victim-task",
     );
-    const result = parseReport(forgedTaskId, { taskId: "attacker-own-task" });
+    const result = parseReport(forgedTaskId, {
+      boundTaskId: "attacker-own-task",
+    });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.report.taskId).toBe("attacker-own-task");
     expect(result.report.taskId).not.toBe("victim-task");
   });
 
-  it("still reads `taskid` from the Metadata block when the caller supplies no default at all", () => {
+  it("prefers boundTaskId even when defaults.taskId is also supplied", () => {
+    // A caller that (incorrectly) supplies both must still get the bound
+    // value, not the gap-fill one -- boundTaskId is unconditional.
+    const forgedTaskId = FULL_MARKDOWN.replace(
+      "taskId: ug-test-1",
+      "taskId: victim-task",
+    );
+    const result = parseReport(forgedTaskId, {
+      taskId: "gap-fill-value",
+      boundTaskId: "attacker-own-task",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.report.taskId).toBe("attacker-own-task");
+  });
+
+  it("does not leak boundTaskId itself onto the persisted report", () => {
+    // boundTaskId is a parser-input-only field; the schema declares
+    // additionalProperties:false, so parseReport must strip it before
+    // returning, not just overwrite taskId.
+    const result = parseReport(FULL_MARKDOWN, { boundTaskId: "b-1" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect("boundTaskId" in result.report).toBe(false);
+  });
+
+  it("still reads `taskid` from the Metadata block when the caller supplies no boundTaskId at all", () => {
     // This is the pre-existing, still-legitimate use: this package's own
     // parser tests call parseReport(markdown) directly with no adapter in
     // front of it. Real adapters (handle-stop.ts / persist-report.ts)
-    // always pass a defaults.taskId, so this fallback path is never live
-    // in production.
+    // always pass a defaults.boundTaskId, so this fallback path is never
+    // live in production.
     const r = parseReport(FULL_MARKDOWN);
     expect(r.ok).toBe(true);
     if (!r.ok) return;

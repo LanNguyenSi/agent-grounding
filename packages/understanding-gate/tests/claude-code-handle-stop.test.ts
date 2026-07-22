@@ -141,14 +141,14 @@ describe("handleStop: marker gating", () => {
 });
 
 describe("handleStop: save path", () => {
-  it("calls parseReport with sessionId as taskId default when env is empty", () => {
+  it("calls parseReport with sessionId as boundTaskId default when env is empty", () => {
     const deps = makeDeps();
     handleStop(makeInput({ sessionId: "session-zzz" }), deps);
     expect(deps.parseReport).toHaveBeenCalledTimes(1);
     const [, defaults] = (deps.parseReport as ReturnType<typeof vi.fn>).mock
       .calls[0];
     expect(defaults).toMatchObject({
-      taskId: "session-zzz",
+      boundTaskId: "session-zzz",
       createdAt: FIXED_NOW.toISOString(),
     });
   });
@@ -164,7 +164,7 @@ describe("handleStop: save path", () => {
     );
     const [, defaults] = (deps.parseReport as ReturnType<typeof vi.fn>).mock
       .calls[0];
-    expect(defaults.taskId).toBe("explicit-task-1");
+    expect(defaults.boundTaskId).toBe("explicit-task-1");
   });
 
   it("forwards UNDERSTANDING_GATE_MODE when valid", () => {
