@@ -109,13 +109,13 @@ describe("handlePersistReport: marker gating", () => {
 });
 
 describe("handlePersistReport: save path", () => {
-  it("forwards sessionId as taskId default", () => {
+  it("forwards sessionId as boundTaskId default", () => {
     const deps = makeDeps();
     handlePersistReport(makeInput({ sessionId: "oc-zzz" }), deps);
     const [, defaults] = (deps.parseReport as ReturnType<typeof vi.fn>).mock
       .calls[0];
     expect(defaults).toMatchObject({
-      taskId: "oc-zzz",
+      boundTaskId: "oc-zzz",
       createdAt: FIXED_NOW.toISOString(),
     });
   });
@@ -131,7 +131,7 @@ describe("handlePersistReport: save path", () => {
     );
     const [, defaults] = (deps.parseReport as ReturnType<typeof vi.fn>).mock
       .calls[0];
-    expect(defaults.taskId).toBe("explicit");
+    expect(defaults.boundTaskId).toBe("explicit");
   });
 
   it("UNDERSTANDING_GATE_MODE forwards only when in-enum", () => {

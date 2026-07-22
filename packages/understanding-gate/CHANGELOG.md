@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.4.9, 2026-07-22
+
+### Fixed
+
+- **`defaults.taskId` gap-fill semantics restored; caller-supplied `taskId`
+  no longer always beats an agent-authored Metadata `taskid`.** 0.4.7
+  (commit `06b577f`, PR #143) made a caller-supplied `defaults.taskId`
+  always win over the markdown's `## Metadata` `taskid` key, to close a
+  block-direction integrity bug (an agent-forged `taskid` could park a
+  forced-pending report under another task's id and downgrade its already-
+  approved entry back to pending, via `findLatestForTask`). That fix was
+  broader than the documented contract ("metadata overrides defaults if
+  present"): legitimate callers that pass `taskId` purely as a gap-filler
+  when the report itself carries no explicit task id -- e.g. the harness's
+  `stdin-report.ts`, which passes `taskId: sessionId` as a filler -- had
+  the real task id silently stamped over by the session id
+  (`persisted.taskId === sessionId`). `defaults.taskId` is gap-fill again,
+  exactly like every other Metadata field: the markdown's `taskid`
+  overrides it when present.
+
+### Added
+
+- **`ParseDefaults.boundTaskId`**: a new, separate field that carries
+  forward the #143 security property. When supplied, it wins over both the
+  markdown's `taskid` key and `defaults.taskId`, and is never leaked onto
+  the persisted report (it is not a schema property). Both adapters
+  (`handle-stop.ts`, `persist-report.ts`) now pass
+  `boundTaskId: env.UNDERSTANDING_GATE_TASK_ID || sessionId` instead of
+  `taskId`; their observable behavior is unchanged from 0.4.7/0.4.8.
+
+### Notes for consumers
+
+- If you call `parseReport` directly (not through the Claude Code or
+  opencode adapters) and need the persisted `taskId` to be bound
+  regardless of what the markdown's Metadata block says -- e.g. to
+  attribute a report to a caller-known task/session and prevent an
+  agent-authored `taskid` from redirecting it -- pass `boundTaskId`, not
+  `taskId`. If you only want `taskId` as a fallback for when the markdown
+  has none, nothing changes: that is `defaults.taskId`'s restored,
+  documented behavior.
+- **Correction to the 0.4.7 and 0.4.8 changelog entries**: both say "No
+  behavior changes in the gate itself." That was inaccurate for 0.4.7:
+  commit `06b577f` (the taskId-precedence change fixed above) landed
+  between the `understanding-gate-v0.4.6` and `understanding-gate-v0.4.7`
+  tags and shipped in 0.4.7, alongside the `hypothesis-tracker` re-pin the
+  entry describes. 0.4.8 itself carried no further parser changes. Those
+  entries are left as originally published; this note documents the
+  discrepancy rather than rewriting history.
+
 ## 0.4.8, 2026-07-18
 
 ### Changed

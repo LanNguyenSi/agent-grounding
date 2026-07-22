@@ -19,12 +19,18 @@
 // other task's already-approved entry, downgrading it back to pending --
 // a denial-of-service / integrity break in the block direction.
 //
-// Fix: a caller-supplied defaults.taskId now always wins over the
+// Fix: a caller-supplied defaults.boundTaskId now always wins over the
 // Metadata block's `taskid` key (parser.ts). Both adapters
-// (handle-stop.ts, persist-report.ts) always pass defaults.taskId derived
+// (handle-stop.ts, persist-report.ts) always pass boundTaskId derived
 // from the runtime's own env/session, so in production the persisted
 // taskId is fully adapter/session-bound and the Metadata key can no
 // longer forge it.
+//
+// agent-tasks 2078873e: this used to be implemented via a plain
+// defaults.taskId, which also (wrongly) made ANY caller-supplied taskId
+// win, breaking legitimate gap-fill callers. defaults.taskId is gap-fill
+// again; this security property now lives in the dedicated
+// defaults.boundTaskId field exercised below.
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -83,14 +89,14 @@ taskid: ${VICTIM_TASK_ID}
 // Defaults matching what handle-stop.ts / persist-report.ts derive from
 // env/sessionId for the attacker's OWN session.
 const ATTACKER_DEFAULTS = {
-  taskId: ATTACKER_TASK_ID,
+  boundTaskId: ATTACKER_TASK_ID,
   createdAt: "2026-07-14T12:00:00.000Z",
   mode: "fast_confirm" as const,
   riskLevel: "medium" as const,
 };
 
-describe("taskId forgery via Metadata: parseReport ignores it when a default is supplied", () => {
-  it("binds the report to the caller-supplied taskId, not the Metadata block's", () => {
+describe("taskId forgery via Metadata: parseReport ignores it when a boundTaskId is supplied", () => {
+  it("binds the report to the caller-supplied boundTaskId, not the Metadata block's", () => {
     const result = parseReport(EXPLOIT_MARKDOWN, ATTACKER_DEFAULTS);
     expect(result.ok, "parse must succeed for the exploit to be relevant").toBe(
       true,
@@ -118,7 +124,7 @@ describe("taskId forgery cannot downgrade another task's approval (block-directi
     // Step 1: the victim's own report is emitted and approved by the
     // operator at an earlier point in time.
     const victimDefaults = {
-      taskId: VICTIM_TASK_ID,
+      boundTaskId: VICTIM_TASK_ID,
       createdAt: "2026-07-14T10:00:00.000Z",
       mode: "fast_confirm" as const,
       riskLevel: "medium" as const,

@@ -3,7 +3,7 @@
 // The binary at stop.ts reads the JSONL transcript, extracts the most
 // recent assistant message text, and passes it here. This module:
 //   1. Bails fast if the text doesn't look like a Report (no marker).
-//   2. Runs parseReport with caller-supplied defaults (taskId from env,
+//   2. Runs parseReport with caller-supplied defaults (boundTaskId from env,
 //      mode from env if set).
 //   3. On parse success, calls saveReport.
 //   4. On parse failure, writes a side-channel parse-error log under
@@ -185,8 +185,11 @@ export function handleStop(
   // agent to emit. The parser treats an inline `## Metadata` block as
   // authoritative for most fields; approvalStatus is always forced to
   // "pending" by parseReport regardless of what the metadata block contains.
+  // taskId is bound via `boundTaskId`, not `taskId`: it must win over an
+  // agent-authored `taskid` key in the report's own Metadata block (see the
+  // taskId binding comment in parser.ts, agent-tasks 2078873e).
   const defaults: ParseDefaults = {
-    taskId: input.env.UNDERSTANDING_GATE_TASK_ID || input.sessionId,
+    boundTaskId: input.env.UNDERSTANDING_GATE_TASK_ID || input.sessionId,
     createdAt: deps.now().toISOString(),
     mode: "fast_confirm",
     riskLevel: "medium",

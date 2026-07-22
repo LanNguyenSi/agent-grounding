@@ -13,9 +13,14 @@
 // usually come from the caller via `defaults`, since the v0 prompts
 // (full / fast_confirm / grill_me) do not ask the agent to emit them. An
 // optional `## Metadata` section in the markdown (`key: value` per line)
-// overrides defaults if present, EXCEPT taskId: a caller-supplied
-// defaults.taskId always wins over the markdown's `taskid` key (see the
-// merge-order comment below and agent-grounding e2e065e6). approvalStatus is
+// overrides defaults if present, including taskId: defaults.taskId is pure
+// gap-fill, used only when the markdown has no `taskid` key. To BIND the
+// persisted taskId regardless of the markdown -- e.g. so an agent-authored
+// `taskid` can never redirect a report onto another task's approval -- pass
+// `defaults.boundTaskId` instead; it wins over both the markdown's `taskid`
+// key and defaults.taskId (see the merge-order comment below,
+// agent-grounding e2e065e6, and agent-tasks 2078873e, which restored the
+// gap-fill contract that PR #143 / 0.4.7-0.4.8 broke). approvalStatus is
 // always forced to "pending" by parseReport regardless of defaults or
 // metadata; only the operator CLI approve flow (withApprovalStatus) may
 // flip it.
@@ -32,8 +37,17 @@ import type {
   UnderstandingReport,
 } from "../schema/types.js";
 
+// Precedence for the persisted taskId (highest wins):
+//   1. boundTaskId       -- binds regardless of the markdown; use this to
+//                            attribute a report to a specific task/session
+//                            (both adapters do). Never agent-settable.
+//   2. markdown `taskid` -- the `## Metadata` block's key, like every other
+//                            metadata field.
+//   3. taskId             -- gap-fill only: used when the markdown has no
+//                            `taskid` key at all.
 export type ParseDefaults = {
   taskId?: string;
+  boundTaskId?: string;
   mode?: UnderstandingGateMode;
   riskLevel?: RiskLevel;
   requiresHumanApproval?: boolean;
@@ -314,11 +328,12 @@ export function parseReport(
 
   // taskId binding (agent-grounding e2e065e6, block-direction integrity
   // finding from the adversarial review of the C1 self-approval fix,
-  // agent-tasks 3a994d92). Unlike every other Metadata-block field, a
-  // caller-supplied defaults.taskId always wins over an agent-authored
-  // `taskid` key: the Claude Code and opencode adapters (handle-stop.ts /
-  // persist-report.ts) always pass defaults.taskId derived from
-  // UNDERSTANDING_GATE_TASK_ID or the runtime's own session id, so in
+  // agent-tasks 3a994d92; restored to gap-fill + moved to the explicit
+  // boundTaskId field in agent-tasks 2078873e, see the ParseDefaults
+  // docstring). When the caller supplies a boundTaskId, it must win over an
+  // agent-authored `taskid` key: the Claude Code and opencode adapters
+  // (handle-stop.ts / persist-report.ts) always pass boundTaskId derived
+  // from UNDERSTANDING_GATE_TASK_ID or the runtime's own session id, so in
   // production this makes the persisted taskId fully adapter/session-bound.
   //
   // Without this, an agent-emitted `## Metadata\ntaskid: <other task>`
@@ -333,25 +348,37 @@ export function parseReport(
   // taskId field, so this metadata value can never grant a write it
   // shouldn't.
   //
-  // The markdown's `taskid` key is left live as a fallback ONLY when the
-  // caller supplies no default at all (defaults.taskId === undefined).
-  // That keeps `parseReport(markdown)` — used throughout this package's own
-  // parser tests with no adapter in front of it — working without having to
-  // thread an explicit taskId through every call site that isn't testing
-  // this binding.
-  if (defaults.taskId !== undefined) {
+  // The markdown's `taskid` key is left live as an override over
+  // defaults.taskId ONLY when the caller supplies no boundTaskId at all
+  // (defaults.boundTaskId === undefined) — that is defaults.taskId's
+  // documented gap-fill role, and it's also what keeps
+  // `parseReport(markdown)` — used throughout this package's own parser
+  // tests with no adapter in front of it — working without having to
+  // thread an explicit boundTaskId through every call site that isn't
+  // testing this binding.
+  // The unconditional override below (merged["taskId"] = boundTaskId) is the
+  // load-bearing protection; this strip is a fail-closed backstop — if the
+  // override ever regresses, a forged markdown `taskid` becomes a missing
+  // taskId (schema violation, report not persisted) instead of a silent
+  // victim-id persist.
+  if (defaults.boundTaskId !== undefined) {
     delete (metadataFromMarkdown as Record<string, unknown>)["taskId"];
   }
 
   // Merge order (lowest -> highest precedence):
   //   1. baseline (requiresHumanApproval=true)
-  //   2. caller-supplied defaults
-  //   3. inline `## Metadata` block from the markdown
+  //   2. caller-supplied defaults (taskId here is gap-fill only, see the
+  //      ParseDefaults docstring)
+  //   3. inline `## Metadata` block from the markdown (its `taskid` key
+  //      overrides defaults.taskId — unless boundTaskId is set, in which
+  //      case it was already stripped above)
   //   4. parsed section bodies
+  //   5. defaults.boundTaskId, applied below: wins over everything above,
+  //      including defaults.taskId itself, whenever the caller supplies it
   // Section keys (collected) and metadata keys never overlap thanks to the
   // SectionKey type-level Exclude<>, so the order is unambiguous, EXCEPT
-  // taskId, which was stripped from metadataFromMarkdown above whenever the
-  // caller supplied a default — see the taskId binding comment above.
+  // taskId, whose markdown key was stripped above whenever the caller
+  // supplied a boundTaskId — see the taskId binding comment above.
   const merged: Record<string, unknown> = {
     requiresHumanApproval: true,
     ...stripUndefined(defaults as Record<string, unknown>),
@@ -362,10 +389,16 @@ export function parseReport(
     // hard-reset runs last so no spread above can override it.
     approvalStatus: "pending",
   };
+  if (defaults.boundTaskId !== undefined) {
+    merged["taskId"] = defaults.boundTaskId;
+  }
   // approvedAt and approvedBy are operator-set fields; remove them
   // defensively in case a dynamic caller sneaks them through via defaults.
+  // boundTaskId is a parser-input-only field, never part of the persisted
+  // report shape (the schema's additionalProperties:false would reject it).
   delete merged["approvedAt"];
   delete merged["approvedBy"];
+  delete merged["boundTaskId"];
 
   if (missing.length > 0) {
     return {

@@ -91,8 +91,11 @@ export function handlePersistReport(
   // agent to emit. The parser treats an inline `## Metadata` block as
   // authoritative for most fields, but approvalStatus is exempt: parseReport
   // hard-resets it to "pending" so only the operator CLI can approve.
+  // taskId is bound via `boundTaskId`, not `taskId`: it must win over an
+  // agent-authored `taskid` key in the report's own Metadata block (see the
+  // taskId binding comment in parser.ts, agent-tasks 2078873e).
   const defaults: ParseDefaults = {
-    taskId: input.env.UNDERSTANDING_GATE_TASK_ID || input.sessionId,
+    boundTaskId: input.env.UNDERSTANDING_GATE_TASK_ID || input.sessionId,
     createdAt: deps.now().toISOString(),
     mode: "fast_confirm",
     riskLevel: "medium",
