@@ -723,7 +723,7 @@ function buildMissingSectionsMessage(
   const malformedSet = new Set(malformedSections);
   const parts = missing.map((key) =>
     malformedSet.has(key)
-      ? `${key} (present but not a markdown bullet list -- use '- ' items)`
+      ? `${key} (present but not a markdown list -- use '- ' or '1.' items)`
       : key,
   );
   return `Missing required sections: ${parts.join(", ")}`;

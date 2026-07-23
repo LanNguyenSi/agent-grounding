@@ -260,8 +260,10 @@ describe("parseReport: kind-mismatch diagnosis (agent-tasks be98cd96)", () => {
     // enough that a schema-conformant report can be derived from it alone.
     expect(r.error.message).toContain("verificationPlan");
     expect(r.error.message).toContain("priorArt");
-    expect(r.error.message.toLowerCase()).toContain("bullet");
-    expect(r.error.message).toContain("- ");
+    expect(r.error.message.toLowerCase()).toContain("markdown list");
+    // The hint covers both list forms LIST_ITEM_RE accepts, not just '- '.
+    expect(r.error.message).toContain("'- '");
+    expect(r.error.message).toContain("'1.'");
   });
 
   it("does not add a key to malformedSections when its heading is absent entirely", () => {
@@ -286,6 +288,72 @@ describe("parseReport: kind-mismatch diagnosis (agent-tasks be98cd96)", () => {
     if (r.ok) return;
     expect(r.error.missing).toContain("risks");
     expect(r.error.malformedSections).not.toContain("risks");
+  });
+
+  it("does not add a key to malformedSections when its body is whitespace-only (spaces/tabs, not zero-length)", () => {
+    // Distinct from the zero-length-body case above: this body has actual
+    // characters, all of them whitespace. buildMissingSectionsMessage's
+    // malformed/plain split relies on body.trim() collapsing this to "",
+    // same as a truly empty body -- pin that the trim, not a length-0
+    // check, is what drives the distinction.
+    const md = KIND_MISMATCH_INCIDENT_MARKDOWN.replace(
+      /### 8\. Risks[\s\S]*?(?=### 9\.)/,
+      "### 8. Risks\n   \t  \n\t\n",
+    );
+    const r = parseReport(md);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.missing).toContain("risks");
+    expect(r.error.malformedSections).not.toContain("risks");
+  });
+
+  it("pins buildMissingSectionsMessage's per-key rendering: a genuinely-missing key stays plain, a malformed key gets annotated, in the same message", () => {
+    // risks: heading removed entirely (truly missing). verificationPlan +
+    // priorArt: heading present, prose body (malformed) -- inherited from
+    // KIND_MISMATCH_INCIDENT_MARKDOWN. All three end up in `missing`, but
+    // only the malformed two should carry the annotation.
+    const md = KIND_MISMATCH_INCIDENT_MARKDOWN.replace(
+      /### 8\. Risks[\s\S]*?(?=### 9\.)/,
+      "",
+    );
+    const r = parseReport(md);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.missing).toEqual(["risks", "verificationPlan", "priorArt"]);
+    expect(r.error.malformedSections).toEqual([
+      "verificationPlan",
+      "priorArt",
+    ]);
+    // The truly-missing key renders plain, immediately followed by the
+    // list separator, never annotated.
+    expect(r.error.message).toMatch(/\brisks,/);
+    expect(r.error.message).not.toMatch(/risks \(present/);
+    // Both malformed keys carry the per-key annotation.
+    expect(r.error.message).toMatch(
+      /verificationPlan \(present but not a markdown list/,
+    );
+    expect(r.error.message).toMatch(
+      /priorArt \(present but not a markdown list/,
+    );
+  });
+
+  it("bold-label section header (discovery C1, commit 42637c8) with a prose body still lands in missing AND malformedSections", () => {
+    // Alias-promotion (bold **Label:** lines promoted to section headers)
+    // and the kind-mismatch diagnosis are independent mechanisms; this
+    // pins that they compose correctly -- a bold-label-headed section with
+    // a prose body is diagnosed the same as a `###`-headed one.
+    const md = FULL_MARKDOWN.replace(
+      /### 9\. Verification plan[\s\S]*?(?=### 10\.)/,
+      "**Verification Plan:**\nDies ist Fließtext ohne Bullet-Punkte, in Bold-Label-Form geschrieben.\n",
+    );
+    const r = parseReport(md);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.missing).toContain("verificationPlan");
+    expect(r.error.malformedSections).toContain("verificationPlan");
+    expect(r.error.message).toMatch(
+      /verificationPlan \(present but not a markdown list/,
+    );
   });
 
   // All 8 kind:"list" sections, each paired with the regex used elsewhere
@@ -351,7 +419,7 @@ describe("parseReport: kind-mismatch diagnosis (agent-tasks be98cd96)", () => {
       expect(r.error.missing).toContain(key);
       expect(r.error.malformedSections).toContain(key);
       expect(r.error.message).toContain(key);
-      expect(r.error.message.toLowerCase()).toContain("bullet list");
+      expect(r.error.message.toLowerCase()).toContain("markdown list");
     },
   );
 
