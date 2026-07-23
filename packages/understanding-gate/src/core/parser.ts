@@ -59,6 +59,29 @@ export type ParseDefaults = {
 //   missing_sections -> the section keys that could not be located/parsed
 //   schema_violation -> required-property names from the ajv errors
 //   invalid_metadata -> empty
+//
+// `malformedSections` (additive, agent-tasks be98cd96): only ever populated
+// on `reason: "missing_sections"`, and always a SUBSET of `missing`. A key
+// lands here when its heading WAS found and its body was non-blank, but
+// zero bullet items could be parsed out of it (e.g. the agent wrote prose
+// instead of a markdown list). This is distinct from the other two ways a
+// list key ends up in `missing`: heading not found at all, or heading found
+// with a genuinely empty/whitespace-only body -- those still just diagnose
+// as absent. Before this field existed, all three cases collapsed into an
+// indistinguishable "missing" verdict; the live incident that motivated
+// this (a report with German prose under Verification Plan / Prior Art,
+// no bullets) was rejected with a message that read as "you forgot these
+// sections" when in fact they were present but wrongly formed.
+//
+// Additive by design, not a new `reason`: `reason` and `missing` keep their
+// exact existing shape and meaning so a consumer that only reads those two
+// fields (this package's own reason===-branches, verified to not exist
+// beyond pass-through logging; the Claude Code / opencode adapters'
+// parse-error log writers; the external harness's stdin-report.ts, out of
+// scope for this change) sees no behaviour change. `malformedSections` is
+// declared optional here (not every ParseError producer in the test suite
+// populates it) but parseReport() itself always sets it, defaulting to `[]`
+// when there is nothing to report.
 export type ParseError = {
   reason:
     | "no_report_found"
@@ -66,6 +89,7 @@ export type ParseError = {
     | "schema_violation"
     | "invalid_metadata";
   missing: string[];
+  malformedSections?: string[];
   schemaErrors: { path: string; message: string }[];
   message: string;
 };
@@ -243,6 +267,7 @@ export function parseReport(
       error: {
         reason: "no_report_found",
         missing: SECTIONS.map((s) => s.key),
+        malformedSections: [],
         schemaErrors: [],
         message: "Empty markdown input",
       },
@@ -253,6 +278,10 @@ export function parseReport(
 
   let collected: Partial<UnderstandingReport> = {};
   const missing: string[] = [];
+  // Subset of `missing`: list-kind keys whose heading was found with a
+  // non-blank body, but that body yielded zero parseable bullet items (see
+  // the ParseError.malformedSections doc comment above).
+  const malformedSections: string[] = [];
 
   // Fast-confirm fallback: when the markdown has no `# Understanding Report`
   // heading or 9-section structure AND the mode is fast_confirm, attempt
@@ -295,6 +324,14 @@ export function parseReport(
       const items = parseList(body);
       if (items.length === 0) {
         missing.push(spec.key);
+        // The heading was found (body != null, handled above) and the body
+        // is non-blank, yet parseList produced no items -- the section is
+        // present but not in bullet-list form (e.g. prose). A genuinely
+        // empty/whitespace-only body is left out of malformedSections and
+        // still diagnoses as plain "missing", matching prior behaviour.
+        if (body.trim().length > 0) {
+          malformedSections.push(spec.key);
+        }
         continue;
       }
       (collected as Record<string, unknown>)[spec.key] = items;
@@ -318,6 +355,7 @@ export function parseReport(
         error: {
           reason: "invalid_metadata",
           missing: [],
+          malformedSections: [],
           schemaErrors: [],
           message: parsed.message,
         },
@@ -406,8 +444,9 @@ export function parseReport(
       error: {
         reason: "missing_sections",
         missing,
+        malformedSections,
         schemaErrors: [],
-        message: `Missing required sections: ${missing.join(", ")}`,
+        message: buildMissingSectionsMessage(missing, malformedSections),
       },
     };
   }
@@ -423,6 +462,7 @@ export function parseReport(
       error: {
         reason: "schema_violation",
         missing: missingFromAjv(validator.errors ?? []),
+        malformedSections: [],
         schemaErrors: (validator.errors ?? []).map(formatAjvError),
         message: "Schema validation failed",
       },
@@ -663,6 +703,30 @@ function stripUndefined(obj: Record<string, unknown>): Record<string, unknown> {
     if (v !== undefined) out[k] = v;
   }
   return out;
+}
+
+// Builds the missing_sections message. malformedSections is always a
+// subset of `missing` (see the ParseError.malformedSections doc comment).
+// Naming that subset explicitly in the message lets a schema-conformant
+// report be derived from the message alone, rather than the mismatch case
+// reading like the section was never written at all (agent-tasks
+// be98cd96): a live report had German prose under Verification Plan /
+// Prior Art (no bullets) and was rejected with a plain "missing" message
+// that gave no hint the sections were present but wrongly formed.
+function buildMissingSectionsMessage(
+  missing: string[],
+  malformedSections: string[],
+): string {
+  if (malformedSections.length === 0) {
+    return `Missing required sections: ${missing.join(", ")}`;
+  }
+  const malformedSet = new Set(malformedSections);
+  const parts = missing.map((key) =>
+    malformedSet.has(key)
+      ? `${key} (present but not a markdown bullet list -- use '- ' items)`
+      : key,
+  );
+  return `Missing required sections: ${parts.join(", ")}`;
 }
 
 function formatAjvError(err: ErrorObject): { path: string; message: string } {

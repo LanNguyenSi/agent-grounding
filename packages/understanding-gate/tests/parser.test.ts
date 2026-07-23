@@ -182,6 +182,188 @@ describe("parseReport: missing sections", () => {
   });
 });
 
+// agent-tasks be98cd96: a live report had `## Verification Plan` and
+// `## Prior Art` present as German prose (no bullets); the parser rejected
+// it with reason=missing_sections listing both keys, indistinguishable
+// from "the agent never wrote these sections at all". `## Open Questions`
+// in the same report WAS bullet-formatted and was accepted -- confirming
+// the parser's per-section list detection, not some global report defect,
+// was the cause. Fixture reconstructed per the incident write-up: an H1
+// with an em dash, German prose under Verification Plan / Prior Art, and
+// Prior Art as the last section before Metadata.
+const KIND_MISMATCH_INCIDENT_MARKDOWN = `# Understanding Report — Live-Vorfall 2026-07-22
+
+### 1. My current understanding
+Der Nutzer möchte einen Parser für Understanding Reports.
+
+### 2. Intended outcome
+\`parseReport\` gibt ein typisiertes, schema-validiertes Objekt zurück.
+
+### 3. Derived todos / specs
+- Parser bauen
+- ajv-Validierung ergänzen
+
+### 4. Acceptance criteria
+- Round-Trip funktioniert
+- Fehlende Sektionen werden erkannt
+
+### 5. Assumptions
+- ajv ist als Runtime-Dependency verfügbar
+
+### 6. Open questions
+- woher kommt die taskId?
+
+### 7. Out of scope
+- LLM-gestützte Wiederherstellung
+
+### 8. Risks
+- falsche Negative bei Heading-Varianten
+
+### 9. Verification plan
+Wir haben die Änderung manuell im Terminal getestet und die Ausgabe
+geprüft, aber nicht als Liste dokumentiert.
+
+### 10. Prior art
+Es gibt kein vergleichbares Werkzeug am Markt, wir haben das selbst gebaut
+und dabei keine Bulletpoints benutzt.
+
+## Metadata
+taskId: incident-1
+mode: grill_me
+riskLevel: medium
+`;
+
+describe("parseReport: kind-mismatch diagnosis (agent-tasks be98cd96)", () => {
+  it("RED-test baseline: reproduces the incident shape -- reason=missing_sections with exactly verificationPlan + priorArt", () => {
+    // This assertion documents today's (pre-fix) observable behaviour
+    // verbatim, per the task contract's red-test-first requirement. It
+    // must stay true after the fix too: `missing` still names exactly
+    // these two keys (schema/required-ness are unchanged by this task);
+    // only the diagnosis alongside it gets more precise (see the next
+    // test below).
+    const r = parseReport(KIND_MISMATCH_INCIDENT_MARKDOWN);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.reason).toBe("missing_sections");
+    expect(r.error.missing).toEqual(["verificationPlan", "priorArt"]);
+  });
+
+  it("distinguishes 'present but not a bullet list' from 'absent' via malformedSections + a precise message", () => {
+    const r = parseReport(KIND_MISMATCH_INCIDENT_MARKDOWN);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.malformedSections).toEqual([
+      "verificationPlan",
+      "priorArt",
+    ]);
+    // The message must name each malformed key and explain the fix well
+    // enough that a schema-conformant report can be derived from it alone.
+    expect(r.error.message).toContain("verificationPlan");
+    expect(r.error.message).toContain("priorArt");
+    expect(r.error.message.toLowerCase()).toContain("bullet");
+    expect(r.error.message).toContain("- ");
+  });
+
+  it("does not add a key to malformedSections when its heading is absent entirely", () => {
+    const md = KIND_MISMATCH_INCIDENT_MARKDOWN.replace(
+      /### 8\. Risks[\s\S]*?(?=### 9\.)/,
+      "",
+    );
+    const r = parseReport(md);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.missing).toContain("risks");
+    expect(r.error.malformedSections).not.toContain("risks");
+  });
+
+  it("does not add a key to malformedSections when its body is genuinely empty (companion to the pinned empty-body test)", () => {
+    const md = KIND_MISMATCH_INCIDENT_MARKDOWN.replace(
+      /### 8\. Risks[\s\S]*?(?=### 9\.)/,
+      "### 8. Risks\n\n",
+    );
+    const r = parseReport(md);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.missing).toContain("risks");
+    expect(r.error.malformedSections).not.toContain("risks");
+  });
+
+  // All 8 kind:"list" sections, each paired with the regex used elsewhere
+  // in this file to isolate that section's heading-through-next-heading
+  // span in FULL_MARKDOWN, so the case list stays generic instead of
+  // special-casing the two sections the live incident happened to hit.
+  const LIST_SECTION_CASES: Array<{
+    key: string;
+    heading: string;
+    regex: RegExp;
+  }> = [
+    {
+      key: "derivedTodos",
+      heading: "### 3. Derived todos / specs",
+      regex: /### 3\. Derived todos \/ specs[\s\S]*?(?=### 4\.)/,
+    },
+    {
+      key: "acceptanceCriteria",
+      heading: "### 4. Acceptance criteria",
+      regex: /### 4\. Acceptance criteria[\s\S]*?(?=### 5\.)/,
+    },
+    {
+      key: "assumptions",
+      heading: "### 5. Assumptions",
+      regex: /### 5\. Assumptions[\s\S]*?(?=### 6\.)/,
+    },
+    {
+      key: "openQuestions",
+      heading: "### 6. Open questions",
+      regex: /### 6\. Open questions[\s\S]*?(?=### 7\.)/,
+    },
+    {
+      key: "outOfScope",
+      heading: "### 7. Out of scope",
+      regex: /### 7\. Out of scope[\s\S]*?(?=### 8\.)/,
+    },
+    {
+      key: "risks",
+      heading: "### 8. Risks",
+      regex: /### 8\. Risks[\s\S]*?(?=### 9\.)/,
+    },
+    {
+      key: "verificationPlan",
+      heading: "### 9. Verification plan",
+      regex: /### 9\. Verification plan[\s\S]*?(?=### 10\.)/,
+    },
+    {
+      key: "priorArt",
+      heading: "### 10. Prior art",
+      regex: /### 10\. Prior art[\s\S]*?(?=## Metadata)/,
+    },
+  ];
+
+  it.each(LIST_SECTION_CASES)(
+    "flags $key as malformed, not silently 'missing', when its heading is present with a non-blank prose body",
+    ({ key, heading, regex }) => {
+      const proseBody = `${heading}\nDies ist Fließtext ohne Bullet-Punkte, der die Sektion ausfüllt.\n`;
+      const md = FULL_MARKDOWN.replace(regex, proseBody);
+      const r = parseReport(md);
+      expect(r.ok).toBe(false);
+      if (r.ok) return;
+      expect(r.error.reason).toBe("missing_sections");
+      expect(r.error.missing).toContain(key);
+      expect(r.error.malformedSections).toContain(key);
+      expect(r.error.message).toContain(key);
+      expect(r.error.message.toLowerCase()).toContain("bullet list");
+    },
+  );
+
+  it("correctly formatted bullet reports are unaffected (malformedSections stays out of the picture on success)", () => {
+    // FULL_MARKDOWN's list sections are all proper bullet lists; the
+    // ok:true round-trip test elsewhere already covers full acceptance.
+    // This just pins that a successful parse carries no `error` at all.
+    const r = parseReport(FULL_MARKDOWN);
+    expect(r.ok).toBe(true);
+  });
+});
+
 describe("parseReport: priorArt section (v0.4.0)", () => {
   it("rejects a report missing the Prior Art section", () => {
     const md = FULL_MARKDOWN.replace(

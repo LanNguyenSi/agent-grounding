@@ -131,6 +131,7 @@ export function handlePersistReport(
     {
       reason: result.error.reason,
       missing: result.error.missing,
+      malformedSections: result.error.malformedSections ?? [],
       schemaErrors: result.error.schemaErrors,
       message: result.error.message,
       stamp,

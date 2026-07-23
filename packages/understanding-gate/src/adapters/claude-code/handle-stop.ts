@@ -229,6 +229,11 @@ export function handleStop(
     {
       reason: result.error.reason,
       missing: result.error.missing,
+      // Optional on ParseError (not every producer in the test suite sets
+      // it), so default defensively. parseReport() itself always
+      // populates it -- see the ParseError.malformedSections doc comment
+      // in core/parser.ts (agent-tasks be98cd96).
+      malformedSections: result.error.malformedSections ?? [],
       schemaErrors: result.error.schemaErrors,
       message: result.error.message,
       stamp,
