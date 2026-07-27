@@ -5,3 +5,7 @@ coverage/
 # Runtime gate state (reports / audit.log) — never committed; tests that
 # spawn the binary must point cwd at a tmp dir, but ignore it as a backstop.
 .understanding-gate/
+# Orchestrator-workflow run state (goal / plan / decisions / handoff per run).
+# Local working notes, not repo content. Root-anchored so a `.ai/` fixture
+# nested inside a package or test tree is still tracked normally.
+/.ai/
