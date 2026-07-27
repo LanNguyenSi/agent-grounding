@@ -15,7 +15,10 @@
     "test:check-pins": "node --test scripts/check-pins.test.js"
   },
   "overrides": {
-    "js-yaml": "^4.2.0"
+    "js-yaml": "^4.2.0",
+    "brace-expansion": "^5.0.8",
+    "minimatch": "^10.2.5",
+    "test-exclude": "^8.0.0"
   },
   "devDependencies": {
     "semver": "^6.3.1"
