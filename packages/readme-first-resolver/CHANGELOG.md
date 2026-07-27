@@ -4,22 +4,29 @@
 
 ### Security
 
-- **Removed the phantom `glob` and `js-yaml` production dependencies**
-  (plus the now-unused `@types/js-yaml` dev dependency). Neither package
-  was ever imported anywhere in `src` or `dist` — this package's full
-  import set is `fs`, `path`, `os`/`child_process` (test files only),
-  `commander`, `chalk`, and its own `./lib.js`. Verified with no static
-  `require`/`import` of either package and no dynamic load path either
-  (no variable- or template-argument `require`/`import()`, no
-  `createRequire`, `module._load`, `eval`, or `new Function`). Because
-  this package is published with `private: false`, the unused
-  `glob@^10.3.0` pulled `minimatch@9.0.9` and the vulnerable
-  `brace-expansion@2.1.2` (`<=5.0.7`,
+- **Removed the phantom `glob` production dependency.** `glob` was declared
+  under `dependencies` (`^10.3.0`) but was never imported anywhere in `src`
+  or `dist` — verified with no static `require`/`import`, and no dynamic
+  load path either (no variable- or template-argument `require`/`import()`,
+  no `createRequire`, `module._load`, `eval`, or `new Function`). Because
+  this package is published (no `private: true`, and
+  `publishConfig.access` is `public`), the unused `glob@^10.3.0` pulled
+  `minimatch@9.0.9` and the vulnerable `brace-expansion@2.1.2` (`<=5.0.7`,
   [GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg),
   HIGH) into every consumer's production dependency closure. `npm audit
   --omit=dev` against a fresh `npm install @lannguyensi/readme-first-resolver`
-  no longer reports it. (`js-yaml` is a genuine dependency of the sibling
-  `@lannguyensi/domain-router` package and was left untouched there.)
+  no longer reports it.
+
+### Removed
+
+- **The phantom `js-yaml` dependency** (plus the now-unused
+  `@types/js-yaml` dev dependency). This is dependency hygiene, not a
+  security fix: `js-yaml` carries no advisory here. It was simply never
+  imported — this package's full import set is `fs`, `path`,
+  `os`/`child_process` (test files only), `commander`, `chalk`, and its
+  own `./lib.js`, verified to the same standard as `glob` above.
+  `js-yaml` is a genuine dependency of the sibling
+  `@lannguyensi/domain-router` package and was left untouched there.
 
 ## 0.1.1, 2026-07-15
 

@@ -10,7 +10,8 @@
   'glob'`, and no dynamic load path either (no variable- or
   template-argument `require`/`import()`, no `createRequire`,
   `module._load`, `eval`, or `new Function`). Because this package is
-  published with `private: false`, the unused `glob@^10.3.0` pulled
+  published (no `private: true`, and `publishConfig.access` is `public`),
+  the unused `glob@^10.3.0` pulled
   `minimatch@9.0.9` and the vulnerable `brace-expansion@2.1.2`
   (`<=5.0.7`, [GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg),
   HIGH) into every consumer's production dependency closure. `npm audit
