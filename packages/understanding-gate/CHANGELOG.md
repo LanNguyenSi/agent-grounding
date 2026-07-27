@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.4.10, 2026-07-27
+
+### Fixed
+
+- **A required list section written as prose (no bullet items) was
+  diagnosed as "missing" instead of "present but wrongly formed".**
+  `parseReport()`'s list-kind branch previously could not tell apart three
+  distinct ways a section key ends up in `missing`: the heading not found
+  at all, the heading found with a genuinely empty/whitespace-only body,
+  and the heading found with a non-blank body that yields zero parseable
+  bullet items (e.g. an agent wrote prose instead of a markdown list). All
+  three collapsed into the same "Missing required sections" verdict. This
+  is the live incident that motivated the fix: a report carried German
+  prose under Verification Plan / Prior Art, no bullets, and was rejected
+  with a message that read as "you forgot these sections" when the
+  sections were in fact present but wrongly formed. `reason` stays
+  `"missing_sections"` (never branched on in-repo; pass-through consumers
+  unchanged). Fixed in commit `6647c50` (PR #154, agent-tasks `be98cd96`).
+
+### Added
+
+- **`ParseError.malformedSections`**: a new, optional, additive field,
+  always a subset of `missing`, populated only for the third case above
+  (heading found, non-blank body, zero bullet items). `reason` and
+  `missing` keep their exact existing shape and meaning, so a consumer
+  that reads only those two fields sees no behaviour change. The
+  rejection `message` now names the malformed keys explicitly ("... key
+  (present but not a markdown list -- use '- ' or '1.' items)") instead of
+  folding them into an undifferentiated "missing" list. Both log writers
+  -- the Claude Code adapter's `handle-stop.ts` and the opencode adapter's
+  `persist-report.ts` -- now include the field in the parse-error log
+  payload, defaulting to `[]` when a `ParseError` producer does not set
+  it (`parseReport()` itself always sets it).
+
+### Notes for consumers
+
+- `malformedSections` is additive and optional; nothing that reads only
+  `reason` / `missing` / `message` breaks. As with `sessionId` in 0.4.6
+  and `ParseDefaults.boundTaskId` in 0.4.9, this is new API surface
+  introduced to fix a diagnostic-accuracy bug, not a new capability a
+  consumer must opt into -- so, consistent with how those two shipped,
+  this stays a patch: callers pinned `^0.4.9` pick it up automatically,
+  which a `0.5.0` would not satisfy under npm's zero-major caret range
+  semantics (`^0.4.9` means `>=0.4.9 <0.5.0`).
+- If you parse the rejection `message` string instead of reading
+  `malformedSections` directly, note the new parenthetical qualifier on
+  malformed keys; exact string matching against the old
+  `"Missing required sections: a, b, c"` format will see that format grow
+  by the qualifier for any key that is present-but-malformed.
+
 ## 0.4.9, 2026-07-22
 
 ### Fixed
