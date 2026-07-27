@@ -1,6 +1,6 @@
 {
   "name": "@lannguyensi/domain-router",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Routes a keyword/problem to the correct repos, components and docs scope",
   "license": "MIT",
   "engines": {
@@ -34,7 +34,6 @@
   "dependencies": {
     "chalk": "^4.1.2",
     "commander": "^11.1.0",
-    "glob": "^10.3.0",
     "js-yaml": "^4.1.0"
   },
   "devDependencies": {
