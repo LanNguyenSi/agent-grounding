@@ -1,6 +1,6 @@
 {
   "name": "@lannguyensi/readme-first-resolver",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Forces agents to read primary docs before any analysis",
   "license": "MIT",
   "engines": {
@@ -33,12 +33,10 @@
   },
   "dependencies": {
     "chalk": "^4.1.2",
-    "commander": "^11.1.0",
-    "js-yaml": "^4.1.0"
+    "commander": "^11.1.0"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.0.0",
     "jest": "^30.3.0",
     "ts-jest": "^29.4.9",

@@ -1,6 +1,6 @@
 {
   "name": "@lannguyensi/domain-router",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Routes a keyword/problem to the correct repos, components and docs scope",
   "license": "MIT",
   "engines": {

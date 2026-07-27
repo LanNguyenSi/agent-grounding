@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.2, 2026-07-27
+
+### Security
+
+- **Removed the phantom `glob` and `js-yaml` production dependencies**
+  (plus the now-unused `@types/js-yaml` dev dependency). Neither package
+  was ever imported anywhere in `src` or `dist` — this package's full
+  import set is `fs`, `path`, `os`/`child_process` (test files only),
+  `commander`, `chalk`, and its own `./lib.js`. Verified with no static
+  `require`/`import` of either package and no dynamic load path either
+  (no variable- or template-argument `require`/`import()`, no
+  `createRequire`, `module._load`, `eval`, or `new Function`). Because
+  this package is published with `private: false`, the unused
+  `glob@^10.3.0` pulled `minimatch@9.0.9` and the vulnerable
+  `brace-expansion@2.1.2` (`<=5.0.7`,
+  [GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg),
+  HIGH) into every consumer's production dependency closure. `npm audit
+  --omit=dev` against a fresh `npm install @lannguyensi/readme-first-resolver`
+  no longer reports it. (`js-yaml` is a genuine dependency of the sibling
+  `@lannguyensi/domain-router` package and was left untouched there.)
+
 ## 0.1.1, 2026-07-15
 
 ### Fixed

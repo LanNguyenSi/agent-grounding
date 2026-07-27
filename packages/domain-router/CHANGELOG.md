@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.2, 2026-07-27
+
+### Security
+
+- **Removed the phantom `glob` production dependency.** `glob` was declared
+  under `dependencies` (`^10.3.0`) but was never imported anywhere in `src`
+  or `dist` — verified with no static `require('glob')`/`import ... from
+  'glob'`, and no dynamic load path either (no variable- or
+  template-argument `require`/`import()`, no `createRequire`,
+  `module._load`, `eval`, or `new Function`). Because this package is
+  published with `private: false`, the unused `glob@^10.3.0` pulled
+  `minimatch@9.0.9` and the vulnerable `brace-expansion@2.1.2`
+  (`<=5.0.7`, [GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg),
+  HIGH) into every consumer's production dependency closure. `npm audit
+  --omit=dev` against a fresh `npm install @lannguyensi/domain-router`
+  no longer reports it.
+
 ## 0.1.1, 2026-07-15
 
 ### Fixed
