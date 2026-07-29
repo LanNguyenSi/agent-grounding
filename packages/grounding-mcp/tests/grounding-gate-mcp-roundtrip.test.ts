@@ -28,6 +28,7 @@ import { createServer } from '../src/server.js';
 import { resetStores } from '../src/hypothesis-store.js';
 import { resetLedgerDb } from '../src/ledger-bridge.js';
 import { writeVerdict } from '../src/solution-verdict.js';
+import { expectValidationError } from './expect-validation-error.js';
 
 // ── Shared types ──────────────────────────────────────────────────────────────
 
@@ -47,20 +48,6 @@ function parseToolResult(raw: unknown): unknown {
   const text = result.content[0]?.text;
   expect(typeof text).toBe('string');
   return JSON.parse(text as string);
-}
-
-// Assert that the MCP SDK returned an InvalidParams envelope for a missing /
-// invalid field. Mirrors the helper in hypothesis-mcp-roundtrip.test.ts verbatim.
-function expectValidationError(raw: unknown, toolName: string, field: string): void {
-  const result = raw as ToolTextResponse;
-  expect(result.isError).toBe(true);
-  const text = result.content?.[0]?.text ?? '';
-  expect(text).toContain(`Invalid arguments for tool ${toolName}`);
-  const jsonStart = text.indexOf('[');
-  expect(jsonStart).toBeGreaterThan(-1);
-  const errors = JSON.parse(text.slice(jsonStart)) as { path: (string | number)[] }[];
-  expect(Array.isArray(errors)).toBe(true);
-  expect(errors.some((e) => e.path.includes(field))).toBe(true);
 }
 
 // ── Harness: MCP client ↔ server via InMemoryTransport ───────────────────────

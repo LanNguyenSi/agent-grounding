@@ -30,6 +30,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createServer } from '../src/server.js';
 import { resetStores } from '../src/hypothesis-store.js';
 import { resetLedgerDb } from '../src/ledger-bridge.js';
+import { expectValidationError } from './expect-validation-error.js';
 
 interface ToolTextResponse {
   content: { type: string; text: string }[];
@@ -205,31 +206,16 @@ describe('hypothesis_* MCP roundtrip — schema validation', () => {
   // The MCP SDK surfaces input-validation failures as a tool-result envelope
   // with `isError: true` and a `text` content block carrying the formatted
   // zod error. The client does NOT throw — callers see a structured error
-  // result. Tests assert both the envelope flag and a substring of the
+  // result. Tests assert both the envelope flag and the field named in the
   // formatted message so a schema rename surfaces here.
-
-  // Robust to SDK/zod formatter changes: rather than matching the
-  // pretty-printed JSON substring, we extract the formatter's JSON array
-  // from the message and assert against the parsed path. That way an SDK
-  // bump that switches indentation, swaps `JSON.stringify(..., 2)` for
-  // `flatten()`, or wraps the payload differently does not flake the test
-  // as long as the structured `path` is still present.
-  function expectValidationError(
-    raw: unknown,
-    toolName: string,
-    field: string,
-  ): void {
-    const result = raw as ToolTextResponse;
-    expect(result.isError).toBe(true);
-    const text = result.content?.[0]?.text ?? '';
-    expect(text).toContain(`Invalid arguments for tool ${toolName}`);
-
-    const jsonStart = text.indexOf('[');
-    expect(jsonStart).toBeGreaterThan(-1);
-    const errors = JSON.parse(text.slice(jsonStart)) as { path: (string | number)[] }[];
-    expect(Array.isArray(errors)).toBe(true);
-    expect(errors.some((e) => e.path.includes(field))).toBe(true);
-  }
+  //
+  // expectValidationError (imported from ./expect-validation-error.js, shared
+  // verbatim with grounding-gate-mcp-roundtrip.test.ts) is robust to SDK/zod
+  // formatter changes: it accepts both the pre-1.30 JSON-array format and the
+  // 1.30+ compact "<message> at <field>" format, and asserts against the
+  // parsed/matched field rather than the exact wording, so an SDK bump that
+  // changes message rendering does not flake this test as long as the
+  // offending field is still identifiable.
 
   it('rejects sessionId = "" with an MCP InvalidParams envelope', async () => {
     const raw = await client.callTool({
