@@ -9,7 +9,7 @@ at them rather than copying them.
 
 - [The grounding stack](grounding-stack-overview.md), pointer to the root
   README's architecture diagram, plus the release topology it does not show
-  (four version-locked packages under one root tag, seven independent ones).
+  (four version-locked packages under one root tag, eight independent ones).
 - [runtime-reality-checker as a policy](runtime-reality-policy-pointer.md),
   pointer to the authoritative spec, plus the ownership fact agents get
   backwards: this package interprets its own escalation env vars, harness only

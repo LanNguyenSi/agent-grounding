@@ -8,14 +8,15 @@
   `OW_FINDINGS_PLACEHOLDER_ROW` / `scanFindings` / `isPlaceholderRow` in
   ow-run-completeness.ts) and had every ow-run-completeness.ts line citation
   re-pinned — that file's header docstring and body grew substantially for the
-  guard, shifting citations by anywhere from 0 to +78 lines (non-uniform, so each
+  guard, shifting citations by anywhere from 0 to +97 lines (non-uniform, so each
   was re-derived by function name, not by a constant offset); solution-verdict.ts
   itself was untouched (all its citations still held exactly). grounding-stack-overview
   and claim-gate-vs-review-claim-gate had drifted version numbers (four locked
   packages 0.5.0 → 0.6.0, grounding-mcp 0.6.0 → 0.7.0, review-claim-gate
   0.1.3 → 0.1.5, review-claim-gate's pinned claim-gate/evidence-ledger deps
-  0.5.0 → 0.6.0) — all ride-along re-pin bumps (PR #147/#148), no behavior
-  change. evidence-ledger-session-key-shapes' db.ts line refs shifted +11
+  0.5.0 → 0.6.0) — all from the lockstep v0.6.0 release train + consumer re-pins (PR #151,
+  97dfa51); no behavior change in the version-number edits themselves, though
+  the same release's grounding-mcp 0.7.0 carries the OW mixed-state guard. evidence-ledger-session-key-shapes' db.ts line refs shifted +11
   (session column, rebuild copy, idx_session, listEntries filter, getSummary)
   from further db.ts churn since the 2026-07-18 getDb-guard re-stamp, plus one
   stale test-file line ref (grounding-gate-mcp-roundtrip.test.ts:645 → :632).
