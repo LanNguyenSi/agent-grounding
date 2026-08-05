@@ -2,6 +2,31 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-08-05T15:56:24Z, re-verification sweep (task d6f48ad9): 5 stale docs
+  re-checked against current sources. Substantive: solution-acceptance-verdict-contract
+  gained a new bullet for the Mixed-State-Bypass-Guard (task `8f173547`,
+  `OW_FINDINGS_PLACEHOLDER_ROW` / `scanFindings` / `isPlaceholderRow` in
+  ow-run-completeness.ts) and had every ow-run-completeness.ts line citation
+  re-pinned — that file's header docstring and body grew substantially for the
+  guard, shifting citations by anywhere from 0 to +97 lines (non-uniform, so each
+  was re-derived by function name, not by a constant offset); solution-verdict.ts
+  itself was untouched (all its citations still held exactly). grounding-stack-overview
+  and claim-gate-vs-review-claim-gate had drifted version numbers (four locked
+  packages 0.5.0 → 0.6.0, grounding-mcp 0.6.0 → 0.7.0, review-claim-gate
+  0.1.3 → 0.1.5, review-claim-gate's pinned claim-gate/evidence-ledger deps
+  0.5.0 → 0.6.0) — all from the lockstep v0.6.0 release train + consumer re-pins (PR #151,
+  97dfa51); no behavior change in the version-number edits themselves, though
+  the same release's grounding-mcp 0.7.0 carries the OW mixed-state guard. evidence-ledger-session-key-shapes' db.ts line refs shifted +11
+  (session column, rebuild copy, idx_session, listEntries filter, getSummary)
+  from further db.ts churn since the 2026-07-18 getDb-guard re-stamp, plus one
+  stale test-file line ref (grounding-gate-mcp-roundtrip.test.ts:645 → :632).
+  hypothesis-tracker-persistence-split re-checked line-for-line against
+  hypothesis-tracker/src/lib.ts, grounding-mcp's hypothesis-store.ts and
+  server.ts hypothesis_* verbs, and understanding-gate's hypothesis-store-fs/
+  -sync/-bridge — zero drift, restamp only. Checked PR #160/#161's
+  `@modelcontextprotocol/sdk` 1.30.0 bump and lockfile-only audit fix against
+  all 5 docs: no doc makes a claim it invalidates.
+
 - 2026-07-18T05:08:08Z, ride-along re-verify (task 56e26999, getDb path
   guard): evidence-ledger-session-key-shapes re-stamped with db.ts line
   refs shifted +44 by the new singleton path guard (guard changes no

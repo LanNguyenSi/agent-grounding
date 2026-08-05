@@ -3,7 +3,7 @@ type: invariant
 title: claim-gate vs review-claim-gate — same word, opposite trust models
 description: Two sibling packages both gate on "evidence" but claim-gate trusts a caller-supplied boolean (self-discipline) while review-claim-gate reads a store (CI gate) — never treat them as interchangeable.
 tags: [claim-gate, review-claim-gate, evidence, trust-boundary]
-timestamp: 2026-07-18T05:08:08Z
+timestamp: 2026-08-05T15:56:24Z
 sources:
   - packages/claim-gate/src/lib.ts
   - packages/claim-gate/src/cli.ts
@@ -128,10 +128,10 @@ for the full key-shape trap.
 Both are configured for public npm publish (`publishConfig.access: "public"` in
 each `package.json`):
 
-- `@lannguyensi/claim-gate` — version **0.5.0** (`packages/claim-gate/package.json`).
-- `@lannguyensi/review-claim-gate` — version **0.1.3**
+- `@lannguyensi/claim-gate` — version **0.6.0** (`packages/claim-gate/package.json`).
+- `@lannguyensi/review-claim-gate` — version **0.1.5**
   (`packages/review-claim-gate/package.json`), depending on
-  `@lannguyensi/claim-gate@0.5.0` and `@lannguyensi/evidence-ledger@0.5.0`
+  `@lannguyensi/claim-gate@0.6.0` and `@lannguyensi/evidence-ledger@0.6.0`
   (pinned, exact).
 
 (These are the declared package versions; the manifests are publish-configured
