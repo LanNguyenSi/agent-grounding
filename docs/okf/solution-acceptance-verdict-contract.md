@@ -3,7 +3,7 @@ type: invariant
 title: Solution-acceptance verdict contract — why the marker lives outside the ledger
 description: A "done" verdict is derived from a real preflight+OW run, HEAD-pinned, and written to an XDG state marker outside the agent-writable evidence-ledger because ledger rows are forgeable via ledger_add.
 tags: [solution-acceptance, verdicts, anti-hacking, trust-boundary]
-timestamp: 2026-07-16T02:31:52Z
+timestamp: 2026-08-05T15:56:24Z
 sources:
   - packages/grounding-mcp/src/solution-verdict.ts
   - packages/grounding-mcp/src/ow-run-completeness.ts
@@ -86,7 +86,7 @@ must be sanitised before reaching the filesystem.
 pinned by the harness consumer — see the comment at lines 516-518. New arms (below) fold
 into `ready`/`blockers` only; they do NOT add fields.
 
-### The two MCP tools (server.ts, `PACKAGE_VERSION = '0.6.0'` at line 49)
+### The two MCP tools (server.ts, `PACKAGE_VERSION = '0.7.0'` at line 49)
 
 - **`solution_evaluate`** (registered line 316) — the producer. Runs preflight against
   the repo, records a HEAD-pinned verdict for `id`. Args: `id` (min 1), optional
@@ -109,27 +109,41 @@ Beyond preflight's technical floor, `solution_evaluate` folds in **orchestrator-
 Each OW blocker is prefixed `orchestrator-workflow: ` (line 296).
 
 `ow-run-completeness.ts` is a **pure, side-effect-free reader** (no subprocess, no
-mutation — comment lines 7-9). Given a `repoPath`, it reads a *third* repo's OW run files
-under `<repoPath>/.ai/runs/`:
+mutation — comment line 3, spelled out again at lines 9-11: "This module only READS...
+nothing here writes, spawns, or mutates"). Given a `repoPath`, it reads a *third* repo's
+OW run files under `<repoPath>/.ai/runs/`:
 
-- **Active run selection** (`findActiveRun`, lines 192-210): newest dated dir, only dirs
+- **Active run selection** (`findActiveRun`, lines 250-268): newest dated dir, only dirs
   matching `/^\d{4}-\d{2}-\d{2}-/` are eligible; name-descending sort, mtime tiebreak.
-- **`06-handoff.md`** → `final-status` marker (`resolveAcceptanceValue`, line 110); must
-  be in `{accepted, accepted_with_notes}` (line 76).
-- **`05-review-findings.md`** → `acceptance-recommendation` marker (line 127); must be in
-  `{accept, accept_with_notes}` (line 77). Plus the **findings table**: rows are located
+- **`06-handoff.md`** → `final-status` marker (`resolveAcceptanceValue`, line 155); must
+  be in `{accepted, accepted_with_notes}` (line 101).
+- **`05-review-findings.md`** → `acceptance-recommendation` marker (line 172); must be in
+  `{accept, accept_with_notes}` (line 102). Plus the **findings table**: rows are located
   by anchoring on a header row whose cells include both `Severity` and `Decision`
-  (`parseFindingsHeaderRow`, line 379), not by the `## Findings` heading text. A concrete
+  (`parseFindingsHeaderRow`, line 476), not by the `## Findings` heading text. A concrete
   `high`/`critical` severity row ARMS the gate UNLESS its Decision is explicitly in
-  `{accepted, defer}` (`RESOLVED_DECISIONS`, line 82) — fix, reject, blank, `open`,
+  `{accepted, defer}` (`RESOLVED_DECISIONS`, line 107) — fix, reject, blank, `open`,
   `TODO`, unknown all block (fail-closed). All tables are parsed (appended second-round
   tables count); a findings section with content but no table yields an explicit format
-  blocker (`findingsFormatBlocker`, line 402).
-- **`00-goal.md`** → the `run-base` marker (`resolveRunBase`, line 172), raw `\S+`
+  blocker (`findingsFormatBlocker`, line 499).
+- **Mixed-state bypass guard** (task `8f173547`): completeness above is not enough —
+  an operator could flip the acceptance markers to an accepted value without ever
+  transferring the reviewer's findings into the table. `scanFindings` (lines 397-455)
+  additionally tracks whether the shipped review template's placeholder/legend row
+  survived untouched (`placeholderRowSeen`, matched byte-exactly cell-by-cell by
+  `isPlaceholderRow`, lines 462-467, against `OW_FINDINGS_PLACEHOLDER_ROW`, lines
+  121-122) and whether any row anywhere carries a real concrete severity
+  (`concreteRowSeen`). When the placeholder row survived AND no concrete row was ever
+  seen, `readOwRunCompleteness` blocks with `complete: false` (lines 198-208), naming
+  both escape hatches: transfer the reviewer's findings into the table, or delete the
+  placeholder row for a genuine zero-findings review. A header row with no data rows at
+  all (the placeholder already deleted) still reads `complete: true`, and a concrete
+  finding row sitting next to a left-behind placeholder row is unaffected.
+- **`00-goal.md`** → the `run-base` marker (`resolveRunBase`, line 230), raw `\S+`
   capture, `TODO` → absent. This module only *extracts* it; git verification happens in
   the verdict layer.
 
-**Marker-first, prose fallback** throughout (`resolveAcceptanceValue`, lines 232-251): the
+**Marker-first, prose fallback** throughout (`resolveAcceptanceValue`, lines 290-309): the
 machine-readable `<!-- solution-acceptance: <field> = <value> -->` marker wins; only when
 the field is entirely absent does it fall back to the `## <heading>` prose value. A `TODO`
 or malformed marker surfaces its own blocker and never silently falls back (fail-closed).
@@ -166,7 +180,7 @@ never silently disable the gate.
   before pushing.
 - **Marker-shadowing in run files.** First marker match wins; a quoted mention of marker
   syntax earlier in a run file can shadow the real marker — a known non-goal, run files are
-  agent-authored honor-system (ow-run-completeness.ts:22-24).
+  agent-authored honor-system (ow-run-completeness.ts:24-26).
 
 ## Out-of-repo boundary note (harness consumer)
 

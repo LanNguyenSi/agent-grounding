@@ -3,7 +3,7 @@ type: invariant
 title: Hypothesis state — one library, two consumers, two persistence shapes
 description: hypothesis-tracker is a pure in-memory library; grounding-mcp keeps a disk-backed LRU cache under ~/.grounding-mcp/hypotheses/ (since PR #139) while understanding-gate persists to hypotheses.json, and inside the library addEvidence and supportHypothesis disagree on whether required_checks gate promotion.
 tags: [hypothesis-tracker, persistence, grounding-mcp, understanding-gate]
-timestamp: 2026-07-16T02:31:52Z
+timestamp: 2026-08-05T15:56:24Z
 sources:
   - packages/hypothesis-tracker/src/lib.ts
   - packages/grounding-mcp/src/hypothesis-store.ts
