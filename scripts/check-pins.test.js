@@ -12,7 +12,15 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { collectPinViolations, collectEnginesViolations, loadWorkspacePackages } = require('./check-pins');
+const {
+  collectPinViolations,
+  collectEnginesViolations,
+  collectOverrideCouplingViolations,
+  collectBraceExpansionCouplingViolations,
+  loadWorkspacePackages,
+  loadRootOverrides,
+  loadLockfilePackages,
+} = require('./check-pins');
 
 test('engines guard: passes when all published packages declare the same value (private may omit)', () => {
   const workspaces = [
@@ -242,4 +250,127 @@ test('loadWorkspacePackages finds real package.json files alongside non-package 
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
+});
+
+// ── Override coupling guard (brace-expansion / minimatch / test-exclude) ──
+// PR #159 / GHSA-mh99-v99m-4gvg: these three root package.json overrides are
+// a coupled set (see the "Override coupling" section of check-pins.js's file
+// header for the full rationale). Runs against in-memory fixtures, plus two
+// "current real repo state passes" checks that load (but never write) the
+// real root package.json / package-lock.json.
+
+test('override coupling: passes when all three coupled keys are present together', () => {
+  const overrides = {
+    'js-yaml': '^4.2.0',
+    'brace-expansion': '^5.0.8',
+    minimatch: '^10.2.5',
+    'test-exclude': '^8.0.0',
+  };
+  assert.deepEqual(collectOverrideCouplingViolations(overrides), []);
+});
+
+test('override coupling: passes (vacuously) when none of the three coupled keys are present', () => {
+  const overrides = { 'js-yaml': '^4.2.0' };
+  assert.deepEqual(collectOverrideCouplingViolations(overrides), []);
+});
+
+test('override coupling: negative control — brace-expansion removed but minimatch/test-exclude left behind fires', () => {
+  // The exact silent-failure mode from the task: only the CVE-fixing
+  // override is removed; minimatch/test-exclude are left pinned to the
+  // versions that require brace-expansion's 5.x named export.
+  const overrides = { minimatch: '^10.2.5', 'test-exclude': '^8.0.0' };
+  const violations = collectOverrideCouplingViolations(overrides);
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].reason, 'override-coupling-broken');
+  assert.deepEqual(violations[0].present, ['minimatch', 'test-exclude']);
+  assert.deepEqual(violations[0].missing, ['brace-expansion']);
+});
+
+test('override coupling: negative control — only brace-expansion present (partial-fix shape) fires', () => {
+  const overrides = { 'js-yaml': '^4.2.0', 'brace-expansion': '^5.0.8' };
+  const violations = collectOverrideCouplingViolations(overrides);
+  assert.equal(violations.length, 1);
+  assert.deepEqual(violations[0].present, ['brace-expansion']);
+  assert.deepEqual(violations[0].missing, ['minimatch', 'test-exclude']);
+});
+
+test('override coupling: current real repo package.json overrides pass', () => {
+  const overrides = loadRootOverrides(path.join(__dirname, '..'));
+  assert.deepEqual(collectOverrideCouplingViolations(overrides), []);
+});
+
+// ── brace-expansion lockfile range guard ───────────────────────────────────
+// The other half of the coupling: package-lock.json is the ground truth for
+// what actually installs, so every resolved minimatch/test-exclude entry
+// that itself depends on brace-expansion must declare a range confined to
+// 5.x, regardless of what the root overrides block says.
+
+test('brace-expansion range guard: passes when minimatch/test-exclude declare a range confined to 5.x', () => {
+  const lockfilePackages = {
+    'node_modules/minimatch': { version: '10.2.5', dependencies: { 'brace-expansion': '^5.0.5' } },
+    'node_modules/test-exclude': {
+      version: '8.0.0',
+      dependencies: { '@istanbuljs/schema': '^0.1.2', glob: '^13.0.6', minimatch: '^10.2.2' },
+    },
+  };
+  assert.deepEqual(collectBraceExpansionCouplingViolations(lockfilePackages), []);
+});
+
+test('brace-expansion range guard: an entry with no brace-expansion dependency at all is not a violation', () => {
+  // Documents the deliberate choice: nothing to couple-check if the
+  // resolved version doesn't depend on brace-expansion in the first place.
+  const lockfilePackages = {
+    'node_modules/minimatch': { version: '99.0.0', dependencies: {} },
+  };
+  assert.deepEqual(collectBraceExpansionCouplingViolations(lockfilePackages), []);
+});
+
+test('brace-expansion range guard: negative control — a nested pre-5.x minimatch/test-exclude range fires', () => {
+  // Reproduces the resolved shape captured 2026-08-06 from a fresh install
+  // with only the brace-expansion override present: top-level minimatch
+  // stuck on 9.0.9 (range ^2.0.2), plus a nested test-exclude ->
+  // node_modules/minimatch at 3.1.5 (range ^1.1.7) — both would throw
+  // "TypeError: (0 , brace_expansion_1.default) is not a function" against a
+  // globally-resolved brace-expansion 5.x.
+  const lockfilePackages = {
+    'node_modules/minimatch': { version: '9.0.9', dependencies: { 'brace-expansion': '^2.0.2' } },
+    'node_modules/test-exclude': {
+      version: '6.0.0',
+      dependencies: { '@istanbuljs/schema': '^0.1.2', glob: '^7.1.4', minimatch: '^3.0.4' },
+    },
+    'node_modules/test-exclude/node_modules/minimatch': {
+      version: '3.1.5',
+      dependencies: { 'brace-expansion': '^1.1.7' },
+    },
+  };
+  const violations = collectBraceExpansionCouplingViolations(lockfilePackages);
+  assert.equal(violations.length, 2);
+  assert.deepEqual(
+    violations.map((v) => [v.key, v.name, v.version, v.range]),
+    [
+      ['node_modules/minimatch', 'minimatch', '9.0.9', '^2.0.2'],
+      ['node_modules/test-exclude/node_modules/minimatch', 'minimatch', '3.1.5', '^1.1.7'],
+    ],
+  );
+});
+
+test('brace-expansion range guard: a wide-open range like "*" is flagged as not confined to 5.x', () => {
+  const lockfilePackages = {
+    'node_modules/minimatch': { version: '10.2.5', dependencies: { 'brace-expansion': '*' } },
+  };
+  const violations = collectBraceExpansionCouplingViolations(lockfilePackages);
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].reason, 'brace-expansion-out-of-range');
+});
+
+test('brace-expansion range guard: ignores unrelated packages even when resolved alongside minimatch/test-exclude', () => {
+  const lockfilePackages = {
+    'node_modules/some-other-pkg': { version: '1.0.0', dependencies: { 'brace-expansion': '^1.0.0' } },
+  };
+  assert.deepEqual(collectBraceExpansionCouplingViolations(lockfilePackages), []);
+});
+
+test('brace-expansion range guard: current real repo package-lock.json passes', () => {
+  const lockfilePackages = loadLockfilePackages(path.join(__dirname, '..'));
+  assert.deepEqual(collectBraceExpansionCouplingViolations(lockfilePackages), []);
 });
