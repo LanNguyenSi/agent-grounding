@@ -1,6 +1,6 @@
 {
   "name": "@lannguyensi/debug-playbook-engine",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Guides agents through domain-specific, ordered diagnostic sequences",
   "license": "MIT",
   "engines": {

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.1, 2026-08-06
+
+### Removed
+
+- **The phantom `chalk` and `commander` dependencies.** This is dependency
+  hygiene, not a security fix: neither package carries an advisory here.
+  Both were simply never imported; this package's full import set is
+  `node:fs`, `node:os`, `node:path`, and its own `./lib.js`/`./triggers.js`/
+  `./expectations.js`/`./audit.js`/`./verify-reference.js`/
+  `./handle-pre-tool-use.js`, verified with no static `require`/`import`
+  and no dynamic load path either (no variable- or template-argument
+  `require`/`import()`, no `createRequire`, `module._load`, `eval`, or
+  `new Function`). Caught by the new repo-wide `check:deps` guard
+  (`scripts/check-deps.js`) on its first run against this package, the same
+  phantom-dependency class as the `glob`/`js-yaml` removals in
+  domain-router/readme-first-resolver (0.1.2, 2026-07-27) that guard exists
+  to prevent from recurring.
+
 ## 0.3.0, 2026-06-16
 
 ### Added

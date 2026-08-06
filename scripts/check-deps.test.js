@@ -13,11 +13,13 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {
+  stripComments,
   extractImportedPackageNames,
   extractPackageNameFromSpecifier,
   loadWorkspacePackagesWithImports,
   collectDependencyViolations,
   countCheckedDependencies,
+  run,
 } = require('./check-deps');
 
 // ── extractPackageNameFromSpecifier ────────────────────────────────────────
@@ -136,6 +138,58 @@ test('extractImportedPackageNames: multiple distinct specifiers across a realist
 test('extractImportedPackageNames: no matches in a file with no imports', () => {
   const names = extractImportedPackageNames(`export function add(a, b) { return a + b; }`);
   assert.deepEqual([...names], []);
+});
+
+// ── Comment stripping (extractImportedPackageNames hardening) ─────────────
+// Regression coverage for the review finding: an apostrophe or semicolon
+// inside a comment used to break IMPORT_EXPORT_FROM_RE's `[^'";]*?` gap
+// between `import`/`export` and `from`, silently turning a genuinely-used
+// dependency into a phantom. Comments are now stripped before the specifier
+// patterns run.
+
+test('extractImportedPackageNames: multi-line import survives inline comments with an apostrophe and a semicolon', () => {
+  // Without comment-stripping, this exact shape used to return an EMPTY
+  // set — the apostrophe in "don't" and the semicolon in "trailing;"
+  // both fall inside IMPORT_EXPORT_FROM_RE's `[^'";]*?` gap and block the
+  // match entirely, so `some-lib` would be reported as an unused phantom
+  // even though it plainly is used.
+  const source = `import {
+  Foo, // don't use bar
+  Bar, // trailing; comment
+} from 'some-lib';
+`;
+  const names = extractImportedPackageNames(source);
+  assert.deepEqual([...names], ['some-lib']);
+});
+
+test('extractImportedPackageNames: require.resolve(...) is found', () => {
+  const names = extractImportedPackageNames(`const p = require.resolve('pkg');`);
+  assert.deepEqual([...names], ['pkg']);
+});
+
+test('extractImportedPackageNames: a commented-out import is NOT counted as evidence', () => {
+  const names = extractImportedPackageNames(`// import x from 'pkg-m';`);
+  assert.deepEqual([...names], []);
+});
+
+test('stripComments: strips a line comment', () => {
+  assert.equal(stripComments(`const x = 1; // a comment\n`), `const x = 1; \n`);
+});
+
+test('stripComments: strips a block comment, including multi-line', () => {
+  assert.equal(stripComments(`const x = /* inline */ 1;`), `const x =  1;`);
+  assert.equal(stripComments(`const x = 1;\n/*\n * multi-line\n */\nconst y = 2;\n`), `const x = 1;\n\nconst y = 2;\n`);
+});
+
+test('stripComments: a scheme-prefixed URL string on its own line survives untouched', () => {
+  // The negative lookbehind spares any "//" immediately preceded by ":" —
+  // covers http://, https://, ws://, git://, etc. This only needs to hold
+  // when nothing else meaningful shares the line, which is the case this
+  // test pins; see stripComments' doc comment for the same-line argument
+  // that makes this safe in this repo even when the lookbehind does not
+  // apply (e.g. a bare protocol-relative URL).
+  const source = `const banner = 'https://example.com/foo';\n`;
+  assert.equal(stripComments(source), source);
 });
 
 // ── collectDependencyViolations (main pure core) ───────────────────────────
@@ -379,6 +433,113 @@ test('loadWorkspacePackagesWithImports returns [] for a packages/ dir with no pa
     assert.deepEqual(workspaces, []);
     assert.deepEqual(collectDependencyViolations(workspaces), []);
     assert.equal(countCheckedDependencies(workspaces), 0);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+// ── run(rootDir) (CLI core, exit code) ─────────────────────────────────────
+// Exercises the CLI entrypoint's pure exit-code core end to end against real
+// (but temporary, disposable) directory layouts — the actual thing `main()`
+// calls and turns into `process.exitCode`. Reproduces the two vacuous-green
+// guards and the two pass/fail paths as exit codes, not just as violation
+// arrays from the pure checkers above.
+
+test('run(): a packages/ dir with zero package.json subdirs exits 1 via the zero-workspace guard specifically', () => {
+  // Exit-code-alone is not enough here: with 0 workspaces,
+  // countCheckedDependencies() is always 0 too, so the SECOND
+  // (zero-checked-deps) guard independently returns 1 for this exact input
+  // even if the FIRST (zero-workspace) guard is disabled. Asserting only
+  // `run(tmpRoot) === 1` cannot tell those two guards apart and would stay
+  // green if the zero-workspace guard were deleted or short-circuited — so
+  // this test captures console.error and pins the zero-workspace guard's
+  // specific message, which only that guard (not the zero-checked-deps one)
+  // ever prints.
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-deps-run-empty-'));
+  const originalError = console.error;
+  const errorMessages = [];
+  console.error = (...args) => {
+    errorMessages.push(args.join(' '));
+  };
+  try {
+    fs.mkdirSync(path.join(tmpRoot, 'packages'));
+    fs.mkdirSync(path.join(tmpRoot, 'packages', 'not-a-package'));
+
+    const exitCode = run(tmpRoot);
+    assert.equal(exitCode, 1);
+    assert.ok(
+      errorMessages.some((message) => message.includes('found 0 workspace packages under packages/')),
+      `expected the zero-workspace guard's message, got: ${JSON.stringify(errorMessages)}`,
+    );
+  } finally {
+    console.error = originalError;
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('run(): packages present but zero checked external dependencies exits 1 (vacuous-green guard)', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-deps-run-zero-checked-'));
+  try {
+    const pkgDir = path.join(tmpRoot, 'packages', 'internal-only-pkg');
+    fs.mkdirSync(path.join(pkgDir, 'src'), { recursive: true });
+    fs.writeFileSync(
+      path.join(pkgDir, 'package.json'),
+      JSON.stringify({
+        name: '@lannguyensi/internal-only-pkg',
+        version: '1.0.0',
+        // Only an internal @lannguyensi/* dep declared — countCheckedDependencies
+        // excludes it, so 0 pairs end up checked even though a package exists.
+        dependencies: { '@lannguyensi/sibling': '1.0.0' },
+      }),
+    );
+    fs.writeFileSync(path.join(pkgDir, 'src', 'index.ts'), `export const noop = () => {};\n`);
+
+    assert.equal(run(tmpRoot), 1);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('run(): a phantom dependency exits 1', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-deps-run-phantom-'));
+  try {
+    const pkgDir = path.join(tmpRoot, 'packages', 'phantom-pkg');
+    fs.mkdirSync(path.join(pkgDir, 'src'), { recursive: true });
+    fs.writeFileSync(
+      path.join(pkgDir, 'package.json'),
+      JSON.stringify({
+        name: '@lannguyensi/phantom-pkg',
+        version: '1.0.0',
+        dependencies: { chalk: '^5.3.0', 'js-yaml': '^4.1.0' },
+      }),
+    );
+    fs.writeFileSync(
+      path.join(pkgDir, 'src', 'index.ts'),
+      `import chalk from 'chalk';\nconsole.log(chalk.red('hi'));\n`,
+    );
+
+    assert.equal(run(tmpRoot), 1);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('run(): a clean tree (every dependency imported) exits 0', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-deps-run-clean-'));
+  try {
+    const pkgDir = path.join(tmpRoot, 'packages', 'clean-pkg');
+    fs.mkdirSync(path.join(pkgDir, 'src'), { recursive: true });
+    fs.writeFileSync(
+      path.join(pkgDir, 'package.json'),
+      JSON.stringify({
+        name: '@lannguyensi/clean-pkg',
+        version: '1.0.0',
+        dependencies: { chalk: '^5.3.0' },
+      }),
+    );
+    fs.writeFileSync(path.join(pkgDir, 'src', 'index.ts'), `import chalk from 'chalk';\n`);
+
+    assert.equal(run(tmpRoot), 0);
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }

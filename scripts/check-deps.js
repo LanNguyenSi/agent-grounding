@@ -37,6 +37,36 @@
  * Internal `@lannguyensi/*` dependencies are skipped entirely (check-pins.js's
  * job, not this script's — see its header).
  *
+ * Jest/Vitest test-layout asymmetry: `walkSourceFiles` walks a package's
+ * entire `src/` tree, test files included — it has no notion of "test" vs.
+ * "production" files, only "under src/" vs. not. Four packages
+ * (debug-playbook-engine, domain-router, readme-first-resolver,
+ * grounding-wrapper) use Jest and keep their tests inside
+ * `src/__tests__/`, so an import that appears ONLY in one of those test
+ * files still counts as usage evidence for this checker — a dependency
+ * genuinely dead in production code but imported by a test would NOT be
+ * flagged as phantom in those four packages. Every other package uses
+ * Vitest with tests in a sibling `tests/` directory (outside `src/`
+ * entirely), where the same test-only import would NOT count and the
+ * dependency WOULD be flagged. This asymmetry is a false-negative risk only
+ * (an unused-in-production dependency slipping through in the four Jest
+ * packages), never a false phantom, so it is accepted rather than special-
+ * cased — narrowing `walkSourceFiles` to exclude `__tests__/` would also
+ * strip genuine test-only devDependency usage from view, which is out of
+ * this checker's scope (devDependencies aren't checked at all, per above).
+ *
+ * ── Assumption: workspaces === packages/* ─────────────────────────────────
+ *
+ * This script (like check-pins.js) hardcodes `packages/` as the one and only
+ * workspace root, matching this repo's root `package.json` `workspaces:
+ * ["packages/*\/"]` today. If a second workspace glob were ever added (e.g.
+ * `apps/*\/`) alongside `packages/*\/`, this script would silently check only
+ * the `packages/` half — it does not read the root `workspaces` field, so it
+ * has no way to notice the mismatch. Renaming `packages/` away entirely
+ * fails loudly instead (loadWorkspacePackagesWithImports's `readdirSync`
+ * throws), which is why that failure mode isn't the concerning one; a
+ * second, unchecked glob added *alongside* `packages/*\/` is the silent one.
+ *
  * ── Dynamic load paths ──────────────────────────────────────────────────
  *
  * A plain import/require grep is proof a dependency IS used, but not proof
@@ -49,6 +79,29 @@
  * below with an explicit reason ('dynamic-import' or otherwise) — the same
  * deliberate escape hatch used for type-only, bin-script-only, and
  * config-driven dependencies (see ALLOWLIST doc comment).
+ *
+ * A related, narrower blind spot in the same family: `createRequire`-based
+ * requires. `understanding-gate/src/cli.ts` does `const requireFromHere =
+ * createRequire(import.meta.url); requireFromHere('../package.json')` — a
+ * fully static, literal-string require, not a dynamic one, but REQUIRE_RE
+ * only matches the literal identifier `require` (optionally
+ * `require.resolve`), so a call through a renamed binding like
+ * `requireFromHere(...)` is invisible to this checker even though it could
+ * statically be resolved just as easily as a plain `require(...)` call.
+ * Today's only real-repo instance requires a relative path (not an npm
+ * package), so it doesn't currently cause a false phantom — but a future
+ * package requiring a real dependency this way would need an ALLOWLIST
+ * entry (reason: e.g. 'createRequire-alias'), the same as any other
+ * statically-invisible load path above.
+ *
+ * A second blind spot, this one in the comment stripper added to feed
+ * cleaner text to the patterns above: it is a plain regex pass, not a real
+ * tokenizer, so it cannot distinguish `//`/`/* *\/`-shaped text inside a
+ * string literal from an actual comment. See stripComments' doc comment for
+ * the full reasoning on why this is safe here (a negative lookbehind spares
+ * scheme-prefixed URLs, and every import/require in this repo's source is
+ * its own statement on its own line) — but it remains a real limitation the
+ * stripper does not resolve in general, not just a stylistic note.
  *
  * Usage: `node scripts/check-deps.js` (wired as the `check:deps` npm
  * script). Exits non-zero and prints one line per phantom dependency found.
@@ -118,8 +171,11 @@ function walkSourceFiles(dir) {
 const IMPORT_EXPORT_FROM_RE = /\b(?:import|export)\b[^'";]*?\bfrom\s*['"]([^'"]+)['"]/g;
 // Matches a bare side-effect import: `import '<spec>'` (no `from`).
 const SIDE_EFFECT_IMPORT_RE = /\bimport\s*['"]([^'"]+)['"]/g;
-// Matches `require('<spec>')` / `require("<spec>")`.
-const REQUIRE_RE = /\brequire\(\s*['"]([^'"]+)['"]\s*\)/g;
+// Matches `require('<spec>')` / `require("<spec>")`, and also
+// `require.resolve('<spec>')` / `require.resolve("<spec>")` — a caller that
+// only needs a module's resolved path (not its exports) still declares a
+// real runtime dependency on it.
+const REQUIRE_RE = /\brequire(?:\.resolve)?\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
 // Matches dynamic `import('<spec>')`.
 const DYNAMIC_IMPORT_RE = /\bimport\(\s*['"]([^'"]+)['"]\s*\)/g;
 
@@ -129,6 +185,60 @@ const SPECIFIER_PATTERNS = [
   REQUIRE_RE,
   DYNAMIC_IMPORT_RE,
 ];
+
+/**
+ * Strips `//` line comments and `/* ... *\/` block comments from
+ * `sourceText` before the specifier patterns above ever see it. Without
+ * this, a comment that happens to contain an apostrophe or a semicolon
+ * (e.g. `// don't use bar`, `// trailing; note`) can break
+ * IMPORT_EXPORT_FROM_RE's `[^'";]*?` gap between `import`/`export` and
+ * `from` — the quote inside the comment looks, to that character class,
+ * indistinguishable from the start of a second statement, and the whole
+ * match fails, silently turning a genuinely-used dependency into a phantom.
+ * A commented-out import/require is the mirror-image problem: without
+ * stripping, `// import x from 'pkg';` would count as real evidence the
+ * checker never intended to trust.
+ *
+ * This is a plain regex pass, not a real tokenizer: it does not distinguish
+ * `//`/`/* *\/` inside a string literal from an actual comment. The
+ * specific case that matters here is a URL string containing `//` (e.g.
+ * `'https://example.com'`) — stripping "starting" at that `//` would delete
+ * the rest of the physical line. Two things keep this from ever causing a
+ * FALSE PHANTOM (a real dependency wrongly reported unused), which is the
+ * only direction of error this checker cannot tolerate:
+ *
+ *   1. A negative lookbehind spares any `//` immediately preceded by `:`
+ *      (the `http://`, `https://`, `ws://`, `git://`, ... shape — the
+ *      overwhelming majority of URLs that appear in source comments/
+ *      strings), so a same-line scheme-prefixed URL does not trigger
+ *      stripping at all.
+ *   2. Even for a URL this misses (a bare protocol-relative `//host/path`,
+ *      with no scheme before it — not used anywhere in this repo today),
+ *      the only way stripping it could delete a real import/require
+ *      specifier is if that specifier sits on the exact same physical line,
+ *      AFTER the URL. Every import/require/dynamic-import in this repo's
+ *      source is its own statement on its own line (the enforced style) —
+ *      there is nothing else on those lines a URL could hide behind. If
+ *      this ever changes, the failure mode is a loud, obvious CI red (the
+ *      dependency starts failing check:deps), not silent drift, and the fix
+ *      is a one-line reflow (move the string off the import's line), not a
+ *      rewrite of this stripper into a full parser.
+ *
+ * The reverse trade (a `//` right after a `:` that IS a real trailing
+ * comment, e.g. a `case 'x'://comment` label with no space) is deliberately
+ * left unstripped by the same lookbehind: that only risks a comment's text
+ * being scanned as if it were code, which can at most manufacture spurious
+ * import-like evidence (a false NEGATIVE on phantom detection — a
+ * genuinely-unused dependency looking used) — the safe direction to err in
+ * for a CI gate, never a false phantom.
+ *
+ * Block comments are stripped with `[\s\S]*?` (non-greedy, so a `/*` and
+ * the NEXT `*\/` bound the removal, never spanning past it) so a
+ * `/* ... *\/`-shaped run does not swallow unrelated code past its close.
+ */
+function stripComments(sourceText) {
+  return sourceText.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(?<!:)\/\/.*$/gm, '');
+}
 
 /**
  * Given a bare-module import specifier (e.g. `"chalk"`,
@@ -152,14 +262,19 @@ function extractPackageNameFromSpecifier(specifier) {
  * Pure function: given the text of one source file, returns the Set of npm
  * package names it references via import/export-from/require/dynamic
  * import. Operates purely on the string — safe to unit test with literal
- * source snippets, never touches the filesystem.
+ * source snippets, never touches the filesystem. Comments are stripped
+ * first (see stripComments' doc comment for what that does and does not
+ * protect against), so a specifier mentioned only in a comment — commented-
+ * out code, or an apostrophe/semicolon in a stray note breaking the
+ * import/export/from character class — is never mistaken for real evidence.
  */
 function extractImportedPackageNames(sourceText) {
+  const strippedText = stripComments(sourceText);
   const names = new Set();
   for (const pattern of SPECIFIER_PATTERNS) {
     pattern.lastIndex = 0;
     let match;
-    while ((match = pattern.exec(sourceText)) !== null) {
+    while ((match = pattern.exec(strippedText)) !== null) {
       const packageName = extractPackageNameFromSpecifier(match[1]);
       if (packageName) names.add(packageName);
     }
@@ -262,8 +377,21 @@ function formatViolation(violation) {
   );
 }
 
-function main() {
-  const rootDir = path.join(__dirname, '..');
+/**
+ * CLI core: runs the full check against `rootDir` (a repo root containing a
+ * `packages/` directory, in the same shape as this repo — or a disposable
+ * fixture root in tests) and returns the process exit code it should
+ * produce (`0` pass, `1` fail), printing the same pass/fail messages `main()`
+ * always has. Pulled out of `main()` so tests can assert on the exit code
+ * directly against real (temporary, disposable) directory trees, instead of
+ * only exercising the pure `collectDependencyViolations`/
+ * `countCheckedDependencies` core with in-memory fixtures — this is the
+ * function that actually reproduces the two vacuous-green guards end to end.
+ *
+ * `rootDir` defaults to this script's own repo root (`path.join(__dirname,
+ * '..')`), matching `main()`'s prior behavior when called with no argument.
+ */
+function run(rootDir = path.join(__dirname, '..')) {
   const workspaces = loadWorkspacePackagesWithImports(rootDir);
 
   if (workspaces.length === 0) {
@@ -276,8 +404,7 @@ function main() {
         'Expected at least one packages/*/package.json; packages/ exists but contains no ' +
         'subdirectory with a package.json (renamed, emptied, or reorganized?).',
     );
-    process.exitCode = 1;
-    return;
+    return 1;
   }
 
   const checkedCount = countCheckedDependencies(workspaces);
@@ -292,8 +419,7 @@ function main() {
         'dependencies and the ALLOWLIST). Expected at least one declared external runtime dependency ' +
         'somewhere in packages/*/package.json.',
     );
-    process.exitCode = 1;
-    return;
+    return 1;
   }
 
   const violations = collectDependencyViolations(workspaces);
@@ -304,22 +430,28 @@ function main() {
       console.error(formatViolation(violation));
     }
     console.error('\nSee each violation above for its specific fix.');
-    process.exitCode = 1;
-    return;
+    return 1;
   }
 
   console.log(
     `Dependency consistency check passed: ${checkedCount} external runtime dependency(ies) across ` +
       `${workspaces.length} workspace package(s), all imported somewhere under their src/.`,
   );
+  return 0;
+}
+
+function main() {
+  process.exitCode = run();
 }
 
 module.exports = {
+  stripComments,
   extractImportedPackageNames,
   extractPackageNameFromSpecifier,
   loadWorkspacePackagesWithImports,
   collectDependencyViolations,
   countCheckedDependencies,
+  run,
   ALLOWLIST,
 };
 
