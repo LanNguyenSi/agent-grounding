@@ -21,10 +21,12 @@ name: Audit
 # COUPLED set — minimatch@^10.2.5 and test-exclude@^8.0.0 are the first
 # releases that consume brace-expansion 5.x's named `expand` export instead of
 # the pre-5.x callable default. This audit gate alone does NOT catch a broken
-# partial override: removing only the brace-expansion override still resolves
-# brace-expansion@5.x (nothing else in the tree pins it lower) and stays
-# `npm audit --audit-level=high` green, while an older minimatch/test-exclude
-# left behind throws at runtime:
+# partial override: removing (or never adding) only the minimatch and
+# test-exclude overrides, while the brace-expansion override stays in place,
+# still resolves brace-expansion@5.x (nothing else in the tree pins it lower)
+# and stays `npm audit --audit-level=high` green, while the old minimatch/
+# test-exclude npm's ordinary resolution falls back to in their absence
+# throws at runtime:
 #   TypeError: (0 , brace_expansion_1.default) is not a function
 # The `check:pins` script (scripts/check-pins.js, run in ci.yml) is the
 # companion gate that actually enforces the coupling; this audit step only

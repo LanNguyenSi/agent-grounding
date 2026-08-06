@@ -233,6 +233,27 @@ test('loadWorkspacePackages returns [] for a packages/ dir with no package.json 
   }
 });
 
+test('loadLockfilePackages returns {} for a lockfile with an empty "packages" object', () => {
+  // main() (in check-pins.js) must not vacuously pass when this happens —
+  // mirrors the 0-workspace guard above, applied to package-lock.json's
+  // "packages" map. collectBraceExpansionCouplingViolations() itself would
+  // (correctly, in isolation) return no violations for an empty packages
+  // map, which is why the fail-loud guard has to live in main() before that
+  // function is ever called.
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-pins-lockfile-empty-'));
+  try {
+    fs.writeFileSync(
+      path.join(tmpRoot, 'package-lock.json'),
+      JSON.stringify({ lockfileVersion: 3, packages: {} }),
+    );
+    const lockfilePackages = loadLockfilePackages(tmpRoot);
+    assert.deepEqual(lockfilePackages, {});
+    assert.deepEqual(collectBraceExpansionCouplingViolations(lockfilePackages), []);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
 test('loadWorkspacePackages finds real package.json files alongside non-package dirs', () => {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-pins-mixed-'));
   try {
@@ -372,5 +393,71 @@ test('brace-expansion range guard: ignores unrelated packages even when resolved
 
 test('brace-expansion range guard: current real repo package-lock.json passes', () => {
   const lockfilePackages = loadLockfilePackages(path.join(__dirname, '..'));
+  assert.deepEqual(collectBraceExpansionCouplingViolations(lockfilePackages), []);
+});
+
+test('brace-expansion range guard: a non-semver range like "latest" is flagged, not crashed (surviving-mutant guard)', () => {
+  // semver.validRange('latest') === null. Without that guard in the
+  // confinedTo5x check, semver.intersects('latest', ...) throws
+  // "TypeError: Invalid comparator: latest" instead of producing a clean
+  // violation — this fixture exercises exactly the branch that guard exists
+  // for.
+  const lockfilePackages = {
+    'node_modules/minimatch': { version: '10.2.5', dependencies: { 'brace-expansion': 'latest' } },
+  };
+  const violations = collectBraceExpansionCouplingViolations(lockfilePackages);
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].reason, 'brace-expansion-out-of-range');
+  assert.equal(violations[0].range, 'latest');
+});
+
+// ── brace-expansion RESOLVED-version guard (arm-C) ─────────────────────────
+// The declared-range check above only reads what minimatch/test-exclude's
+// OWN package.json says it needs. An `overrides` entry forces a resolved
+// version regardless of that declaration, so a consumer can declare a fine
+// 5.x range and still be handed a pre-5.x brace-expansion at runtime. This is
+// the "arm-C" shape: overrides { brace-expansion ^2.0.2, minimatch ^10.2.5,
+// test-exclude ^8.0.0 } leave both the override-coupling guard and the
+// declared-range guard green, and `npm audit` green, while
+// `require('minimatch')` throws
+// "TypeError: (0 , brace_expansion_1.expand) is not a function".
+
+test('brace-expansion resolved-version guard: arm-C shape fires — declared range confined to 5.x but resolved version is not', () => {
+  const lockfilePackages = {
+    'node_modules/minimatch': { version: '10.2.5', dependencies: { 'brace-expansion': '^5.0.5' } },
+    'node_modules/brace-expansion': { version: '2.0.2' },
+  };
+  const violations = collectBraceExpansionCouplingViolations(lockfilePackages);
+  assert.equal(violations.length, 1);
+  assert.deepEqual(violations[0], {
+    reason: 'brace-expansion-resolved-mismatch',
+    key: 'node_modules/minimatch',
+    name: 'minimatch',
+    version: '10.2.5',
+    declaredRange: '^5.0.5',
+    resolvedVersion: '2.0.2',
+  });
+});
+
+test('brace-expansion resolved-version guard: a consistent tree (declared range confined to 5.x AND resolved version matches) passes', () => {
+  const lockfilePackages = {
+    'node_modules/minimatch': { version: '10.2.5', dependencies: { 'brace-expansion': '^5.0.5' } },
+    'node_modules/brace-expansion': { version: '5.0.9' },
+  };
+  assert.deepEqual(collectBraceExpansionCouplingViolations(lockfilePackages), []);
+});
+
+test('brace-expansion resolved-version guard: walks up to the nearest ANCESTOR node_modules/brace-expansion, not just a nested sibling', () => {
+  // node_modules/test-exclude/node_modules/minimatch has no
+  // node_modules/test-exclude/node_modules/brace-expansion sitting next to
+  // it, so Node's own module resolution (and this guard) falls back to the
+  // root node_modules/brace-expansion.
+  const lockfilePackages = {
+    'node_modules/test-exclude/node_modules/minimatch': {
+      version: '10.2.5',
+      dependencies: { 'brace-expansion': '^5.0.5' },
+    },
+    'node_modules/brace-expansion': { version: '5.0.9' },
+  };
   assert.deepEqual(collectBraceExpansionCouplingViolations(lockfilePackages), []);
 });
