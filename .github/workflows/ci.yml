@@ -37,8 +37,9 @@ jobs:
 
       - name: Pin consistency checker unit tests
         # Fixture-based unit tests for the checker function itself
-        # (including a negative control), run against in-memory fixtures,
-        # never the real manifests.
+        # (including a negative control); mostly in-memory fixtures, plus a
+        # couple of tests that read (but never write) the real root
+        # manifests.
         run: npm run test:check-pins
 
       - name: Build
