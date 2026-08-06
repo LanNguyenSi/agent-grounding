@@ -17,20 +17,20 @@ function entry(
 
 const emptyBuckets = { facts: [], hypotheses: [], rejected: [], unknowns: [], policyDecisions: [] };
 
+let logs: string[];
+let spy: ReturnType<typeof vi.spyOn>;
+
+beforeEach(() => {
+  logs = [];
+  spy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+    logs.push(args.join(" "));
+  });
+});
+afterEach(() => {
+  spy.mockRestore();
+});
+
 describe("printSummary — policy_decision bucket", () => {
-  let logs: string[];
-  let spy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    logs = [];
-    spy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
-      logs.push(args.join(" "));
-    });
-  });
-  afterEach(() => {
-    spy.mockRestore();
-  });
-
   it("renders a POLICY DECISIONS section and counts it in the total", () => {
     printSummary(
       {
@@ -59,23 +59,10 @@ describe("printSummary — policy_decision bucket", () => {
 });
 
 describe("printSummary — empty state", () => {
-  let logs: string[];
-  let spy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    logs = [];
-    spy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
-      logs.push(args.join(" "));
-    });
-  });
-  afterEach(() => {
-    spy.mockRestore();
-  });
-
-  it("recommends a real CLI verb when there are no entries", () => {
+  it("recommends a real CLI verb scoped to the shown session", () => {
     printSummary({ ...emptyBuckets }, "sess");
     const out = logs.join("\n");
-    expect(out).toContain('ledger fact "<content>"');
+    expect(out).toContain('ledger fact "<content>" --session sess');
     expect(out).not.toMatch(/ledger\s+add/);
   });
 });

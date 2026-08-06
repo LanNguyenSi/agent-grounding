@@ -154,9 +154,13 @@ Walk the standard review checklist:
 8. Test coverage of the risky bits.
 9. Integration touchpoints.
 
-For every finding you surface, call `ledger fact "<one line>" --session <TASK-ID>`
-(or `ledger unknown "<one line>"` / `ledger reject <id>` for open questions
-and rejected hypotheses) so the parent session can audit the review. If you already started a dedicated grounding
+For every finding you surface, call
+`ledger fact "<one line>" --session <TASK-ID>` so the parent session
+can audit the review. For an open question, use
+`ledger unknown "<one line>" --session <TASK-ID>`; for a disproven
+hypothesis, log it first via `ledger hypothesis "<one line>" --session
+<TASK-ID>`, then mark it with `ledger reject <id> --reason "…"`.
+If you already started a dedicated grounding
 session (for example `gs-agent-grounding-...`), either keep `session = <TASK-ID>`
 as the default convention or export later via `review-claim-gate export --task-id <TASK-ID> --from-session <GROUNDING-SESSION-ID>`.
 
