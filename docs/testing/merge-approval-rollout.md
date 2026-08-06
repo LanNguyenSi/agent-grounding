@@ -76,7 +76,7 @@ alongside it.)
 3. Confirm no unresolved review comments → `review:comments-resolved`.
 4. Confirm the diff stays inside the task scope → `review:scope-matches-task`.
 5. Log ≥1 evidence-ledger entry under `session = <branch-name>`
-   (e.g. `ledger add --session feat/foo --type fact --content "…"`).
+   (e.g. `ledger fact "…" --session feat/foo`).
    Add `review:evidence-logged`.
 
 The Check-Run flips to `ALLOWED` once all five are present. Merge.

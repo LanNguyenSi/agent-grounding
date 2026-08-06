@@ -100,8 +100,8 @@ GitHub UI, even with an approving review.
 ```bash
 # During review, log findings to your local evidence-ledger with
 # session = <branch-name-or-task-id>:
-ledger add --session feat/foo --type fact --content "CI green, all 94 tests pass"
-ledger add --session feat/foo --type fact --content "Reviewed security/scope dimensions"
+ledger fact "CI green, all 94 tests pass" --session feat/foo
+ledger fact "Reviewed security/scope dimensions" --session feat/foo
 
 # When finishing the review, export to the convention path:
 mkdir -p .agent-grounding/evidence

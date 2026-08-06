@@ -86,7 +86,9 @@ export function printSummary(
   }
 
   if (total === 0) {
-    console.log(chalk.dim("  No entries yet. Use `ledger add` to start tracking."));
+    console.log(
+      chalk.dim(`  No entries yet. Use \`ledger fact "<content>" --session ${session}\` to start tracking.`),
+    );
     console.log();
   }
 }
