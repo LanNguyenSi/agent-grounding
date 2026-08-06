@@ -12,7 +12,9 @@
     "test": "npm run test --workspaces",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "check:pins": "node scripts/check-pins.js",
-    "test:check-pins": "node --test scripts/check-pins.test.js"
+    "test:check-pins": "node --test scripts/check-pins.test.js",
+    "check:deps": "node scripts/check-deps.js",
+    "test:check-deps": "node --test scripts/check-deps.test.js"
   },
   "overrides": {
     "js-yaml": "^4.2.0",

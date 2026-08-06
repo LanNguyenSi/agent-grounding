@@ -42,6 +42,24 @@ jobs:
         # manifests.
         run: npm run test:check-pins
 
+      - name: Dependency consistency check
+        # Asserts every external runtime dependency declared in
+        # packages/*/package.json's `dependencies` field is actually
+        # imported somewhere under that package's src/ — the phantom-dep
+        # class check-pins.js is explicitly blind to (it only covers
+        # internal @lannguyensi/* pins). Catches a re-added phantom
+        # dependency, or a revert of one already removed (see task a5cd84a0
+        # / the glob and js-yaml phantom deps found in domain-router and
+        # readme-first-resolver during the ca2aceff review).
+        run: npm run check:deps
+
+      - name: Dependency consistency checker unit tests
+        # Fixture-based unit tests for the checker function itself
+        # (including a negative control); mostly in-memory fixtures, plus a
+        # couple of tests that exercise the filesystem loader against
+        # disposable temp directories.
+        run: npm run test:check-deps
+
       - name: Build
         # Uses the root `build` script (which topo-orders the wrapped libs
         # before everything else). A bare `npm run build --workspaces`
