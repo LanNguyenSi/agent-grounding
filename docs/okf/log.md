@@ -39,7 +39,7 @@
   against current sources. Substantive: grounding-mcp hypothesis state is
   disk-backed since PR #139 (doc premise inverted); review-claim-gate's
   evidence-path guard gained a symlink-aware backstop (PR #141); the
-  `ledger add` example was corrected to the real `ledger fact` verb here
+  ghost `add`-verb example was corrected to the real `ledger fact` verb here
   and in merge-approval-gate-mechanics.md. claim-gate version bug
   541c19e8 confirmed fixed on master (PR #136).
 

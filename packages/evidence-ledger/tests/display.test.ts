@@ -57,3 +57,25 @@ describe("printSummary — policy_decision bucket", () => {
     expect(logs.join("\n")).not.toContain("POLICY DECISIONS");
   });
 });
+
+describe("printSummary — empty state", () => {
+  let logs: string[];
+  let spy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    logs = [];
+    spy = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
+      logs.push(args.join(" "));
+    });
+  });
+  afterEach(() => {
+    spy.mockRestore();
+  });
+
+  it("recommends a real CLI verb when there are no entries", () => {
+    printSummary({ ...emptyBuckets }, "sess");
+    const out = logs.join("\n");
+    expect(out).toContain('ledger fact "<content>"');
+    expect(out).not.toMatch(/ledger\s+add/);
+  });
+});
