@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.7.1, 2026-08-06
+
+### Changed
+
+- Re-pin `runtime-reality-checker` to 0.3.1. Picks up the phantom
+  `chalk`/`commander` dependency removal caught by the new repo-wide
+  `check:deps` guard (`scripts/check-deps.js`); the exact-pin lockstep
+  convention used for internal `@lannguyensi/*` deps means the workspace
+  bump alone does not update what grounding-mcp bundles. No behavior
+  changes from the re-pin itself.
+
 ## 0.7.0, 2026-07-18
 
 ### Fixed

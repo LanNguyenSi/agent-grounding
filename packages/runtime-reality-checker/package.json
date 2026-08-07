@@ -1,6 +1,6 @@
 {
   "name": "@lannguyensi/runtime-reality-checker",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Checks if actual runtime state matches documentation and assumptions; ships a PreToolUse policy PoC",
   "license": "MIT",
   "engines": {
@@ -41,10 +41,6 @@
     "test": "vitest run",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "chalk": "^5.3.0",
-    "commander": "^12.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",

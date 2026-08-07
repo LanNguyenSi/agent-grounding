@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.2, 2026-08-06
+
+### Removed
+
+- **The phantom `js-yaml` dependency** (plus the now-unused
+  `@types/js-yaml` dev dependency). This is dependency hygiene, not a
+  security fix: `js-yaml` carries no advisory here. It was simply never
+  imported; this package's full import set is `fs`, `path`,
+  `child_process` (test files only), `commander`, `chalk`, and its own
+  `./lib.js`, verified with no static `require`/`import` and no dynamic
+  load path either (no variable- or template-argument `require`/`import()`,
+  no `createRequire`, `module._load`, `eval`, or `new Function`). Caught by
+  the new repo-wide `check:deps` guard (`scripts/check-deps.js`) on its
+  first run against this package, the same phantom-dependency class as the
+  `glob`/`js-yaml` removals in domain-router/readme-first-resolver
+  (0.1.2, 2026-07-27) that guard exists to prevent from recurring.
+
 ## 0.1.1, 2026-07-15
 
 ### Fixed
