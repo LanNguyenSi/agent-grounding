@@ -17,7 +17,7 @@
     "test:check-deps": "node --test scripts/check-deps.test.js"
   },
   "overrides": {
-    "js-yaml": "^4.2.0",
+    "js-yaml": "^4.3.1",
     "brace-expansion": "^5.0.8",
     "minimatch": "^10.2.5",
     "test-exclude": "^8.0.0"

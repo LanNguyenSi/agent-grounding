@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.3, 2026-08-08
+
+### Security
+
+- **Raised the declared `js-yaml` floor to `^4.3.1`.** The package imports
+  `js-yaml` in production code (`src/lib.ts`, `yaml.load`), but the
+  declared range (`^4.1.0`) still admitted `4.0.0`-`4.3.0`, the vulnerable
+  range for the `!!omap` quadratic-CPU advisory
+  ([GHSA-5p4m-2wfm-xmqj](https://github.com/advisories/GHSA-5p4m-2wfm-xmqj),
+  HIGH). This package is published (no `private: true`, and
+  `publishConfig.access` is `public`) and npm does not publish
+  `package-lock.json`, so a downstream consumer installing with their own
+  lockfile could still resolve into the vulnerable range even though this
+  monorepo's own lockfile already carried `js-yaml@4.3.1`. The root
+  `overrides` entry, which only constrains installs inside this monorepo,
+  is raised to match.
+
 ## 0.1.2, 2026-07-27
 
 ### Security
