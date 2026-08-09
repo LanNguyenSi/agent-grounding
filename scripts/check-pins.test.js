@@ -572,11 +572,72 @@ test('advisory floor guard: no false positive on ordinary caret runtime deps not
   assert.deepEqual(collectAdvisoryFloorViolations(workspaces, overrides), []);
 });
 
-test('advisory floor guard: a non-semver declared range is skipped, not crashed', () => {
+test('advisory floor guard: a non-semver declared range for a curated dependency is reported, not fail-open skipped', () => {
+  // Fixed from a MEDIUM found on empirical review: this used to `continue`
+  // past any range `semver.validRange` couldn't parse, silently passing a
+  // git URL, an npm dist-tag, or (the practically reachable bypass below) an
+  // npm alias straight through. That is fail-OPEN for the exact class this
+  // guard exists to close, so an unparseable range on a curated name must
+  // now be its own violation (fail-CLOSED), never skipped or crashed on.
   const workspaces = [
     { name: '@lannguyensi/pkg', version: '1.0.0', dependencies: { 'js-yaml': 'latest' } },
   ];
-  assert.deepEqual(collectAdvisoryFloorViolations(workspaces, {}), []);
+  const violations = collectAdvisoryFloorViolations(workspaces, {});
+  assert.deepEqual(violations, [
+    {
+      reason: 'advisory-floor-unparseable-range',
+      source: 'declared',
+      consumer: '@lannguyensi/pkg',
+      field: 'dependencies',
+      dependency: 'js-yaml',
+      range: 'latest',
+      advisoryId: 'GHSA-5p4m-2wfm-xmqj',
+      vulnerableRange: '<4.3.1',
+    },
+  ]);
+});
+
+test('advisory floor guard: the npm self-alias bypass ("npm:js-yaml@^4.1.0" under the "js-yaml" key) is reported, not fail-open skipped', () => {
+  // Reviewer-measured practical bypass: `"js-yaml": "npm:js-yaml@^4.1.0"` is
+  // valid npm syntax that still installs the vulnerable js-yaml under the
+  // curated key, but `semver.validRange` can't parse the alias form, so the
+  // old skip-on-invalid behavior let this straight through silently.
+  const workspaces = [
+    { name: '@lannguyensi/pkg', version: '1.0.0', dependencies: { 'js-yaml': 'npm:js-yaml@^4.1.0' } },
+  ];
+  const violations = collectAdvisoryFloorViolations(workspaces, {});
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].reason, 'advisory-floor-unparseable-range');
+  assert.equal(violations[0].dependency, 'js-yaml');
+  assert.equal(violations[0].range, 'npm:js-yaml@^4.1.0');
+});
+
+test('advisory floor guard: a git-URL declared range for a curated dependency is reported, not fail-open skipped', () => {
+  const workspaces = [
+    {
+      name: '@lannguyensi/pkg',
+      version: '1.0.0',
+      dependencies: { 'js-yaml': 'git+https://github.com/nodeca/js-yaml.git#4.1.0' },
+    },
+  ];
+  const violations = collectAdvisoryFloorViolations(workspaces, {});
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].reason, 'advisory-floor-unparseable-range');
+});
+
+test('advisory floor guard: the npm alias bypass in the ROOT OVERRIDE is also reported, not fail-open skipped', () => {
+  const overrides = { 'js-yaml': 'npm:js-yaml@^4.1.0' };
+  const violations = collectAdvisoryFloorViolations([], overrides);
+  assert.deepEqual(violations, [
+    {
+      reason: 'advisory-floor-unparseable-range',
+      source: 'override',
+      dependency: 'js-yaml',
+      range: 'npm:js-yaml@^4.1.0',
+      advisoryId: 'GHSA-5p4m-2wfm-xmqj',
+      vulnerableRange: '<4.3.1',
+    },
+  ]);
 });
 
 test('advisory floor guard: current real repo package.json + root overrides pass', () => {
@@ -593,4 +654,115 @@ test('advisory floor guard: the curated table currently only covers js-yaml (GHS
   assert.deepEqual(ADVISORY_FLOOR_TABLE, {
     'js-yaml': { id: 'GHSA-5p4m-2wfm-xmqj', vulnerableRange: '<4.3.1' },
   });
+});
+
+test('advisory floor guard: ADVISORY_FLOOR_TABLE (and its entries) are frozen so nothing can weaken the curated table at runtime', () => {
+  assert.equal(Object.isFrozen(ADVISORY_FLOOR_TABLE), true);
+  assert.equal(Object.isFrozen(ADVISORY_FLOOR_TABLE['js-yaml']), true);
+});
+
+// ── Advisory floor guard: object-form npm `overrides` (reviewer MEDIUM) ────
+// npm's `overrides` field allows a nested-object value instead of a plain
+// version string, either to set the key's own version via a "." sub-key, or
+// to scope an override to a dependency nested inside that key's subtree.
+// The original override loop only iterated top-level keys and treated every
+// value as a string; `semver.validRange(<object>)` is `null`, so both shapes
+// below used to fall through the same non-semver skip and pass silently even
+// though both are valid npm and both can reintroduce the vulnerable version.
+
+test('advisory floor guard: object-form self-override ({"js-yaml": {".": "^4.1.0"}}) is caught, not silently skipped', () => {
+  const overrides = { 'js-yaml': { '.': '^4.1.0' } };
+  const violations = collectAdvisoryFloorViolations([], overrides);
+  assert.deepEqual(violations, [
+    {
+      reason: 'advisory-floor-violated',
+      source: 'override',
+      dependency: 'js-yaml',
+      range: '^4.1.0',
+      advisoryId: 'GHSA-5p4m-2wfm-xmqj',
+      vulnerableRange: '<4.3.1',
+    },
+  ]);
+});
+
+test('advisory floor guard: object-form nested override ({"some-pkg": {"js-yaml": "^4.1.0"}}) is caught, not silently skipped', () => {
+  const overrides = { 'some-pkg': { 'js-yaml': '^4.1.0' } };
+  const violations = collectAdvisoryFloorViolations([], overrides);
+  assert.deepEqual(violations, [
+    {
+      reason: 'advisory-floor-violated',
+      source: 'override',
+      dependency: 'js-yaml',
+      range: '^4.1.0',
+      advisoryId: 'GHSA-5p4m-2wfm-xmqj',
+      vulnerableRange: '<4.3.1',
+    },
+  ]);
+});
+
+test('advisory floor guard: an override value this guard cannot interpret at all (neither string nor nested object) is reported, not skipped', () => {
+  const overrides = { 'js-yaml': 42 };
+  const violations = collectAdvisoryFloorViolations([], overrides);
+  assert.deepEqual(violations, [
+    {
+      reason: 'advisory-floor-unhandled-override-shape',
+      source: 'override',
+      dependency: 'js-yaml',
+      advisoryId: 'GHSA-5p4m-2wfm-xmqj',
+      vulnerableRange: '<4.3.1',
+    },
+  ]);
+});
+
+test('advisory floor guard: object-form overrides for a non-curated key stay silent (no false positive)', () => {
+  const overrides = { 'some-pkg': { '.': '^2.0.0', chalk: '^4.1.2' } };
+  assert.deepEqual(collectAdvisoryFloorViolations([], overrides), []);
+});
+
+// ── Advisory floor guard: field coverage (reviewer MEDIUM) ─────────────────
+// Every prior fixture in this file only ever put js-yaml under `dependencies`.
+// That leaves `for (const field of DEPENDENCY_FIELDS)` untested for the other
+// three fields — a mutant collapsing DEPENDENCY_FIELDS to `['dependencies']`
+// would pass every test above unnoticed. This fixture puts a curated name
+// under devDependencies, peerDependencies, and optionalDependencies and
+// asserts `field` on each violation, so that mutant now loses a violation
+// and turns this test red.
+
+test('advisory floor guard: fires for js-yaml under devDependencies, peerDependencies, and optionalDependencies too (not just dependencies)', () => {
+  const workspaces = [
+    { name: '@lannguyensi/pkg-dev', version: '1.0.0', devDependencies: { 'js-yaml': '^4.1.0' } },
+    { name: '@lannguyensi/pkg-peer', version: '1.0.0', peerDependencies: { 'js-yaml': '^4.1.0' } },
+    { name: '@lannguyensi/pkg-optional', version: '1.0.0', optionalDependencies: { 'js-yaml': '^4.1.0' } },
+  ];
+  const violations = collectAdvisoryFloorViolations(workspaces, {});
+  assert.equal(violations.length, 3);
+  assert.deepEqual(
+    violations.map((v) => v.field).sort(),
+    ['devDependencies', 'optionalDependencies', 'peerDependencies'],
+  );
+  for (const violation of violations) {
+    assert.equal(violation.reason, 'advisory-floor-violated');
+    assert.equal(violation.dependency, 'js-yaml');
+  }
+});
+
+// ── Advisory floor guard: prototype-key safety (reviewer LOW) ──────────────
+// `ADVISORY_FLOOR_TABLE[dependency]` with `dependency === 'constructor'` (a
+// syntactically valid npm package name) used to return the inherited
+// `Object.prototype.constructor` function — truthy, so the old `if
+// (!advisory) continue` guard did not skip it — and then crash inside
+// `semver.intersects` on `advisory.vulnerableRange` being `undefined`. The
+// fix is an explicit `hasOwnProperty` guard; these fixtures must resolve
+// cleanly (no throw) to `[]` rather than crash the whole check.
+
+test('advisory floor guard: a declared dependency literally named "constructor" is looked up safely, not crashed', () => {
+  const workspaces = [
+    { name: '@lannguyensi/pkg', version: '1.0.0', dependencies: { constructor: '^4.1.0' } },
+  ];
+  assert.deepEqual(collectAdvisoryFloorViolations(workspaces, {}), []);
+});
+
+test('advisory floor guard: a root override literally named "constructor" is looked up safely, not crashed', () => {
+  const overrides = { constructor: '^4.1.0' };
+  assert.deepEqual(collectAdvisoryFloorViolations([], overrides), []);
 });

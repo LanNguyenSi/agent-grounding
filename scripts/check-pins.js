@@ -81,17 +81,35 @@
  * range for CVEs this repo has actually shipped a fix for. For every entry in
  * that table, asserts that neither (a) any `packages/*\/package.json`
  * dependency-field range naming that package, nor (b) the root package.json
- * `overrides` entry for that package (if present), intersects the vulnerable
- * range via `semver.intersects` — a caret/tilde/exact declaration that can
- * still resolve back into the closed CVE window is a violation, independent
- * of what package-lock.json happens to resolve today.
+ * `overrides` entry for that package (if present, including npm's nested
+ * per-subtree `overrides` object shape — see `collectOverrideAdvisoryFloor
+ * Violations` below), intersects the vulnerable range via `semver.intersects`
+ * — a caret/tilde/exact declaration that can still resolve back into the
+ * closed CVE window is a violation, independent of what package-lock.json
+ * happens to resolve today. Unlike the brace-expansion coupling guard, this
+ * guard has no lockfile ground truth to fall back on, so it is fail-CLOSED
+ * for anything it cannot cleanly interpret: a declared or override range for
+ * a curated name that isn't parseable semver (an npm alias like
+ * `"npm:js-yaml@^4.1.0"`, a git URL, the `"latest"` tag, ...) is reported as
+ * its own violation rather than skipped, and an override value for a curated
+ * name that is neither a string nor a further nested overrides object is
+ * likewise reported rather than silently passed through.
  *
  * Deliberately NOT a general "declared floor must equal/exceed the resolved
  * version" rule: measured against this repo's actual manifests, that shape
  * flags 18 of 20 external runtime deps (chalk, commander, ajv, zod, ...) for
  * ordinary, harmless caret-range practice, making the gate too noisy to keep.
  * Only package names explicitly added to `ADVISORY_FLOOR_TABLE` are ever
- * checked; everything else is silently out of scope for this guard.
+ * checked; everything else is silently out of scope for this guard. js-yaml
+ * is currently the only curated entry not because it is the only advisory
+ * this repo has shipped a floor for, but because it is the only one whose
+ * vulnerable range is worth hand-typing here at all: the 0.1.2 release's
+ * brace-expansion/glob DoS is already closed structurally, by construction,
+ * via `collectOverrideCouplingViolations` / `collectBraceExpansionCoupling
+ * Violations` above — adding an approximate vulnerable range for it here
+ * from memory would risk a wrong range doing more harm than the gap it
+ * would close, for a class this file already handles by a sturdier
+ * mechanism.
  *
  * Usage: `node scripts/check-pins.js` (wired as the `check:pins` npm script).
  * Exits non-zero and prints one line per offending package + pin on failure.
@@ -411,28 +429,136 @@ function collectBraceExpansionCouplingViolations(lockfilePackages) {
  * rationale, and in particular why this table is hand-curated rather than
  * derived from any general "floor == resolved" rule.
  *
+ * Frozen (table and every entry) so no consumer — a test fixture, another
+ * script requiring this module, a future edit elsewhere in this file — can
+ * mutate it at runtime and silently weaken what the guard checks.
+ *
  * Table shape: { [dependencyName]: { id, vulnerableRange } }.
  */
-const ADVISORY_FLOOR_TABLE = {
-  'js-yaml': { id: 'GHSA-5p4m-2wfm-xmqj', vulnerableRange: '<4.3.1' },
-};
+const ADVISORY_FLOOR_TABLE = Object.freeze(
+  Object.fromEntries(
+    Object.entries({
+      'js-yaml': { id: 'GHSA-5p4m-2wfm-xmqj', vulnerableRange: '<4.3.1' },
+    }).map(([name, entry]) => [name, Object.freeze(entry)]),
+  ),
+);
+
+/**
+ * Looks up `dependency` in `ADVISORY_FLOOR_TABLE` via an explicit
+ * `hasOwnProperty` check (never a bare `ADVISORY_FLOOR_TABLE[dependency]`
+ * lookup) and, if curated, checks `range` against its vulnerable range.
+ * Returns `null` when `dependency` isn't curated (nothing to check) or the
+ * range is curated-but-clean (parseable and outside the vulnerable range).
+ *
+ * The `hasOwnProperty` guard matters because `dependency` and `range` are
+ * both attacker/data-controlled strings straight out of a `package.json` or
+ * `overrides` block: a dependency literally named `"constructor"` (a
+ * syntactically valid npm package name) makes a bare bracket lookup return
+ * `Object.prototype.constructor` — a truthy, non-`undefined` value — which
+ * would then crash `semver.intersects` on `advisory.vulnerableRange` being
+ * `undefined` instead of either skipping cleanly or reporting a violation.
+ *
+ * Returns one of:
+ *   - `null` (not curated, or curated and clean)
+ *   - `{ reason: 'advisory-floor-unparseable-range', source, dependency,
+ *      range, advisoryId, vulnerableRange, consumer?, field? }` — curated,
+ *      but `range` isn't parseable semver at all (fail-CLOSED: reported, not
+ *      skipped — see the file header for why this differs from the
+ *      brace-expansion guard's skip-on-invalid behavior).
+ *   - `{ reason: 'advisory-floor-violated', source, dependency, range,
+ *      advisoryId, vulnerableRange, consumer?, field? }` — curated, parses,
+ *      and intersects the vulnerable range.
+ * (`consumer`/`field` are only ever attached for `source: 'declared'`.)
+ */
+function checkAdvisoryFloorRange({ dependency, range, source, consumer, field }) {
+  if (!Object.prototype.hasOwnProperty.call(ADVISORY_FLOOR_TABLE, dependency)) return null;
+  const advisory = ADVISORY_FLOOR_TABLE[dependency];
+
+  const base = { source, dependency };
+  if (consumer !== undefined) base.consumer = consumer;
+  if (field !== undefined) base.field = field;
+  base.range = range;
+  base.advisoryId = advisory.id;
+  base.vulnerableRange = advisory.vulnerableRange;
+
+  if (semver.validRange(range) === null) {
+    return { reason: 'advisory-floor-unparseable-range', ...base };
+  }
+  if (semver.intersects(range, advisory.vulnerableRange)) {
+    return { reason: 'advisory-floor-violated', ...base };
+  }
+  return null;
+}
+
+/**
+ * Recursively walks a root `package.json` `overrides` object (or a nested
+ * subtree of one) and pushes any advisory-floor violation it finds onto
+ * `violations`. Handles npm's nested-override shape: a value that is itself
+ * a plain object means "overrides scoped to this dependency's own subtree",
+ * where a `"."` key inside it overrides the ENCLOSING key's own version, and
+ * any other key overrides a (possibly further-nested) dependency by that
+ * name somewhere within the enclosing key's subtree. `parentName` is the
+ * enclosing key's name (what a `"."` key at this level refers to), or `null`
+ * at the root, where a bare `"."` key is not valid npm syntax and resolves
+ * to nothing rather than crashing.
+ *
+ * Never silently drops a curated dependency name regardless of the shape its
+ * override value takes: a string leaf goes through `checkAdvisoryFloorRange`
+ * (which itself never skips a curated name — see its own doc comment), a
+ * plain-object leaf is recursed into, and any other leaf shape (number,
+ * `null`, array, ...) attached to a curated name is reported as its own
+ * `'advisory-floor-unhandled-override-shape'` violation instead of being
+ * silently passed over.
+ *
+ * Violation (in addition to the two reasons `checkAdvisoryFloorRange` can
+ * produce): { reason: 'advisory-floor-unhandled-override-shape', source:
+ *   'override', dependency, advisoryId, vulnerableRange }
+ */
+function collectOverrideAdvisoryFloorViolations(overridesNode, parentName, violations) {
+  for (const [key, value] of Object.entries(overridesNode || {})) {
+    const effectiveName = key === '.' ? parentName : key;
+
+    if (typeof value === 'string') {
+      if (effectiveName) {
+        const violation = checkAdvisoryFloorRange({ dependency: effectiveName, range: value, source: 'override' });
+        if (violation) violations.push(violation);
+      }
+      continue;
+    }
+
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      collectOverrideAdvisoryFloorViolations(value, key, violations);
+      continue;
+    }
+
+    if (effectiveName && Object.prototype.hasOwnProperty.call(ADVISORY_FLOOR_TABLE, effectiveName)) {
+      const advisory = ADVISORY_FLOOR_TABLE[effectiveName];
+      violations.push({
+        reason: 'advisory-floor-unhandled-override-shape',
+        source: 'override',
+        dependency: effectiveName,
+        advisoryId: advisory.id,
+        vulnerableRange: advisory.vulnerableRange,
+      });
+    }
+  }
+}
 
 /**
  * Given the array of workspace package shapes and the root package.json
  * `overrides` object, returns an array of violation objects: one per curated
- * `ADVISORY_FLOOR_TABLE` entry whose vulnerable range is intersected by
- * either a `packages/*\/package.json` dependency-field range naming that
- * package, or the root `overrides` entry for that package name. An empty
+ * `ADVISORY_FLOOR_TABLE` entry whose vulnerable range is intersected (or
+ * whose declared/override range can't even be parsed as semver — see
+ * `checkAdvisoryFloorRange`) by either a `packages/*\/package.json`
+ * dependency-field range naming that package, or the root `overrides` entry
+ * for that package name (including npm's nested per-subtree `overrides`
+ * object shape — see `collectOverrideAdvisoryFloorViolations`). An empty
  * array means every curated floor holds.
  *
- * `semver.validRange` guards `semver.intersects` the same way the
- * brace-expansion range guard above does: a non-semver declared range (e.g.
- * a git URL or tag like "latest") must not crash this check, it has nothing
- * meaningful to intersect and is skipped rather than treated as a violation.
- *
- * Violation: { reason: 'advisory-floor-violated', source: 'declared'|'override',
- *   consumer?, field?, dependency, range, advisoryId, vulnerableRange }
- * (`consumer`/`field` are only present for `source: 'declared'`.)
+ * See `checkAdvisoryFloorRange` and `collectOverrideAdvisoryFloorViolations`
+ * for the exact violation shapes this can return; every one always carries
+ * `dependency`, `advisoryId`, and `vulnerableRange`, and every one except
+ * `'advisory-floor-unhandled-override-shape'` also carries `range`.
  */
 function collectAdvisoryFloorViolations(workspacePackages, overrides) {
   const violations = [];
@@ -441,40 +567,13 @@ function collectAdvisoryFloorViolations(workspacePackages, overrides) {
     for (const field of DEPENDENCY_FIELDS) {
       const deps = pkg[field] || {};
       for (const [dependency, range] of Object.entries(deps)) {
-        const advisory = ADVISORY_FLOOR_TABLE[dependency];
-        if (!advisory) continue;
-        if (semver.validRange(range) === null) continue;
-        if (semver.intersects(range, advisory.vulnerableRange)) {
-          violations.push({
-            reason: 'advisory-floor-violated',
-            source: 'declared',
-            consumer: pkg.name,
-            field,
-            dependency,
-            range,
-            advisoryId: advisory.id,
-            vulnerableRange: advisory.vulnerableRange,
-          });
-        }
+        const violation = checkAdvisoryFloorRange({ dependency, range, source: 'declared', consumer: pkg.name, field });
+        if (violation) violations.push(violation);
       }
     }
   }
 
-  for (const [dependency, range] of Object.entries(overrides || {})) {
-    const advisory = ADVISORY_FLOOR_TABLE[dependency];
-    if (!advisory) continue;
-    if (semver.validRange(range) === null) continue;
-    if (semver.intersects(range, advisory.vulnerableRange)) {
-      violations.push({
-        reason: 'advisory-floor-violated',
-        source: 'override',
-        dependency,
-        range,
-        advisoryId: advisory.id,
-        vulnerableRange: advisory.vulnerableRange,
-      });
-    }
-  }
+  collectOverrideAdvisoryFloorViolations(overrides, null, violations);
 
   return violations;
 }
@@ -536,6 +635,28 @@ function formatViolation(violation) {
       `declared range this wide can resolve back into the patched CVE window even when the current ` +
       `lockfile happens to resolve above it today. Raise the floor so "${violation.dependency}" no longer ` +
       `intersects "${violation.vulnerableRange}".`
+    );
+  }
+  if (violation.reason === 'advisory-floor-unparseable-range') {
+    const location =
+      violation.source === 'override'
+        ? 'root package.json "overrides"'
+        : `${violation.consumer} (${violation.field})`;
+    return (
+      `  - ${location} declares "${violation.dependency}": "${violation.range}", which is not a semver range ` +
+      `this guard can parse (an npm alias, a git URL, a dist-tag, ...) — "${violation.dependency}" is curated ` +
+      `for advisory ${violation.advisoryId} (closed range "${violation.vulnerableRange}"), and an unparseable ` +
+      `declaration is reported rather than skipped because it could just as easily resolve the vulnerable ` +
+      `version under this name as any ordinary range would. Replace it with an explicit semver range that ` +
+      `does not intersect "${violation.vulnerableRange}".`
+    );
+  }
+  if (violation.reason === 'advisory-floor-unhandled-override-shape') {
+    return (
+      `  - root package.json "overrides" entry for "${violation.dependency}" uses a value this guard could ` +
+      `not interpret as either a semver range or a nested npm overrides object — "${violation.dependency}" is ` +
+      `curated for advisory ${violation.advisoryId} (closed range "${violation.vulnerableRange}"), so this must ` +
+      `be resolved into an explicit range rather than left in an unrecognized shape.`
     );
   }
   const location = `${violation.consumer} (${violation.field})`;
