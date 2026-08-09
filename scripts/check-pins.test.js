@@ -17,9 +17,11 @@ const {
   collectEnginesViolations,
   collectOverrideCouplingViolations,
   collectBraceExpansionCouplingViolations,
+  collectAdvisoryFloorViolations,
   loadWorkspacePackages,
   loadRootOverrides,
   loadLockfilePackages,
+  ADVISORY_FLOOR_TABLE,
 } = require('./check-pins');
 
 test('engines guard: passes when all published packages declare the same value (private may omit)', () => {
@@ -460,4 +462,135 @@ test('brace-expansion resolved-version guard: walks up to the nearest ANCESTOR n
     'node_modules/brace-expansion': { version: '5.0.9' },
   };
   assert.deepEqual(collectBraceExpansionCouplingViolations(lockfilePackages), []);
+});
+
+// ── Advisory floor guard (curated CVEs) ────────────────────────────────────
+// Task 03068fb2 / reviewer-MEDIUM from ce7c1d32: the js-yaml floor raise to
+// ^4.3.1 (GHSA-5p4m-2wfm-xmqj) was purely declarative — nothing in CI caught
+// a revert, because npm audit reads the lockfile (which kept resolving
+// 4.3.1 either way), not the declared range. These tests exercise
+// collectAdvisoryFloorViolations() directly against in-memory fixtures, plus
+// one "current real repo state passes" check.
+
+test('advisory floor guard: reproduces the ce7c1d32 revert — declared range AND root override both flagged', () => {
+  // Exact shape the reviewer's mutation probe used: domain-router's
+  // dependency floor reverted to ^4.1.0, root override reverted to ^4.2.0.
+  // Both surfaces intersect the closed GHSA-5p4m-2wfm-xmqj range (<4.3.1),
+  // and both are independent CI-invisible holes per the task description —
+  // this pins that the guard checks both, not just one.
+  const workspaces = [
+    {
+      name: '@lannguyensi/domain-router',
+      version: '0.1.3',
+      dependencies: { chalk: '^4.1.2', commander: '^11.1.0', 'js-yaml': '^4.1.0' },
+    },
+  ];
+  const overrides = { 'js-yaml': '^4.2.0', 'brace-expansion': '^5.0.8', minimatch: '^10.2.5', 'test-exclude': '^8.0.0' };
+
+  const violations = collectAdvisoryFloorViolations(workspaces, overrides);
+  assert.equal(violations.length, 2);
+
+  const declared = violations.find((v) => v.source === 'declared');
+  assert.deepEqual(declared, {
+    reason: 'advisory-floor-violated',
+    source: 'declared',
+    consumer: '@lannguyensi/domain-router',
+    field: 'dependencies',
+    dependency: 'js-yaml',
+    range: '^4.1.0',
+    advisoryId: 'GHSA-5p4m-2wfm-xmqj',
+    vulnerableRange: '<4.3.1',
+  });
+
+  const override = violations.find((v) => v.source === 'override');
+  assert.deepEqual(override, {
+    reason: 'advisory-floor-violated',
+    source: 'override',
+    dependency: 'js-yaml',
+    range: '^4.2.0',
+    advisoryId: 'GHSA-5p4m-2wfm-xmqj',
+    vulnerableRange: '<4.3.1',
+  });
+});
+
+test('advisory floor guard: fires from the declared range alone, even when the root override is fine', () => {
+  const workspaces = [
+    { name: '@lannguyensi/domain-router', version: '0.1.3', dependencies: { 'js-yaml': '^4.1.0' } },
+  ];
+  const overrides = { 'js-yaml': '^4.3.1' };
+  const violations = collectAdvisoryFloorViolations(workspaces, overrides);
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].source, 'declared');
+});
+
+test('advisory floor guard: fires from the root override alone, even when every declared range is fine', () => {
+  const workspaces = [
+    { name: '@lannguyensi/domain-router', version: '0.1.3', dependencies: { 'js-yaml': '^4.3.1' } },
+  ];
+  const overrides = { 'js-yaml': '^4.2.0' };
+  const violations = collectAdvisoryFloorViolations(workspaces, overrides);
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].source, 'override');
+});
+
+test('advisory floor guard: instrument liveness — boundary precision around the curated <4.3.1 cutoff', () => {
+  // A declared range that still reaches the last vulnerable patch (4.3.0)
+  // must fire; a declared range confined to exactly the curated floor
+  // (4.3.1) must not. Any drift in ADVISORY_FLOOR_TABLE's vulnerableRange
+  // for js-yaml (e.g. accidentally weakened to "<4.3.0" or "<4.2.0") flips
+  // one of these two assertions and turns this test red — proving the guard
+  // is wired to the exact curated cutoff, not just "some range check".
+  const insideVulnerableWindow = collectAdvisoryFloorViolations(
+    [{ name: '@lannguyensi/domain-router', version: '0.1.3', dependencies: { 'js-yaml': '^4.3.0' } }],
+    {},
+  );
+  assert.equal(insideVulnerableWindow.length, 1);
+  assert.equal(insideVulnerableWindow[0].advisoryId, 'GHSA-5p4m-2wfm-xmqj');
+
+  const atCuratedFloor = collectAdvisoryFloorViolations(
+    [{ name: '@lannguyensi/domain-router', version: '0.1.3', dependencies: { 'js-yaml': '4.3.1' } }],
+    {},
+  );
+  assert.deepEqual(atCuratedFloor, []);
+});
+
+test('advisory floor guard: no false positive on ordinary caret runtime deps not in the curated table', () => {
+  // The reviewer explicitly measured that a general "floor == resolved"
+  // rule would flag 18/20 external runtime deps as ordinary caret-range
+  // practice. This fixture exercises exactly that shape (unrelated
+  // packages, wide caret ranges) and pins that the curated-table guard
+  // stays silent because none of these names are in ADVISORY_FLOOR_TABLE.
+  const workspaces = [
+    {
+      name: '@lannguyensi/domain-router',
+      version: '0.1.3',
+      dependencies: { chalk: '^4.1.2', commander: '^11.1.0', 'js-yaml': '^4.3.1' },
+      devDependencies: { jest: '^30.3.0', typescript: '^5.0.0' },
+    },
+  ];
+  const overrides = { 'brace-expansion': '^5.0.8', minimatch: '^10.2.5', 'test-exclude': '^8.0.0' };
+  assert.deepEqual(collectAdvisoryFloorViolations(workspaces, overrides), []);
+});
+
+test('advisory floor guard: a non-semver declared range is skipped, not crashed', () => {
+  const workspaces = [
+    { name: '@lannguyensi/pkg', version: '1.0.0', dependencies: { 'js-yaml': 'latest' } },
+  ];
+  assert.deepEqual(collectAdvisoryFloorViolations(workspaces, {}), []);
+});
+
+test('advisory floor guard: current real repo package.json + root overrides pass', () => {
+  const rootDir = path.join(__dirname, '..');
+  const workspaces = loadWorkspacePackages(rootDir);
+  const overrides = loadRootOverrides(rootDir);
+  assert.deepEqual(collectAdvisoryFloorViolations(workspaces, overrides), []);
+});
+
+test('advisory floor guard: the curated table currently only covers js-yaml (GHSA-5p4m-2wfm-xmqj)', () => {
+  // Documents the current scope so an accidental table edit (e.g. a typo'd
+  // key, or an entry silently dropped) is visible as a diff in this test
+  // rather than only as a gap in coverage nobody notices.
+  assert.deepEqual(ADVISORY_FLOOR_TABLE, {
+    'js-yaml': { id: 'GHSA-5p4m-2wfm-xmqj', vulnerableRange: '<4.3.1' },
+  });
 });

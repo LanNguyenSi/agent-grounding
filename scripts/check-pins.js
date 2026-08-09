@@ -65,6 +65,34 @@
  * `_interopRequireDefault` in consuming packages; test-exclude@8 already
  * pulls glob ^13.0.6 itself where it needs it.)
  *
+ * ── Advisory floor guard (curated CVEs) ────────────────────────────────────
+ *
+ * Two consecutive security releases from this monorepo (domain-router 0.1.2
+ * brace-expansion/glob, 0.1.3 js-yaml GHSA-5p4m-2wfm-xmqj) raised a DECLARED
+ * dependency floor without any CI gate asserting the floor stuck. A revert of
+ * that floor stays green everywhere that matters for CI: `npm audit` reads
+ * package-lock.json, not the declared range, and the lockfile can (and, when
+ * measured, did) keep resolving the patched version even after the declared
+ * floor was reverted — so the revert is invisible to every existing check.
+ *
+ * `collectAdvisoryFloorViolations` closes this the same way the
+ * brace-expansion coupling guard above closes its class: a small, hand-
+ * curated table (`ADVISORY_FLOOR_TABLE`) of package name -> closed vulnerable
+ * range for CVEs this repo has actually shipped a fix for. For every entry in
+ * that table, asserts that neither (a) any `packages/*\/package.json`
+ * dependency-field range naming that package, nor (b) the root package.json
+ * `overrides` entry for that package (if present), intersects the vulnerable
+ * range via `semver.intersects` — a caret/tilde/exact declaration that can
+ * still resolve back into the closed CVE window is a violation, independent
+ * of what package-lock.json happens to resolve today.
+ *
+ * Deliberately NOT a general "declared floor must equal/exceed the resolved
+ * version" rule: measured against this repo's actual manifests, that shape
+ * flags 18 of 20 external runtime deps (chalk, commander, ajv, zod, ...) for
+ * ordinary, harmless caret-range practice, making the gate too noisy to keep.
+ * Only package names explicitly added to `ADVISORY_FLOOR_TABLE` are ever
+ * checked; everything else is silently out of scope for this guard.
+ *
  * Usage: `node scripts/check-pins.js` (wired as the `check:pins` npm script).
  * Exits non-zero and prints one line per offending package + pin on failure.
  * Also exits non-zero (instead of vacuously passing) if zero workspace
@@ -376,6 +404,81 @@ function collectBraceExpansionCouplingViolations(lockfilePackages) {
   return violations;
 }
 
+/**
+ * Curated table of CLOSED vulnerable ranges for externally-published
+ * dependencies this monorepo has previously shipped a security release for.
+ * See the "Advisory floor guard" section of the file header for the full
+ * rationale, and in particular why this table is hand-curated rather than
+ * derived from any general "floor == resolved" rule.
+ *
+ * Table shape: { [dependencyName]: { id, vulnerableRange } }.
+ */
+const ADVISORY_FLOOR_TABLE = {
+  'js-yaml': { id: 'GHSA-5p4m-2wfm-xmqj', vulnerableRange: '<4.3.1' },
+};
+
+/**
+ * Given the array of workspace package shapes and the root package.json
+ * `overrides` object, returns an array of violation objects: one per curated
+ * `ADVISORY_FLOOR_TABLE` entry whose vulnerable range is intersected by
+ * either a `packages/*\/package.json` dependency-field range naming that
+ * package, or the root `overrides` entry for that package name. An empty
+ * array means every curated floor holds.
+ *
+ * `semver.validRange` guards `semver.intersects` the same way the
+ * brace-expansion range guard above does: a non-semver declared range (e.g.
+ * a git URL or tag like "latest") must not crash this check, it has nothing
+ * meaningful to intersect and is skipped rather than treated as a violation.
+ *
+ * Violation: { reason: 'advisory-floor-violated', source: 'declared'|'override',
+ *   consumer?, field?, dependency, range, advisoryId, vulnerableRange }
+ * (`consumer`/`field` are only present for `source: 'declared'`.)
+ */
+function collectAdvisoryFloorViolations(workspacePackages, overrides) {
+  const violations = [];
+
+  for (const pkg of workspacePackages) {
+    for (const field of DEPENDENCY_FIELDS) {
+      const deps = pkg[field] || {};
+      for (const [dependency, range] of Object.entries(deps)) {
+        const advisory = ADVISORY_FLOOR_TABLE[dependency];
+        if (!advisory) continue;
+        if (semver.validRange(range) === null) continue;
+        if (semver.intersects(range, advisory.vulnerableRange)) {
+          violations.push({
+            reason: 'advisory-floor-violated',
+            source: 'declared',
+            consumer: pkg.name,
+            field,
+            dependency,
+            range,
+            advisoryId: advisory.id,
+            vulnerableRange: advisory.vulnerableRange,
+          });
+        }
+      }
+    }
+  }
+
+  for (const [dependency, range] of Object.entries(overrides || {})) {
+    const advisory = ADVISORY_FLOOR_TABLE[dependency];
+    if (!advisory) continue;
+    if (semver.validRange(range) === null) continue;
+    if (semver.intersects(range, advisory.vulnerableRange)) {
+      violations.push({
+        reason: 'advisory-floor-violated',
+        source: 'override',
+        dependency,
+        range,
+        advisoryId: advisory.id,
+        vulnerableRange: advisory.vulnerableRange,
+      });
+    }
+  }
+
+  return violations;
+}
+
 function formatViolation(violation) {
   if (violation.reason === 'engines-missing') {
     return (
@@ -420,6 +523,19 @@ function formatViolation(violation) {
       `this can stay audit-green and pass the declared-range check above while still throwing at runtime the ` +
       `moment ${violation.name} touches a brace-expansion API it doesn't have. Regenerate package-lock.json ` +
       `against a consistent override set (or resolve the version conflict directly).`
+    );
+  }
+  if (violation.reason === 'advisory-floor-violated') {
+    const location =
+      violation.source === 'override'
+        ? 'root package.json "overrides"'
+        : `${violation.consumer} (${violation.field})`;
+    return (
+      `  - ${location} declares "${violation.dependency}": "${violation.range}", which intersects the ` +
+      `closed vulnerable range "${violation.vulnerableRange}" of advisory ${violation.advisoryId} — a ` +
+      `declared range this wide can resolve back into the patched CVE window even when the current ` +
+      `lockfile happens to resolve above it today. Raise the floor so "${violation.dependency}" no longer ` +
+      `intersects "${violation.vulnerableRange}".`
     );
   }
   const location = `${violation.consumer} (${violation.field})`;
@@ -475,6 +591,7 @@ function main() {
     ...collectEnginesViolations(workspaces),
     ...collectOverrideCouplingViolations(overrides),
     ...collectBraceExpansionCouplingViolations(lockfilePackages),
+    ...collectAdvisoryFloorViolations(workspaces, overrides),
   ];
 
   if (violations.length > 0) {
@@ -483,8 +600,9 @@ function main() {
       console.error(formatViolation(violation));
     }
     console.error(
-      '\nSee each violation above for its specific fix (an internal pin bump, an engines.node ' +
-        'fix, or restoring/regenerating the coupled brace-expansion/minimatch/test-exclude overrides).',
+      '\nSee each violation above for its specific fix (an internal pin bump, an engines.node fix, ' +
+        'restoring/regenerating the coupled brace-expansion/minimatch/test-exclude overrides, or raising a ' +
+        'declared floor past a curated advisory\'s vulnerable range).',
     );
     process.exitCode = 1;
     return;
@@ -493,7 +611,8 @@ function main() {
   console.log(
     `Pin consistency check passed: ${workspaces.length} workspace package(s), all internal ` +
       `${INTERNAL_SCOPE_PREFIX}* pins are satisfied by their workspace's current version, engines.node is ` +
-      `uniform, and the brace-expansion/minimatch/test-exclude override coupling holds.`,
+      `uniform, the brace-expansion/minimatch/test-exclude override coupling holds, and no curated advisory ` +
+      `floor is violated.`,
   );
 }
 
@@ -505,6 +624,8 @@ module.exports = {
   collectEnginesViolations,
   collectOverrideCouplingViolations,
   collectBraceExpansionCouplingViolations,
+  collectAdvisoryFloorViolations,
+  ADVISORY_FLOOR_TABLE,
 };
 
 if (require.main === module) {
