@@ -1,10 +1,11 @@
 /**
  * Unit tests for the pure `collectPinViolations` checker in check-pins.js.
  *
- * Runs entirely against in-memory fixture workspace arrays (never the real
- * repo manifests), so these tests can safely include a "negative control"
- * fixture with a deliberately broken pin without touching any real
- * package.json. Uses Node's built-in test runner (`node --test`), no
+ * Runs mostly against in-memory fixture workspace arrays, plus run() tests
+ * against disposable temp roots and a couple of tests that read (never
+ * write) the real root manifests, so these tests can safely include a
+ * "negative control" fixture with a deliberately broken pin without
+ * touching any real package.json. Uses Node's built-in test runner (`node --test`), no
  * additional test-framework dependency needed for a root-level script.
  */
 const test = require('node:test');
@@ -804,6 +805,11 @@ test('run(): a packages/ dir with zero package.json subdirs exits 1 via the zero
   try {
     fs.mkdirSync(path.join(tmpRoot, 'packages'));
     fs.mkdirSync(path.join(tmpRoot, 'packages', 'not-a-package'));
+    // Healthy root manifests, so a disabled guard reaches the assertions
+    // below instead of crashing on a missing package.json in
+    // loadRootOverrides — the crash would kill the mutant for the wrong
+    // reason and prove nothing about the guard.
+    writeRootManifests(tmpRoot);
 
     const exitCode = run(tmpRoot);
     assert.equal(exitCode, 1);
