@@ -1,10 +1,11 @@
 /**
  * Unit tests for the pure `collectPinViolations` checker in check-pins.js.
  *
- * Runs entirely against in-memory fixture workspace arrays (never the real
- * repo manifests), so these tests can safely include a "negative control"
- * fixture with a deliberately broken pin without touching any real
- * package.json. Uses Node's built-in test runner (`node --test`), no
+ * Runs mostly against in-memory fixture workspace arrays, plus run() tests
+ * against disposable temp roots and a couple of tests that read (never
+ * write) the real root manifests, so these tests can safely include a
+ * "negative control" fixture with a deliberately broken pin without
+ * touching any real package.json. Uses Node's built-in test runner (`node --test`), no
  * additional test-framework dependency needed for a root-level script.
  */
 const test = require('node:test');
@@ -21,6 +22,7 @@ const {
   loadWorkspacePackages,
   loadRootOverrides,
   loadLockfilePackages,
+  run,
   ADVISORY_FLOOR_TABLE,
 } = require('./check-pins');
 
@@ -765,4 +767,136 @@ test('advisory floor guard: a declared dependency literally named "constructor" 
 test('advisory floor guard: a root override literally named "constructor" is looked up safely, not crashed', () => {
   const overrides = { constructor: '^4.1.0' };
   assert.deepEqual(collectAdvisoryFloorViolations([], overrides), []);
+});
+
+// ── run(rootDir) (CLI core, exit code) ─────────────────────────────────────
+// Exercises the CLI entrypoint's pure exit-code core end to end against real
+// (but temporary, disposable) directory layouts — the actual thing `main()`
+// calls and turns into `process.exitCode`. Mirrors the run() block in
+// check-deps.test.js: reproduces both vacuous-green guards and the pass/fail
+// paths as exit codes, not just as violation arrays from the pure checkers.
+
+function writeRootManifests(tmpRoot, { lockPackages } = {}) {
+  fs.writeFileSync(path.join(tmpRoot, 'package.json'), JSON.stringify({ name: 'fixture-root' }));
+  fs.writeFileSync(
+    path.join(tmpRoot, 'package-lock.json'),
+    JSON.stringify({ packages: lockPackages ?? { '': {} } }),
+  );
+}
+
+function writeWorkspacePackage(tmpRoot, dirName, pkg) {
+  const pkgDir = path.join(tmpRoot, 'packages', dirName);
+  fs.mkdirSync(pkgDir, { recursive: true });
+  fs.writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify(pkg));
+}
+
+test('run(): a packages/ dir with zero package.json subdirs exits 1 via the zero-workspace guard specifically', () => {
+  // Exit-code-alone is not enough here: if the zero-workspace guard were
+  // disabled, this exact input would still fail later (the empty lockfile
+  // guard, or a crash in loadRootOverrides). Asserting the guard's specific
+  // message — which only that guard ever prints — is what kills the
+  // `if (false)` mutant instead of letting a second guard mask it.
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-pins-run-empty-'));
+  const originalError = console.error;
+  const errorMessages = [];
+  console.error = (...args) => {
+    errorMessages.push(args.join(' '));
+  };
+  try {
+    fs.mkdirSync(path.join(tmpRoot, 'packages'));
+    fs.mkdirSync(path.join(tmpRoot, 'packages', 'not-a-package'));
+    // Healthy root manifests, so a disabled guard reaches the assertions
+    // below instead of crashing on a missing package.json in
+    // loadRootOverrides — the crash would kill the mutant for the wrong
+    // reason and prove nothing about the guard.
+    writeRootManifests(tmpRoot);
+
+    const exitCode = run(tmpRoot);
+    assert.equal(exitCode, 1);
+    assert.ok(
+      errorMessages.some((message) => message.includes('found 0 workspace packages under packages/')),
+      `expected the zero-workspace guard's message, got: ${JSON.stringify(errorMessages)}`,
+    );
+  } finally {
+    console.error = originalError;
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('run(): a lockfile with zero "packages" entries exits 1 via the empty-lockfile guard specifically', () => {
+  // Same masking hazard as above in the other direction: a fixture that
+  // trips this guard has a healthy workspace list, but asserting only the
+  // exit code could not tell this guard from a later violation. Pin its
+  // unique message.
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-pins-run-empty-lock-'));
+  const originalError = console.error;
+  const errorMessages = [];
+  console.error = (...args) => {
+    errorMessages.push(args.join(' '));
+  };
+  try {
+    writeWorkspacePackage(tmpRoot, 'pkg-a', {
+      name: '@lannguyensi/pkg-a',
+      version: '1.0.0',
+      engines: { node: '>=20' },
+    });
+    writeRootManifests(tmpRoot, { lockPackages: {} });
+
+    const exitCode = run(tmpRoot);
+    assert.equal(exitCode, 1);
+    assert.ok(
+      errorMessages.some((message) => message.includes('package-lock.json has 0 entries under "packages"')),
+      `expected the empty-lockfile guard's message, got: ${JSON.stringify(errorMessages)}`,
+    );
+  } finally {
+    console.error = originalError;
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('run(): a violated internal pin exits 1', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-pins-run-violation-'));
+  const originalError = console.error;
+  console.error = () => {};
+  try {
+    writeWorkspacePackage(tmpRoot, 'pkg-a', {
+      name: '@lannguyensi/pkg-a',
+      version: '1.0.0',
+      engines: { node: '>=20' },
+      dependencies: { '@lannguyensi/pkg-b': '9.9.9' },
+    });
+    writeWorkspacePackage(tmpRoot, 'pkg-b', {
+      name: '@lannguyensi/pkg-b',
+      version: '1.0.0',
+      engines: { node: '>=20' },
+    });
+    writeRootManifests(tmpRoot);
+
+    assert.equal(run(tmpRoot), 1);
+  } finally {
+    console.error = originalError;
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('run(): a clean tree exits 0', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-pins-run-clean-'));
+  try {
+    writeWorkspacePackage(tmpRoot, 'pkg-a', {
+      name: '@lannguyensi/pkg-a',
+      version: '1.0.0',
+      engines: { node: '>=20' },
+      dependencies: { '@lannguyensi/pkg-b': '1.0.5' },
+    });
+    writeWorkspacePackage(tmpRoot, 'pkg-b', {
+      name: '@lannguyensi/pkg-b',
+      version: '1.0.5',
+      engines: { node: '>=20' },
+    });
+    writeRootManifests(tmpRoot);
+
+    assert.equal(run(tmpRoot), 0);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
 });

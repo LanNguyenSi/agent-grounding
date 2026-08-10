@@ -672,8 +672,14 @@ function formatViolation(violation) {
   );
 }
 
-function main() {
-  const rootDir = path.join(__dirname, '..');
+/**
+ * CLI core: runs every pin check against `rootDir` and returns the process
+ * exit code, printing findings along the way. Extracted from main() so tests
+ * can exercise the vacuous-green guards and exit codes against disposable
+ * root directories (mirrors run() in check-deps.js). `rootDir` defaults to
+ * this script's own repo root, matching main()'s prior behavior.
+ */
+function run(rootDir = path.join(__dirname, '..')) {
   const workspaces = loadWorkspacePackages(rootDir);
 
   if (workspaces.length === 0) {
@@ -685,8 +691,7 @@ function main() {
         'Expected at least one packages/*/package.json; packages/ exists but contains no ' +
         'subdirectory with a package.json (renamed, emptied, or reorganized?).',
     );
-    process.exitCode = 1;
-    return;
+    return 1;
   }
 
   const overrides = loadRootOverrides(rootDir);
@@ -703,8 +708,7 @@ function main() {
       'Pin consistency check failed: package-lock.json has 0 entries under "packages". Expected ' +
         'the lockfile\'s ground-truth package list to be non-empty (missing/empty "packages" field?).',
     );
-    process.exitCode = 1;
-    return;
+    return 1;
   }
 
   const violations = [
@@ -725,8 +729,7 @@ function main() {
         'restoring/regenerating the coupled brace-expansion/minimatch/test-exclude overrides, or raising a ' +
         'declared floor past a curated advisory\'s vulnerable range).',
     );
-    process.exitCode = 1;
-    return;
+    return 1;
   }
 
   console.log(
@@ -735,6 +738,11 @@ function main() {
       `uniform, the brace-expansion/minimatch/test-exclude override coupling holds, and no curated advisory ` +
       `floor is violated.`,
   );
+  return 0;
+}
+
+function main() {
+  process.exitCode = run();
 }
 
 module.exports = {
@@ -746,6 +754,7 @@ module.exports = {
   collectOverrideCouplingViolations,
   collectBraceExpansionCouplingViolations,
   collectAdvisoryFloorViolations,
+  run,
   ADVISORY_FLOOR_TABLE,
 };
 
