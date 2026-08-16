@@ -59,7 +59,9 @@
  * of the eefeb6a9 regeneration. Every entry here needs an explicit `reason`
  * — this is meant to stay small and auditable, not become a blanket
  * suppression list that quietly re-legitimizes the exact drift this script
- * exists to catch.
+ * exists to catch. `run()` validates at startup that every entry actually
+ * carries a non-empty string `key` and `reason` — an entry missing either is
+ * itself a failure, not a silent no-op.
  *
  * Shape: { key: 'node_modules/some-legacy-pkg', reason: '...' }
  */
@@ -67,6 +69,27 @@ const fs = require('fs');
 const path = require('path');
 
 const ALLOWLIST = [];
+
+/**
+ * A `link: true` entry is only a genuine npm workspace symlink (see the
+ * "Scope" section above) if its `resolved` field is a relative workspace
+ * path that itself exists as a key in the same lockfile's `packages` map
+ * (e.g. `node_modules/@lannguyensi/claim-gate`'s `resolved: "packages/claim-
+ * gate"` names `packages/claim-gate`, which is itself a packages map key —
+ * that package's own root entry). Without this check, `link: true` was a
+ * free unconditional skip: an entry with `resolved`/`integrity` stripped and
+ * `link: true` added bypassed the check entirely regardless of what (if
+ * anything) `resolved` pointed at, silently re-legitimizing the exact
+ * unverifiable-entry drift this script exists to catch (empirically
+ * confirmed against this repo's real lockfile — a one-key edit like that
+ * still reported an all-green pass, just for one fewer entry).
+ */
+function isValidWorkspaceLinkTarget(resolved, pkgs) {
+  if (typeof resolved !== 'string' || resolved.length === 0) return false;
+  if (resolved.startsWith('/') || resolved.startsWith('.')) return false;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(resolved)) return false; // not a URL
+  return Object.prototype.hasOwnProperty.call(pkgs || {}, resolved);
+}
 
 /**
  * Given a parsed package-lock.json object, returns every third-party entry
@@ -81,10 +104,48 @@ function collectThirdPartyEntries(lock) {
   for (const [key, value] of Object.entries(pkgs)) {
     if (key === '') continue;
     if (!key.includes('node_modules')) continue;
-    if (value.link) continue;
+    if (!value || typeof value !== 'object') {
+      // Malformed entry (null, array, primitive) — cannot carry
+      // resolved/integrity by definition, and dereferencing `.link` on it
+      // below would throw. Push it through as an ordinary entry with an
+      // empty value so it surfaces downstream as a normal "missing resolved
+      // and integrity" violation naming this key, instead of an uncaught
+      // TypeError with no indication which key caused it.
+      entries.push({ key, value: {} });
+      continue;
+    }
+    if (value.link) {
+      // A genuine npm workspace symlink is skipped — see the "Scope"
+      // section in the file header and isValidWorkspaceLinkTarget's doc
+      // comment. Anything claiming `link: true` without a resolved target
+      // that actually names a workspace package falls through and is
+      // checked (and will fail) like any other third-party entry.
+      if (isValidWorkspaceLinkTarget(value.resolved, pkgs)) continue;
+    }
     entries.push({ key, value });
   }
   return entries;
+}
+
+/**
+ * Pure helper: counts how many entries in `lock`'s `packages` map are
+ * `link: true` entries that validate as genuine npm workspace symlinks (see
+ * isValidWorkspaceLinkTarget) — i.e. entries collectThirdPartyEntries
+ * legitimately excludes rather than including as a checkable/violatable
+ * third-party entry. Used only for the pass-message skip count in run(); has
+ * no effect on the violation/exit-code logic itself.
+ */
+function countSkippedWorkspaceLinks(lock) {
+  const pkgs = (lock && lock.packages) || {};
+  let count = 0;
+  for (const [key, value] of Object.entries(pkgs)) {
+    if (key === '') continue;
+    if (!key.includes('node_modules')) continue;
+    if (value && typeof value === 'object' && value.link && isValidWorkspaceLinkTarget(value.resolved, pkgs)) {
+      count++;
+    }
+  }
+  return count;
 }
 
 /**
@@ -101,6 +162,20 @@ function collectIntegrityViolations(entries, allowlist = ALLOWLIST) {
   const violations = [];
   for (const { key, value } of entries) {
     if (allowedKeys.has(key)) continue;
+    if (value && value.link) {
+      // Only reaches this loop when collectThirdPartyEntries could not
+      // validate this link entry's target as a real workspace package (a
+      // genuine symlink is filtered out upstream) — e.g. `resolved` is
+      // missing, isn't a relative path, or doesn't name an actual entry in
+      // packages. Flag it as its own violation rather than falling through
+      // to the resolved/integrity check below, which a forged entry could
+      // otherwise satisfy with fabricated values.
+      violations.push({
+        key,
+        missing: ['a valid workspace link target (resolved must reference an existing packages/* entry)'],
+      });
+      continue;
+    }
     const missing = [];
     if (!value.resolved) missing.push('resolved');
     if (!value.integrity) missing.push('integrity');
@@ -126,6 +201,23 @@ function formatViolation(violation) {
 }
 
 /**
+ * Pure guard: returns true iff `entry` is a well-formed ALLOWLIST entry — a
+ * non-empty string `key` and a non-empty string `reason`. The ALLOWLIST's
+ * doc comment documents `reason` as mandatory; this is what actually
+ * enforces that instead of leaving it a convention nobody checks.
+ */
+function isValidAllowlistEntry(entry) {
+  return Boolean(
+    entry &&
+      typeof entry === 'object' &&
+      typeof entry.key === 'string' &&
+      entry.key.trim().length > 0 &&
+      typeof entry.reason === 'string' &&
+      entry.reason.trim().length > 0,
+  );
+}
+
+/**
  * CLI core: runs the full check against `rootDir` (a repo root containing a
  * `package-lock.json`, in the same shape as this repo — or a disposable
  * fixture root in tests) and returns the process exit code it should
@@ -136,8 +228,28 @@ function formatViolation(violation) {
  *
  * `rootDir` defaults to this script's own repo root (`path.join(__dirname,
  * '..')`), matching `main()`'s behavior when called with no argument.
+ * `allowlist` defaults to the module-level ALLOWLIST, matching `main()`'s
+ * behavior when called with no argument; tests inject a fixture allowlist so
+ * the zero-checked guard and the allowlist-shape guard below are actually
+ * reachable without editing the module-level ALLOWLIST.
  */
-function run(rootDir = path.join(__dirname, '..')) {
+function run(rootDir = path.join(__dirname, '..'), allowlist = ALLOWLIST) {
+  const invalidAllowlistEntries = allowlist.filter((entry) => !isValidAllowlistEntry(entry));
+  if (invalidAllowlistEntries.length > 0) {
+    console.error(
+      `Lockfile integrity check failed: ${invalidAllowlistEntries.length} ALLOWLIST entr${invalidAllowlistEntries.length === 1 ? 'y' : 'ies'} ` +
+        'in scripts/check-lockfile-integrity.js missing a non-empty string `key` and/or `reason`:\n',
+    );
+    for (const entry of invalidAllowlistEntries) {
+      console.error(`  - ${JSON.stringify(entry)}`);
+    }
+    console.error(
+      '\nEvery ALLOWLIST entry needs an explicit { key: <non-empty string>, reason: <non-empty string> } — ' +
+        'see the ALLOWLIST section in this file\'s header comment.',
+    );
+    return 1;
+  }
+
   const lockPath = path.join(rootDir, 'package-lock.json');
   const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
   const entries = collectThirdPartyEntries(lock);
@@ -156,7 +268,7 @@ function run(rootDir = path.join(__dirname, '..')) {
     return 1;
   }
 
-  const checkedCount = countCheckedEntries(entries);
+  const checkedCount = countCheckedEntries(entries, allowlist);
   if (checkedCount === 0) {
     // Same fail-loud principle applied to the checked count: if the
     // ALLOWLIST ever grew to cover every third-party entry, this check
@@ -169,7 +281,7 @@ function run(rootDir = path.join(__dirname, '..')) {
     return 1;
   }
 
-  const violations = collectIntegrityViolations(entries);
+  const violations = collectIntegrityViolations(entries, allowlist);
 
   if (violations.length > 0) {
     console.error(
@@ -190,9 +302,11 @@ function run(rootDir = path.join(__dirname, '..')) {
     return 1;
   }
 
+  const skippedLinkCount = countSkippedWorkspaceLinks(lock);
   console.log(
-    `Lockfile integrity check passed: ${checkedCount} third-party entry(ies) in package-lock.json ` +
-      'all carry resolved + integrity.',
+    `Lockfile integrity check passed: ${checkedCount} checked, ${skippedLinkCount} workspace link(s) ` +
+      `skipped — all ${checkedCount} checked third-party entry(ies) in package-lock.json carry resolved + ` +
+      'integrity.',
   );
   return 0;
 }
@@ -205,6 +319,8 @@ module.exports = {
   collectThirdPartyEntries,
   collectIntegrityViolations,
   countCheckedEntries,
+  countSkippedWorkspaceLinks,
+  isValidAllowlistEntry,
   run,
   ALLOWLIST,
 };

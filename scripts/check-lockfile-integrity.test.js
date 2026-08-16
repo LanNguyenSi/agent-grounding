@@ -17,6 +17,8 @@ const {
   collectThirdPartyEntries,
   collectIntegrityViolations,
   countCheckedEntries,
+  countSkippedWorkspaceLinks,
+  isValidAllowlistEntry,
   run,
 } = require('./check-lockfile-integrity');
 
@@ -45,16 +47,48 @@ test('collectThirdPartyEntries: excludes a workspace package\'s own root entry (
   assert.deepEqual(entries.map((e) => e.key), ['node_modules/chalk']);
 });
 
-test('collectThirdPartyEntries: excludes local workspace symlinks (link: true)', () => {
+test('collectThirdPartyEntries: excludes local workspace symlinks (link: true) with a valid resolved target', () => {
   const lock = {
     packages: {
       '': { name: 'agent-grounding' },
+      // The link's resolved target ("packages/claim-gate") must itself be a
+      // key in the packages map for the link to validate as genuine — see
+      // isValidWorkspaceLinkTarget.
+      'packages/claim-gate': { name: '@lannguyensi/claim-gate', version: '0.6.0' },
       'node_modules/@lannguyensi/claim-gate': { resolved: 'packages/claim-gate', link: true },
       'node_modules/chalk': { version: '5.6.2', resolved: 'x', integrity: 'y' },
     },
   };
   const entries = collectThirdPartyEntries(lock);
   assert.deepEqual(entries.map((e) => e.key), ['node_modules/chalk']);
+});
+
+test('collectThirdPartyEntries: an invalid link entry (resolved does not name a real packages/* entry) is NOT excluded', () => {
+  // Reproduces the link-bypass finding: a forged/manipulated entry with
+  // `link: true` but no resolved target that actually names a workspace
+  // package must fall through to being checked (and flagged) like any other
+  // third-party entry, instead of getting a free unconditional skip.
+  const lock = {
+    packages: {
+      '': { name: 'agent-grounding' },
+      'node_modules/forged-link': { link: true },
+      'node_modules/chalk': { version: '5.6.2', resolved: 'x', integrity: 'y' },
+    },
+  };
+  const entries = collectThirdPartyEntries(lock);
+  assert.deepEqual(entries.map((e) => e.key), ['node_modules/forged-link', 'node_modules/chalk']);
+});
+
+test('collectThirdPartyEntries: a malformed (null) entry value is included as a normal entry, not a crash', () => {
+  const lock = {
+    packages: {
+      '': { name: 'agent-grounding' },
+      'node_modules/malformed': null,
+      'node_modules/chalk': { version: '5.6.2', resolved: 'x', integrity: 'y' },
+    },
+  };
+  const entries = collectThirdPartyEntries(lock);
+  assert.deepEqual(entries.map((e) => e.key), ['node_modules/malformed', 'node_modules/chalk']);
 });
 
 test('collectThirdPartyEntries: includes nested per-package entries (e.g. packages/x/node_modules/y)', () => {
@@ -232,11 +266,12 @@ test('run(): negative control — a manipulated entry missing integrity turns th
   }
 });
 
-test('run(): a link:true workspace entry missing integrity does NOT turn the check red', () => {
+test('run(): a link:true workspace entry with a valid resolved target does NOT turn the check red', () => {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-lockfile-integrity-link-'));
   try {
     writeFixtureLock(tmpRoot, {
       '': { name: 'fixture' },
+      'packages/claim-gate': { name: '@lannguyensi/claim-gate', version: '0.6.0' },
       'node_modules/@lannguyensi/claim-gate': { resolved: 'packages/claim-gate', link: true },
       'node_modules/chalk': {
         version: '5.6.2',
@@ -246,6 +281,93 @@ test('run(): a link:true workspace entry missing integrity does NOT turn the che
     });
     assert.equal(run(tmpRoot), 0);
   } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('run(): the pass message reports the checked count and the workspace-link skip count', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-lockfile-integrity-skip-msg-'));
+  const originalLog = console.log;
+  const logMessages = [];
+  console.log = (...args) => logMessages.push(args.join(' '));
+  try {
+    writeFixtureLock(tmpRoot, {
+      '': { name: 'fixture' },
+      'packages/claim-gate': { name: '@lannguyensi/claim-gate', version: '0.6.0' },
+      'node_modules/@lannguyensi/claim-gate': { resolved: 'packages/claim-gate', link: true },
+      'node_modules/chalk': {
+        version: '5.6.2',
+        resolved: 'https://registry.npmjs.org/chalk/-/chalk-5.6.2.tgz',
+        integrity: 'sha512-abc',
+      },
+    });
+    assert.equal(run(tmpRoot), 0);
+    assert.ok(
+      logMessages.some((m) => m.includes('1 checked') && m.includes('1 workspace link(s) skipped')),
+      `expected the pass message to report the checked and skipped-link counts, got: ${JSON.stringify(logMessages)}`,
+    );
+  } finally {
+    console.log = originalLog;
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('run(): a link:true entry whose resolved target is not a real workspace package IS flagged (link-bypass guard)', () => {
+  // Reproduces the finding: a manipulated entry with resolved/integrity
+  // stripped and link:true added must NOT silently pass — the whole point
+  // of link:true being a free skip is that a genuine npm workspace symlink
+  // has nothing to fetch or hash; a forged entry claiming the same shape
+  // without a real workspace target is exactly the drift this check exists
+  // to catch.
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-lockfile-integrity-link-bypass-'));
+  const originalError = console.error;
+  const errorMessages = [];
+  console.error = (...args) => errorMessages.push(args.join(' '));
+  try {
+    writeFixtureLock(tmpRoot, {
+      '': { name: 'fixture' },
+      'node_modules/forged-link': { link: true },
+      'node_modules/chalk': {
+        version: '5.6.2',
+        resolved: 'https://registry.npmjs.org/chalk/-/chalk-5.6.2.tgz',
+        integrity: 'sha512-abc',
+      },
+    });
+    const exitCode = run(tmpRoot);
+    assert.equal(exitCode, 1);
+    assert.ok(
+      errorMessages.some((m) => m.includes('node_modules/forged-link') && m.includes('workspace link target')),
+      `expected the forged link entry to be flagged by key, got: ${JSON.stringify(errorMessages)}`,
+    );
+  } finally {
+    console.error = originalError;
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('run(): a malformed (null) package entry is flagged as a normal violation naming the key, not an uncaught crash', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-lockfile-integrity-malformed-'));
+  const originalError = console.error;
+  const errorMessages = [];
+  console.error = (...args) => errorMessages.push(args.join(' '));
+  try {
+    writeFixtureLock(tmpRoot, {
+      '': { name: 'fixture' },
+      'node_modules/malformed': null,
+      'node_modules/chalk': {
+        version: '5.6.2',
+        resolved: 'https://registry.npmjs.org/chalk/-/chalk-5.6.2.tgz',
+        integrity: 'sha512-abc',
+      },
+    });
+    const exitCode = run(tmpRoot);
+    assert.equal(exitCode, 1);
+    assert.ok(
+      errorMessages.some((m) => m.includes('node_modules/malformed') && m.includes('resolved') && m.includes('integrity')),
+      `expected the malformed entry to be flagged by key, got: ${JSON.stringify(errorMessages)}`,
+    );
+  } finally {
+    console.error = originalError;
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
 });
@@ -276,18 +398,118 @@ test('run(): zero third-party entries exits 1 via the zero-entries guard specifi
 });
 
 test('run(): an allowlist covering every entry exits 1 via the zero-checked guard (vacuous-green)', () => {
-  // Cannot exercise this through the real ALLOWLIST export without editing
-  // the module, so this test documents the guard's *intent* via
-  // countCheckedEntries directly (already covered above) plus confirms
-  // run() itself would hit the SAME shape of input (entries present, all
-  // filtered out) through the zero-entries guard when there are truly no
-  // entries at all — the two guards are independently tested in
-  // check-lockfile-integrity.js's own comments and in check-deps.test.js's
-  // analogous pattern. This test instead pins that a real ALLOWLIST edit
-  // would need to keep passing test coverage, by asserting the exported
-  // ALLOWLIST is currently empty (so nothing is silently pre-exempted).
-  const { ALLOWLIST } = require('./check-lockfile-integrity');
-  assert.deepEqual(ALLOWLIST, []);
+  // run() now accepts an injectable allowlist (second argument), so this
+  // exercises the zero-checked guard directly against a real run() call
+  // instead of only documenting its intent: a one-entry fixture lockfile
+  // whose single third-party entry is fully covered by the injected
+  // allowlist must make run() exit 1 via the zero-checked guard specifically
+  // (not vacuously report success because "everything allowlisted" looks
+  // green from collectIntegrityViolations' point of view).
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-lockfile-integrity-allowlist-vacuous-'));
+  const originalError = console.error;
+  const errorMessages = [];
+  console.error = (...args) => errorMessages.push(args.join(' '));
+  try {
+    writeFixtureLock(tmpRoot, {
+      '': { name: 'fixture' },
+      'node_modules/chalk': {
+        version: '5.6.2',
+        resolved: 'https://registry.npmjs.org/chalk/-/chalk-5.6.2.tgz',
+        integrity: 'sha512-abc',
+      },
+    });
+    const allowlist = [{ key: 'node_modules/chalk', reason: 'test: exercises the zero-checked guard' }];
+    const exitCode = run(tmpRoot, allowlist);
+    assert.equal(exitCode, 1);
+    assert.ok(
+      errorMessages.some((m) => m.includes('third-party entries left to check')),
+      `expected the zero-checked guard's message, got: ${JSON.stringify(errorMessages)}`,
+    );
+  } finally {
+    console.error = originalError;
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+// ── ALLOWLIST entry shape validation (key + reason required) ──────────────
+
+test('isValidAllowlistEntry: accepts a well-formed entry, rejects missing/empty key or reason', () => {
+  assert.equal(isValidAllowlistEntry({ key: 'node_modules/x', reason: 'documented reason' }), true);
+  assert.equal(isValidAllowlistEntry({ key: '', reason: 'documented reason' }), false);
+  assert.equal(isValidAllowlistEntry({ key: '   ', reason: 'documented reason' }), false);
+  assert.equal(isValidAllowlistEntry({ key: 'node_modules/x', reason: '' }), false);
+  assert.equal(isValidAllowlistEntry({ key: 'node_modules/x' }), false);
+  assert.equal(isValidAllowlistEntry({ reason: 'documented reason' }), false);
+  assert.equal(isValidAllowlistEntry(null), false);
+});
+
+test('run(): an ALLOWLIST entry with an empty reason is rejected (exit 1) before checking the lockfile', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-lockfile-integrity-allowlist-reason-'));
+  const originalError = console.error;
+  const errorMessages = [];
+  console.error = (...args) => errorMessages.push(args.join(' '));
+  try {
+    writeFixtureLock(tmpRoot, {
+      '': { name: 'fixture' },
+      'node_modules/chalk': {
+        version: '5.6.2',
+        resolved: 'https://registry.npmjs.org/chalk/-/chalk-5.6.2.tgz',
+        integrity: 'sha512-abc',
+      },
+    });
+    const allowlist = [{ key: 'node_modules/chalk', reason: '' }];
+    const exitCode = run(tmpRoot, allowlist);
+    assert.equal(exitCode, 1);
+    assert.ok(
+      errorMessages.some((m) => m.includes('ALLOWLIST') && m.includes('key') && m.includes('reason')),
+      `expected the invalid-allowlist-entry guard to fire, got: ${JSON.stringify(errorMessages)}`,
+    );
+  } finally {
+    console.error = originalError;
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('run(): an ALLOWLIST entry with a missing key is rejected (exit 1) before checking the lockfile', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-lockfile-integrity-allowlist-key-'));
+  const originalError = console.error;
+  const errorMessages = [];
+  console.error = (...args) => errorMessages.push(args.join(' '));
+  try {
+    writeFixtureLock(tmpRoot, {
+      '': { name: 'fixture' },
+      'node_modules/chalk': {
+        version: '5.6.2',
+        resolved: 'https://registry.npmjs.org/chalk/-/chalk-5.6.2.tgz',
+        integrity: 'sha512-abc',
+      },
+    });
+    const allowlist = [{ reason: 'no key on this entry' }];
+    const exitCode = run(tmpRoot, allowlist);
+    assert.equal(exitCode, 1);
+    assert.ok(
+      errorMessages.some((m) => m.includes('ALLOWLIST') && m.includes('key') && m.includes('reason')),
+      `expected the invalid-allowlist-entry guard to fire, got: ${JSON.stringify(errorMessages)}`,
+    );
+  } finally {
+    console.error = originalError;
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+// ── countSkippedWorkspaceLinks ─────────────────────────────────────────────
+
+test('countSkippedWorkspaceLinks: counts only link entries whose resolved target is a real packages/* key', () => {
+  const lock = {
+    packages: {
+      '': { name: 'agent-grounding' },
+      'packages/claim-gate': { name: '@lannguyensi/claim-gate', version: '0.6.0' },
+      'node_modules/@lannguyensi/claim-gate': { resolved: 'packages/claim-gate', link: true },
+      'node_modules/forged-link': { link: true },
+      'node_modules/chalk': { version: '5.6.2', resolved: 'x', integrity: 'y' },
+    },
+  };
+  assert.equal(countSkippedWorkspaceLinks(lock), 1);
 });
 
 // ── Sanity check against the real repo ─────────────────────────────────────

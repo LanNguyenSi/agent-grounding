@@ -24,9 +24,13 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install
-        run: npm ci
-
+      # These two lockfile-integrity steps run BEFORE `npm ci` on purpose:
+      # both scripts only use Node core (fs/path) plus node:test/assert for
+      # the unit tests — no installed dependency is required — and the whole
+      # point of the check is to gate whether it's even safe to run `npm ci`
+      # against this lockfile in the first place (an unverifiable entry is a
+      # problem for `npm ci` itself, not just for whatever it installs).
+      # Failing here means CI never even attempts the install.
       - name: Lockfile integrity check
         # Asserts every third-party entry in package-lock.json's "packages"
         # map carries both `resolved` and `integrity` — the fields `npm ci`
@@ -43,6 +47,9 @@ jobs:
         # temp-file fixtures, plus a sanity check that reads (but never
         # writes) the real root package-lock.json.
         run: npm run test:check-lockfile-integrity
+
+      - name: Install
+        run: npm ci
 
       - name: Pin consistency check
         # Asserts every internal @lannguyensi/* dependency pin across
