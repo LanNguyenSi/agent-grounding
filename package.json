@@ -14,7 +14,9 @@
     "check:pins": "node scripts/check-pins.js",
     "test:check-pins": "node --test scripts/check-pins.test.js",
     "check:deps": "node scripts/check-deps.js",
-    "test:check-deps": "node --test scripts/check-deps.test.js"
+    "test:check-deps": "node --test scripts/check-deps.test.js",
+    "check:lockfile-integrity": "node scripts/check-lockfile-integrity.js",
+    "test:check-lockfile-integrity": "node --test scripts/check-lockfile-integrity.test.js"
   },
   "overrides": {
     "js-yaml": "^4.3.1",

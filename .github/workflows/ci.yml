@@ -24,6 +24,30 @@ jobs:
           node-version: 22
           cache: npm
 
+      # These two lockfile-integrity steps run BEFORE `npm ci` on purpose:
+      # both scripts only use Node core (fs/path) plus node:test/assert for
+      # the unit tests — no installed dependency is required — and the whole
+      # point of the check is to gate whether it's even safe to run `npm ci`
+      # against this lockfile in the first place (an unverifiable entry is a
+      # problem for `npm ci` itself, not just for whatever it installs).
+      # Failing here means CI never even attempts the install.
+      - name: Lockfile integrity check
+        # Asserts every third-party entry in package-lock.json's "packages"
+        # map carries both `resolved` and `integrity` — the fields `npm ci`
+        # needs to actually verify a package's checksum instead of silently
+        # trusting whatever tarball the registry hands back. Catches a
+        # regenerated-from-a-bad-source or hand-edited lockfile drifting
+        # back into the state task eefeb6a9 found and fixed (304 of 603
+        # entries missing one or both fields as of 2026-07-27).
+        run: npm run check:lockfile-integrity
+
+      - name: Lockfile integrity checker unit tests
+        # Fixture-based unit tests for the checker function itself
+        # (including a negative control); mostly in-memory and disposable
+        # temp-file fixtures, plus a sanity check that reads (but never
+        # writes) the real root package-lock.json.
+        run: npm run test:check-lockfile-integrity
+
       - name: Install
         run: npm ci
 
