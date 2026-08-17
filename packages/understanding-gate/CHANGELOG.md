@@ -1,5 +1,58 @@
 # Changelog
 
+## 0.4.11, 2026-08-17
+
+### Added
+
+- **`ApprovalStatus` gains `"expired"`; `UnderstandingReport` gains an
+  optional `expiredAt` field.** The harness's
+  `understanding-before-execution` runtime pack (`expirePersistedReport()`,
+  `approval_lifecycle` policy) already rewrites a persisted report's
+  `approvalStatus` to `"expired"` and stamps `expiredAt` in place when a
+  previously-approved report ages out or a matching tool/bash pattern
+  fires post-approval. Before this change, that real, already-shipping
+  runtime state was not representable in this package's own
+  `ApprovalStatus` union or `UNDERSTANDING_REPORT_SCHEMA`
+  (`additionalProperties: false`, enum of four values): a package consumer
+  that validated a flat, package-shaped persisted report (this package's
+  own `UnderstandingReport` JSON, on disk as written by `saveReport`)
+  against the exported schema, or that switched exhaustively over
+  `ApprovalStatus`, had no way to recognize an expired report as a known,
+  valid state. This validation claim is scoped to that shape only: the
+  harness's `codex-stop` hook writes a separate, differently-shaped
+  envelope that this package never validated and still does not,
+  independent of this change. `expired` is now a fifth `ApprovalStatus`
+  member, `expiredAt` is declared as an optional `date-time` schema
+  property (parallel to `approvedAt`), and both schema variants (default
+  and `fast_confirm`) accept them.
+- This package's own parser (`parseReport`), CLI (`approve` / `revoke` /
+  `status`), and guards (`isApproved`, `findLatestForTask`) never produce
+  or require `"expired"` themselves; they only need to not reject it.
+  `isApproved` correctly reads an `"expired"` entry as not approved, same
+  as any other non-`"approved"` status. Setting `"expired"` /
+  `expiredAt` end-to-end (e.g. via `withApprovalStatus` or a CLI verb)
+  remains out of scope here; that lifecycle is owned by the harness.
+
+### Notes for consumers
+
+- Additive and optional, same shape of change as `sessionId` in 0.4.6 and
+  `ParseDefaults.boundTaskId` in 0.4.9: nothing that validated under
+  0.4.10 stops validating, and no previously-required field changed.
+  Ships as a patch so callers pinned `^0.4.x` pick it up automatically,
+  which a `0.5.0` would not satisfy under npm's zero-major caret range
+  semantics.
+- A consumer with its own hand-maintained copy of `ApprovalStatus` or the
+  JSON Schema (rather than importing this package's) will not see
+  `"expired"` until it updates that copy; this package's own exports are
+  the fix.
+- A consumer that imports `ApprovalStatus` and switches over it
+  exhaustively (e.g. a `switch` with no `default`, relying on TypeScript
+  to flag an unhandled member) gets a `tsc` error on updating to this
+  version until it adds a branch for `"expired"`. That is the intended
+  forcing function, not a regression to work around: silently falling
+  through to a `default` for an expired report is exactly the unmodeled-
+  status gap this release closes.
+
 ## 0.4.10, 2026-07-27
 
 ### Fixed

@@ -109,6 +109,7 @@ type SectionKey = Exclude<
   | "createdAt"
   | "approvedAt"
   | "approvedBy"
+  | "expiredAt"
 >;
 
 type SectionSpec = {

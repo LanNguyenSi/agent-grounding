@@ -60,6 +60,16 @@ export function withApprovalStatus(
     delete next.approvedAt;
     delete next.approvedBy;
   }
+  // expiredAt is the harness's stamp for how a report reached "expired"
+  // (expirePersistedReport()); it describes that specific past state, not
+  // the report's current state. Once a caller flips the status away from
+  // "expired" (approve or revoke), the stale timestamp must not survive
+  // into the new snapshot -- otherwise saveReport would persist a
+  // self-contradictory record, e.g. {status: "approved", expiredAt: ...}
+  // (agent-grounding 5120938c, review round 2).
+  if (status !== "expired") {
+    delete next.expiredAt;
+  }
   return next;
 }
 

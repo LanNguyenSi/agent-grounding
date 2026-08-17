@@ -273,6 +273,45 @@ describe("loadReport", () => {
   });
 });
 
+describe("expiredAt persistence (agent-grounding 5120938c)", () => {
+  it("round-trips expiredAt through saveReport -> loadReport -> listReports", () => {
+    // Shape written in place by the harness's understanding-before-
+    // execution runtime pack (expirePersistedReport()): approvalStatus
+    // "expired" plus expiredAt. This package only needs to not lose the
+    // field on a load/list round trip; KEY_ORDER is schema-derived (see
+    // persistence.ts), so this pins that expiredAt actually rides along.
+    const report: UnderstandingReport = {
+      ...baseReport,
+      taskId: "ug-expired-1",
+      approvalStatus: "expired",
+      approvedAt: "2026-05-01T10:05:00.000Z",
+      approvedBy: "cli",
+      expiredAt: "2026-05-01T12:00:00.000Z",
+    };
+    const { path } = saveReport(report, { dir: tmpDir });
+
+    const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    expect(raw.expiredAt).toBe("2026-05-01T12:00:00.000Z");
+    expect(raw.approvalStatus).toBe("expired");
+
+    const loaded = loadReport(path, { dir: tmpDir });
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    expect(loaded.report.expiredAt).toBe("2026-05-01T12:00:00.000Z");
+
+    const listed = listReports({ dir: tmpDir });
+    expect(listed).toHaveLength(1);
+    expect(listed[0]!.approvalStatus).toBe("expired");
+    expect(listed[0]!.expiredAt).toBe("2026-05-01T12:00:00.000Z");
+  });
+
+  it("omits expiredAt entirely from a listed entry when the report never expired", () => {
+    saveReport({ ...baseReport, taskId: "ug-expired-2" }, { dir: tmpDir });
+    const [entry] = listReports({ dir: tmpDir });
+    expect("expiredAt" in entry).toBe(false);
+  });
+});
+
 describe("saveReport: schema/canonical-order coverage", () => {
   // Now-redundant safety belt: KEY_ORDER in persistence.ts is derived
   // directly from UNDERSTANDING_REPORT_SCHEMA.properties at module load,

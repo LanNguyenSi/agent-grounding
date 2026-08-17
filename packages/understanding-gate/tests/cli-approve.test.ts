@@ -179,4 +179,25 @@ describe("runStatus", () => {
     expect(r.stdout).toContain("approved");
     expect(r.stdout).toContain("2026-05-02");
   });
+
+  // agent-grounding 5120938c, review round 2: a harness-expired entry's
+  // displayed timestamp must be the expiry time, not the earlier approval
+  // time that preceded the expiry -- otherwise "expired @ <time>" reads as
+  // when the (no-longer-current) approval happened.
+  it("shows the expiredAt timestamp, not approvedAt, for an expired entry", () => {
+    saveReport(
+      {
+        ...baseReport,
+        approvalStatus: "expired",
+        approvedAt: "2026-05-01T10:05:00.000Z",
+        approvedBy: "cli",
+        expiredAt: "2026-05-01T12:00:00.000Z",
+      },
+      { cwd: tmp },
+    );
+    const r = runStatus({ cwd: tmp });
+    expect(r.stdout).toContain("expired");
+    expect(r.stdout).toContain("2026-05-01T12:00:00.000Z");
+    expect(r.stdout).not.toContain("2026-05-01T10:05:00.000Z");
+  });
 });

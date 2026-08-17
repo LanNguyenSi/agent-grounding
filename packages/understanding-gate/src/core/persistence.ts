@@ -46,6 +46,14 @@ export type ReportEntry = {
   approvalStatus: UnderstandingReport["approvalStatus"];
   createdAt: string;
   approvedAt?: string;
+  /**
+   * Set alongside approvalStatus: "expired" by the harness's
+   * understanding-before-execution runtime pack (expirePersistedReport()),
+   * never by this package. Absent on any report this package's own CLI
+   * produced or that predates the "expired" status (agent-grounding
+   * 5120938c).
+   */
+  expiredAt?: string;
   /** Absent on reports written before v0.4.6, and on any report an adapter could not attribute. */
   sessionId?: string;
 };
@@ -111,6 +119,7 @@ export function listReports(opts: ListOptions = {}): ReportEntry[] {
       approvalStatus: parsed.approvalStatus,
       createdAt: parsed.createdAt ?? "",
       approvedAt: parsed.approvedAt,
+      ...(parsed.expiredAt !== undefined ? { expiredAt: parsed.expiredAt } : {}),
       ...(parsed.sessionId !== undefined ? { sessionId: parsed.sessionId } : {}),
     });
   }
