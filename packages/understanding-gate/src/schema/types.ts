@@ -3,11 +3,20 @@
 
 export type UnderstandingGateMode = "fast_confirm" | "grill_me";
 export type RiskLevel = "low" | "medium" | "high" | "critical";
+// "expired" is written externally by the harness's
+// understanding-before-execution runtime pack (expirePersistedReport(),
+// approval_lifecycle policy), never by this package: it rewrites a
+// persisted report's approvalStatus to "expired" + sets expiredAt when an
+// approval ages out or a matching tool/bash pattern fires post-approval.
+// The literal lives here so package consumers (parsers, guards,
+// exhaustive switches) recognize a harness-expired report as a known
+// status instead of an unmodeled one.
 export type ApprovalStatus =
   | "pending"
   | "approved"
   | "revision_requested"
-  | "rejected";
+  | "rejected"
+  | "expired";
 
 export interface UnderstandingReport {
   taskId: string;
@@ -37,6 +46,13 @@ export interface UnderstandingReport {
   createdAt?: string;
   approvedAt?: string;
   approvedBy?: string;
+  /**
+   * Set by the harness's understanding-before-execution runtime pack
+   * (expirePersistedReport()) alongside approvalStatus: "expired". Never
+   * set by this package's own parser/CLI. Optional: absent on every
+   * report this package itself produces or approves.
+   */
+  expiredAt?: string;
   /**
    * Session that produced the report. Set by the adapters from the
    * runtime's session id, never from agent-authored markdown. Absent on

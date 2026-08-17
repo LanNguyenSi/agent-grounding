@@ -67,6 +67,36 @@ describe("UNDERSTANDING_REPORT_SCHEMA", () => {
     expect(validate({ ...validReport, approvalStatus: "maybe" })).toBe(false);
   });
 
+  it("accepts a harness-expired report (approvalStatus: 'expired' + expiredAt)", () => {
+    // Shape written by the harness's understanding-before-execution
+    // runtime pack (expirePersistedReport(), agent-grounding 5120938c):
+    // it rewrites a persisted report's approvalStatus to "expired" and
+    // sets expiredAt, in place, leaving every other field untouched.
+    // Consumers that validate a persisted report against this schema
+    // (e.g. an exhaustive parser/guard) must not reject that shape.
+    const validate = makeValidator();
+    const harnessExpired = {
+      ...validReport,
+      approvalStatus: "expired",
+      approvedAt: "2026-08-01T09:00:00Z",
+      approvedBy: "cli",
+      expiredAt: "2026-08-01T13:00:00Z",
+    };
+    expect(validate(harnessExpired)).toBe(true);
+    expect(validate.errors).toBeNull();
+  });
+
+  it("rejects an invalid expiredAt format", () => {
+    const validate = makeValidator();
+    expect(
+      validate({
+        ...validReport,
+        approvalStatus: "expired",
+        expiredAt: "not-a-date",
+      }),
+    ).toBe(false);
+  });
+
   it("accepts optional createdAt/approvedAt as ISO date-times", () => {
     const validate = makeValidator();
     expect(

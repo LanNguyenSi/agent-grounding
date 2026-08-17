@@ -66,6 +66,10 @@ describe("isApproved", () => {
     expect(isApproved(entry({ approvalStatus: "pending" }))).toBe(false);
     expect(isApproved(entry({ approvalStatus: "rejected" }))).toBe(false);
     expect(isApproved(entry({ approvalStatus: "revision_requested" }))).toBe(false);
+    // "expired" is written by the harness's understanding-before-execution
+    // runtime pack when a previously-approved report's approval ages out
+    // (agent-grounding 5120938c); it must never read as approved.
+    expect(isApproved(entry({ approvalStatus: "expired" }))).toBe(false);
   });
   it("returns true only for approved", () => {
     expect(isApproved(entry({ approvalStatus: "approved" }))).toBe(true);

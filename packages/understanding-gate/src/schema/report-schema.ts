@@ -89,13 +89,23 @@ export const UNDERSTANDING_REPORT_SCHEMA = {
       items: { type: "string", minLength: 1 },
     },
     requiresHumanApproval: { type: "boolean" },
+    // "expired" (agent-grounding 5120938c): written externally by the
+    // harness's understanding-before-execution runtime pack
+    // (expirePersistedReport()), never by this package's own parser/CLI.
+    // Included here so a harness-expired persisted report -- which
+    // carries this status plus the expiredAt field below -- still
+    // validates against this schema instead of tripping the enum check.
     approvalStatus: {
       type: "string",
-      enum: ["pending", "approved", "revision_requested", "rejected"],
+      enum: ["pending", "approved", "revision_requested", "rejected", "expired"],
     },
     createdAt: { type: "string", format: "date-time" },
     approvedAt: { type: "string", format: "date-time" },
     approvedBy: { type: "string" },
+    // Set by the harness alongside approvalStatus: "expired" (see comment
+    // above). additionalProperties:false below means this must be
+    // declared for a harness-expired report to validate at all.
+    expiredAt: { type: "string", format: "date-time" },
     // Identity of the agent session that produced this report. Written
     // by the adapters from the runtime's own session id, never parsed
     // out of agent-authored markdown (the `## Metadata` block cannot
