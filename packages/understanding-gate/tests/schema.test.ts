@@ -1,13 +1,22 @@
 import { describe, it, expect } from "vitest";
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
-import { UNDERSTANDING_REPORT_SCHEMA } from "../src/schema/report-schema.js";
+import {
+  UNDERSTANDING_REPORT_SCHEMA,
+  UNDERSTANDING_REPORT_SCHEMA_FAST_CONFIRM,
+} from "../src/schema/report-schema.js";
 import type { UnderstandingReport } from "../src/schema/types.js";
 
 function makeValidator() {
   const ajv = new Ajv({ strict: true, allErrors: true });
   addFormats(ajv);
   return ajv.compile(UNDERSTANDING_REPORT_SCHEMA);
+}
+
+function makeFastConfirmValidator() {
+  const ajv = new Ajv({ strict: true, allErrors: true });
+  addFormats(ajv);
+  return ajv.compile(UNDERSTANDING_REPORT_SCHEMA_FAST_CONFIRM);
 }
 
 const validReport: UnderstandingReport = {
@@ -172,5 +181,59 @@ describe("UNDERSTANDING_REPORT_SCHEMA", () => {
       const validate = makeValidator();
       expect(validate({ ...validReport, [field]: [] })).toBe(true);
     });
+  });
+});
+
+describe("UNDERSTANDING_REPORT_SCHEMA_FAST_CONFIRM", () => {
+  // The fast_confirm variant is built as `{ ...UNDERSTANDING_REPORT_SCHEMA,
+  // required: [...] }` (report-schema.ts), so its `properties` block is the
+  // very same object reference as the strict schema's -- every property-
+  // level assertion above (including the expired-report acceptance) was
+  // already exercised against the fast_confirm variant's data by
+  // reference, just never compiled and validated explicitly through this
+  // variant's own ajv instance. This block closes that gap (agent-grounding
+  // 5120938c, review round 2).
+  it("compiles cleanly with ajv strict:true", () => {
+    expect(() => makeFastConfirmValidator()).not.toThrow();
+  });
+
+  it("validates a fast_confirm-shaped report (five bullets, no derivedTodos/acceptanceCriteria/openQuestions/risks/priorArt)", () => {
+    const validate = makeFastConfirmValidator();
+    const fastConfirmReport = {
+      taskId: "task-123",
+      mode: "fast_confirm",
+      riskLevel: "low",
+      currentUnderstanding: "User wants the gate.",
+      intendedOutcome: "Gate is in place.",
+      assumptions: ["read-only ok"],
+      outOfScope: ["enforcement"],
+      verificationPlan: ["unit tests"],
+      requiresHumanApproval: false,
+      approvalStatus: "pending",
+    };
+    expect(validate(fastConfirmReport)).toBe(true);
+    expect(validate.errors).toBeNull();
+  });
+
+  it("accepts a harness-expired report (approvalStatus: 'expired' + expiredAt) through the fast_confirm variant", () => {
+    // Same fixture shape as the strict-schema test above. The harness
+    // writes expired reports in place regardless of which mode produced
+    // them, so a fast_confirm-produced report can just as well end up in
+    // this state; the fast_confirm variant must accept it too.
+    const validate = makeFastConfirmValidator();
+    const harnessExpired = {
+      ...validReport,
+      approvalStatus: "expired",
+      approvedAt: "2026-08-01T09:00:00Z",
+      approvedBy: "cli",
+      expiredAt: "2026-08-01T13:00:00Z",
+    };
+    expect(validate(harnessExpired)).toBe(true);
+    expect(validate.errors).toBeNull();
+  });
+
+  it("rejects an out-of-enum approvalStatus value", () => {
+    const validate = makeFastConfirmValidator();
+    expect(validate({ ...validReport, approvalStatus: "maybe" })).toBe(false);
   });
 });

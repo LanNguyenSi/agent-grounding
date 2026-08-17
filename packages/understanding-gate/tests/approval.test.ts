@@ -122,6 +122,37 @@ describe("withApprovalStatus", () => {
     expect(baseReport).toEqual(before);
   });
 
+  it("clears expiredAt when approving a previously expired report", () => {
+    // agent-grounding 5120938c review round 2: the harness stamps
+    // expiredAt on a report it rewrites to approvalStatus "expired". If a
+    // human later approves that report via the CLI, the resulting
+    // "approved" snapshot must not still carry expiredAt -- it would
+    // read back as a self-contradictory record.
+    const expired: UnderstandingReport = {
+      ...baseReport,
+      approvalStatus: "expired",
+      approvedAt: "2026-05-01T10:05:00.000Z",
+      approvedBy: "cli",
+      expiredAt: "2026-05-01T12:00:00.000Z",
+    };
+    const next = withApprovalStatus(expired, "approved", "cli", new Date("2026-05-02T09:00:00.000Z"));
+    expect(next.approvalStatus).toBe("approved");
+    expect(next.expiredAt).toBeUndefined();
+  });
+
+  it("clears expiredAt when reverting a previously expired report to pending", () => {
+    const expired: UnderstandingReport = {
+      ...baseReport,
+      approvalStatus: "expired",
+      approvedAt: "2026-05-01T10:05:00.000Z",
+      approvedBy: "cli",
+      expiredAt: "2026-05-01T12:00:00.000Z",
+    };
+    const next = withApprovalStatus(expired, "pending", "cli", new Date("2026-05-02T09:00:00.000Z"));
+    expect(next.approvalStatus).toBe("pending");
+    expect(next.expiredAt).toBeUndefined();
+  });
+
   it("refreshes createdAt to `now` on every state flip", () => {
     // The persisted file is a snapshot of report state; createdAt is
     // the snapshot's birth time, not the original draft time. This is

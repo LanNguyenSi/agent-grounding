@@ -233,7 +233,15 @@ function safeAudit(cwd: string, event: AuditEvent): void {
 
 function formatEntryLine(taskId: string, latest: ReportEntry | null): string {
   if (!latest) return `  ${taskId}: (no entry)`;
-  const stamp = latest.approvedAt ?? latest.createdAt ?? "";
+  // For an "expired" entry, expiredAt is the timestamp that matches the
+  // shown status (when it aged out); approvedAt on that same entry is the
+  // timestamp of the approval that preceded the expiry, which used to be
+  // shown here and read as "approved at <time>" for a report that is no
+  // longer approved (agent-grounding 5120938c, review round 2).
+  const stamp =
+    latest.approvalStatus === "expired"
+      ? latest.expiredAt ?? latest.createdAt ?? ""
+      : latest.approvedAt ?? latest.createdAt ?? "";
   return `  ${taskId}: ${latest.approvalStatus}${stamp ? ` @ ${stamp}` : ""} — ${shortenPath(latest.path)}`;
 }
 

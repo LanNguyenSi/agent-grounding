@@ -14,12 +14,17 @@
   runtime state was not representable in this package's own
   `ApprovalStatus` union or `UNDERSTANDING_REPORT_SCHEMA`
   (`additionalProperties: false`, enum of four values): a package consumer
-  that validated a persisted report against the exported schema, or that
-  switched exhaustively over `ApprovalStatus`, had no way to recognize an
-  expired report as a known, valid state. `expired` is now a fifth
-  `ApprovalStatus` member, `expiredAt` is declared as an optional
-  `date-time` schema property (parallel to `approvedAt`), and both schema
-  variants (default and `fast_confirm`) accept them.
+  that validated a flat, package-shaped persisted report (this package's
+  own `UnderstandingReport` JSON, on disk as written by `saveReport`)
+  against the exported schema, or that switched exhaustively over
+  `ApprovalStatus`, had no way to recognize an expired report as a known,
+  valid state. This validation claim is scoped to that shape only: the
+  harness's `codex-stop` hook writes a separate, differently-shaped
+  envelope that this package never validated and still does not,
+  independent of this change. `expired` is now a fifth `ApprovalStatus`
+  member, `expiredAt` is declared as an optional `date-time` schema
+  property (parallel to `approvedAt`), and both schema variants (default
+  and `fast_confirm`) accept them.
 - This package's own parser (`parseReport`), CLI (`approve` / `revoke` /
   `status`), and guards (`isApproved`, `findLatestForTask`) never produce
   or require `"expired"` themselves; they only need to not reject it.
@@ -40,6 +45,13 @@
   JSON Schema (rather than importing this package's) will not see
   `"expired"` until it updates that copy; this package's own exports are
   the fix.
+- A consumer that imports `ApprovalStatus` and switches over it
+  exhaustively (e.g. a `switch` with no `default`, relying on TypeScript
+  to flag an unhandled member) gets a `tsc` error on updating to this
+  version until it adds a branch for `"expired"`. That is the intended
+  forcing function, not a regression to work around: silently falling
+  through to a `default` for an expired report is exactly the unmodeled-
+  status gap this release closes.
 
 ## 0.4.10, 2026-07-27
 

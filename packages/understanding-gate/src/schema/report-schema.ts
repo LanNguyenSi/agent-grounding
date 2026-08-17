@@ -15,6 +15,8 @@
 // schema is a strict superset of inputs the strict schema accepts.
 // Rationale: see agent-tasks/eaac8fe5.
 
+import { APPROVAL_STATUSES } from "./types.js";
+
 export const UNDERSTANDING_REPORT_SCHEMA = {
   $schema: "http://json-schema.org/draft-07/schema#",
   $id: "https://lannguyensi.github.io/agent-grounding/understanding-report.schema.json",
@@ -97,7 +99,7 @@ export const UNDERSTANDING_REPORT_SCHEMA = {
     // validates against this schema instead of tripping the enum check.
     approvalStatus: {
       type: "string",
-      enum: ["pending", "approved", "revision_requested", "rejected", "expired"],
+      enum: [...APPROVAL_STATUSES],
     },
     createdAt: { type: "string", format: "date-time" },
     approvedAt: { type: "string", format: "date-time" },

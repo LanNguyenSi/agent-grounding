@@ -11,12 +11,23 @@ export type RiskLevel = "low" | "medium" | "high" | "critical";
 // The literal lives here so package consumers (parsers, guards,
 // exhaustive switches) recognize a harness-expired report as a known
 // status instead of an unmodeled one.
-export type ApprovalStatus =
-  | "pending"
-  | "approved"
-  | "revision_requested"
-  | "rejected"
-  | "expired";
+//
+// Single source of truth for the five values: report-schema.ts's
+// `approvalStatus` enum is spread from this array (`enum: [...APPROVAL_STATUSES]`),
+// not hand-copied, so removing a member here removes it from the
+// runtime-validated JSON Schema in the same edit -- there is no second
+// place that can drift out of sync with the union (agent-grounding
+// 5120938c, review round 2; guarded by tests/schema.test.ts, which
+// ajv-validates a harness-expired fixture against the real schema).
+export const APPROVAL_STATUSES = [
+  "pending",
+  "approved",
+  "revision_requested",
+  "rejected",
+  "expired",
+] as const;
+
+export type ApprovalStatus = (typeof APPROVAL_STATUSES)[number];
 
 export interface UnderstandingReport {
   taskId: string;
