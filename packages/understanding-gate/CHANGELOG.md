@@ -32,6 +32,21 @@
   `cli-approve.test.ts` ("approve → revoke → findLatestForTask returns
   the revoked snapshot"). The adapter-local dedupe touches nothing shared
   with the claude-code adapter or the CLI approve/revoke flow.
+
+  Refinement (Fix-Runde 2, agent-grounding `973281e1`): the dedupe key is
+  claimed only after a fetch has returned usable text, not before the
+  fetch is attempted. Claiming it eagerly, before the fetch, was found to
+  lose reports permanently on a transient failure -- if the first of
+  opencode's two same-message fires hit a failing fetch, the key was
+  already marked processed and the second, often-successful fire was
+  skipped too, silently dropping the report. With the key claimed only
+  after success, a failed fire leaves the key unclaimed so the next fire
+  for the same message gets a genuine retry. Accepted consequence: if
+  BOTH fires fail, both attempt the fetch and both log a
+  `transport_error` breadcrumb, so the `transport_error` path is *not*
+  deduped for free the way the report-save path is -- a duplicate (loud)
+  breadcrumb is preferable to a silently missing report that stalls the
+  harness at the Layer 2 gate.
 - **Stale header comment in the opencode plugin source.**
   `persist-report-plugin.ts` said the `init`-generated shim lands at
   `.opencode/plugin/` (singular) and that the user must add an

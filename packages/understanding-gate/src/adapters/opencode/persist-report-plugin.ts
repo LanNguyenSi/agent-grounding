@@ -77,6 +77,22 @@ export const persistReportPlugin: OpencodePlugin = async (
   // plugin load), matching the event's own lifetime; unbounded for a
   // session's lifetime is fine at this volume (one entry per finished
   // assistant message).
+  //
+  // Claim timing (Fix-Runde 2, agent-grounding 973281e1, Finding 1): the
+  // key is added to this set only after a fetch has actually returned
+  // usable text (see below), never before the fetch is attempted.
+  // Claiming eagerly, before the fetch, was tried first and found to lose
+  // reports permanently: if the first of opencode's two same-message
+  // fires hit a transient fetch failure, the key was already marked
+  // processed, so the second fire -- often the one that would have
+  // succeeded -- was skipped too, and the report was gone with nothing
+  // but a single transport_error breadcrumb to show for it. Deferring the
+  // claim means a failed fire leaves the key unclaimed, so the next fire
+  // for the same message gets a genuine retry. Accepted trade-off: if
+  // BOTH fires fail, both attempt the fetch and both log a
+  // transport_error breadcrumb -- the transport_error path is no longer
+  // deduped for free. A duplicate (loud) breadcrumb is preferable to a
+  // silently missing report that stalls the harness at the Layer 2 gate.
   const processedMessages = new Set<string>();
   return {
     "tool.execute.before": (
@@ -100,11 +116,11 @@ export const persistReportPlugin: OpencodePlugin = async (
 
       // Dedupe opencode's double `message.updated` fire for the same
       // finished message (see the closure comment above). Skips the fetch
-      // + parse + save + sync work entirely on the repeat fire, so the
-      // transport_error path is deduped for free too.
+      // + parse + save + sync work entirely on a repeat fire once a prior
+      // fire's fetch already succeeded. The key itself is claimed further
+      // below, only after that success -- not here.
       const dedupeKey = `${info.sessionID}:${info.id}`;
       if (processedMessages.has(dedupeKey)) return;
-      processedMessages.add(dedupeKey);
 
       // Fetch the message + parts so we have the full assistant text.
       // Two failure modes to handle without ever throwing back into the
@@ -137,6 +153,11 @@ export const persistReportPlugin: OpencodePlugin = async (
         return;
       }
       if (!text) return;
+
+      // Only claim the dedupe key once the fetch produced usable text.
+      // See the closure comment above for why this is deferred rather
+      // than claimed eagerly before the fetch was attempted.
+      processedMessages.add(dedupeKey);
 
       const outcome = handlePersistReport(
         {
