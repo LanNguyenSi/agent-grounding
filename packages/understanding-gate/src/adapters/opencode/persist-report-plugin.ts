@@ -5,11 +5,12 @@
 // has no runtime dependency on @opencode-ai/* — only a structural type
 // dependency at build time.
 //
-// Loading: opencode reads its `plugin` config and imports each entry. The
-// `init --target opencode` command writes a shim file at
-// `.opencode/plugin/understanding-gate-persist-report.ts` that re-exports
-// the function below as default. The user adds an entry to `opencode.json`
-// pointing at that file (documented in the printed init message).
+// Loading: the `init --target opencode` command writes a shim file at
+// `.opencode/plugins/understanding-gate-persist-report.ts` that re-exports
+// the function below as default. opencode auto-loads every file under
+// `.opencode/plugins/` (plural), so no `opencode.json` edit is needed
+// (confirmed against opencode 1.18.18 in
+// docs/testing/opencode-npm-dogfood.md, Finding 5).
 
 import { parseReport } from "../../core/parser.js";
 import { listReports, saveReport } from "../../core/persistence.js";
@@ -47,6 +48,52 @@ export const persistReportPlugin: OpencodePlugin = async (
   ctx: OpencodePluginInput,
 ): Promise<OpencodeHooks> => {
   const cwd = ctx.directory;
+  // opencode fires `message.updated` twice for the same finished assistant
+  // message (a delta update then a final update, both with `info.finish`
+  // set), confirmed in docs/testing/opencode-npm-dogfood.md, Finding 3:
+  // two report writes ~105ms apart, byte-identical except `createdAt`, and
+  // the identical double-fire on the transport_error breadcrumb path too.
+  //
+  // Dedupe decision: track `sessionID:id` here in the adapter rather than
+  // dropping `createdAt` from saveReport's content hash (core/persistence.ts
+  // canonicalJSON/contentHash). The hash-based fix would be adapter-agnostic
+  // but changes shared saveReport semantics for every consumer, and at
+  // least one is load-bearing on `createdAt` being part of the hash:
+  // core/approval.ts's `withApprovalStatus` deliberately bumps `createdAt`
+  // on every approve/revoke specifically "so saveReport produces a new
+  // content-hash-keyed file" (see its doc comment). A revoke that restores
+  // a report to a state byte-identical to an earlier pending snapshot
+  // (same fields, no approvedAt/approvedBy) would, with `createdAt`
+  // excluded from the hash, collide with that earlier file's hash and
+  // silently no-op instead of writing the revoked snapshot, breaking the
+  // audit-trail guarantee `cli-approve.test.ts` locks in ("approve ->
+  // revoke -> findLatestForTask returns the revoked snapshot"). Deduping
+  // in-memory per (sessionID, messageID) here is adapter-local, closer to
+  // the actual symptom (opencode's own double event fire), and touches
+  // nothing shared with the claude-code adapter or the CLI approve/revoke
+  // flow.
+  //
+  // Lives in the plugin's closure so it resets per opencode process (per
+  // plugin load), matching the event's own lifetime; unbounded for a
+  // session's lifetime is fine at this volume (one entry per finished
+  // assistant message).
+  //
+  // Claim timing (Fix-Runde 2, agent-grounding 973281e1, Finding 1): the
+  // key is added to this set only after a fetch has actually returned
+  // usable text (see below), never before the fetch is attempted.
+  // Claiming eagerly, before the fetch, was tried first and found to lose
+  // reports permanently: if the first of opencode's two same-message
+  // fires hit a transient fetch failure, the key was already marked
+  // processed, so the second fire -- often the one that would have
+  // succeeded -- was skipped too, and the report was gone with nothing
+  // but a single transport_error breadcrumb to show for it. Deferring the
+  // claim means a failed fire leaves the key unclaimed, so the next fire
+  // for the same message gets a genuine retry. Accepted trade-off: if
+  // BOTH fires fail, both attempt the fetch and both log a
+  // transport_error breadcrumb -- the transport_error path is no longer
+  // deduped for free. A duplicate (loud) breadcrumb is preferable to a
+  // silently missing report that stalls the harness at the Layer 2 gate.
+  const processedMessages = new Set<string>();
   return {
     "tool.execute.before": (
       input: OpencodeToolExecuteBeforeInput,
@@ -66,6 +113,14 @@ export const persistReportPlugin: OpencodePlugin = async (
       // updates would re-parse half-formed reports on every part flush.
       if (!info.finish) return;
       if (!info.sessionID || !info.id) return;
+
+      // Dedupe opencode's double `message.updated` fire for the same
+      // finished message (see the closure comment above). Skips the fetch
+      // + parse + save + sync work entirely on a repeat fire once a prior
+      // fire's fetch already succeeded. The key itself is claimed further
+      // below, only after that success -- not here.
+      const dedupeKey = `${info.sessionID}:${info.id}`;
+      if (processedMessages.has(dedupeKey)) return;
 
       // Fetch the message + parts so we have the full assistant text.
       // Two failure modes to handle without ever throwing back into the
@@ -98,6 +153,11 @@ export const persistReportPlugin: OpencodePlugin = async (
         return;
       }
       if (!text) return;
+
+      // Only claim the dedupe key once the fetch produced usable text.
+      // See the closure comment above for why this is deferred rather
+      // than claimed eagerly before the fetch was attempted.
+      processedMessages.add(dedupeKey);
 
       const outcome = handlePersistReport(
         {

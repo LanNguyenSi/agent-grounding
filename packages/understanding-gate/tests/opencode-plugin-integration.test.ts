@@ -4,7 +4,7 @@
 // reports/. Exercises persist-report-plugin → handlePersistReport →
 // real saveReport (no mocks below the plugin layer).
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   existsSync,
   mkdirSync,
@@ -97,6 +97,203 @@ describe("persistReportPlugin: end-to-end", () => {
     const files = readdirSync(reportsDir).filter((n) => n.endsWith(".json"));
     expect(files).toHaveLength(1);
     expect(files[0]).toMatch(/-session-int-[0-9a-f]{8}\.json$/);
+  });
+
+  // Regression net for the opencode double-fire dedupe (agent-grounding
+  // 973281e1): opencode's own `message.updated` fires twice for the same
+  // finished assistant message (docs/testing/opencode-npm-dogfood.md,
+  // Finding 3, ~105ms apart, `now()` differs between the two fires). Two
+  // events for the same sessionID+messageID, each with a distinct `now()`,
+  // must persist exactly one report. Mutation probe: commenting out the
+  // `processedMessages` dedupe check in persist-report-plugin.ts turns
+  // this red (2 files instead of 1) -- verified manually, not asserted by
+  // this suite.
+  it("dedupes a double message.updated fire for the same session+messageID", async () => {
+    const client = makeClient([{ type: "text", text: FULL_REPORT_TEXT }]);
+    const hooks = await persistReportPlugin({ client, directory: tmp });
+    expect(hooks.event).toBeDefined();
+    if (!hooks.event) return;
+
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-08-17T06:41:17.559Z"));
+      await hooks.event({
+        event: {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "m-dup",
+              sessionID: "session-dup",
+              role: "assistant",
+              finish: "ok",
+            },
+          },
+        },
+      });
+      vi.setSystemTime(new Date("2026-08-17T06:41:17.664Z")); // +105ms, matches the dogfood evidence
+      await hooks.event({
+        event: {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "m-dup",
+              sessionID: "session-dup",
+              role: "assistant",
+              finish: "ok",
+            },
+          },
+        },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const reportsDir = join(tmp, ".understanding-gate", "reports");
+    const files = readdirSync(reportsDir).filter((n) => n.endsWith(".json"));
+    expect(files).toHaveLength(1);
+  });
+
+  // Fix-Runde 2 (agent-grounding 973281e1, Finding 1): the dedupe key is
+  // now claimed only after a fetch has returned usable text, not before
+  // the fetch is attempted (see the closure comment in
+  // persist-report-plugin.ts). Accepted consequence of that ordering: if
+  // BOTH of opencode's same-message fires fail, neither claims the key,
+  // so both attempt the fetch and both log a transport_error breadcrumb --
+  // the transport_error path is no longer deduped for free.
+  it("retries the fetch on a second fire when both fires for the same message fail (transport_error is no longer deduped)", async () => {
+    const message = vi.fn(async () => {
+      throw new Error("network down");
+    });
+    const rejectingClient: OpencodeClient = { session: { message } };
+    const hooks = await persistReportPlugin({
+      client: rejectingClient,
+      directory: tmp,
+    });
+    expect(hooks.event).toBeDefined();
+    if (!hooks.event) return;
+
+    const fire = () =>
+      hooks.event!({
+        event: {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "m-retry",
+              sessionID: "session-retry",
+              role: "assistant",
+              finish: "ok",
+            },
+          },
+        },
+      });
+    await fire();
+    await fire();
+
+    expect(message).toHaveBeenCalledTimes(2);
+    const errsDir = join(tmp, ".understanding-gate", "parse-errors");
+    const logs = readdirSync(errsDir).filter((n) => n.endsWith(".log"));
+    expect(logs).toHaveLength(2);
+  });
+
+  // This is the actual regression protection for Finding 1: a transient
+  // failure on the FIRST of opencode's two same-message fires must not
+  // permanently lose the report. Mutation probe: moving
+  // `processedMessages.add(dedupeKey)` back to before the fetch (its
+  // Fix-Runde-1 position) turns this red -- 0 report files instead of 1,
+  // because the key gets claimed on the failing first fire and the
+  // succeeding second fire is then skipped as a dupe -- verified
+  // manually, not asserted by this suite.
+  it("persists exactly one report when the first fire's fetch fails and the second fire's fetch succeeds", async () => {
+    let call = 0;
+    const message = vi.fn(async () => {
+      call += 1;
+      if (call === 1) throw new Error("transient network blip");
+      return {
+        data: {
+          info: { id: "m-order", sessionID: "session-order", role: "assistant" },
+          parts: [{ type: "text", text: FULL_REPORT_TEXT }],
+        },
+      };
+    });
+    const flakyClient: OpencodeClient = { session: { message } };
+    const hooks = await persistReportPlugin({
+      client: flakyClient,
+      directory: tmp,
+    });
+    expect(hooks.event).toBeDefined();
+    if (!hooks.event) return;
+
+    const fire = () =>
+      hooks.event!({
+        event: {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "m-order",
+              sessionID: "session-order",
+              role: "assistant",
+              finish: "ok",
+            },
+          },
+        },
+      });
+    await fire();
+    await fire();
+
+    expect(message).toHaveBeenCalledTimes(2);
+    const reportsDir = join(tmp, ".understanding-gate", "reports");
+    const files = readdirSync(reportsDir).filter((n) => n.endsWith(".json"));
+    expect(files).toHaveLength(1);
+  });
+
+  // Reviewer recommendation (agent-grounding 973281e1, Fix-Runde 2):
+  // guards against a future simplification of the dedupe key down to
+  // just `sessionID` (dropping the messageID half), which would wrongly
+  // collapse two distinct finished messages in the same session into one
+  // persisted report.
+  it("persists reports for two different messageIDs in the same session", async () => {
+    const client = makeClient([{ type: "text", text: FULL_REPORT_TEXT }]);
+    const hooks = await persistReportPlugin({ client, directory: tmp });
+    expect(hooks.event).toBeDefined();
+    if (!hooks.event) return;
+
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-08-17T06:41:17.559Z"));
+      await hooks.event({
+        event: {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "m-multi-a",
+              sessionID: "session-multi",
+              role: "assistant",
+              finish: "ok",
+            },
+          },
+        },
+      });
+      vi.setSystemTime(new Date("2026-08-17T06:41:17.664Z"));
+      await hooks.event({
+        event: {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "m-multi-b",
+              sessionID: "session-multi",
+              role: "assistant",
+              finish: "ok",
+            },
+          },
+        },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const reportsDir = join(tmp, ".understanding-gate", "reports");
+    const files = readdirSync(reportsDir).filter((n) => n.endsWith(".json"));
+    expect(files).toHaveLength(2);
   });
 
   it("does nothing when info.finish is not set (still streaming)", async () => {
