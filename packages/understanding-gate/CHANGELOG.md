@@ -1,5 +1,55 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **opencode adapter: deduped the double `message.updated` fire so a
+  finished assistant message persists exactly one Understanding Report,
+  not two.** Confirmed in the 0.4.10 npm-published-package dogfood
+  (`docs/testing/opencode-npm-dogfood.md`, Finding 3, agent-tasks
+  `f097e38e`): opencode fires `message.updated` twice for the same
+  finished message (a delta update then a final update, both with
+  `info.finish` set), ~85-105ms apart, and the plugin's handler ran the
+  full fetch/parse/save path both times, landing two near-identical
+  report files (byte-identical except `createdAt`) under
+  `.understanding-gate/reports/`. The same double-fire also duplicated
+  `transport_error` breadcrumbs under `.understanding-gate/parse-errors/`
+  on the error path.
+
+  Fixed in the opencode adapter (`persist-report-plugin.ts`) by tracking
+  each finished message's `(sessionID, id)` in an in-process `Set` and
+  skipping the fetch/parse/save work entirely on a repeat fire, rather
+  than by excluding `createdAt` from `saveReport`'s content-hash-keyed
+  idempotency check (`core/persistence.ts`). The hash-based alternative
+  was considered and rejected: `core/approval.ts`'s `withApprovalStatus`
+  deliberately bumps `createdAt` on every approve/revoke specifically so
+  `saveReport` produces a new content-hash-keyed file, and a revoke that
+  restores a report to a state byte-identical to an earlier pending
+  snapshot would, with `createdAt` excluded from the hash, collide with
+  that earlier file's hash and silently no-op instead of persisting the
+  revoked snapshot, breaking the audit-trail guarantee locked in by
+  `cli-approve.test.ts` ("approve → revoke → findLatestForTask returns
+  the revoked snapshot"). The adapter-local dedupe touches nothing shared
+  with the claude-code adapter or the CLI approve/revoke flow.
+- **Stale header comment in the opencode plugin source.**
+  `persist-report-plugin.ts` said the `init`-generated shim lands at
+  `.opencode/plugin/` (singular) and that the user must add an
+  `opencode.json` entry. Both were stale as of the same dogfood: `init`
+  writes to the plural `.opencode/plugins/` directory, which opencode
+  auto-loads with no `opencode.json` edit needed. Comment-only fix, no
+  behavior change (the README's own opencode section already had this
+  right).
+
+### Docs
+
+- README's opencode section now documents the deterministic path for
+  exercising the `transport_error` breadcrumb: the existing unit hooks in
+  `tests/opencode-plugin-integration.test.ts` (two cases, search for
+  "transport_error") plus a pointer to the live-session ctx-wrapping
+  recipe in the opencode npm dogfood doc (Scenario 2/Attempt C), so a
+  future dogfood doesn't have to rediscover it.
+
 ## 0.4.11, 2026-08-17
 
 ### Added

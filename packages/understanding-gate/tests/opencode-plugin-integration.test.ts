@@ -4,7 +4,7 @@
 // reports/. Exercises persist-report-plugin → handlePersistReport →
 // real saveReport (no mocks below the plugin layer).
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   existsSync,
   mkdirSync,
@@ -97,6 +97,59 @@ describe("persistReportPlugin: end-to-end", () => {
     const files = readdirSync(reportsDir).filter((n) => n.endsWith(".json"));
     expect(files).toHaveLength(1);
     expect(files[0]).toMatch(/-session-int-[0-9a-f]{8}\.json$/);
+  });
+
+  // Regression net for the opencode double-fire dedupe (agent-grounding
+  // 973281e1): opencode's own `message.updated` fires twice for the same
+  // finished assistant message (docs/testing/opencode-npm-dogfood.md,
+  // Finding 3, ~105ms apart, `now()` differs between the two fires). Two
+  // events for the same sessionID+messageID, each with a distinct `now()`,
+  // must persist exactly one report. Mutation probe: commenting out the
+  // `processedMessages` dedupe check in persist-report-plugin.ts turns
+  // this red (2 files instead of 1) -- verified manually, not asserted by
+  // this suite.
+  it("dedupes a double message.updated fire for the same session+messageID", async () => {
+    const client = makeClient([{ type: "text", text: FULL_REPORT_TEXT }]);
+    const hooks = await persistReportPlugin({ client, directory: tmp });
+    if (!hooks.event) return;
+
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-08-17T06:41:17.559Z"));
+      await hooks.event({
+        event: {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "m-dup",
+              sessionID: "session-dup",
+              role: "assistant",
+              finish: "ok",
+            },
+          },
+        },
+      });
+      vi.setSystemTime(new Date("2026-08-17T06:41:17.664Z")); // +105ms, matches the dogfood evidence
+      await hooks.event({
+        event: {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "m-dup",
+              sessionID: "session-dup",
+              role: "assistant",
+              finish: "ok",
+            },
+          },
+        },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const reportsDir = join(tmp, ".understanding-gate", "reports");
+    const files = readdirSync(reportsDir).filter((n) => n.endsWith(".json"));
+    expect(files).toHaveLength(1);
   });
 
   it("does nothing when info.finish is not set (still streaming)", async () => {
