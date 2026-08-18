@@ -7,6 +7,17 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       reporter: ['text', 'json'],
       thresholds: {
+        // Package-wide floor, kept alongside the per-file thresholds below
+        // as a catch-all: without it, a brand-new src file with no test
+        // coverage at all would not be gated by anything (the per-file
+        // globs only cover files named explicitly here). Set comfortably
+        // below the measured package totals (2026-08-18 run: stmts 92.4,
+        // branches 82.44, funcs 93.93, lines 93.34) so it does not fight
+        // the tighter per-file floors on the known glue files.
+        statements: 85,
+        branches: 75,
+        functions: 88,
+        lines: 85,
         // Per-file threshold for server.ts — the glue layer guarded by the
         // MCP-transport roundtrip tests. Set ~6 points below the measured
         // baseline (2026-06-30 run: stmts 84.87, branches 60, funcs 91.66,
@@ -23,8 +34,8 @@ export default defineConfig({
         // The remaining glue files that sit alongside server.ts (residual
         // hardening follow-up to #130, which only gated server.ts). Set ~5-10
         // points below each file's measured baseline (2026-08-18 run) so a
-        // sibling glue file can silently regress without being brittle to
-        // minor refactors. Branch thresholds on the small files
+        // regression in a sibling glue file surfaces in coverage CI without
+        // being brittle to minor refactors. Branch thresholds on the small files
         // (derive-context.ts, ledger-bridge.ts) are quantized in coarse
         // steps because they only have a handful of branch sites.
         'src/derive-context.ts': {
