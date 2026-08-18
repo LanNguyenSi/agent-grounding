@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { readFileSync, realpathSync } from "node:fs";
 import { Command } from "commander";
 import chalk from "chalk";
-import { evaluateClaim, detectClaimType, POLICIES } from "./lib.js";
+import { evaluateClaim, POLICIES } from "./lib.js";
 import type { ClaimContext, ClaimType } from "./lib.js";
 
 // Reads the version from package.json instead of hardcoding it, so the CLI

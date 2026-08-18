@@ -3,7 +3,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { getPlaybook, initRun, getCurrentStep, recordStep, getRemainingMandatory } from './lib.js';
+import { getPlaybook, initRun, getCurrentStep, getRemainingMandatory } from './lib.js';
 
 export * from './lib.js';
 

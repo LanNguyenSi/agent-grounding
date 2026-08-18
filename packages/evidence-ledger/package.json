@@ -29,6 +29,7 @@
     "postbuild": "chmod +x ./dist/cli.js",
     "dev": "tsx src/cli.ts",
     "test": "vitest run",
+    "test:ci": "vitest run --coverage",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
@@ -41,8 +42,9 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.8",
     "@types/node": "^20.11.5",
+    "@vitest/coverage-v8": "4.1.9",
     "tsx": "^4.22.4",
     "typescript": "^5.3.3",
-    "vitest": "^4.1.4"
+    "vitest": "4.1.9"
   }
 }
