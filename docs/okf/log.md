@@ -9,8 +9,11 @@
   the fallback). Code anchors re-checked against the branch: the env
   additions live at the END of verdict-signing.ts and the two in-place
   lines inside `getOrCreateSigningKey` (156-193) keep every previously
-  restamped line citation valid (verified by resolving the cited symbols
-  again after the change).
+  restamped line citation into verdict-signing.ts valid (each cited symbol
+  re-resolved after the change). Review then found and fixed in the same
+  PR: the solution-verdict.ts citations carried a 3-line offset since #177
+  (now 185-191 / line 187 / docblock 159-184) and the mkdirSync quote had
+  drifted with the env change; both corrected.
 
 - 2026-08-19T10:38:21Z, restamp (task 9b6c4beb, round-2 review fix G2 of
   `.ai/runs/2026-08-19-verdict-signing-producer`): closes R2-M1 (round-2

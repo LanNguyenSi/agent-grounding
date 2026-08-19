@@ -313,3 +313,20 @@ describe('interop: a real writeVerdict marker vs the vendored harness verifier',
     });
   });
 });
+
+describe('interop under the H1 env projection (SOLUTION_VERDICT_SIGNING_KEY)', () => {
+  it('a marker signed via the projected consumer key path verifies under the vendored consumer', () => {
+    // H1 model: harness projects ITS OWN resolved key-file path; producer
+    // signs through it, consumer verifies with the same file.
+    const projected = path.join(gd(), '.approval-signing.key');
+    process.env.SOLUTION_VERDICT_SIGNING_KEY = projected;
+    try {
+      const v = makeVerdict({ id: 'task-h1-projection' });
+      const onDisk = writeAndRead(v);
+      const sig = verifyVerdictSignature(gd(), v.id, onDisk);
+      expect(sig.ok).toBe(true);
+    } finally {
+      delete process.env.SOLUTION_VERDICT_SIGNING_KEY;
+    }
+  });
+});

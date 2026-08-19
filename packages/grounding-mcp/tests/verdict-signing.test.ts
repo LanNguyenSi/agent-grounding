@@ -559,3 +559,20 @@ describe('resolveSigningKeyPath / SOLUTION_VERDICT_SIGNING_KEY (env primary, tas
     }
   });
 });
+
+describe('resolveSigningKeyPath hardening (review round 1 of task d0daa18a)', () => {
+  it('an empty-string env value falls back to the mirrored resolution', () => {
+    process.env[SIGNING_KEY_ENV] = '';
+    expect(resolveSigningKeyPath()).toBe(signingKeyPathFor(resolveGeneratedDir()));
+  });
+
+  it('a relative env value throws loudly instead of creating a key under cwd', () => {
+    process.env[SIGNING_KEY_ENV] = 'relative/key';
+    expect(() => resolveSigningKeyPath()).toThrow(/must be an absolute path/);
+  });
+
+  it('an unexpanded tilde env value throws loudly (projection-side tilde gotcha)', () => {
+    process.env[SIGNING_KEY_ENV] = '~/.harness/harness.generated/.approval-signing.key';
+    expect(() => resolveSigningKeyPath()).toThrow(/must be an absolute path/);
+  });
+});
