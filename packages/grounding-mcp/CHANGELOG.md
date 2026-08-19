@@ -6,6 +6,14 @@
 
 ### Added
 
+- **`bin` entry normalized to `dist/server.js` (no `./` prefix)** (task
+  256d65a6): npm >= 11 strips `./`-prefixed bin targets from the manifest it
+  submits at publish time ("auto-corrected ... and removed"), which both
+  loses the bin in the registry metadata and diverges the submitted
+  manifest from the tarball's own package.json. All packages in this repo
+  got the same normalization; the published artifacts already carried the
+  `./`-free form (they were published by npm 10).
+
 - **`solution_evaluate` now signs the verdict marker.** The marker
   `writeVerdict` (`src/solution-verdict.ts`) writes to
   `$SOLUTION_VERDICT_DIR`/`~/.local/state/agent-grounding/solution-verdicts/`

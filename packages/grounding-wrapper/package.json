@@ -28,7 +28,7 @@
     "./cli": "./dist/index.js"
   },
   "bin": {
-    "grounding-wrapper": "./dist/index.js"
+    "grounding-wrapper": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",

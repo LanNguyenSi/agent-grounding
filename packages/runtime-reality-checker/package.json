@@ -33,7 +33,7 @@
     }
   },
   "bin": {
-    "runtime-reality-policy-pre-tool-use": "./dist/policy/pre-tool-use.js"
+    "runtime-reality-policy-pre-tool-use": "dist/policy/pre-tool-use.js"
   },
   "scripts": {
     "build": "tsc",

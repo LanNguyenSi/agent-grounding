@@ -2,6 +2,10 @@
 
 ## 0.3.1, 2026-08-06
 
+- `bin` entry normalized to `dist/policy/pre-tool-use.js` (no `./` prefix;
+  task 256d65a6) so npm >= 11 publishes keep the bin in the registry
+  manifest instead of auto-removing it.
+
 ### Removed
 
 - **The phantom `chalk` and `commander` dependencies.** This is dependency

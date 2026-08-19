@@ -21,7 +21,7 @@
   ],
   "main": "dist/index.js",
   "bin": {
-    "domain-router": "./dist/index.js"
+    "domain-router": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",
