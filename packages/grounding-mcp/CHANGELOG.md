@@ -27,6 +27,16 @@
   (`packages/grounding-mcp/tests/interop/`): a real `writeVerdict` marker
   is accepted, and tampering, cross-id replay, and an unrecognized `alg`
   are all rejected the same way harness itself rejects them.
+- **`SOLUTION_VERDICT_SIGNING_KEY` env projection (primary key path).**
+  When set (an absolute path to the signing-key FILE, projected by harness
+  at apply time onto this MCP server's env following its
+  `EVIDENCE_LEDGER_DB` pattern; slice H1 of the task-9b6c4beb Option-2
+  design), the producer reads/creates the key at exactly that path and the
+  mirrored home resolution above becomes the documented fallback for
+  non-harness-managed setups. This removes the one ambiguity the mirror
+  cannot close (a harness run under `--config` / a non-default home).
+  `getOrCreate` semantics apply at the projected path too, so whichever
+  side runs first creates the shared key race-tolerantly.
 
   **Release sequencing warning.** `grounding-mcp-v0.8.0` MUST be published
   to npm and installed on every machine running the `grounding-mcp` MCP

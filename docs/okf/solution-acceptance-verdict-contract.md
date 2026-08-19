@@ -3,7 +3,7 @@ type: invariant
 title: Solution-acceptance verdict contract — why the marker lives outside the ledger
 description: A "done" verdict is derived from a real preflight+OW run, HEAD-pinned, and written to an XDG state marker outside the agent-writable evidence-ledger because ledger rows are forgeable via ledger_add.
 tags: [solution-acceptance, verdicts, anti-hacking, trust-boundary]
-timestamp: 2026-08-19T10:38:21Z
+timestamp: 2026-08-19T11:34:00Z
 sources:
   - packages/grounding-mcp/src/solution-verdict.ts
   - packages/grounding-mcp/src/verdict-signing.ts
@@ -88,7 +88,7 @@ must be sanitised before reaching the filesystem.
 timestamp, source }` (lines 53-67), plus, since 0.8.0, two additive OPTIONAL fields
 `alg?` (line 77) and `signature?` (line 79). `head` is a 40-hex sha; `ready` is derived;
 `source` is `'preflight'`. The 7-key shape is pinned by the harness consumer; see the
-`writeVerdict` docblock at lines 156-163 ("`alg` + `signature` in addition to the 7
+`writeVerdict` docblock at lines 159-184 ("`alg` + `signature` in addition to the 7
 pinned fields", mirroring the consumer). The comments at lines 562-563 and 631-632
 scope the OW arms: they fold into `ready`/`blockers` only and do NOT add fields. `alg`/`signature` are the one addition
 to that pinning rule, and deliberately additive-only (see "Verdict marker signing"
@@ -98,8 +98,8 @@ every marker `writeVerdict` actually puts on disk carries both, unconditionally.
 
 ### Verdict marker signing (0.8.0): `verdict-signing.ts`
 
-Since 0.8.0, `writeVerdict` (solution-verdict.ts:182-188) no longer writes the 7 pinned
-fields alone: it calls `signVerdict(resolveGeneratedDir(), verdict)` (line 184, from the
+Since 0.8.0, `writeVerdict` (solution-verdict.ts:185-191) no longer writes the 7 pinned
+fields alone: it calls `signVerdict(resolveGeneratedDir(), verdict)` (line 187, from the
 new `src/verdict-signing.ts`) BEFORE writing, and persists the signed copy. There is no
 unsigned fallback: signing is unconditional (D-002, task 9b6c4beb / grounding-mcp
 CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly the
@@ -116,6 +116,15 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
   `resolveGeneratedDir()` (line 131) is `<harness-home>/harness.generated`
   (`GENERATED_DIRNAME`, line 46), so the full path is
   `<harness-home>/harness.generated/.approval-signing.key`.
+- **Env projection (primary since 0.8.0, task d0daa18a)**: when
+  `$SOLUTION_VERDICT_SIGNING_KEY` is set (an absolute path to the key FILE,
+  projected by harness at apply time following its `EVIDENCE_LEDGER_DB`
+  pattern; slice H1 of the task-9b6c4beb Option-2 design),
+  `resolveSigningKeyPath()` (`SIGNING_KEY_ENV`, end of verdict-signing.ts)
+  returns it verbatim and the mirrored resolution below is the FALLBACK for
+  non-harness-managed setups. `getOrCreateSigningKey` (lines 156-193)
+  resolves through it, so `getOrCreate` semantics apply at the projected
+  path too.
 - **`<harness-home>` resolution**: `resolveHarnessHome()` (verdict-signing.ts:100-110),
   mirrors harness `resolveHomeDir`. Precedence, exactly:
   1. `$HARNESS_HOME` env var, if non-empty (also the test-isolation knob).
@@ -146,7 +155,9 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
 - **On a harness-less machine, this creates `~/.harness/harness.generated/` and the key
   file as a side effect of the FIRST signed verdict** (D-002, documented, not a bug):
   the producer always signs, so `getOrCreateSigningKey` always runs, and its
-  `fs.mkdirSync(generatedDir, { recursive: true })` creates the directory tree if
+  `fs.mkdirSync(path.dirname(filePath), { recursive: true })` creates the directory
+  tree of whichever path is in effect (the mirrored `<generatedDir>` in the fallback
+  case, `dirname($SOLUTION_VERDICT_SIGNING_KEY)` under the env projection) if
   nothing else on that machine already has.
 - **Threat model, unchanged from harness' own posture:** this is pragmatic
   defense-in-depth, not a new authorization boundary: the key is read under the SAME

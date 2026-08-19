@@ -26,10 +26,10 @@
 //     explicit `--home` CLI-flag tier, which grounding-mcp has no
 //     equivalent of).
 //
-// Any drift from the consumer's implementation here produces a marker that
-// LOOKS signed but never verifies — a silent universal deny on the harness
-// side. Keep this file's constants and payload shapes textually identical
-// to the harness source above; a change there must be mirrored here.
+// Any drift here produces a marker that LOOKS signed but never verifies — a
+// silent universal deny on the harness side; keep constants and payload
+// shapes textually identical to the harness source above. ONE deliberate
+// divergence: the SOLUTION_VERDICT_SIGNING_KEY env tier (EOF, task d0daa18a).
 
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
@@ -145,8 +145,8 @@ export interface SigningKeyHandle {
 }
 
 /**
- * Read the signing key, generating one (0600, `crypto.randomBytes(32)`) on
- * first use. Mirrors harness `getOrCreateSigningKey` exactly, including its
+ * Read the signing key at `resolveSigningKeyPath(generatedDir)` (env first,
+ * see EOF), creating one (0600, 32B) on first use. Mirrors harness incl. its
  * race-tolerant exclusive (`wx`) create and its truncated-key-file repair
  * path: a key file shorter than `KEY_BYTES` is treated as corrupt and
  * unconditionally regenerated (a short key would only ever weaken future
@@ -154,8 +154,8 @@ export interface SigningKeyHandle {
  * back rather than clobbered.
  */
 export function getOrCreateSigningKey(generatedDir: string): SigningKeyHandle {
-  const filePath = signingKeyPathFor(generatedDir);
-  fs.mkdirSync(generatedDir, { recursive: true });
+  const filePath = resolveSigningKeyPath(generatedDir);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
   let fileExisted = false;
   try {
     const existing = fs.readFileSync(filePath);
@@ -298,4 +298,43 @@ export function signVerdict<
     reportContentHash: verdictContentHash(verdict),
   });
   return { ...verdict, alg: signed.alg, signature: signed.signature };
+}
+
+/**
+ * Env var carrying the ABSOLUTE path of the signing-key FILE, projected by
+ * harness at apply time onto this MCP server's env (slice H1 of the
+ * operator-decided Option 2 design, task 9b6c4beb: harness resolves its
+ * own `<generatedDir>/.approval-signing.key` and writes the resolved path
+ * here, following its `EVIDENCE_LEDGER_DB` projection pattern). When set,
+ * it is authoritative and removes the one ambiguity the mirrored home
+ * resolution cannot close (a harness run under `--config` / a non-default
+ * home). Must be an already-resolved ABSOLUTE path (no `~`); anything else
+ * throws loudly in `resolveSigningKeyPath` instead of silently creating a
+ * key the consumer never finds. These EOF declarations are placed here
+ * deliberately: it keeps every line anchor above (cited by the OKF doc)
+ * stable.
+ */
+export const SIGNING_KEY_ENV = 'SOLUTION_VERDICT_SIGNING_KEY';
+
+/**
+ * Resolve the signing-key FILE path: `SOLUTION_VERDICT_SIGNING_KEY` env
+ * projection first, else the harness-mirrored `<generatedDir>` resolution
+ * (the documented fallback for non-harness-managed setups). `getOrCreate`
+ * semantics apply at the resolved path either way, so whichever side runs
+ * first (producer or consumer) creates the shared key race-tolerantly.
+ */
+export function resolveSigningKeyPath(generatedDir: string = resolveGeneratedDir()): string {
+  const envValue = process.env[SIGNING_KEY_ENV];
+  if (typeof envValue === 'string' && envValue.length > 0) {
+    if (!path.isAbsolute(envValue)) {
+      // Loud failure over a silent universal deny: a relative or unexpanded
+      // "~" value (the projection-side tilde gotcha) would otherwise create
+      // a key under the MCP server's cwd that the consumer never finds.
+      throw new Error(
+        `${SIGNING_KEY_ENV} must be an absolute path to the signing-key file, got: ${envValue}`,
+      );
+    }
+    return envValue;
+  }
+  return signingKeyPathFor(generatedDir);
 }

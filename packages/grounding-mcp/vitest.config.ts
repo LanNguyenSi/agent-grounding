@@ -9,7 +9,9 @@ export default defineConfig({
     // ~/.harness (or ~/.claude) signing key, even when an ambient
     // HARNESS_HOME is exported. See tests/setup/harness-home-guard.ts for
     // the rationale and tests/setup/harness-home-guard.self.test.ts for
-    // the self-test that fails if this entry is removed.
+    // the self-test that fails if this entry is removed. The guard also
+    // clears an ambient SOLUTION_VERDICT_SIGNING_KEY projection per test
+    // file (task d0daa18a), restored in afterAll.
     setupFiles: ['./tests/setup/harness-home-guard.ts'],
     coverage: {
       provider: 'v8',
