@@ -27,7 +27,10 @@
 // The guard can still be opted out of, but only via a DEDICATED opt-in
 // variable (`HARNESS_HOME_GUARD_DISABLE=1`), never implicitly via "was
 // HARNESS_HOME already set" — an ambient/ambient-looking value is exactly
-// the case this guard must override, not defer to.
+// the case this guard must override, not defer to. Note that the opt-out
+// deliberately reddens the guard's self-test
+// (harness-home-guard.self.test.ts): disabling the net is visible, never
+// silent (R3-L3).
 //
 // Deliberately a per-file DEFAULT, not a fight: this only sets HARNESS_HOME
 // once, at this setup file's own module-evaluation time (vitest re-evaluates

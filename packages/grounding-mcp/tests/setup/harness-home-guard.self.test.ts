@@ -14,7 +14,22 @@ import { describe, expect, it } from 'vitest';
 import os from 'node:os';
 import path from 'node:path';
 
+// Captured at MODULE LOAD of this test file, i.e. after the setupFiles
+// guard's own module ran but before any beforeAll/beforeEach hook. A guard
+// regressed to setting HARNESS_HOME inside a hook (the R2-M2 shape) leaves
+// this undefined even when HARNESS_HOME is unset in the ambient
+// environment, which is what makes the regression detectable in default
+// CI/local runs (R3-M1).
+const harnessHomeAtModuleLoad = process.env.HARNESS_HOME;
+
 describe('harness-home-guard (setupFiles self-test)', () => {
+  it('HARNESS_HOME was already pinned at module load of this test file (R3-M1)', () => {
+    expect(harnessHomeAtModuleLoad).toBeTruthy();
+    expect(path.basename(harnessHomeAtModuleLoad as string)).toMatch(
+      /^grounding-mcp-harness-home-guard-/,
+    );
+  });
+
   it('HARNESS_HOME is set by the time a test file runs', () => {
     expect(process.env.HARNESS_HOME).toBeTruthy();
   });

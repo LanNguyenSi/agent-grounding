@@ -88,8 +88,9 @@ must be sanitised before reaching the filesystem.
 timestamp, source }` (lines 53-67), plus, since 0.8.0, two additive OPTIONAL fields
 `alg?` (line 77) and `signature?` (line 79). `head` is a 40-hex sha; `ready` is derived;
 `source` is `'preflight'`. The 7-key shape is pinned by the harness consumer; see the
-comment at lines 562-563 (and its echo at lines 631-632). New arms (OW, below) fold into
-`ready`/`blockers` only; they do NOT add fields. `alg`/`signature` are the one addition
+`writeVerdict` docblock at lines 156-163 ("`alg` + `signature` in addition to the 7
+pinned fields", mirroring the consumer). The comments at lines 562-563 and 631-632
+scope the OW arms: they fold into `ready`/`blockers` only and do NOT add fields. `alg`/`signature` are the one addition
 to that pinning rule, and deliberately additive-only (see "Verdict marker signing"
 below): they are optional on the TypeScript type only because a hand-constructed
 `Verdict` inside `evaluateSolution` has not been signed yet at construction time;

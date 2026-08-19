@@ -88,11 +88,14 @@ export interface GateResult {
 
 /**
  * Result of `evaluateSolution`. `verdict` is the PRE-SIGNING object (the 7
- * pinned fields only — no `alg`/`signature`): signing happens later, inside
- * `writeVerdict`, after this return value has already been built. The
- * marker actually written to `markerPath` (when non-null) is the SIGNED
- * copy and additionally carries `alg`/`signature`; use `readVerdict` if the
- * signed on-disk shape is what's needed. See "Verdict marker signing" in
+ * pinned fields only — no `alg`/`signature`): `signVerdict` returns a
+ * signed COPY inside `writeVerdict`, and the object referenced here is
+ * never mutated, so the response stays pre-signing. The marker actually
+ * written to `markerPath` (when non-null) is that signed copy and
+ * additionally carries `alg`/`signature`; read the marker file at
+ * `markerPath` directly (JSON.parse) if the signed on-disk shape is what's
+ * needed — `readVerdict` deliberately reconstructs only the 7 pinned
+ * fields and drops `alg`/`signature`. See "Verdict marker signing" in
  * README.md.
  */
 export interface EvaluateResult {
