@@ -6,8 +6,9 @@
 
 ### Added
 
-- Dependency pin moved to `@lannguyensi/runtime-reality-checker@0.3.0`
-  (the published version). 0.3.1/0.3.2 are registry-held (package-specific
+- Dependency pin moved to `@lannguyensi/runtime-reality-checker@^0.3.0`
+  (resolves to the published 0.3.0 today; satisfies the staged workspace
+  0.3.2 for the pin-consistency guard). 0.3.1/0.3.2 are registry-held (package-specific
   server-side block, npm support ticket pending) and carry no API delta
   this package consumes; the rrc-internal symlink-containment fix (#142)
   follows with the next pin bump once the hold is lifted.
