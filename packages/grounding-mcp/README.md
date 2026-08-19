@@ -36,7 +36,7 @@ The other packages in this repo are CLI-first. That works fine for scripted invo
 | Session JSON | `~/.grounding-mcp/sessions/<id>.json` | `GROUNDING_MCP_SESSIONS_DIR` |
 | Evidence ledger | `~/.evidence-ledger/ledger.db` (owned by `evidence-ledger`) | `EVIDENCE_LEDGER_DB` |
 | Solution verdicts | `~/.local/state/agent-grounding/solution-verdicts/<id>.json` (`$XDG_STATE_HOME` honored) | `SOLUTION_VERDICT_DIR` |
-| Verdict signing key | `<harness-home>/harness.generated/.approval-signing.key` (`<harness-home>` resolves like the harness consumer: `~/.harness` if it exists, else `~/.claude` if it already carries harness state, else `~/.harness` created on first use) | `HARNESS_HOME` |
+| Verdict signing key | `$SOLUTION_VERDICT_SIGNING_KEY` (absolute key-file path, projected by harness at apply time) when set; else `<harness-home>/harness.generated/.approval-signing.key` (`<harness-home>` resolves like the harness consumer: `~/.harness` if it exists, else `~/.claude` if it already carries harness state, else `~/.harness` created on first use) | `SOLUTION_VERDICT_SIGNING_KEY`, `HARNESS_HOME` |
 
 A phase that ends up with `'skipped'` status (because no steps mapped to it for the chosen keyword, e.g. a non-service domain skips runtime-inspection) counts as satisfied for `claim_evaluate_from_session`. Otherwise the gate would block forever on prerequisites the agent can't actually complete.
 
@@ -63,7 +63,7 @@ The marker lives outside the agent-writable evidence-ledger on purpose (a ledger
 
 ### Verdict marker signing (0.8.0)
 
-Since 0.8.0, `writeVerdict` signs the marker unconditionally (HMAC-SHA256, no unsigned fallback) before writing it: `alg` is the versioned tag `hmac-sha256-v1`, and `signature` is computed over the marker's fields with a key at `<harness-home>/harness.generated/.approval-signing.key` (see Storage above; the key is created on first use if absent). A signature-checking consumer (e.g. harness) rejects a naive hand-typed JSON file, one with no `alg`/`signature` at all or a wrong signature, as forged.
+Since 0.8.0, `writeVerdict` signs the marker unconditionally (HMAC-SHA256, no unsigned fallback) before writing it: `alg` is the versioned tag `hmac-sha256-v1`, and `signature` is computed over the marker's fields with the key at the path `SOLUTION_VERDICT_SIGNING_KEY` points to (projected by harness at apply time; primary since 0.8.0), else at `<harness-home>/harness.generated/.approval-signing.key` (see Storage above; the key is created on first use if absent, at whichever path is in effect). A signature-checking consumer (e.g. harness) rejects a naive hand-typed JSON file, one with no `alg`/`signature` at all or a wrong signature, as forged.
 
 This closes casual/accidental forgery, and it closes silent tampering: mutating any signed field after signing (intentionally or by a bug) invalidates the signature and is rejected. It does **not** close a shell-capable, same-UID forger: the signing key is read (and, on a fresh machine, first created) under the SAME UID that runs `grounding-mcp` and the same UID a shell-capable agent runs under, so such an agent could still read that key and compute a valid signature itself, exactly the same same-UID threat model the harness consumer's own signing already documents. This is pragmatic defense-in-depth, not a new authorization boundary. Composing additional ground-truth (CI, review, unresolved hypotheses from the session) into the verdict is the next layer.
 

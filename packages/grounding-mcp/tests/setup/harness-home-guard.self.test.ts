@@ -21,6 +21,7 @@ import path from 'node:path';
 // environment, which is what makes the regression detectable in default
 // CI/local runs (R3-M1).
 const harnessHomeAtModuleLoad = process.env.HARNESS_HOME;
+const signingKeyEnvAtModuleLoad = process.env.SOLUTION_VERDICT_SIGNING_KEY;
 
 describe('harness-home-guard (setupFiles self-test)', () => {
   it('HARNESS_HOME was already pinned at module load of this test file (R3-M1)', () => {
@@ -42,6 +43,10 @@ describe('harness-home-guard (setupFiles self-test)', () => {
     // "/Users/lan").
     const withinRealHome = value === realHome || value.startsWith(realHome + path.sep);
     expect(withinRealHome).toBe(false);
+  });
+
+  it('SOLUTION_VERDICT_SIGNING_KEY is cleared at module load (no ambient projection leaks into tests)', () => {
+    expect(signingKeyEnvAtModuleLoad).toBeUndefined();
   });
 
   it('HARNESS_HOME matches the guard tempdir naming pattern', () => {

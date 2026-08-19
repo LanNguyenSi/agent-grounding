@@ -95,12 +95,14 @@ import {
   LEGACY_HARNESS_HOME_DIRNAME,
   resolveGeneratedDir,
   resolveHarnessHome,
+  resolveSigningKeyPath,
   sha256Hex,
   signingKeyPathFor,
   signMarker,
   signVerdict,
   SIGNING_ALG,
   SIGNING_KEY_BASENAME,
+  SIGNING_KEY_ENV,
   verdictMarkerId,
   VERDICT_MARKER_ID_PREFIX,
 } from '../src/verdict-signing.js';
@@ -128,9 +130,15 @@ function expectedSignature(key: Buffer, payload: string): string {
 
 let tmpHome: string;
 let savedHarnessHome: string | undefined;
+let savedSigningKeyEnv: string | undefined;
 
 beforeEach(() => {
   savedHarnessHome = process.env.HARNESS_HOME;
+  savedSigningKeyEnv = process.env[SIGNING_KEY_ENV];
+  // Start every test with the env projection ABSENT: the mirrored home
+  // resolution is the baseline under test; env-primary tests set it
+  // explicitly themselves.
+  delete process.env[SIGNING_KEY_ENV];
   tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'verdict-signing-home-'));
   process.env.HARNESS_HOME = tmpHome;
 });
@@ -138,6 +146,8 @@ beforeEach(() => {
 afterEach(() => {
   if (savedHarnessHome === undefined) delete process.env.HARNESS_HOME;
   else process.env.HARNESS_HOME = savedHarnessHome;
+  if (savedSigningKeyEnv === undefined) delete process.env[SIGNING_KEY_ENV];
+  else process.env[SIGNING_KEY_ENV] = savedSigningKeyEnv;
   fs.rmSync(tmpHome, { recursive: true, force: true });
 });
 
@@ -467,5 +477,85 @@ describe('getOrCreateSigningKey exclusive-create (wx) failure handling (F4b)', (
     expect(fsWriteFail.armedPath).toBeNull();
     // The failed exclusive-create wrote nothing: no key file left behind.
     expect(fs.existsSync(filePath)).toBe(false);
+  });
+});
+
+describe('resolveSigningKeyPath / SOLUTION_VERDICT_SIGNING_KEY (env primary, task d0daa18a)', () => {
+  it('falls back to the mirrored generatedDir path when the env projection is absent', () => {
+    expect(resolveSigningKeyPath()).toBe(signingKeyPathFor(resolveGeneratedDir()));
+  });
+
+  it('returns the env-projected key file path verbatim when set', () => {
+    const projected = path.join(tmpHome, 'projected', 'the-key');
+    process.env[SIGNING_KEY_ENV] = projected;
+    expect(resolveSigningKeyPath()).toBe(projected);
+    expect(resolveSigningKeyPath(path.join(tmpHome, 'other-generated'))).toBe(projected);
+  });
+
+  it('getOrCreateSigningKey creates the key AT the projected path and never consults the mirrored dir', () => {
+    const projected = path.join(tmpHome, 'projected-dir', 'signing.key');
+    process.env[SIGNING_KEY_ENV] = projected;
+    const handle = getOrCreateSigningKey(resolveGeneratedDir());
+    expect(handle.filePath).toBe(projected);
+    expect(handle.created).toBe(true);
+    expect(fs.readFileSync(projected).length).toBe(32);
+    expect(fs.statSync(projected).mode & 0o777).toBe(0o600);
+    // The mirrored location must stay untouched (env is authoritative).
+    expect(fs.existsSync(signingKeyPathFor(resolveGeneratedDir()))).toBe(false);
+  });
+
+  it('uses a pre-existing key at the projected path (H1 model: harness projected its own key file)', () => {
+    const consumerGenerated = path.join(tmpHome, 'consumer', GENERATED_DIRNAME);
+    const consumerKeyPath = signingKeyPathFor(consumerGenerated);
+    fs.mkdirSync(consumerGenerated, { recursive: true });
+    const consumerKey = crypto.randomBytes(32);
+    fs.writeFileSync(consumerKeyPath, consumerKey, { mode: 0o600 });
+    process.env[SIGNING_KEY_ENV] = consumerKeyPath;
+
+    const markerId = verdictMarkerId('task-env');
+    const fields = signMarker(resolveGeneratedDir(), markerId, {
+      approvedAt: '2026-05-30T00:00:00.000Z',
+      approvedBy: 'preflight',
+      reportContentHash: sha256Hex('x'),
+    });
+    expect(fields.signature).toBe(
+      expectedSignature(
+        consumerKey,
+        canonicalPayload(markerId, '2026-05-30T00:00:00.000Z', 'preflight', sha256Hex('x')),
+      ),
+    );
+  });
+
+  it('writeVerdict signs with the env-projected key end to end', () => {
+    const projected = path.join(tmpHome, 'consumer-side', GENERATED_DIRNAME, SIGNING_KEY_BASENAME);
+    process.env[SIGNING_KEY_ENV] = projected;
+    const verdictDir = path.join(tmpHome, 'verdicts');
+    process.env.SOLUTION_VERDICT_DIR = verdictDir;
+    try {
+      const verdict = makeVerdict({ id: 'task-env-e2e' });
+      writeVerdict(verdict);
+      const raw = JSON.parse(
+        fs.readFileSync(verdictPath('task-env-e2e'), 'utf8'),
+      ) as Verdict & { alg: string; signature: string };
+      const key = fs.readFileSync(projected);
+      const markerId = verdictMarkerId('task-env-e2e');
+      const contentHash = sha256Hex(
+        JSON.stringify({
+          head: verdict.head,
+          ready: verdict.ready,
+          confidence: verdict.confidence,
+          blockers: verdict.blockers,
+        }),
+      );
+      expect(raw.alg).toBe(SIGNING_ALG);
+      expect(raw.signature).toBe(
+        expectedSignature(
+          key,
+          canonicalPayload(markerId, verdict.timestamp, verdict.source, contentHash),
+        ),
+      );
+    } finally {
+      delete process.env.SOLUTION_VERDICT_DIR;
+    }
   });
 });

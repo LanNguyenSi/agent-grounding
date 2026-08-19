@@ -3,7 +3,7 @@ type: invariant
 title: Solution-acceptance verdict contract — why the marker lives outside the ledger
 description: A "done" verdict is derived from a real preflight+OW run, HEAD-pinned, and written to an XDG state marker outside the agent-writable evidence-ledger because ledger rows are forgeable via ledger_add.
 tags: [solution-acceptance, verdicts, anti-hacking, trust-boundary]
-timestamp: 2026-08-19T10:38:21Z
+timestamp: 2026-08-19T11:34:00Z
 sources:
   - packages/grounding-mcp/src/solution-verdict.ts
   - packages/grounding-mcp/src/verdict-signing.ts
@@ -116,6 +116,15 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
   `resolveGeneratedDir()` (line 131) is `<harness-home>/harness.generated`
   (`GENERATED_DIRNAME`, line 46), so the full path is
   `<harness-home>/harness.generated/.approval-signing.key`.
+- **Env projection (primary since 0.8.0, task d0daa18a)**: when
+  `$SOLUTION_VERDICT_SIGNING_KEY` is set (an absolute path to the key FILE,
+  projected by harness at apply time following its `EVIDENCE_LEDGER_DB`
+  pattern; slice H1 of the task-9b6c4beb Option-2 design),
+  `resolveSigningKeyPath()` (`SIGNING_KEY_ENV`, end of verdict-signing.ts)
+  returns it verbatim and the mirrored resolution below is the FALLBACK for
+  non-harness-managed setups. `getOrCreateSigningKey` (lines 156-193)
+  resolves through it, so `getOrCreate` semantics apply at the projected
+  path too.
 - **`<harness-home>` resolution**: `resolveHarnessHome()` (verdict-signing.ts:100-110),
   mirrors harness `resolveHomeDir`. Precedence, exactly:
   1. `$HARNESS_HOME` env var, if non-empty (also the test-isolation knob).

@@ -61,18 +61,26 @@ const guardDisabled = process.env[DISABLE_ENV] === '1';
 // Captured BEFORE the override below, whatever it was (ambient/real, another
 // tempdir, or unset) — this is what `afterAll` restores.
 const savedHarnessHome = process.env.HARNESS_HOME;
+// Same net for the signing-key env projection (SOLUTION_VERDICT_SIGNING_KEY,
+// task d0daa18a): an ambient projection from the operator's harness apply
+// must never leak into tests, or every signing test would silently use the
+// operator's REAL key file. Deleted per file, restored in afterAll.
+const savedSigningKeyEnv = process.env.SOLUTION_VERDICT_SIGNING_KEY;
 
 let guardTmpDir: string | undefined;
 
 if (!guardDisabled) {
   guardTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'grounding-mcp-harness-home-guard-'));
   process.env.HARNESS_HOME = guardTmpDir;
+  delete process.env.SOLUTION_VERDICT_SIGNING_KEY;
 }
 
 afterAll(() => {
   if (guardDisabled) return;
   if (savedHarnessHome === undefined) delete process.env.HARNESS_HOME;
   else process.env.HARNESS_HOME = savedHarnessHome;
+  if (savedSigningKeyEnv === undefined) delete process.env.SOLUTION_VERDICT_SIGNING_KEY;
+  else process.env.SOLUTION_VERDICT_SIGNING_KEY = savedSigningKeyEnv;
   if (guardTmpDir) fs.rmSync(guardTmpDir, { recursive: true, force: true });
   guardTmpDir = undefined;
 });

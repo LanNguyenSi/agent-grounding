@@ -2,6 +2,16 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-08-19T11:34:00Z, re-verify + extend (task d0daa18a, G1-Nachzug der
+  Option-2-Spec aus 9b6c4beb): documents the new
+  `SOLUTION_VERDICT_SIGNING_KEY` env projection as the PRIMARY signing-key
+  path (harness H1 apply-time projection; mirrored home resolution becomes
+  the fallback). Code anchors re-checked against the branch: the env
+  additions live at the END of verdict-signing.ts and the two in-place
+  lines inside `getOrCreateSigningKey` (156-193) keep every previously
+  restamped line citation valid (verified by resolving the cited symbols
+  again after the change).
+
 - 2026-08-19T10:38:21Z, restamp (task 9b6c4beb, round-2 review fix G2 of
   `.ai/runs/2026-08-19-verdict-signing-producer`): closes R2-M1 (round-2
   review finding: the prior restamp below was correct for commit `2db3098`,
