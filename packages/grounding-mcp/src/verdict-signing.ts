@@ -7,8 +7,10 @@
 // verifyVerdictSignature). This module signs with the SAME key file, the
 // SAME HMAC scheme, and the SAME canonical payload the consumer verifies
 // with, so a marker this package writes satisfies the consumer's signature
-// check without either side depending on the other's package (D-001,
-// .ai/runs/2026-08-19-verdict-signing-producer/03-decisions.md) — the same
+// check without either side depending on the other's package (D-001, task
+// 9b6c4beb / grounding-mcp CHANGELOG 0.8.0: independent mirror chosen over a
+// shared package because it is consistent with the shipped consumer's own
+// design and avoids a new cross-repo architecture decision) — the same
 // independent-mirroring convention `verdictDir()` / `sanitizeVerdictId()`
 // in solution-verdict.ts already use.
 //
@@ -86,9 +88,9 @@ export function verdictMarkerId(id: string): string {
  * seam (`src/runtime/home-dir.ts`): an injectable override for the
  * OPERATOR's `$HOME` the tiers below the env var anchor on, defaulting to
  * `os.homedir()`. Signature-compatible with every existing zero-arg call
- * site. Added (D-005,
- * .ai/runs/2026-08-19-verdict-signing-producer/03-decisions.md) because
- * `vi.spyOn(os, 'homedir')` was tried and confirmed NOT to redirect the
+ * site. Added (D-005, task 9b6c4beb / grounding-mcp CHANGELOG 0.8.0: review
+ * found the deeper home-resolution tiers were only exercised transitively)
+ * because `vi.spyOn(os, 'homedir')` was tried and confirmed NOT to redirect the
  * call inside this module under this package's ESM/vitest setup — an
  * explicit parameter is the only reliable test-injection point for the
  * `~/.harness`-exists / `~/.claude`-legacy / create-default tiers, which

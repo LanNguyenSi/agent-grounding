@@ -11,9 +11,10 @@
 // copying the producer module here would make this suite test the
 // producer's mirror against itself ("the mirror testing the mirror"),
 // which cannot catch a drift between the two independently-mirrored
-// implementations. Per D-001/D-003
-// (.ai/runs/2026-08-19-verdict-signing-producer/03-decisions.md) that drift
-// is exactly the risk this interop suite exists to catch.
+// implementations. Per D-001 (independent mirrors, no package dependency) /
+// D-003 (vendored interop verifier over a hand fixture, so the proof runs
+// in CI), task 9b6c4beb / grounding-mcp CHANGELOG 0.8.0: that drift is
+// exactly the risk this interop suite exists to catch.
 //
 // SOURCE STAMP — transcribed verbatim (constants, control flow, literal
 // reason strings) from:

@@ -67,9 +67,10 @@ export interface Verdict {
   source: string;
   /**
    * Signature algorithm tag; set by `writeVerdict`, which always signs
-   * (see `verdict-signing.ts`, D-002:
-   * .ai/runs/2026-08-19-verdict-signing-producer/03-decisions.md — no
-   * fail-open "unsigned when no key" path). Optional on the type only
+   * (see `verdict-signing.ts`, D-002, task 9b6c4beb / grounding-mcp
+   * CHANGELOG 0.8.0: no fail-open "unsigned when no key" path — that would
+   * reproduce the exact producer-doesn't-sign universal-deny failure this
+   * feature closes). Optional on the type only
    * because a hand-constructed `Verdict` (e.g. in `evaluateSolution`,
    * before it reaches `writeVerdict`) has not been signed yet.
    */
@@ -151,6 +152,23 @@ export async function getHeadSha(repoPath: string): Promise<string | null> {
  * always requires (and, on first use, creates) the shared harness signing
  * key, so this can fail if the key file cannot be read or written. Returns
  * the marker's path.
+ *
+ * Signing failure and a stale marker (F6, D-006, task 9b6c4beb /
+ * grounding-mcp CHANGELOG 0.8.0): `signVerdict` is called BEFORE any write
+ * to `target`. If it throws, this function throws too and `target` is never
+ * touched — a marker already on disk from an earlier, successful
+ * `writeVerdict` call for the same id is left exactly as it was (it is not
+ * deleted, truncated, or otherwise invalidated). That pre-existing marker
+ * may now be stale relative to the caller's intent (e.g. a solver expecting
+ * a fresh not-ready verdict after a broken change still sees the last green
+ * one at the same HEAD). This is a deliberate, documented, NOT a new
+ * behavior change: the same class of residual predates 0.8.0 (any
+ * exception before the write already had this shape), signing only raises
+ * how often the write path can throw. Deleting the stale marker before
+ * rethrowing was considered and rejected: that would add a new destructive
+ * write on an error path in a security-relevant function, for a narrow,
+ * loud (an exception, not a silent success) failure mode, which is a worse
+ * trade than the residual it would close.
  */
 export function writeVerdict(verdict: Verdict): string {
   const target = verdictPath(verdict.id);

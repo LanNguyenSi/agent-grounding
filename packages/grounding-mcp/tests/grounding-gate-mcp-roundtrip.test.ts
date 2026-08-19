@@ -14,6 +14,13 @@
 //   claim_evaluate, claim_evaluate_from_session
 //   solution_evaluate, solution_gate
 //   verify_memory_reference
+//
+// `solution_evaluate`/`solution_gate` write through `writeVerdict`, which
+// always signs (verdict-signing.ts) and resolves + lazily creates a shared
+// harness signing key under `<HARNESS_HOME>/harness.generated/`; this suite
+// also isolates HARNESS_HOME to a tempdir so no test run ever reads or
+// writes the host's real ~/.harness (or ~/.claude fallback) — mirrors
+// solution-verdict.test.ts's isolation pattern.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
@@ -56,6 +63,8 @@ let tmpRoot: string;
 let prevSessionsDir: string | undefined;
 let prevLedgerDb: string | undefined;
 let prevVerdictDir: string | undefined;
+let harnessHomeTmp: string;
+let prevHarnessHome: string | undefined;
 let client: Client;
 let close: () => Promise<void>;
 
@@ -68,6 +77,10 @@ beforeEach(async () => {
   process.env.GROUNDING_MCP_SESSIONS_DIR = join(tmpRoot, 'sessions');
   process.env.EVIDENCE_LEDGER_DB = join(tmpRoot, 'ledger.db');
   process.env.SOLUTION_VERDICT_DIR = join(tmpRoot, 'verdicts');
+
+  prevHarnessHome = process.env.HARNESS_HOME;
+  harnessHomeTmp = mkdtempSync(join(tmpdir(), 'grounding-mcp-gate-harness-home-'));
+  process.env.HARNESS_HOME = harnessHomeTmp;
 
   resetLedgerDb();
   resetStores();
@@ -95,7 +108,10 @@ afterEach(async () => {
   else process.env.EVIDENCE_LEDGER_DB = prevLedgerDb;
   if (prevVerdictDir === undefined) delete process.env.SOLUTION_VERDICT_DIR;
   else process.env.SOLUTION_VERDICT_DIR = prevVerdictDir;
+  if (prevHarnessHome === undefined) delete process.env.HARNESS_HOME;
+  else process.env.HARNESS_HOME = prevHarnessHome;
   rmSync(tmpRoot, { recursive: true, force: true });
+  rmSync(harnessHomeTmp, { recursive: true, force: true });
 });
 
 // ── grounding_start ───────────────────────────────────────────────────────────

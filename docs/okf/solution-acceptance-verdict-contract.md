@@ -100,10 +100,9 @@ every marker `writeVerdict` actually puts on disk carries both, unconditionally.
 Since 0.8.0, `writeVerdict` (solution-verdict.ts:155-161) no longer writes the 7 pinned
 fields alone: it calls `signVerdict(resolveGeneratedDir(), verdict)` (line 157, from the
 new `src/verdict-signing.ts`) BEFORE writing, and persists the signed copy. There is no
-unsigned fallback: signing is unconditional (D-002,
-`.ai/runs/2026-08-19-verdict-signing-producer/03-decisions.md`): an unsigned-when-no-key
-escape hatch would reproduce exactly the "producer doesn't sign" universal-deny failure
-mode this feature exists to close.
+unsigned fallback: signing is unconditional (D-002, task 9b6c4beb / grounding-mcp
+CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly the
+"producer doesn't sign" universal-deny failure mode this feature exists to close.
 
 - **Same key file, same scheme, no package dependency (D-001).** `verdict-signing.ts`
   independently mirrors the harness CONSUMER's signing/verification implementation

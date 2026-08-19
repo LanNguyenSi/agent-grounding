@@ -1,13 +1,15 @@
 // Producer-side signing mirror of harness' HMAC marker signing
 // (verdict-signing.ts). All tests isolate HARNESS_HOME to a tempdir so the
 // signing-key resolution + getOrCreate never touches the host's real
-// ~/.harness (or ~/.claude fallback) — see D-001/D-002,
-// .ai/runs/2026-08-19-verdict-signing-producer/03-decisions.md.
+// ~/.harness (or ~/.claude fallback) — see D-001 (independent mirror, no
+// package dependency) / D-002 (unconditional signing, no unsigned
+// fallback), task 9b6c4beb / grounding-mcp CHANGELOG 0.8.0.
 //
 // The `resolveHarnessHome` precedence tiers beyond the HARNESS_HOME env
 // override (~/.harness-exists, ~/.claude-legacy, default-create) mirror
 // harness `resolveHomeDir` and are exercised below via `resolveHarnessHome`'s
-// injectable `userHome` parameter (D-005, same decisions file). A
+// injectable `userHome` parameter (D-005, same task/CHANGELOG anchor: review
+// found the deeper tiers only transitively tested). A
 // `vi.spyOn(os, 'homedir')` was tried FIRST and confirmed NOT to redirect
 // the call inside verdict-signing.ts under this package's ESM/vitest setup
 // (the resolved path came back as the REAL host home dir, which on this
@@ -19,11 +21,71 @@
 // solution-verdict.test.ts) relies on for isolation — the `userHome` tier
 // tests are additive, not a replacement for that.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+
+// F4b (review round 1): hoisted, test-armed mocks of `node:fs.readFileSync`
+// / `node:fs.writeFileSync` used ONLY by the two "wx-write catch block"
+// tests below, to exercise BOTH branches of `getOrCreateSigningKey`'s
+// exclusive-create failure handling (verdict-signing.ts's wx-write catch
+// block, otherwise uncovered): the lost-the-race EEXIST readback, and its
+// non-EEXIST rethrow. `vi.spyOn(fs, 'readFileSync')` does NOT work for
+// this: same class of failure as the `vi.spyOn(os, 'homedir')` finding
+// above — confirmed by hand (a throwaway spy-based version of this test
+// never observed the spy invoked from inside verdict-signing.ts). Module
+// mocking via `vi.mock('node:fs', ...)` DOES intercept calls made through
+// verdict-signing.ts's `import * as fs from 'node:fs'`, confirmed the same
+// way. Guarded by the two `armedPath` flags below: every other test in this
+// file (both stay null) gets the real, unmodified `node:fs` behavior.
+const fsReadRace = vi.hoisted(() => ({
+  armedPath: null as string | null,
+  armedPayload: null as Buffer | null,
+}));
+const fsWriteFail = vi.hoisted(() => ({ armedPath: null as string | null }));
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  const readFileSync = ((...args: unknown[]) => {
+    const target = args[0];
+    if (fsReadRace.armedPath !== null && target === fsReadRace.armedPath) {
+      const payload = fsReadRace.armedPayload as Buffer;
+      fsReadRace.armedPath = null;
+      fsReadRace.armedPayload = null;
+      // The "concurrent creator": really write the winning key to disk,
+      // in the exact window between the miss-read we are about to report
+      // and getOrCreateSigningKey's own `wx` write, using the SAME
+      // exclusive-create flag a genuine concurrent process would use.
+      actual.writeFileSync(target as string, payload, { mode: 0o600, flag: 'wx' });
+      const err = new Error('ENOENT (simulated concurrent-create race)') as NodeJS.ErrnoException;
+      err.code = 'ENOENT';
+      throw err;
+    }
+    return (actual.readFileSync as (...a: unknown[]) => unknown)(...args);
+  }) as typeof actual.readFileSync;
+  const writeFileSync = ((...args: unknown[]) => {
+    const target = args[0];
+    const opts = args[2] as { flag?: string } | undefined;
+    if (fsWriteFail.armedPath !== null && target === fsWriteFail.armedPath && opts?.flag === 'wx') {
+      fsWriteFail.armedPath = null;
+      // A non-EEXIST failure of the exclusive-create write (e.g. a real
+      // EACCES from a read-only generatedDir) — must propagate, NOT be
+      // swallowed as a lost create race.
+      const err = new Error('EACCES (simulated non-EEXIST wx-write failure)') as NodeJS.ErrnoException;
+      err.code = 'EACCES';
+      throw err;
+    }
+    return (actual.writeFileSync as (...a: unknown[]) => unknown)(...args);
+  }) as typeof actual.writeFileSync;
+  return {
+    ...actual,
+    default: { ...actual.default, readFileSync, writeFileSync },
+    readFileSync,
+    writeFileSync,
+  };
+});
 
 import {
   canonicalPayload,
@@ -42,7 +104,7 @@ import {
   verdictMarkerId,
   VERDICT_MARKER_ID_PREFIX,
 } from '../src/verdict-signing.js';
-import { writeVerdict, type Verdict } from '../src/solution-verdict.js';
+import { verdictPath, writeVerdict, type Verdict } from '../src/solution-verdict.js';
 
 const HEAD_A = 'a'.repeat(40);
 
@@ -334,5 +396,76 @@ describe('writeVerdict (solution-verdict.ts wiring)', () => {
       else process.env.SOLUTION_VERDICT_DIR = savedVerdictDir;
       fs.rmSync(verdictDirTmp, { recursive: true, force: true });
     }
+  });
+});
+
+describe('writeVerdict fail-closed on a signing failure (F4a, D-002 pinned directly)', () => {
+  it('a directory sitting at the key file path makes writeVerdict throw and writes NO marker file', () => {
+    const verdictDirTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'verdict-signing-failclosed-'));
+    const savedVerdictDir = process.env.SOLUTION_VERDICT_DIR;
+    process.env.SOLUTION_VERDICT_DIR = verdictDirTmp;
+    try {
+      const generatedDir = resolveGeneratedDir();
+      // A directory (not a file) at the key path: getOrCreateSigningKey's
+      // `fs.readFileSync(filePath)` throws EISDIR, which is NOT 'ENOENT',
+      // so it rethrows immediately instead of falling through to
+      // "generate a fresh key" — signVerdict, and therefore writeVerdict,
+      // never reaches its write.
+      fs.mkdirSync(signingKeyPathFor(generatedDir), { recursive: true });
+
+      const verdict = makeVerdict({ id: 'fail-closed-task' });
+      expect(() => writeVerdict(verdict)).toThrow();
+      // D-002 fail-closed, pinned directly: no marker file at all — not a
+      // partially-written or unsigned one.
+      expect(fs.existsSync(verdictPath(verdict.id))).toBe(false);
+    } finally {
+      if (savedVerdictDir === undefined) delete process.env.SOLUTION_VERDICT_DIR;
+      else process.env.SOLUTION_VERDICT_DIR = savedVerdictDir;
+      fs.rmSync(verdictDirTmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('getOrCreateSigningKey exclusive-create (wx) failure handling (F4b)', () => {
+  it('EEXIST create-race: a key concurrently created between the miss-read and the wx-write is read back, not clobbered — both converge on the SAME key', () => {
+    const generatedDir = path.join(tmpHome, GENERATED_DIRNAME);
+    const filePath = signingKeyPathFor(generatedDir);
+    const concurrentWinner = crypto.randomBytes(32);
+
+    fsReadRace.armedPath = filePath;
+    fsReadRace.armedPayload = concurrentWinner;
+
+    const handle = getOrCreateSigningKey(generatedDir);
+
+    // The race was consumed (armed exactly once) — confirms this test
+    // actually exercised the injected race rather than silently no-op'ing.
+    expect(fsReadRace.armedPath).toBeNull();
+    // Lost the `wx` race: `created` is false, the returned key is the
+    // concurrent creator's key, read back rather than overwritten.
+    expect(handle.created).toBe(false);
+    expect(handle.key.equals(concurrentWinner)).toBe(true);
+    // Both "callers" converge on the identical on-disk key: our call's
+    // result AND a fresh, unmocked re-read of the file.
+    expect(fs.readFileSync(filePath).equals(concurrentWinner)).toBe(true);
+
+    // A second, wholly normal call (no race) also converges on the exact
+    // same key — the shared-key contract getOrCreateSigningKey exists for.
+    const second = getOrCreateSigningKey(generatedDir);
+    expect(second.created).toBe(false);
+    expect(second.key.equals(concurrentWinner)).toBe(true);
+  });
+
+  it('a non-EEXIST wx-write failure propagates (rethrown, not swallowed as a lost race)', () => {
+    const generatedDir = path.join(tmpHome, GENERATED_DIRNAME);
+    const filePath = signingKeyPathFor(generatedDir);
+
+    fsWriteFail.armedPath = filePath;
+
+    expect(() => getOrCreateSigningKey(generatedDir)).toThrow(/EACCES/);
+    // The armed failure was consumed exactly once — confirms this test
+    // actually reached the wx-write, not some earlier branch.
+    expect(fsWriteFail.armedPath).toBeNull();
+    // The failed exclusive-create wrote nothing: no key file left behind.
+    expect(fs.existsSync(filePath)).toBe(false);
   });
 });
