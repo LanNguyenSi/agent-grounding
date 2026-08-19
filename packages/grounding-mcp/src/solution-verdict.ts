@@ -46,6 +46,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 import { readOwRunCompleteness, type OwRunCompleteness } from './ow-run-completeness.js';
+import { resolveGeneratedDir, signVerdict } from './verdict-signing.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -64,6 +65,17 @@ export interface Verdict {
   timestamp: string;
   /** Which evidence producer derived the verdict (e.g. "preflight"). */
   source: string;
+  /**
+   * Signature algorithm tag; set by `writeVerdict`, which always signs
+   * (see `verdict-signing.ts`, D-002:
+   * .ai/runs/2026-08-19-verdict-signing-producer/03-decisions.md — no
+   * fail-open "unsigned when no key" path). Optional on the type only
+   * because a hand-constructed `Verdict` (e.g. in `evaluateSolution`,
+   * before it reaches `writeVerdict`) has not been signed yet.
+   */
+  alg?: string;
+  /** HMAC-SHA256 hex signature over the harness verdict-marker contract; set alongside `alg`. */
+  signature?: string;
 }
 
 export interface GateResult {
@@ -131,11 +143,20 @@ export async function getHeadSha(repoPath: string): Promise<string | null> {
   }
 }
 
-/** Write (or overwrite) the verdict marker. Returns its path. */
+/**
+ * Write (or overwrite) the verdict marker. Always signs the marker first
+ * (mirrors the harness consumer's `verifyVerdictSignature`, see
+ * `verdict-signing.ts`): the on-disk marker carries `alg` + `signature` in
+ * addition to the 7 pinned fields. No unsigned fallback (D-002) — signing
+ * always requires (and, on first use, creates) the shared harness signing
+ * key, so this can fail if the key file cannot be read or written. Returns
+ * the marker's path.
+ */
 export function writeVerdict(verdict: Verdict): string {
   const target = verdictPath(verdict.id);
+  const signed = signVerdict(resolveGeneratedDir(), verdict);
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, `${JSON.stringify(verdict, null, 2)}\n`, 'utf8');
+  fs.writeFileSync(target, `${JSON.stringify(signed, null, 2)}\n`, 'utf8');
   return target;
 }
 

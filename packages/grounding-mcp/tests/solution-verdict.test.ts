@@ -5,6 +5,12 @@
 // throwaway git repo and point SOLUTION_PREFLIGHT_BIN at a stub that emits
 // fixture preflight JSON, so they need neither the real `preflight` binary nor
 // a network.
+//
+// `writeVerdict` now always signs (verdict-signing.ts) which resolves +
+// lazily creates a shared harness signing key under
+// `<HARNESS_HOME>/harness.generated/`; every test here also isolates
+// HARNESS_HOME to a tempdir so no test run ever reads or writes the host's
+// real ~/.harness (or ~/.claude fallback).
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
@@ -41,17 +47,27 @@ function makeVerdict(over: Partial<Verdict> = {}): Verdict {
 
 let tmpDir: string;
 let savedVerdictDir: string | undefined;
+let harnessHomeTmp: string;
+let savedHarnessHome: string | undefined;
 
 beforeEach(() => {
   savedVerdictDir = process.env.SOLUTION_VERDICT_DIR;
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'solution-verdict-'));
   process.env.SOLUTION_VERDICT_DIR = tmpDir;
+
+  savedHarnessHome = process.env.HARNESS_HOME;
+  harnessHomeTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'solution-verdict-harness-home-'));
+  process.env.HARNESS_HOME = harnessHomeTmp;
 });
 
 afterEach(() => {
   if (savedVerdictDir === undefined) delete process.env.SOLUTION_VERDICT_DIR;
   else process.env.SOLUTION_VERDICT_DIR = savedVerdictDir;
   fs.rmSync(tmpDir, { recursive: true, force: true });
+
+  if (savedHarnessHome === undefined) delete process.env.HARNESS_HOME;
+  else process.env.HARNESS_HOME = savedHarnessHome;
+  fs.rmSync(harnessHomeTmp, { recursive: true, force: true });
 });
 
 describe('sanitizeVerdictId', () => {
