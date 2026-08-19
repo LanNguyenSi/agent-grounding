@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+## 0.8.0, 2026-08-19
+
+### Added
+
+- **`solution_evaluate` now signs the verdict marker.** The marker
+  `writeVerdict` (`src/solution-verdict.ts`) writes to
+  `$SOLUTION_VERDICT_DIR`/`~/.local/state/agent-grounding/solution-verdicts/`
+  carries two new fields, `alg` (`'hmac-sha256-v1'`) and `signature`
+  (HMAC-SHA256 hex), computed by the new `src/verdict-signing.ts`. The
+  producer signs **unconditionally**: there is no unsigned fallback. The
+  signing key lives at `<harness-home>/harness.generated/.approval-signing.key`
+  (`getOrCreate`: read an existing >=32-byte file, else generate and write
+  `crypto.randomBytes(32)` at mode `0600`, race-tolerant against a
+  concurrent creator); `<harness-home>` is resolved with the same
+  precedence the harness consumer uses (`$HARNESS_HOME` env override,
+  else `~/.harness` if it exists, else `~/.claude` if it already carries
+  harness state, else `~/.harness` created on first use). This is an
+  additive change to the on-disk shape: the 7 previously-pinned verdict
+  fields (`id`, `head`, `ready`, `confidence`, `blockers`, `timestamp`,
+  `source`) are unchanged, so existing non-harness readers of the marker
+  are unaffected. Proven against harness' own consumer-side verification
+  logic by a vendored interop suite
+  (`packages/grounding-mcp/tests/interop/`): a real `writeVerdict` marker
+  is accepted, and tampering, cross-id replay, and an unrecognized `alg`
+  are all rejected the same way harness itself rejects them.
+
+  **Release sequencing warning.** `grounding-mcp-v0.8.0` MUST be published
+  to npm and installed on every machine running the `grounding-mcp` MCP
+  server **before** harness task `c7c3f606`
+  (`batch19/sign-verdict-marker`) is merged/released. Once the harness
+  consumer ships, it verifies every solution-acceptance verdict marker's
+  signature before trusting it, and a marker written by a producer older
+  than 0.8.0 carries no `alg`/`signature` at all. That shape does **not**
+  hit the consumer's narrow "genuinely unsigned, not forged" carve-out
+  (which only fires when a required signed field, e.g. `timestamp`, reads
+  blank AND `alg`/`signature` are both absent); a realistic legacy marker
+  still has a valid `timestamp`/`source` and no `alg`/`signature`, which
+  the consumer classifies `forged: true` via its generic "missing
+  signature (legacy pre-signing marker, or forged file)" branch. Releasing
+  harness first therefore denies the completion gate universally for
+  every repo still on a pre-0.8.0 grounding-mcp, not just for genuinely
+  forged markers.
+
 ## 0.7.1, 2026-08-06
 
 ### Changed

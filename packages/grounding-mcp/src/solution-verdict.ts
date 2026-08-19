@@ -46,6 +46,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 import { readOwRunCompleteness, type OwRunCompleteness } from './ow-run-completeness.js';
+import { resolveGeneratedDir, signVerdict } from './verdict-signing.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -64,6 +65,18 @@ export interface Verdict {
   timestamp: string;
   /** Which evidence producer derived the verdict (e.g. "preflight"). */
   source: string;
+  /**
+   * Signature algorithm tag; set by `writeVerdict`, which always signs
+   * (see `verdict-signing.ts`, D-002, task 9b6c4beb / grounding-mcp
+   * CHANGELOG 0.8.0: no fail-open "unsigned when no key" path — that would
+   * reproduce the exact producer-doesn't-sign universal-deny failure this
+   * feature closes). Optional on the type only
+   * because a hand-constructed `Verdict` (e.g. in `evaluateSolution`,
+   * before it reaches `writeVerdict`) has not been signed yet.
+   */
+  alg?: string;
+  /** HMAC-SHA256 hex signature over the harness verdict-marker contract; set alongside `alg`. */
+  signature?: string;
 }
 
 export interface GateResult {
@@ -73,6 +86,18 @@ export interface GateResult {
   currentHead: string | null;
 }
 
+/**
+ * Result of `evaluateSolution`. `verdict` is the PRE-SIGNING object (the 7
+ * pinned fields only — no `alg`/`signature`): `signVerdict` returns a
+ * signed COPY inside `writeVerdict`, and the object referenced here is
+ * never mutated, so the response stays pre-signing. The marker actually
+ * written to `markerPath` (when non-null) is that signed copy and
+ * additionally carries `alg`/`signature`; read the marker file at
+ * `markerPath` directly (JSON.parse) if the signed on-disk shape is what's
+ * needed — `readVerdict` deliberately reconstructs only the 7 pinned
+ * fields and drops `alg`/`signature`. See "Verdict marker signing" in
+ * README.md.
+ */
 export interface EvaluateResult {
   verdict: Verdict | null;
   markerPath: string | null;
@@ -131,11 +156,37 @@ export async function getHeadSha(repoPath: string): Promise<string | null> {
   }
 }
 
-/** Write (or overwrite) the verdict marker. Returns its path. */
+/**
+ * Write (or overwrite) the verdict marker. Always signs the marker first
+ * (mirrors the harness consumer's `verifyVerdictSignature`, see
+ * `verdict-signing.ts`): the on-disk marker carries `alg` + `signature` in
+ * addition to the 7 pinned fields. No unsigned fallback (D-002) — signing
+ * always requires (and, on first use, creates) the shared harness signing
+ * key, so this can fail if the key file cannot be read or written. Returns
+ * the marker's path.
+ *
+ * Signing failure and a stale marker (F6, D-006, task 9b6c4beb /
+ * grounding-mcp CHANGELOG 0.8.0): `signVerdict` is called BEFORE any write
+ * to `target`. If it throws, this function throws too and `target` is never
+ * touched — a marker already on disk from an earlier, successful
+ * `writeVerdict` call for the same id is left exactly as it was (it is not
+ * deleted, truncated, or otherwise invalidated). That pre-existing marker
+ * may now be stale relative to the caller's intent (e.g. a solver expecting
+ * a fresh not-ready verdict after a broken change still sees the last green
+ * one at the same HEAD). This is a deliberate, documented, NOT a new
+ * behavior change: the same class of residual predates 0.8.0 (any
+ * exception before the write already had this shape), signing only raises
+ * how often the write path can throw. Deleting the stale marker before
+ * rethrowing was considered and rejected: that would add a new destructive
+ * write on an error path in a security-relevant function, for a narrow,
+ * loud (an exception, not a silent success) failure mode, which is a worse
+ * trade than the residual it would close.
+ */
 export function writeVerdict(verdict: Verdict): string {
   const target = verdictPath(verdict.id);
+  const signed = signVerdict(resolveGeneratedDir(), verdict);
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, `${JSON.stringify(verdict, null, 2)}\n`, 'utf8');
+  fs.writeFileSync(target, `${JSON.stringify(signed, null, 2)}\n`, 'utf8');
   return target;
 }
 
@@ -511,11 +562,14 @@ async function oldestChangeAuthorDate(repoPath: string): Promise<string | null> 
  * parseable stdout is a normal not-ready verdict, not a failure.
  *
  * The verdict also reflects OW process-completeness: after preflight is parsed,
- * `owBlockersFor(repoPath)` is folded into `ready` and `blockers` ONLY (no new
- * Verdict field — the 7-key shape {id, head, ready, confidence, blockers,
- * timestamp, source} is pinned by the harness consumer). `ready` is true iff
- * preflight is ready AND there are no OW blockers; `blockers` is the preflight
- * blockers followed by the (prefixed) OW blockers.
+ * `owBlockersFor(repoPath)` is folded into `ready` and `blockers` ONLY — the
+ * OW arm adds no field of its own, so OW state flows entirely through the
+ * existing `ready` and `blockers`. (Signing, which DOES add `alg`/`signature`,
+ * happens later, only inside `writeVerdict` below; the `verdict` object this
+ * function returns is still the pre-signing 7-key shape — see
+ * `EvaluateResult` above.) `ready` is true iff preflight is ready AND there
+ * are no OW blockers; `blockers` is the preflight blockers followed by the
+ * (prefixed) OW blockers.
  *
  * Fails closed: when preflight is absent or its output is unusable, returns an
  * `error` and writes NO marker (so the gate stays closed via "no verdict").
@@ -577,10 +631,13 @@ export async function evaluateSolution(
     }
   }
 
-  // Fold the OW process-completeness arm into ready + blockers ONLY. No new
-  // Verdict field: the consumer pins the 7-key shape, so OW state flows through
-  // the existing `ready` and `blockers`. For a non-OW repo under the default
-  // (auto) knob, owBlockers is [] and the output stays byte-identical.
+  // Fold the OW process-completeness arm into ready + blockers ONLY: the OW
+  // arm adds no field of its own, so OW state flows through the existing
+  // `ready` and `blockers`. (Signing, which DOES add `alg`/`signature`, only
+  // happens later inside `writeVerdict` below — the `verdict` object built
+  // here is still the pre-signing 7-key shape; see `EvaluateResult`.) For a
+  // non-OW repo under the default (auto) knob, owBlockers is [] and the
+  // output stays byte-identical.
   const owBlockers = await owBlockersFor(repoPath);
   const ready = pf.ready && owBlockers.length === 0;
   const blockers = [...pf.blockers, ...owBlockers];

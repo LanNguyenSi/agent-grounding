@@ -5,6 +5,12 @@
 // throwaway git repo and point SOLUTION_PREFLIGHT_BIN at a stub that emits
 // fixture preflight JSON, so they need neither the real `preflight` binary nor
 // a network.
+//
+// `writeVerdict` now always signs (verdict-signing.ts) which resolves +
+// lazily creates a shared harness signing key under
+// `<HARNESS_HOME>/harness.generated/`; every test here also isolates
+// HARNESS_HOME to a tempdir so no test run ever reads or writes the host's
+// real ~/.harness (or ~/.claude fallback).
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
@@ -41,17 +47,27 @@ function makeVerdict(over: Partial<Verdict> = {}): Verdict {
 
 let tmpDir: string;
 let savedVerdictDir: string | undefined;
+let harnessHomeTmp: string;
+let savedHarnessHome: string | undefined;
 
 beforeEach(() => {
   savedVerdictDir = process.env.SOLUTION_VERDICT_DIR;
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'solution-verdict-'));
   process.env.SOLUTION_VERDICT_DIR = tmpDir;
+
+  savedHarnessHome = process.env.HARNESS_HOME;
+  harnessHomeTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'solution-verdict-harness-home-'));
+  process.env.HARNESS_HOME = harnessHomeTmp;
 });
 
 afterEach(() => {
   if (savedVerdictDir === undefined) delete process.env.SOLUTION_VERDICT_DIR;
   else process.env.SOLUTION_VERDICT_DIR = savedVerdictDir;
   fs.rmSync(tmpDir, { recursive: true, force: true });
+
+  if (savedHarnessHome === undefined) delete process.env.HARNESS_HOME;
+  else process.env.HARNESS_HOME = savedHarnessHome;
+  fs.rmSync(harnessHomeTmp, { recursive: true, force: true });
 });
 
 describe('sanitizeVerdictId', () => {
@@ -174,6 +190,36 @@ describe('evaluateSolution (producer)', () => {
     expect(res.verdict).toMatchObject({ id: 'task-1', head, ready: true, source: 'preflight' });
     // and the gate passes at that HEAD
     expect(evaluateGate('task-1', head).allowed).toBe(true);
+  });
+
+  it('the MCP response verdict is pre-signing (no alg/signature); the written marker carries both (G4, R2-L1/L2)', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-ready-signed.sh',
+      '#!/bin/sh\necho \'{"ready":true,"confidence":0.9,"blockers":[]}\'\n',
+    );
+    const res = await evaluateSolution('task-1', repo, { timestamp: '2026-05-30T00:00:00.000Z' });
+    expect(res.error).toBeUndefined();
+    expect(res.markerPath).not.toBeNull();
+
+    // Response divergence, documented on `EvaluateResult` and in the README's
+    // "Solution-acceptance gate" section: the MCP response's `verdict` is the
+    // PRE-SIGNING object `writeVerdict` was called with, not the signed
+    // marker it wrote to disk.
+    expect(res.verdict).not.toHaveProperty('alg');
+    expect(res.verdict).not.toHaveProperty('signature');
+
+    // The on-disk marker DOES carry both, added by `writeVerdict`'s call to
+    // `signVerdict`. Deliberately read the raw file here, not `readVerdict()`
+    // — `readVerdict` reconstructs a fresh 7-key object (solution-verdict.ts)
+    // and would silently drop `alg`/`signature` even if the file has them, so
+    // it can't tell "written but stripped on read" apart from "never
+    // written". Reading the file is what actually pins the divergence this
+    // test exists to catch.
+    const onDisk = JSON.parse(fs.readFileSync(res.markerPath as string, 'utf8'));
+    expect(onDisk).toHaveProperty('alg');
+    expect(onDisk).toHaveProperty('signature');
+    expect(typeof onDisk.alg).toBe('string');
+    expect(typeof onDisk.signature).toBe('string');
   });
 
   it('records a not-ready verdict even when preflight exits non-zero (JSON on stdout)', async () => {

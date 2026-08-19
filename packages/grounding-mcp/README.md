@@ -36,6 +36,7 @@ The other packages in this repo are CLI-first. That works fine for scripted invo
 | Session JSON | `~/.grounding-mcp/sessions/<id>.json` | `GROUNDING_MCP_SESSIONS_DIR` |
 | Evidence ledger | `~/.evidence-ledger/ledger.db` (owned by `evidence-ledger`) | `EVIDENCE_LEDGER_DB` |
 | Solution verdicts | `~/.local/state/agent-grounding/solution-verdicts/<id>.json` (`$XDG_STATE_HOME` honored) | `SOLUTION_VERDICT_DIR` |
+| Verdict signing key | `<harness-home>/harness.generated/.approval-signing.key` (`<harness-home>` resolves like the harness consumer: `~/.harness` if it exists, else `~/.claude` if it already carries harness state, else `~/.harness` created on first use) | `HARNESS_HOME` |
 
 A phase that ends up with `'skipped'` status (because no steps mapped to it for the chosen keyword, e.g. a non-service domain skips runtime-inspection) counts as satisfied for `claim_evaluate_from_session`. Otherwise the gate would block forever on prerequisites the agent can't actually complete.
 
@@ -46,8 +47,10 @@ Verifier-gated "done": completion is **earned from a real preflight run, not cla
 The verdict marker is the contract a consumer (e.g. harness, gating task-finishing tools) reads:
 
 ```json
-{ "id": "task-42", "head": "<40-hex sha>", "ready": true, "confidence": 0.9, "blockers": [], "timestamp": "...", "source": "preflight" }
+{ "id": "task-42", "head": "<40-hex sha>", "ready": true, "confidence": 0.9, "blockers": [], "timestamp": "...", "source": "preflight", "alg": "hmac-sha256-v1", "signature": "<64-hex HMAC-SHA256>" }
 ```
+
+`solution_evaluate`'s MCP response returns the verdict as it looked *before* signing (the 7-key shape above, minus `alg`/`signature`); the on-disk marker file additionally carries `alg` and `signature`, added by `writeVerdict` (see "Verdict marker signing" below) after the response value was already built.
 
 Anti-hacking contract:
 
@@ -56,13 +59,19 @@ Anti-hacking contract:
 3. **HEAD-pinned**: a verdict counts only at the HEAD it was produced at; any rework shifts HEAD and invalidates a green verdict.
 4. **No stale green**: a not-ready run overwrites a prior green marker.
 
-The marker lives outside the agent-writable evidence-ledger on purpose (a ledger row is forgeable via `ledger_add`). Requirements / knobs: the `preflight` binary on `PATH` (override with `SOLUTION_PREFLIGHT_BIN`); fails closed (writes no verdict) when preflight is unavailable. Documented residual: a shell-capable agent could still hand-write the marker file; closing that (signing, or a harness-owned dir checked by a PreToolUse hook) is the harness wiring follow-up. Composing additional ground-truth (CI, review, unresolved hypotheses from the session) into the verdict is the next layer.
+The marker lives outside the agent-writable evidence-ledger on purpose (a ledger row is forgeable via `ledger_add`). Requirements / knobs: the `preflight` binary on `PATH` (override with `SOLUTION_PREFLIGHT_BIN`); fails closed (writes no verdict) when preflight is unavailable.
+
+### Verdict marker signing (0.8.0)
+
+Since 0.8.0, `writeVerdict` signs the marker unconditionally (HMAC-SHA256, no unsigned fallback) before writing it: `alg` is the versioned tag `hmac-sha256-v1`, and `signature` is computed over the marker's fields with a key at `<harness-home>/harness.generated/.approval-signing.key` (see Storage above; the key is created on first use if absent). A signature-checking consumer (e.g. harness) rejects a naive hand-typed JSON file, one with no `alg`/`signature` at all or a wrong signature, as forged.
+
+This closes casual/accidental forgery, and it closes silent tampering: mutating any signed field after signing (intentionally or by a bug) invalidates the signature and is rejected. It does **not** close a shell-capable, same-UID forger: the signing key is read (and, on a fresh machine, first created) under the SAME UID that runs `grounding-mcp` and the same UID a shell-capable agent runs under, so such an agent could still read that key and compute a valid signature itself, exactly the same same-UID threat model the harness consumer's own signing already documents. This is pragmatic defense-in-depth, not a new authorization boundary. Composing additional ground-truth (CI, review, unresolved hypotheses from the session) into the verdict is the next layer.
 
 The verdict pins to the committed HEAD, so edits made after a green `solution_evaluate` do not shift HEAD: re-run it after any change. preflight's own clean-worktree check fails a dirty tree, so a fresh `solution_evaluate` on uncommitted work yields a not-ready verdict.
 
 ### Orchestrator-workflow (OW) process-completeness arm
 
-Beyond preflight's technical checks, `solution_evaluate` also folds in **OW process-completeness**: it reads the repo's active `.ai/runs/<date-slug>/` run and requires the handoff to be accepted, the review to recommend accept, and no unresolved high/critical findings. This flows into the **same** verdict fields, `ready` and `blockers` (each OW blocker is prefixed `orchestrator-workflow: `), so the marker keeps its pinned 7-key shape and consumers need no change. `ready` is true only when **both** preflight is ready **and** there are no OW blockers.
+Beyond preflight's technical checks, `solution_evaluate` also folds in **OW process-completeness**: it reads the repo's active `.ai/runs/<date-slug>/` run and requires the handoff to be accepted, the review to recommend accept, and no unresolved high/critical findings. This flows into the **same** verdict fields, `ready` and `blockers` (each OW blocker is prefixed `orchestrator-workflow: `), so the OW arm adds no verdict field of its own. `ready` is true only when **both** preflight is ready **and** there are no OW blockers.
 
 The active run must also **claim the current change** (0.6.0): a run whose `00-goal.md` carries a `<!-- solution-acceptance: run-base = <sha> -->` marker (the repo HEAD at run creation) binds precisely — the recorded base must resolve, be an ancestor of the current HEAD, and not lie behind the fork point of the current change (merge-base with the remote default branch). A legacy run without the marker is downgraded tolerantly to a day-granular date check: it blocks only when the run dir's date prefix is older than the author date of the first commit of the current change. Either way a stale accepted run can no longer keep the gate green for later, unrelated work; the fail directions and residuals (same-day staleness for legacy runs, no fork-point check without a remote, deliberate false-block when evaluating at an already-pushed default-branch tip — the gate is pre-merge by design) are documented on `owBindingBlockers` in `src/solution-verdict.ts`. The `run-base` marker is written by the orchestrator-workflow kit starting with agent-dx task `ow-review-2026-07-01/run-binding-kit`; markerless runs stay on the heuristic path.
 
