@@ -6,16 +6,18 @@
 //
 // The `resolveHarnessHome` precedence tiers beyond the HARNESS_HOME env
 // override (~/.harness-exists, ~/.claude-legacy, default-create) mirror
-// harness `resolveHomeDir` and are deliberately NOT separately unit-tested
-// here: they read `os.homedir()` directly (no test-injectable override, by
-// design — grounding-mcp has no `--home` CLI flag to mirror), and a
-// `vi.spyOn(os, 'homedir')` was tried and confirmed NOT to redirect the
-// call inside verdict-signing.ts under this package's ESM/vitest setup (the
-// resolved path came back as the REAL host home dir, which on this
+// harness `resolveHomeDir` and are exercised below via `resolveHarnessHome`'s
+// injectable `userHome` parameter (D-005, same decisions file). A
+// `vi.spyOn(os, 'homedir')` was tried FIRST and confirmed NOT to redirect
+// the call inside verdict-signing.ts under this package's ESM/vitest setup
+// (the resolved path came back as the REAL host home dir, which on this
 // particular dev machine has a real ~/.harness — exactly the real-home
-// touch this suite must not risk). The single HARNESS_HOME-env test below
-// is what every other test in this file (and in solution-verdict.test.ts)
-// actually relies on for isolation, so it is the one covered here.
+// touch this suite must not risk); `userHome` is the explicit test-injection
+// seam that replaces that broken approach, mirroring harness'
+// `resolveHomeDir(opts)`'s own `opts.userHome`. The HARNESS_HOME-env test
+// below is still what every OTHER test in this file (and in
+// solution-verdict.test.ts) relies on for isolation — the `userHome` tier
+// tests are additive, not a replacement for that.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as crypto from 'node:crypto';
@@ -27,6 +29,8 @@ import {
   canonicalPayload,
   getOrCreateSigningKey,
   GENERATED_DIRNAME,
+  HARNESS_HOME_DIRNAME,
+  LEGACY_HARNESS_HOME_DIRNAME,
   resolveGeneratedDir,
   resolveHarnessHome,
   sha256Hex,
@@ -104,6 +108,74 @@ describe('canonicalPayload', () => {
 describe('resolveHarnessHome', () => {
   it('honors the HARNESS_HOME env override', () => {
     expect(resolveHarnessHome()).toBe(tmpHome);
+  });
+
+  it('the HARNESS_HOME env override wins even when a userHome override is also passed', () => {
+    // Precedence: env beats userHome unconditionally — userHome only
+    // matters for the tiers BELOW the env check.
+    const otherUserHome = fs.mkdtempSync(path.join(os.tmpdir(), 'verdict-signing-otheruser-'));
+    try {
+      expect(resolveHarnessHome(otherUserHome)).toBe(tmpHome);
+    } finally {
+      fs.rmSync(otherUserHome, { recursive: true, force: true });
+    }
+  });
+
+  describe('userHome tiers (D-005: HARNESS_HOME env unset, isolated via the injectable userHome override)', () => {
+    let userHome: string;
+
+    beforeEach(() => {
+      delete process.env.HARNESS_HOME;
+      userHome = fs.mkdtempSync(path.join(os.tmpdir(), 'verdict-signing-userhome-'));
+    });
+
+    afterEach(() => {
+      fs.rmSync(userHome, { recursive: true, force: true });
+      // outer beforeEach/afterEach restore HARNESS_HOME from savedHarnessHome
+    });
+
+    it('<userHome>/.harness exists on disk -> used', () => {
+      const newHarnessDir = path.join(userHome, HARNESS_HOME_DIRNAME);
+      fs.mkdirSync(newHarnessDir, { recursive: true });
+      expect(resolveHarnessHome(userHome)).toBe(newHarnessDir);
+    });
+
+    it('no .harness, <userHome>/.claude carries harness.generated/ -> legacy fallback', () => {
+      const legacyDir = path.join(userHome, LEGACY_HARNESS_HOME_DIRNAME);
+      fs.mkdirSync(path.join(legacyDir, 'harness.generated'), { recursive: true });
+      expect(resolveHarnessHome(userHome)).toBe(legacyDir);
+    });
+
+    it('no .harness, <userHome>/.claude carries harness.yaml -> legacy fallback', () => {
+      const legacyDir = path.join(userHome, LEGACY_HARNESS_HOME_DIRNAME);
+      fs.mkdirSync(legacyDir, { recursive: true });
+      fs.writeFileSync(path.join(legacyDir, 'harness.yaml'), 'policy_packs: []\n', 'utf8');
+      expect(resolveHarnessHome(userHome)).toBe(legacyDir);
+    });
+
+    it('neither tier present -> defaults to <userHome>/.harness (create-on-first-use)', () => {
+      const newHarnessDir = path.join(userHome, HARNESS_HOME_DIRNAME);
+      expect(fs.existsSync(newHarnessDir)).toBe(false);
+      expect(resolveHarnessHome(userHome)).toBe(newHarnessDir);
+    });
+
+    it('a bare <userHome>/.claude WITHOUT harness state is NOT claimed (not somebody else\'s dir)', () => {
+      const legacyDir = path.join(userHome, LEGACY_HARNESS_HOME_DIRNAME);
+      // e.g. Claude Code's own settings.json living there, no harness.yaml
+      // and no harness.generated/.
+      fs.mkdirSync(legacyDir, { recursive: true });
+      fs.writeFileSync(path.join(legacyDir, 'settings.json'), '{}\n', 'utf8');
+      const newHarnessDir = path.join(userHome, HARNESS_HOME_DIRNAME);
+      expect(resolveHarnessHome(userHome)).toBe(newHarnessDir);
+    });
+
+    it('.harness (new) is preferred over a ALSO-present legacy .claude with harness state', () => {
+      const newHarnessDir = path.join(userHome, HARNESS_HOME_DIRNAME);
+      fs.mkdirSync(newHarnessDir, { recursive: true });
+      const legacyDir = path.join(userHome, LEGACY_HARNESS_HOME_DIRNAME);
+      fs.mkdirSync(path.join(legacyDir, 'harness.generated'), { recursive: true });
+      expect(resolveHarnessHome(userHome)).toBe(newHarnessDir);
+    });
   });
 });
 
