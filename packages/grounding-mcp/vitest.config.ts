@@ -2,12 +2,14 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    // Package-wide regression guard (F1, review round 1): pins HARNESS_HOME
-    // to a per-file tempdir when a test file starts with it unset, so a
-    // test that forgets its own isolation can never fall through to the
-    // host's real ~/.harness (or ~/.claude) signing key. See
-    // tests/setup/harness-home-guard.ts for the full rationale and why it
-    // does not interfere with tests that manage HARNESS_HOME themselves.
+    // Package-wide regression guard (review rounds 1+2): unconditionally
+    // pins HARNESS_HOME to a per-file tempdir at setup-module load (opt-out
+    // only via HARNESS_HOME_GUARD_DISABLE=1), so a test file that forgets
+    // its own isolation can never fall through to the host's real
+    // ~/.harness (or ~/.claude) signing key, even when an ambient
+    // HARNESS_HOME is exported. See tests/setup/harness-home-guard.ts for
+    // the rationale and tests/setup/harness-home-guard.self.test.ts for
+    // the self-test that fails if this entry is removed.
     setupFiles: ['./tests/setup/harness-home-guard.ts'],
     coverage: {
       provider: 'v8',
