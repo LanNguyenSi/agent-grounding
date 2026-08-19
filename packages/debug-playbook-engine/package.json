@@ -21,7 +21,7 @@
   ],
   "main": "dist/index.js",
   "bin": {
-    "debug-playbook": "./dist/index.js"
+    "debug-playbook": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",

@@ -22,10 +22,10 @@
   ],
   "type": "module",
   "bin": {
-    "understanding-gate": "./dist/cli.js",
-    "understanding-gate-claude-hook": "./dist/adapters/claude-code/user-prompt-submit.js",
-    "understanding-gate-claude-stop": "./dist/adapters/claude-code/stop.js",
-    "understanding-gate-claude-pre-tool-use": "./dist/adapters/claude-code/pre-tool-use.js"
+    "understanding-gate": "dist/cli.js",
+    "understanding-gate-claude-hook": "dist/adapters/claude-code/user-prompt-submit.js",
+    "understanding-gate-claude-stop": "dist/adapters/claude-code/stop.js",
+    "understanding-gate-claude-pre-tool-use": "dist/adapters/claude-code/pre-tool-use.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

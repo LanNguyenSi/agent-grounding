@@ -21,7 +21,7 @@
   ],
   "type": "module",
   "bin": {
-    "review-claim-gate": "./dist/cli.js"
+    "review-claim-gate": "dist/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

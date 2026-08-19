@@ -21,7 +21,7 @@
   ],
   "type": "module",
   "bin": {
-    "grounding-mcp": "./dist/server.js"
+    "grounding-mcp": "dist/server.js"
   },
   "main": "./dist/server.js",
   "types": "./dist/server.d.ts",

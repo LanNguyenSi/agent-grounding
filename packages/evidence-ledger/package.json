@@ -20,7 +20,7 @@
   ],
   "type": "module",
   "bin": {
-    "ledger": "./dist/cli.js"
+    "ledger": "dist/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
