@@ -6,6 +6,10 @@
 
 ### Added
 
+- Dependency pin moved to `@lannguyensi/runtime-reality-checker@0.3.2`
+  (0.3.1 was never accepted by the registry; see that package's 0.3.2
+  entry).
+
 - **`bin` entry normalized to `dist/server.js` (no `./` prefix)** (task
   256d65a6): npm >= 11 strips `./`-prefixed bin targets from the manifest it
   submits at publish time ("auto-corrected ... and removed"), which both

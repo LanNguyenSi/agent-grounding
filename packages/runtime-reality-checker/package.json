@@ -1,6 +1,6 @@
 {
   "name": "@lannguyensi/runtime-reality-checker",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Checks if actual runtime state matches documentation and assumptions; ships a PreToolUse policy PoC",
   "license": "MIT",
   "engines": {
