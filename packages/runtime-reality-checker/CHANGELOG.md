@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.2, 2026-08-19
+
+- Version-only re-release: 0.3.1 was never accepted by the registry (every
+  publish attempt, across CI-token, session, and fresh 2FA-backed auth
+  paths, was rejected with a generic policy 403; a provenance statement
+  for 0.3.1 had already been registered in the sigstore transparency log
+  by the first CI attempt). Content is identical to the intended 0.3.1
+  below.
+
 ## 0.3.1, 2026-08-06
 
 - `bin` entry normalized to `dist/policy/pre-tool-use.js` (no `./` prefix;

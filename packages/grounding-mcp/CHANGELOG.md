@@ -6,6 +6,12 @@
 
 ### Added
 
+- Dependency pin moved to `@lannguyensi/runtime-reality-checker@0.3.0`
+  (the published version). 0.3.1/0.3.2 are registry-held (package-specific
+  server-side block, npm support ticket pending) and carry no API delta
+  this package consumes; the rrc-internal symlink-containment fix (#142)
+  follows with the next pin bump once the hold is lifted.
+
 - **`bin` entry normalized to `dist/server.js` (no `./` prefix)** (task
   256d65a6): npm >= 11 strips `./`-prefixed bin targets from the manifest it
   submits at publish time ("auto-corrected ... and removed"), which both
