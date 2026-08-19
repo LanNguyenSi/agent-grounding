@@ -2,6 +2,43 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-08-19T10:38:21Z, restamp (task 9b6c4beb, round-2 review fix G2 of
+  `.ai/runs/2026-08-19-verdict-signing-producer`): closes R2-M1 (round-2
+  review finding: the prior restamp below was correct for commit `2db3098`,
+  but the very fix commit that landed it, `c4a89d9`, immediately made it
+  stale again by growing `writeVerdict`'s docblock with the new F6/D-006
+  stale-marker-on-signing-failure paragraph, and separately regressed the
+  `EvaluateResult` docblock the same commit touched). All 38
+  `solution-verdict.ts`/`verdict-signing.ts` line citations in this doc were
+  individually re-resolved against the current file (grep the cited symbol,
+  confirm it sits at the cited line; not a constant-offset guess) and 38
+  needed correcting; 25 others (8 into `solution-verdict.ts`/`server.ts`
+  whose citations sit before every shift, 17 into the untouched
+  `ow-run-completeness.ts`) were re-checked and confirmed still exact,
+  no edit needed. Two shift bands account for the movement:
+  `solution-verdict.ts` citations at/after `writeVerdict` (line 182, was
+  155) shifted +27 (a +1 from the `Verdict.alg` docblock rewording below,
+  landed by this same task's round-2 fix G3, then +26 more from
+  `writeVerdict`'s new docblock paragraph); `verdict-signing.ts` citations
+  at/after the D-001 comment (line 10) shifted +2 (D-001/D-005 provenance
+  text reworded away from the `.ai/runs/...` path per F3, same as this doc's
+  own prior sweep already did). The "7-key shape is pinned by the harness
+  consumer" citation (`lines 536-537`, echo `line 602`) also moved content,
+  not just position: round-2 fix G3 reworded both the `evaluateSolution`
+  docblock paragraph and its inline echo to state precisely what they now
+  mean (the OW arm adds no field of its own; the *returned* `verdict` stays
+  pre-signing, `writeVerdict`'s `alg`/`signature` addition is separate and
+  applies only to the on-disk marker) after a round-2 finding (R2-L1) that
+  the old wording still read as "the whole marker is pinned to 7 keys",
+  contradicting the `alg`/`signature` fields two sections above; this doc's
+  citation now points at the reworded text (`lines 562-563`, echo
+  `lines 631-632`), which still supports the same claim this doc makes.
+  `okf-kit check --json docs/okf` (v0.4.0) re-run against the updated
+  bundle: exit 0, 0 errors, warnings/notices unchanged from the prior sweep
+  below (same 9 pre-existing `sources-fresh` staleness warnings in the 5
+  OTHER docs untouched by this task; `solution-acceptance-verdict-contract.md`
+  itself produced zero findings, same as before).
+
 - 2026-08-19T09:24:20Z, re-verification sweep + new section (task 9b6c4beb,
   T-003 of `.ai/runs/2026-08-19-verdict-signing-producer`):
   solution-acceptance-verdict-contract re-checked line-for-line against

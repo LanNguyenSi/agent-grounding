@@ -86,6 +86,15 @@ export interface GateResult {
   currentHead: string | null;
 }
 
+/**
+ * Result of `evaluateSolution`. `verdict` is the PRE-SIGNING object (the 7
+ * pinned fields only — no `alg`/`signature`): signing happens later, inside
+ * `writeVerdict`, after this return value has already been built. The
+ * marker actually written to `markerPath` (when non-null) is the SIGNED
+ * copy and additionally carries `alg`/`signature`; use `readVerdict` if the
+ * signed on-disk shape is what's needed. See "Verdict marker signing" in
+ * README.md.
+ */
 export interface EvaluateResult {
   verdict: Verdict | null;
   markerPath: string | null;
@@ -550,11 +559,14 @@ async function oldestChangeAuthorDate(repoPath: string): Promise<string | null> 
  * parseable stdout is a normal not-ready verdict, not a failure.
  *
  * The verdict also reflects OW process-completeness: after preflight is parsed,
- * `owBlockersFor(repoPath)` is folded into `ready` and `blockers` ONLY (no new
- * Verdict field — the 7-key shape {id, head, ready, confidence, blockers,
- * timestamp, source} is pinned by the harness consumer). `ready` is true iff
- * preflight is ready AND there are no OW blockers; `blockers` is the preflight
- * blockers followed by the (prefixed) OW blockers.
+ * `owBlockersFor(repoPath)` is folded into `ready` and `blockers` ONLY — the
+ * OW arm adds no field of its own, so OW state flows entirely through the
+ * existing `ready` and `blockers`. (Signing, which DOES add `alg`/`signature`,
+ * happens later, only inside `writeVerdict` below; the `verdict` object this
+ * function returns is still the pre-signing 7-key shape — see
+ * `EvaluateResult` above.) `ready` is true iff preflight is ready AND there
+ * are no OW blockers; `blockers` is the preflight blockers followed by the
+ * (prefixed) OW blockers.
  *
  * Fails closed: when preflight is absent or its output is unusable, returns an
  * `error` and writes NO marker (so the gate stays closed via "no verdict").
@@ -616,10 +628,13 @@ export async function evaluateSolution(
     }
   }
 
-  // Fold the OW process-completeness arm into ready + blockers ONLY. No new
-  // Verdict field: the consumer pins the 7-key shape, so OW state flows through
-  // the existing `ready` and `blockers`. For a non-OW repo under the default
-  // (auto) knob, owBlockers is [] and the output stays byte-identical.
+  // Fold the OW process-completeness arm into ready + blockers ONLY: the OW
+  // arm adds no field of its own, so OW state flows through the existing
+  // `ready` and `blockers`. (Signing, which DOES add `alg`/`signature`, only
+  // happens later inside `writeVerdict` below — the `verdict` object built
+  // here is still the pre-signing 7-key shape; see `EvaluateResult`.) For a
+  // non-OW repo under the default (auto) knob, owBlockers is [] and the
+  // output stays byte-identical.
   const owBlockers = await owBlockersFor(repoPath);
   const ready = pf.ready && owBlockers.length === 0;
   const blockers = [...pf.blockers, ...owBlockers];

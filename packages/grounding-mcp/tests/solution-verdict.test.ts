@@ -192,6 +192,36 @@ describe('evaluateSolution (producer)', () => {
     expect(evaluateGate('task-1', head).allowed).toBe(true);
   });
 
+  it('the MCP response verdict is pre-signing (no alg/signature); the written marker carries both (G4, R2-L1/L2)', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-ready-signed.sh',
+      '#!/bin/sh\necho \'{"ready":true,"confidence":0.9,"blockers":[]}\'\n',
+    );
+    const res = await evaluateSolution('task-1', repo, { timestamp: '2026-05-30T00:00:00.000Z' });
+    expect(res.error).toBeUndefined();
+    expect(res.markerPath).not.toBeNull();
+
+    // Response divergence, documented on `EvaluateResult` and in the README's
+    // "Solution-acceptance gate" section: the MCP response's `verdict` is the
+    // PRE-SIGNING object `writeVerdict` was called with, not the signed
+    // marker it wrote to disk.
+    expect(res.verdict).not.toHaveProperty('alg');
+    expect(res.verdict).not.toHaveProperty('signature');
+
+    // The on-disk marker DOES carry both, added by `writeVerdict`'s call to
+    // `signVerdict`. Deliberately read the raw file here, not `readVerdict()`
+    // — `readVerdict` reconstructs a fresh 7-key object (solution-verdict.ts)
+    // and would silently drop `alg`/`signature` even if the file has them, so
+    // it can't tell "written but stripped on read" apart from "never
+    // written". Reading the file is what actually pins the divergence this
+    // test exists to catch.
+    const onDisk = JSON.parse(fs.readFileSync(res.markerPath as string, 'utf8'));
+    expect(onDisk).toHaveProperty('alg');
+    expect(onDisk).toHaveProperty('signature');
+    expect(typeof onDisk.alg).toBe('string');
+    expect(typeof onDisk.signature).toBe('string');
+  });
+
   it('records a not-ready verdict even when preflight exits non-zero (JSON on stdout)', async () => {
     process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
       'stub-notready.sh',

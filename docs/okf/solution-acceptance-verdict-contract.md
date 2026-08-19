@@ -3,7 +3,7 @@ type: invariant
 title: Solution-acceptance verdict contract — why the marker lives outside the ledger
 description: A "done" verdict is derived from a real preflight+OW run, HEAD-pinned, and written to an XDG state marker outside the agent-writable evidence-ledger because ledger rows are forgeable via ledger_add.
 tags: [solution-acceptance, verdicts, anti-hacking, trust-boundary]
-timestamp: 2026-08-19T09:24:20Z
+timestamp: 2026-08-19T10:38:21Z
 sources:
   - packages/grounding-mcp/src/solution-verdict.ts
   - packages/grounding-mcp/src/verdict-signing.ts
@@ -29,14 +29,14 @@ Four properties hold, stated verbatim as the anti-hacking contract in the header
 
 1. **Derived, not claimed** — `ready` comes from preflight's real run; the caller
    supplies no result.
-2. **Producer != solver**: `evaluateSolution` (line 544) *runs* preflight; the check
+2. **Producer != solver**: `evaluateSolution` (line 574) *runs* preflight; the check
    set is taken from the repo's committed `.preflight.json`, not from arguments, so an
    agent cannot weaken the gate at call time.
 3. **HEAD-pinned** — a verdict counts only at the HEAD it was produced at; any rework
-   shifts HEAD and invalidates a green verdict (`evaluateGate`, lines 225-232, compares
+   shifts HEAD and invalidates a green verdict (`evaluateGate`, lines 252-259, compares
    `verdict.head !== currentHead`).
 4. **No stale green** — a not-ready run overwrites a prior green marker (`writeVerdict`,
-   line 159, unconditionally overwrites via `fs.writeFileSync`).
+   line 186, unconditionally overwrites via `fs.writeFileSync`).
 
 The reason the marker sits outside the ledger is stated exactly at lines 19-21:
 
@@ -50,7 +50,7 @@ is a trust-boundary decision: anything the agent can write as part of its soluti
 
 ## Where it's enforced
 
-### Marker location: `verdictDir()` (solution-verdict.ts:103-110)
+### Marker location: `verdictDir()` (solution-verdict.ts:113-120)
 
 Resolution order, exactly:
 
@@ -63,10 +63,10 @@ Resolution order, exactly:
    return path.join(base, 'agent-grounding', 'solution-verdicts');
    ```
 
-`verdictPath(id)` (line 127) is `path.join(verdictDir(), \`${sanitizeVerdictId(id)}.json\`)`.
+`verdictPath(id)` (line 137) is `path.join(verdictDir(), \`${sanitizeVerdictId(id)}.json\`)`.
 One JSON file per `id`, deliberately outside the repo and outside the ledger.
 
-### Path-traversal guard: `sanitizeVerdictId` (solution-verdict.ts:118-125)
+### Path-traversal guard: `sanitizeVerdictId` (solution-verdict.ts:128-135)
 
 ```js
 const cleaned = id.replace(/[^A-Za-z0-9._-]/g, '_');
@@ -84,11 +84,11 @@ must be sanitised before reaching the filesystem.
 
 ### The verdict shape (7 pinned keys + 2 additive signing fields)
 
-`Verdict` (lines 53-79): the 7 pinned keys `{ id, head, ready, confidence, blockers,
+`Verdict` (lines 53-80): the 7 pinned keys `{ id, head, ready, confidence, blockers,
 timestamp, source }` (lines 53-67), plus, since 0.8.0, two additive OPTIONAL fields
-`alg?` (line 76) and `signature?` (line 78). `head` is a 40-hex sha; `ready` is derived;
+`alg?` (line 77) and `signature?` (line 79). `head` is a 40-hex sha; `ready` is derived;
 `source` is `'preflight'`. The 7-key shape is pinned by the harness consumer; see the
-comment at lines 536-537 (and its echo at line 602). New arms (OW, below) fold into
+comment at lines 562-563 (and its echo at lines 631-632). New arms (OW, below) fold into
 `ready`/`blockers` only; they do NOT add fields. `alg`/`signature` are the one addition
 to that pinning rule, and deliberately additive-only (see "Verdict marker signing"
 below): they are optional on the TypeScript type only because a hand-constructed
@@ -97,8 +97,8 @@ every marker `writeVerdict` actually puts on disk carries both, unconditionally.
 
 ### Verdict marker signing (0.8.0): `verdict-signing.ts`
 
-Since 0.8.0, `writeVerdict` (solution-verdict.ts:155-161) no longer writes the 7 pinned
-fields alone: it calls `signVerdict(resolveGeneratedDir(), verdict)` (line 157, from the
+Since 0.8.0, `writeVerdict` (solution-verdict.ts:182-188) no longer writes the 7 pinned
+fields alone: it calls `signVerdict(resolveGeneratedDir(), verdict)` (line 184, from the
 new `src/verdict-signing.ts`) BEFORE writing, and persists the signed copy. There is no
 unsigned fallback: signing is unconditional (D-002, task 9b6c4beb / grounding-mcp
 CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly the
@@ -110,20 +110,20 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
   on harness branch `batch19/sign-verdict-marker`) field-for-field and byte-for-byte,
   the same independent-mirroring convention `verdictDir()`/`sanitizeVerdictId()` above
   already use, with no runtime dependency between the two repos' packages.
-- **Key path**: `signingKeyPathFor(generatedDir)` (verdict-signing.ts:134-136) is
-  `<generatedDir>/.approval-signing.key` (`SIGNING_KEY_BASENAME`, line 41), and
-  `resolveGeneratedDir()` (line 129) is `<harness-home>/harness.generated`
-  (`GENERATED_DIRNAME`, line 44), so the full path is
+- **Key path**: `signingKeyPathFor(generatedDir)` (verdict-signing.ts:136-138) is
+  `<generatedDir>/.approval-signing.key` (`SIGNING_KEY_BASENAME`, line 43), and
+  `resolveGeneratedDir()` (line 131) is `<harness-home>/harness.generated`
+  (`GENERATED_DIRNAME`, line 46), so the full path is
   `<harness-home>/harness.generated/.approval-signing.key`.
-- **`<harness-home>` resolution**: `resolveHarnessHome()` (verdict-signing.ts:98-108),
+- **`<harness-home>` resolution**: `resolveHarnessHome()` (verdict-signing.ts:100-110),
   mirrors harness `resolveHomeDir`. Precedence, exactly:
   1. `$HARNESS_HOME` env var, if non-empty (also the test-isolation knob).
-  2. `~/.harness/` if it already exists on disk (`existsDir`, lines 110-116).
+  2. `~/.harness/` if it already exists on disk (`existsDir`, lines 112-118).
   3. `~/.claude/` (legacy) if it carries harness state, either `harness.yaml` or a
-     `harness.generated/` subdir (`legacyHasHarnessState`, lines 118-126).
+     `harness.generated/` subdir (`legacyHasHarnessState`, lines 120-128).
   4. else `~/.harness/`, the create-on-first-use default (no `--home` CLI-flag tier
      here; grounding-mcp has no such flag to mirror).
-- **`getOrCreateSigningKey(generatedDir)` (verdict-signing.ts:154-191).** Reads an
+- **`getOrCreateSigningKey(generatedDir)` (verdict-signing.ts:156-193).** Reads an
   existing key file when it is `>= 32` bytes; otherwise generates
   `crypto.randomBytes(32)` and writes it at mode `0600` with the exclusive `wx` flag
   (an `EEXIST` from a concurrent creator is read back rather than clobbered: race
@@ -131,15 +131,15 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
   shorter than 32 bytes is treated as corrupt and unconditionally regenerated
   (truncated-key repair).
 - **Signed payload**: `canonicalPayload`/`signMarker`/`signVerdict` (verdict-signing.ts:
-  206-213, 228-246, 282-299). `markerId = verdictMarkerId(verdict.id)` =
-  `'solution-verdict-' + id` (`VERDICT_MARKER_ID_PREFIX`, line 64); the HMAC-SHA256 hex
+  208-215, 230-248, 284-301). `markerId = verdictMarkerId(verdict.id)` =
+  `'solution-verdict-' + id` (`VERDICT_MARKER_ID_PREFIX`, line 66); the HMAC-SHA256 hex
   signature is computed over `JSON.stringify({ markerId, approvedAt, approvedBy,
   reportContentHash })` in that FIXED key order, with `approvedAt <- verdict.timestamp`,
   `approvedBy <- verdict.source`, and `reportContentHash` = a sha256 hex digest of
   `JSON.stringify({ head, ready, confidence, blockers })` (also fixed key order), so
   the signature transitively covers `head`/`ready`/`confidence`/`blockers` even though
   they have no dedicated slot in the payload tuple. `alg` is the versioned tag
-  `'hmac-sha256-v1'` (`SIGNING_ALG`, line 38). Binding `markerId` (hence `verdict.id`)
+  `'hmac-sha256-v1'` (`SIGNING_ALG`, line 40). Binding `markerId` (hence `verdict.id`)
   into the signed bytes is what makes a copy-and-relabel of a validly-signed marker
   onto a different id's lookup path fail signature verification.
 - **On a harness-less machine, this creates `~/.harness/harness.generated/` and the key
@@ -197,18 +197,18 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
 
 `evaluateSolution` fails **closed**: an invalid `id`, an unresolvable git HEAD, a missing
 `preflight` binary (ENOENT), or unparseable preflight output all return an `error` and
-write NO marker (lines 549-599), so the gate stays denied via "no verdict recorded". The
-binary is `SOLUTION_PREFLIGHT_BIN ?? 'preflight'` (line 565); preflight exits non-zero
+write NO marker (lines 579-629), so the gate stays denied via "no verdict recorded". The
+binary is `SOLUTION_PREFLIGHT_BIN ?? 'preflight'` (line 595); preflight exits non-zero
 when not-ready but still prints JSON, so a non-zero exit with parseable stdout is a normal
 not-ready verdict, not a failure. `writeVerdict`, and therefore signing, is only ever
-reached (line 618) on a successfully parsed, non-error result.
+reached (line 651) on a successfully parsed, non-error result.
 
 ### The OW process-completeness arm (cross-repo coupling)
 
 Beyond preflight's technical floor, `solution_evaluate` folds in **orchestrator-workflow
-(OW) process-completeness** via `owBlockersFor` (line 303), whose blockers are folded into
-`ready` and `blockers` only (lines 601-607): `ready = pf.ready && owBlockers.length === 0`
-(line 606). Each OW blocker is prefixed `orchestrator-workflow: ` (line 317).
+(OW) process-completeness** via `owBlockersFor` (line 330), whose blockers are folded into
+`ready` and `blockers` only (lines 631-640): `ready = pf.ready && owBlockers.length === 0`
+(line 639). Each OW blocker is prefixed `orchestrator-workflow: ` (line 344).
 
 `ow-run-completeness.ts` is a **pure, side-effect-free reader** (no subprocess, no
 mutation — comment line 3, spelled out again at lines 9-11: "This module only READS...
@@ -250,16 +250,16 @@ machine-readable `<!-- solution-acceptance: <field> = <value> -->` marker wins; 
 the field is entirely absent does it fall back to the `## <heading>` prose value. A `TODO`
 or malformed marker surfaces its own blocker and never silently falls back (fail-closed).
 
-**Change binding** (`owBindingBlockers`, solution-verdict.ts:361-410): completeness alone
+**Change binding** (`owBindingBlockers`, solution-verdict.ts:388-437): completeness alone
 would let one old accepted run keep the gate green for every later change, so the active
 run must also *claim the current change*. New-kit runs carry a `run-base` sha in
 `00-goal.md`; it must (1) resolve to a commit here, (2) be an ancestor of HEAD, and (3)
 not lie strictly behind the fork point (merge-base of HEAD with the remote default branch).
-`RUN_BASE_SHA = /^[0-9a-f]{7,40}$/i` (line 324) validates the agent-writable value BEFORE
+`RUN_BASE_SHA = /^[0-9a-f]{7,40}$/i` (line 351) validates the agent-writable value BEFORE
 any git call (argv-injection guard). Legacy markerless runs downgrade to a day-granular
-date heuristic (lines 401-409). The knob `<repoPath>/.ai/solution-acceptance.json`
+date heuristic (lines 428-436). The knob `<repoPath>/.ai/solution-acceptance.json`
 `{ "orchestratorWorkflow": "auto"|"on"|"off" }` resolves **fail-SAFE** to `auto` on any
-missing/unparseable/invalid config (`resolveOwKnob`, lines 271-281); a malformed file can
+missing/unparseable/invalid config (`resolveOwKnob`, lines 298-308); a malformed file can
 never silently disable the gate.
 
 ## What breaks it
@@ -288,7 +288,7 @@ never silently disable the gate.
   change. preflight's own clean-worktree check also fails a dirty tree, so a fresh
   evaluate on uncommitted work is not-ready.
 - **Evaluating at an already-pushed default-branch tip.** Pre-merge by design: the binding
-  arm false-blocks (fork == HEAD), which is deliberate and pinned by a test (lines 353-360).
+  arm false-blocks (fork == HEAD), which is deliberate and pinned by a test (lines 380-386).
   The remedy in the blocker text — start a new run — matches the ship-flow, which evaluates
   before pushing.
 - **Marker-shadowing in run files.** First marker match wins; a quoted mention of marker
