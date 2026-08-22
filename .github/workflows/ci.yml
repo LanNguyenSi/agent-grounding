@@ -84,6 +84,17 @@ jobs:
         # disposable temp directories.
         run: npm run test:check-deps
 
+      - name: OKF citation resolver unit tests
+        # Fixture-based unit tests for the mechanical `path:N[-M]` (and
+        # `:N`, -`N`/–`N`, (`N`) continuation-ref) citation resolver
+        # (scripts/okf-citations-resolve.mjs) that okf-staleness.yml runs
+        # warn-only against the real docs/okf bundle. Node core (fs/path)
+        # plus node:test/assert only, no installed dependency, matching
+        # the sibling checkers above; the fixtures are disposable and under
+        # scripts/okf-citations-resolve-fixtures/, never the repo's real
+        # docs/okf.
+        run: npm run test:check-okf-citations
+
       - name: Build
         # Uses the root `build` script (which topo-orders the wrapped libs
         # before everything else). A bare `npm run build --workspaces`

@@ -3,7 +3,7 @@ type: runbook
 title: Merge-approval gate — labels, keys, and when it actually blocks
 description: How the merge-approval Check-Run maps five review:* PR labels to merge_approval booleans, keys evidence by the PR HEAD BRANCH NAME, and blocks only when required in branch protection — which on agent-grounding master it is not, so it is advisory in fact today.
 tags: [merge-approval, review-claim-gate, ci, runbook, labels]
-timestamp: 2026-08-22T04:45:51Z
+timestamp: 2026-08-22T06:05:30Z
 sources:
   - .github/workflows/merge-approval.yml
   - packages/review-claim-gate/README.md

@@ -129,11 +129,45 @@ jobs:
         # that shifts line numbers inside a still-fresh source file — the
         # exact class of drift PR #184 caught by hand in this bundle's
         # `path:N[-M]` citations. This is a no-dependency, mechanical spike
-        # at closing that gap: it resolves every citation and warns when
-        # the target file is missing, the range exceeds the file, or the
-        # start line is blank (or, for a non-markdown target, only a
-        # closing brace/bracket). It does not check whether the cited line
-        # is the semantically right one (see the script's own header for
-        # the documented limits of a mechanical-only check); never block on
-        # it, this step stays warn-only like the check above.
-        run: node scripts/okf-citations-resolve.mjs
+        # at closing that gap: it resolves every citation (including the
+        # bundle's `:N`, -`N`/–`N`, and (`N`) continuation-ref shorthands)
+        # and warns when the target file is missing, the range exceeds the
+        # file, or the start line is blank (or, for a non-markdown target,
+        # only a closing brace/bracket). It does not check whether the
+        # cited line is the semantically right one (see the script's own
+        # header for the documented limits of a mechanical-only check);
+        # never block on it, this step stays warn-only like the check
+        # above, mirroring its json-report -> step-summary + ::warning
+        # shape.
+        shell: bash
+        run: |
+          # --silent: `npm run` otherwise prints a "> ... check:okf-citations"
+          # banner to stdout before the script's own output, which would
+          # corrupt the redirected JSON.
+          npm run check:okf-citations --silent -- --json > okf-citations-report.json
+
+          jq -e . okf-citations-report.json > /dev/null
+
+          findings=$(jq '.findings | length' okf-citations-report.json)
+          docs=$(jq '.docFiles | length' okf-citations-report.json)
+          unresolved=$(jq '.unresolved | length' okf-citations-report.json)
+
+          {
+            echo "## OKF citation resolver (\`scripts/okf-citations-resolve.mjs\`), warn-only spike"
+            echo ""
+            echo "${findings} finding(s) across ${docs} doc(s) scanned, ${unresolved} citation(s) ambiguous (not evaluated)."
+            echo ""
+            if [ "${findings}" -gt 0 ]; then
+              echo '```'
+              jq -r '.findings[] | "\(.doc)  cites \(.citation)  [\(.rule)]: \(.message)"' okf-citations-report.json
+              echo '```'
+            else
+              echo "Clean, no findings."
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          jq -r '.findings[] | "\(.doc) cites \(.citation) [\(.rule)]"' okf-citations-report.json | while IFS= read -r line; do
+            echo "::warning title=OKF citation drift::${line}"
+          done
+
+          exit 0

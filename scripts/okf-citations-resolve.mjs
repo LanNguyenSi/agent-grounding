@@ -54,7 +54,35 @@
  * citation is reported separately as "unresolved (ambiguous)" — informational
  * only, not counted as a finding — rather than guessed at or false-flagged
  * as missing. A citation resolved by none of the above, with zero candidates
- * at step 5, is reported as `missing-file`.
+ * at step 5, is reported as `missing-file`. A citedPath containing a `..`
+ * segment is rejected outright (`path-traversal-rejected`) without ever
+ * being resolved, so a malformed or hostile citation cannot walk resolution
+ * outside the repo.
+ *
+ * Continuation citations. Once a sentence has stated a full `path:N`
+ * citation, this bundle's prose habitually repeats just the line (or
+ * range) for a later reference in the same sentence rather than retyping
+ * the path, in three forms actually used in docs/okf:
+ *   - `` `:N` `` or `` `:N-M` `` — a bare colon-prefixed line/range
+ *   - `` -`M` `` / `` –`M` `` — a hyphen- or en-dash-led bare line, the
+ *     tail half of a `` `path:N`-`M` `` split range
+ *   - `` (`N`) `` — a parenthesized bare line
+ * Each of these resolves against `governing`: the nearest *preceding*
+ * citation (full or itself a continuation) that resolved to a real file,
+ * scanned in document order. `governing` resets to none whenever the
+ * citation immediately before it failed to resolve, was ambiguous, or was
+ * out of scope (leading `/`) — a continuation never silently inherits a
+ * stale or unrelated path from further up the doc. A continuation with no
+ * governing citation at all (e.g. very start of a doc) is skipped, not
+ * flagged: there is nothing to validate it against.
+ *
+ * A continuation is further split into two roles (see
+ * collectContinuationAtoms): "fresh" (a genuinely new start line, checked
+ * the same four ways as a full citation's start) versus "extension" (only
+ * ever the tail `M` of a split range whose start was already checked) —
+ * an extension gets *only* the range-exceeds-file check, never
+ * blank/closing-brace, since a range legitimately ending on a closing
+ * brace is normal, not drift.
  *
  * Usage:
  *   node scripts/okf-citations-resolve.mjs [--root <dir>] [--json] [--fail-on-warn]
@@ -70,6 +98,14 @@ import { fileURLToPath } from "node:url";
 
 const CITATION_RE =
   /([\w./-]+\.(?:ts|js|mjs|md|yml|yaml|json)):(\d+)(?:-(\d+))?/g;
+// Continuation citation forms (see the "Continuation citations" doc block
+// above). Each requires the backtick delimiter as part of the match so it
+// can never overlap a CITATION_RE match: a full citation's regex match
+// never includes the surrounding backticks, and none of these three
+// require a `path.ext` prefix before the digits.
+const CONT_COLON_RE = /`:(\d+)(?:-(\d+))?`/g;
+const CONT_DASH_RE = /[-–]`(\d+)`/g;
+const CONT_PAREN_RE = /\(`(\d+)`\)/g;
 const CLOSING_ONLY_EXTS = new Set(["ts", "js", "mjs", "yml", "yaml", "json"]);
 const CLOSING_BRACE_RE = /^[)\]}][;,]?$/;
 const DOC_DIRS = ["docs/okf", "docs/testing"];
@@ -81,6 +117,11 @@ const EXCLUDED_DIRS = new Set([
   "coverage",
   ".next",
   ".turbo",
+  // This script's own disposable test fixtures: a small, fake docs/okf +
+  // src/ tree under scripts/okf-citations-resolve-fixtures/ with filenames
+  // (target.ts, note.md) that could otherwise collide with a repo-wide
+  // basename search (resolution step 5) for a real docs/okf citation.
+  "okf-citations-resolve-fixtures",
 ]);
 
 function scriptDefaultRoot() {
@@ -88,11 +129,14 @@ function scriptDefaultRoot() {
   return resolvePath(here, "..");
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const opts = { root: null, json: false, failOnWarn: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--root") {
+      if (argv[i + 1] === undefined) {
+        throw new Error("--root requires a value");
+      }
       opts.root = argv[i + 1];
       i += 1;
     } else if (arg === "--json") {
@@ -112,6 +156,11 @@ function isFile(path) {
   } catch {
     return false;
   }
+}
+
+/** True when citedPath has a literal `..` path segment. */
+function hasParentSegment(citedPath) {
+  return citedPath.split("/").includes("..");
 }
 
 function findDocFiles(root) {
@@ -224,7 +273,8 @@ function findPriorQualifiedCitation(content, beforeIndex, citedPath) {
  * (leading `/`), `{ path }` on a definitive single resolution, `{ ambiguous:
  * true, candidates }` when more than one plausible target exists and none of
  * the higher-priority strategies picked one, or `null` when nothing at all
- * matches.
+ * matches. Callers must reject a citedPath with a `..` segment (see
+ * hasParentSegment) before calling this; it is not re-checked here.
  */
 function resolveCitation(root, docPath, docContent, docSources, citedPath, matchIndex) {
   if (citedPath.startsWith("/")) {
@@ -302,32 +352,163 @@ function checkTarget(citedPath, startLine, endLine, resolvedPath) {
   return null;
 }
 
+/**
+ * Collects every continuation-citation atom (see the "Continuation
+ * citations" doc block above) in `content`, sorted by document position.
+ *
+ * Each atom is tagged with a role:
+ *   - "cont-fresh": establishes a new start line (optionally with its own
+ *     embedded end, e.g. `` `:75-78` ``), checked the same way as a full
+ *     citation's start (blank / closing-brace / range-exceeds).
+ *   - "cont-ext": purely extends the *end* of whatever start line came
+ *     immediately before it (a `` -`M` `` / `` –`M` `` tail, or a `` `:M` ``
+ *     directly preceded by a `-`/`–`) — e.g. the `264` half of `` `src/cli
+ *     .ts:260`-`264` ``. Ending a range on a closing brace is completely
+ *     normal, so an extension is checked ONLY for range-exceeds-file, never
+ *     blank/closing-brace (that would misflag every range that legitimately
+ *     ends at a function's closing `}`).
+ * A colon-form match (`` `:N` ``) is "cont-ext" exactly when the nearest
+ * non-whitespace character before its opening backtick is `-` or `–`;
+ * otherwise it is "cont-fresh". Dash-form (`` -`M` ``/`` –`M` ``) is always
+ * "cont-ext" by construction. Paren-form (`` (`N`) ``) is always
+ * "cont-fresh": nothing in this bundle uses it as a range tail, and a
+ * parenthetical reads as its own standalone pointer.
+ */
+function collectContinuationAtoms(content) {
+  const atoms = [];
+
+  const colonRe = new RegExp(CONT_COLON_RE.source, "g");
+  let m;
+  while ((m = colonRe.exec(content)) !== null) {
+    const before = content.slice(0, m.index).trimEnd();
+    if (/[-–]$/.test(before)) {
+      atoms.push({
+        kind: "cont-ext",
+        index: m.index,
+        value: m[2] ? Number(m[2]) : Number(m[1]),
+      });
+    } else {
+      atoms.push({
+        kind: "cont-fresh",
+        index: m.index,
+        startLine: Number(m[1]),
+        endLine: m[2] ? Number(m[2]) : null,
+      });
+    }
+  }
+
+  const dashRe = new RegExp(CONT_DASH_RE.source, "g");
+  while ((m = dashRe.exec(content)) !== null) {
+    atoms.push({ kind: "cont-ext", index: m.index, value: Number(m[1]) });
+  }
+
+  const parenRe = new RegExp(CONT_PAREN_RE.source, "g");
+  while ((m = parenRe.exec(content)) !== null) {
+    atoms.push({ kind: "cont-fresh", index: m.index, startLine: Number(m[1]), endLine: null });
+  }
+
+  return atoms;
+}
+
 function scanDoc(root, docPath) {
   const content = readFileSync(docPath, "utf8");
   const sources = parseFrontmatterSources(content);
   const findings = [];
   const unresolved = [];
 
+  const fullAtoms = [];
   const re = new RegExp(CITATION_RE.source, "g");
   let m;
   while ((m = re.exec(content)) !== null) {
-    const citedPath = m[1];
-    const startLine = Number(m[2]);
-    const endLine = m[3] ? Number(m[3]) : null;
+    fullAtoms.push({
+      kind: "full",
+      index: m.index,
+      citedPath: m[1],
+      startLine: Number(m[2]),
+      endLine: m[3] ? Number(m[3]) : null,
+    });
+  }
+
+  const atoms = [...fullAtoms, ...collectContinuationAtoms(content)].sort(
+    (a, b) => a.index - b.index,
+  );
+
+  // `governing`: nearest preceding citation (full or continuation) that
+  // resolved to a real file; see the "Continuation citations" doc block
+  // above for the reset rules. `lastStartLine`: the start line a "cont-ext"
+  // atom extends into a range; tracks the most recent full or cont-fresh
+  // atom's own startLine, scoped together with `governing`.
+  let governing = null;
+  let lastStartLine = null;
+
+  for (const atom of atoms) {
+    if (atom.kind === "cont-ext") {
+      if (!governing || lastStartLine === null) continue; // nothing to extend
+      const citation = `${governing.citedPath}:${lastStartLine}-${atom.value} (continuation)`;
+      const problem = checkTarget(governing.citedPath, lastStartLine, atom.value, governing.resolvedPath);
+      if (problem) {
+        findings.push({
+          doc: relative(root, docPath),
+          citation,
+          resolvedTo: relative(root, governing.resolvedPath),
+          rule: problem.rule,
+          message: problem.message,
+        });
+      }
+      continue; // governing and lastStartLine both carry over unchanged
+    }
+
+    if (atom.kind === "cont-fresh") {
+      if (!governing) continue; // nothing to validate a bare continuation against
+      const { startLine, endLine } = atom;
+      const citation = `${governing.citedPath}:${startLine}${endLine ? "-" + endLine : ""} (continuation)`;
+      const problem = checkTarget(governing.citedPath, startLine, endLine, governing.resolvedPath);
+      if (problem) {
+        findings.push({
+          doc: relative(root, docPath),
+          citation,
+          resolvedTo: relative(root, governing.resolvedPath),
+          rule: problem.rule,
+          message: problem.message,
+        });
+      }
+      lastStartLine = startLine;
+      continue; // governing (same file) carries over unchanged
+    }
+
+    const { citedPath, startLine, endLine } = atom;
     const citation = `${citedPath}:${startLine}${endLine ? "-" + endLine : ""}`;
 
-    const resolution = resolveCitation(root, docPath, content, sources, citedPath, m.index);
+    if (hasParentSegment(citedPath)) {
+      findings.push({
+        doc: relative(root, docPath),
+        citation,
+        rule: "path-traversal-rejected",
+        message: `citedPath contains a ".." segment and was rejected without resolving: ${citedPath}`,
+      });
+      governing = null;
+      lastStartLine = null;
+      continue;
+    }
+
+    const resolution = resolveCitation(root, docPath, content, sources, citedPath, atom.index);
 
     if (!resolution) {
       findings.push({
         doc: relative(root, docPath),
         citation,
         rule: "missing-file",
-        message: `could not resolve ${citedPath} (tried doc sources, repo-root, doc-relative, nearest prior qualified mention, repo-wide search) — no candidate file exists`,
+        message: `could not resolve ${citedPath}: tried doc sources, repo-root, doc-relative, nearest prior qualified mention, repo-wide search; no candidate file exists`,
       });
+      governing = null;
+      lastStartLine = null;
       continue;
     }
-    if (resolution.skip) continue;
+    if (resolution.skip) {
+      governing = null;
+      lastStartLine = null;
+      continue;
+    }
     if (resolution.ambiguous) {
       unresolved.push({
         doc: relative(root, docPath),
@@ -335,6 +516,8 @@ function scanDoc(root, docPath) {
         reason: "ambiguous",
         candidates: resolution.candidates,
       });
+      governing = null;
+      lastStartLine = null;
       continue;
     }
 
@@ -348,6 +531,8 @@ function scanDoc(root, docPath) {
         message: problem.message,
       });
     }
+    governing = { citedPath, resolvedPath: resolution.path };
+    lastStartLine = startLine;
   }
 
   return { findings, unresolved };

@@ -2,6 +2,24 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-08-22T06:05:30Z, okf-citations-resolve follow-up fix round (task
+  28ee6911): merge-approval-gate-mechanics.md's README.md citation fix
+  (line 74-78, shifted to 75-78; commit 085e062, prior round of this same
+  task) changed doc content without a restamp or log entry; restamped
+  here. Extended scripts/okf-citations-resolve.mjs to also resolve the
+  bundle's colon, dash, and parenthesized continuation-citation shorthands
+  (~21 instances across claim-gate-vs-review-claim-gate.md and
+  evidence-ledger-session-key-shapes.md), distinguishing a genuinely new
+  start line from the tail of a split range (a range legitimately ending
+  on a closing brace is not drift, unlike a citation that starts there).
+  `npm run check:okf-citations` against the extended resolver reports 0
+  findings at HEAD (one pre-existing ambiguous review-claim-gate cli.ts
+  reference in this log's own 2026-08-05 entry below, unresolvable
+  between four same-named cli.ts files and left as-is, out of scope for
+  prose in a log). No citation content changed as a result; the extended
+  checks confirm the bundle's continuation refs, not just its full
+  citations, are clean.
+
 - 2026-08-22T04:54:02Z, docs-freshness audit round-2 review fix (task 4f61601d,
   medium/low batch): merge-approval-gate-mechanics.md hard-gate bullet
   (107-110) said the Merge button is blocked "until all five labels are
