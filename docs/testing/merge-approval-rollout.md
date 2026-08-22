@@ -29,12 +29,21 @@ branch and visible in both the PR UI and the Check-Run summary.
 
 ## What is NOT enforced yet
 
-The `evidence_logged` label is an honour-system tick: nothing in CI
-cross-checks that actual evidence exists for that task id. Iteration 2
-replaces the label with a **committed evidence file**
-(`.agent-grounding/evidence/<task-id>.jsonl`) exported by the reviewer
-from their local evidence-ledger. See follow-up task
-[`5ea6d7cf`](https://agent-tasks.opentriologue.ai/tasks/5ea6d7cf-51ee-4669-9832-2f58a44d424c).
+Iteration 2 has shipped on the CLI/action side: the `review-claim-gate`
+action auto-detects a **committed evidence file**
+(`.agent-grounding/evidence/<task-id>.jsonl`) in the checked-out workspace
+and counts it, with no workflow wiring needed. When the reviewer commits
+that file via `review-claim-gate export`, CI does cross-check that actual
+evidence exists for the task id.
+
+What remains honour-system is the `review:evidence-logged` label
+force-override: adding that label sets `evidence_logged=true` regardless of
+whether a committed evidence file backs it up, the same as the other four
+label-driven prereqs (`tests_pass`, `review_checklist_complete`,
+`no_unresolved_review_comments`, `scope_matches_task`), which still have no
+CI-side check beyond the reviewer's own label tick. See follow-up task
+[`5ea6d7cf`](https://agent-tasks.opentriologue.ai/tasks/5ea6d7cf-51ee-4669-9832-2f58a44d424c)
+for tracking history.
 
 ## Making the check Required
 

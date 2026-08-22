@@ -3,7 +3,7 @@ type: overview
 title: The grounding stack — where to read, and how releases are split
 description: Pointer doc — the root README already diagrams the whole stack; this entry adds the release topology (four version-locked packages under one root tag, eight independently-versioned ones) that the diagram does not show.
 tags: [overview, monorepo, releases, versioning, pointer]
-timestamp: 2026-08-05T15:56:24Z
+timestamp: 2026-08-22T00:00:00Z
 sources:
   - README.md
   - CHANGELOG.md
@@ -41,8 +41,8 @@ anyone who assumes one monorepo means one version:
 - `@lannguyensi/understanding-gate` (tags `understanding-gate-vX.Y.Z`, published
   by `publish-understanding-gate.yml`, so its cadence never bumps the four
   locked packages)
-- `@lannguyensi/grounding-mcp` (`0.7.0`)
-- `@lannguyensi/runtime-reality-checker` (`0.3.0`)
+- `@lannguyensi/grounding-mcp` (`0.8.0`)
+- `@lannguyensi/runtime-reality-checker` (`0.3.2`)
 - `@lannguyensi/review-claim-gate` (`0.1.5`)
 - `@lannguyensi/grounding-sdk`, `@lannguyensi/debug-playbook-engine`,
   `@lannguyensi/domain-router`, `@lannguyensi/readme-first-resolver`

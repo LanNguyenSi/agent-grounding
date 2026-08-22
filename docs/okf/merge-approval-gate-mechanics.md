@@ -3,7 +3,7 @@ type: runbook
 title: Merge-approval gate — labels, keys, and when it actually blocks
 description: How the merge-approval Check-Run maps five review:* PR labels to merge_approval booleans, keys evidence by the PR HEAD BRANCH NAME, and blocks only when required in branch protection — which on agent-grounding master it is not, so it is advisory in fact today.
 tags: [merge-approval, review-claim-gate, ci, runbook, labels]
-timestamp: 2026-07-16T02:31:52Z
+timestamp: 2026-08-22T00:00:00Z
 sources:
   - .github/workflows/merge-approval.yml
   - packages/review-claim-gate/README.md
@@ -85,10 +85,13 @@ three sources, highest precedence first (`README.md:69-80`):
    (again, branch name).
 
 `evidenceSource` in the JSON verdict is one of `"forced" | "file" | "ledger" |
-"none"` (`README.md:109`). Note the workflow only wires the label→`evidence-logged`
-input, so in CI today evidence is effectively **forced by label** (iteration 1);
-iteration 2 swaps the label for the committed file
-(`merge-approval-rollout.md:31-37`, follow-up task `5ea6d7cf`).
+"none"` (`README.md:109`). The workflow wires the `review:evidence-logged`
+label to the `evidence-logged` input, but that label is optional: absent it,
+the action falls through to the committed-file auto-detect above, so a
+committed `.agent-grounding/evidence/<task-id>.jsonl` in the PR branch
+already satisfies `evidence_logged` in CI today, no label required
+(`merge-approval-rollout.md:31-43`, follow-up task `5ea6d7cf` tracks
+history).
 
 ## When it actually blocks (two states — know which is live)
 

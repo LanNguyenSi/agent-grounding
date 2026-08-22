@@ -2,6 +2,15 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-08-22T00:00:00Z, docs-freshness audit follow-up (task 4f61601d,
+  medium/low batch): grounding-stack-overview.md re-stamped, grounding-mcp
+  0.7.0 -> 0.8.0 and runtime-reality-checker 0.3.0 -> 0.3.2 (both
+  package.json-verified). merge-approval-gate-mechanics.md re-stamped: the
+  evidence-source precedence section wrongly said CI evidence is "forced by
+  label"; corrected to say the committed evidence-file auto-detect (action.yml,
+  review-claim-gate CLI) already satisfies `evidence_logged` in CI without the
+  label, which is the label's optional override only.
+
 - 2026-08-19T11:34:00Z, re-verify + extend (task d0daa18a, G1-Nachzug der
   Option-2-Spec aus 9b6c4beb): documents the new
   `SOLUTION_VERDICT_SIGNING_KEY` env projection as the PRIMARY signing-key
