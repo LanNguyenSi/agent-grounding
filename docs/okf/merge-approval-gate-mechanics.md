@@ -157,7 +157,7 @@ committed `.agent-grounding/evidence/<branch>.jsonl`, no ledger rows for
 gate is broken.** Because the key is the branch name, evidence logged under a
 grounding-session id (e.g. `gs-agent-grounding-…`) will not be found; use
 `review-claim-gate export --task-id <branch-name> --from-session <gs-id>` to
-rewrite it under the branch key without re-logging (`README.md:74-78`). Missing
+rewrite it under the branch key without re-logging (`README.md:75-78`). Missing
 prereqs are also listed in the verdict's `next_steps` (`README.md:36`).
 
 ## How to re-trigger after backfilling
