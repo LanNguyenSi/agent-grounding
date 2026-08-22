@@ -99,7 +99,7 @@ import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const CITATION_RE =
+export const CITATION_RE =
   /([\w./-]+\.(?:ts|js|mjs|md|yml|yaml|json)):(\d+)(?:-(\d+))?/g;
 // Continuation citation forms (see the "Continuation citations" doc block
 // above). Each requires the backtick delimiter as part of the match so it
@@ -161,11 +161,11 @@ function isFile(path) {
 }
 
 /** True when citedPath has a literal `..` path segment. */
-function hasParentSegment(citedPath) {
+export function hasParentSegment(citedPath) {
   return citedPath.split("/").includes("..");
 }
 
-function findDocFiles(root) {
+export function findDocFiles(root) {
   const okfDir = join(root, "docs/okf");
   const files = [];
   if (existsSync(okfDir)) {
@@ -198,7 +198,7 @@ function findDocFiles(root) {
 }
 
 /** Parses the flat YAML `sources:` list out of a doc's frontmatter. */
-function parseFrontmatterSources(content) {
+export function parseFrontmatterSources(content) {
   const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!fmMatch) return [];
   const fm = fmMatch[1];
@@ -278,7 +278,7 @@ function findPriorQualifiedCitation(content, beforeIndex, citedPath) {
  * matches. Callers must reject a citedPath with a `..` segment (see
  * hasParentSegment) before calling this; it is not re-checked here.
  */
-function resolveCitation(root, docPath, docContent, docSources, citedPath, matchIndex) {
+export function resolveCitation(root, docPath, docContent, docSources, citedPath, matchIndex) {
   if (citedPath.startsWith("/")) {
     return { skip: true };
   }
@@ -316,7 +316,7 @@ function resolveCitation(root, docPath, docContent, docSources, citedPath, match
   return null;
 }
 
-function splitLines(content) {
+export function splitLines(content) {
   const lines = content.split("\n");
   if (lines.length > 0 && lines[lines.length - 1] === "" && content.endsWith("\n")) {
     lines.pop();

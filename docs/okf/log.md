@@ -2,6 +2,51 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-08-22T07:13:26Z, citation-anchor detection spike (task 42c5d5fd,
+  NOT MET, nothing shipped): tested whether the seven citation drifts
+  hand-caught in PR #184 (docs/okf/merge-approval-gate-mechanics.md's
+  `merge-approval-rollout.md:N-M` citations, all landing on real, non-blank,
+  in-range content, i.e. exactly the class scripts/okf-citations-resolve.mjs
+  is structurally blind to) can be caught mechanically. Reconstructed the
+  drift from commit 891821f (its own gate-mechanics.md still carries the
+  seven old, pre-fix ranges) resolved against HEAD's current rollout.md.
+  Two strategies, scripts/okf-citation-anchor-spike.mjs (throwaway, not
+  CI-wired):
+  (a) quoted-phrase pairing (each double-quoted verbatim excerpt paired
+  with the single nearest FOLLOWING citation, flagged if the quote is not
+  verbatim inside the resolved range): 1/7 caught (only the "task-id
+  sentence" citation has an adjacent quote at all; the other six have none
+  to test against), 38 false positives across the current 10-doc bundle
+  (59 quote/citation pairs evaluated) -- worse than the reviewer's original
+  whole-paragraph prototype (1/7, 12 FP) because "nearest following
+  citation" often pairs a quote to an unrelated citation one or two
+  sentences later.
+  (b) named-anchor verification (a markdown-heading anchor, hand-supplied
+  per citation from PR #184's own plain-English label for each drift --
+  "label table", "reviewer cheat sheet", etc. -- then mechanically checked:
+  does the anchor's heading still exist in the current target, and does
+  the cited range fall inside its current span): 5/7 caught (misses:
+  "label table" and "task-id sentence", both drifts landing inside the
+  same heading section the anchor already names, below heading
+  granularity). False positives NOT measured: no citation in the live
+  bundle carries an anchor today, and hand-authoring one per citation
+  bundle-wide is out of this spike's scope, so (b)'s catch rate is real
+  but its false-positive rate is unknown.
+  Decision: neither strategy meets the ship bar (5/7 with 0 false
+  positives, demonstrated, at HEAD). (a) fails outright on both counts.
+  (b) reaches the catch-rate half but its false-positive rate was never
+  measured, so "0 false positives" cannot be claimed. Nothing promoted
+  into scripts/okf-citations-resolve.mjs; its rule set is unchanged (the
+  only edit there is exporting five already-existing internal functions
+  so the spike script could reuse the real resolution logic instead of
+  duplicating it -- verified behavior-preserving via the existing 23-test
+  suite, still 0 findings, same as before). okf-kit promotion (this task's
+  scope item 2) deferred: the resolver's rule set is not stable, so filing
+  that agent-dx task now would be premature. Worth revisiting: author real
+  section-heading anchors on this bundle's markdown citations and re-run
+  strategy (b) for a genuine false-positive number, rather than the
+  hand-supplied 7-case replay done here.
+
 - 2026-08-22T06:31:26Z, okf-citations-resolve review round-3 fix (task
   28ee6911): the round-1 fix (commit f802013) had grown the
   review-claim-gate pin-bump comment in `.github/workflows/merge-approval.yml`
