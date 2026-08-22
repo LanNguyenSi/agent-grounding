@@ -3,7 +3,7 @@ type: runbook
 title: Merge-approval gate — labels, keys, and when it actually blocks
 description: How the merge-approval Check-Run maps five review:* PR labels to merge_approval booleans, keys evidence by the PR HEAD BRANCH NAME, and blocks only when required in branch protection — which on agent-grounding master it is not, so it is advisory in fact today.
 tags: [merge-approval, review-claim-gate, ci, runbook, labels]
-timestamp: 2026-08-22T04:45:51Z
+timestamp: 2026-08-22T06:31:26Z
 sources:
   - .github/workflows/merge-approval.yml
   - packages/review-claim-gate/README.md
@@ -157,7 +157,7 @@ committed `.agent-grounding/evidence/<branch>.jsonl`, no ledger rows for
 gate is broken.** Because the key is the branch name, evidence logged under a
 grounding-session id (e.g. `gs-agent-grounding-…`) will not be found; use
 `review-claim-gate export --task-id <branch-name> --from-session <gs-id>` to
-rewrite it under the branch key without re-logging (`README.md:74-78`). Missing
+rewrite it under the branch key without re-logging (`README.md:75-78`). Missing
 prereqs are also listed in the verdict's `next_steps` (`README.md:36`).
 
 ## How to re-trigger after backfilling

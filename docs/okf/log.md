@@ -2,6 +2,41 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-08-22T06:31:26Z, okf-citations-resolve review round-3 fix (task
+  28ee6911): the round-1 fix (commit f802013) had grown the
+  review-claim-gate pin-bump comment in `.github/workflows/merge-approval.yml`
+  from 6 to 13 lines, sitting above the `uses:`/`with:` block it annotates,
+  which shifted `uses:` from line 47 to 60 and every line under `with:`
+  along with it, without a restamp — breaking five citations across
+  merge-approval-gate-mechanics.md (`:47`, `:51-55`, `:49`) and
+  evidence-ledger-session-key-shapes.md (`:49`, `:47`). Fixed by moving the
+  comment below the `with:` block instead of shortening it, which restores
+  every line number the comment had shifted (uses: back to 47, task-id
+  back to 49, tests-pass..evidence-logged back to 51-55) without touching
+  the docs. Re-measured all nine `merge-approval.yml:N[-M]` citations in
+  docs/okf/ against the fixed file (`:47`, `:49` x2, `:51-55`, `:31-44`,
+  `:40-44` x2, `:4-11`, `:19-21`); all nine match. Restamped both docs'
+  frontmatter timestamps since their cited lines were re-verified, though
+  no citation content needed to change.
+
+- 2026-08-22T06:05:30Z, okf-citations-resolve follow-up fix round (task
+  28ee6911): merge-approval-gate-mechanics.md's README.md citation fix
+  (line 74-78, shifted to 75-78; commit 085e062, prior round of this same
+  task) changed doc content without a restamp or log entry; restamped
+  here. Extended scripts/okf-citations-resolve.mjs to also resolve the
+  bundle's colon, dash, and parenthesized continuation-citation shorthands
+  (~21 instances across claim-gate-vs-review-claim-gate.md and
+  evidence-ledger-session-key-shapes.md), distinguishing a genuinely new
+  start line from the tail of a split range (a range legitimately ending
+  on a closing brace is not drift, unlike a citation that starts there).
+  `npm run check:okf-citations` against the extended resolver reports 0
+  findings at HEAD (one pre-existing ambiguous review-claim-gate cli.ts
+  reference in this log's own 2026-08-05 entry below, unresolvable
+  between four same-named cli.ts files and left as-is, out of scope for
+  prose in a log). No citation content changed as a result; the extended
+  checks confirm the bundle's continuation refs, not just its full
+  citations, are clean.
+
 - 2026-08-22T04:54:02Z, docs-freshness audit round-2 review fix (task 4f61601d,
   medium/low batch): merge-approval-gate-mechanics.md hard-gate bullet
   (107-110) said the Merge button is blocked "until all five labels are

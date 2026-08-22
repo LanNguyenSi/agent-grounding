@@ -44,7 +44,7 @@ jobs:
             core.setOutput('evidence_logged',           has('review:evidence-logged').toString());
 
       - name: Run merge-approval gate
-        uses: LanNguyenSi/agent-grounding/packages/review-claim-gate/action@62faca5b4ad7f9b9072fdad284287a351a114097 # review-claim-gate-v0.1.0
+        uses: LanNguyenSi/agent-grounding/packages/review-claim-gate/action@97dfa51c5b278048dd6ec1006a6866977398a3cc # review-claim-gate-v0.1.5
         with:
           task-id: ${{ github.event.pull_request.head.ref }}
           pr-number: ${{ github.event.pull_request.number }}
@@ -54,3 +54,17 @@ jobs:
           scope-matches-task: ${{ steps.labels.outputs.scope_matches_task }}
           evidence-logged: ${{ steps.labels.outputs.evidence_logged }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+        # Pin bumped v0.1.0 -> v0.1.5 (2026-08-22, task 28ee6911) to match
+        # the current @lannguyensi/review-claim-gate package version.
+        # action.yml is byte-identical between the two tags (`git diff
+        # review-claim-gate-v0.1.0 review-claim-gate-v0.1.5 -- action.yml`
+        # is empty): same inputs/outputs, so this workflow's usage needed
+        # no changes. The bump matters anyway: this action's "Install +
+        # build review-claim-gate" step builds the CLI from the checked-out
+        # tree at the pinned ref (not a published npm package), so the gate
+        # actually ran cli.ts as it stood at v0.1.0 (334 lines) until now,
+        # not the 451-line cli.ts docs/okf's citations (e.g.
+        # merge-approval-gate-mechanics.md) describe -- v0.1.5's cli.ts is
+        # byte-identical to HEAD's. Verified action.yml identical and the
+        # CLI build locally; the merge-approval Check-Run on this branch's
+        # PR is the live confirmation.
