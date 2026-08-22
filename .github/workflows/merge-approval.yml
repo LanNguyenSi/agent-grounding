@@ -44,6 +44,16 @@ jobs:
             core.setOutput('evidence_logged',           has('review:evidence-logged').toString());
 
       - name: Run merge-approval gate
+        uses: LanNguyenSi/agent-grounding/packages/review-claim-gate/action@97dfa51c5b278048dd6ec1006a6866977398a3cc # review-claim-gate-v0.1.5
+        with:
+          task-id: ${{ github.event.pull_request.head.ref }}
+          pr-number: ${{ github.event.pull_request.number }}
+          tests-pass: ${{ steps.labels.outputs.tests_pass }}
+          review-checklist-complete: ${{ steps.labels.outputs.checklist_complete }}
+          comments-resolved: ${{ steps.labels.outputs.comments_resolved }}
+          scope-matches-task: ${{ steps.labels.outputs.scope_matches_task }}
+          evidence-logged: ${{ steps.labels.outputs.evidence_logged }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
         # Pin bumped v0.1.0 -> v0.1.5 (2026-08-22, task 28ee6911) to match
         # the current @lannguyensi/review-claim-gate package version.
         # action.yml is byte-identical between the two tags (`git diff
@@ -55,15 +65,6 @@ jobs:
         # actually ran cli.ts as it stood at v0.1.0 (334 lines) until now,
         # not the 451-line cli.ts docs/okf's citations (e.g.
         # merge-approval-gate-mechanics.md) describe -- v0.1.5's cli.ts is
-        # byte-identical to HEAD's. The green gate run on this branch's own
-        # PR is the observed confirmation.
-        uses: LanNguyenSi/agent-grounding/packages/review-claim-gate/action@97dfa51c5b278048dd6ec1006a6866977398a3cc # review-claim-gate-v0.1.5
-        with:
-          task-id: ${{ github.event.pull_request.head.ref }}
-          pr-number: ${{ github.event.pull_request.number }}
-          tests-pass: ${{ steps.labels.outputs.tests_pass }}
-          review-checklist-complete: ${{ steps.labels.outputs.checklist_complete }}
-          comments-resolved: ${{ steps.labels.outputs.comments_resolved }}
-          scope-matches-task: ${{ steps.labels.outputs.scope_matches_task }}
-          evidence-logged: ${{ steps.labels.outputs.evidence_logged }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+        # byte-identical to HEAD's. Verified action.yml identical and the
+        # CLI build locally; the merge-approval Check-Run on this branch's
+        # PR is the live confirmation.

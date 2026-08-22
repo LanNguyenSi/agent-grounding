@@ -126,7 +126,7 @@ jobs:
         # okf-kit's `check` above is timestamp-only: it flags a doc as
         # STALE when a listed `sources:` path changed after the doc's
         # verification timestamp, but it is structurally blind to an edit
-        # that shifts line numbers inside a still-fresh source file — the
+        # that shifts line numbers inside a still-fresh source file, the
         # exact class of drift PR #184 caught by hand in this bundle's
         # `path:N[-M]` citations. This is a no-dependency, mechanical spike
         # at closing that gap: it resolves every citation (including the
@@ -138,7 +138,8 @@ jobs:
         # header for the documented limits of a mechanical-only check);
         # never block on it, this step stays warn-only like the check
         # above, mirroring its json-report -> step-summary + ::warning
-        # shape.
+        # shape, including the per-doc annotation grouping below (same
+        # 10-annotation-per-type-per-step cap applies here).
         shell: bash
         run: |
           # --silent: `npm run` otherwise prints a "> ... check:okf-citations"
@@ -166,7 +167,11 @@ jobs:
             fi
           } >> "${GITHUB_STEP_SUMMARY}"
 
-          jq -r '.findings[] | "\(.doc) cites \(.citation) [\(.rule)]"' okf-citations-report.json | while IFS= read -r line; do
+          jq -r '
+            .findings
+            | group_by(.doc)[]
+            | "\(.[0].doc): \(length) citation drift finding(s), full list in the job summary"
+          ' okf-citations-report.json | while IFS= read -r line; do
             echo "::warning title=OKF citation drift::${line}"
           done
 

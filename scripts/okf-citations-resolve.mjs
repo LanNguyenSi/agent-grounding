@@ -15,6 +15,7 @@
  *
  * What it checks (mechanical only, no symbol/AST resolution):
  *   - the target file does not exist (after resolution, see below)
+ *   - a range's end line is before its start line (an inverted range)
  *   - the cited line (or the end of a range) is past the end of the file
  *   - the start line is blank
  *   - for non-markdown targets only, the start line is only a closing
@@ -78,11 +79,13 @@
  *
  * A continuation is further split into two roles (see
  * collectContinuationAtoms): "fresh" (a genuinely new start line, checked
- * the same four ways as a full citation's start) versus "extension" (only
+ * the same five ways as a full citation's start) versus "extension" (only
  * ever the tail `M` of a split range whose start was already checked) —
- * an extension gets *only* the range-exceeds-file check, never
- * blank/closing-brace, since a range legitimately ending on a closing
- * brace is normal, not drift.
+ * an extension gets *only* the range-bound checks (inverted-range,
+ * range-exceeds-file), never blank/closing-brace: that start line was
+ * already checked when it was first cited, so re-running it here would
+ * double-report the same drift, and a range legitimately ending on a
+ * closing brace is normal, not drift.
  *
  * Usage:
  *   node scripts/okf-citations-resolve.mjs [--root <dir>] [--json] [--fail-on-warn]
@@ -108,7 +111,6 @@ const CONT_DASH_RE = /[-–]`(\d+)`/g;
 const CONT_PAREN_RE = /\(`(\d+)`\)/g;
 const CLOSING_ONLY_EXTS = new Set(["ts", "js", "mjs", "yml", "yaml", "json"]);
 const CLOSING_BRACE_RE = /^[)\]}][;,]?$/;
-const DOC_DIRS = ["docs/okf", "docs/testing"];
 const EXCLUDED_DIRS = new Set([
   "node_modules",
   ".git",
@@ -243,7 +245,7 @@ function findByBasename(root, basename) {
 
 /**
  * Finds the nearest citation earlier in the same doc whose cited path
- * contains a `/` and ends with the same suffix as `citedPath` — the "full
+ * contains a `/` and ends with the same suffix as `citedPath`, the "full
  * path was mentioned earlier in this section/doc" convention.
  */
 function findPriorQualifiedCitation(content, beforeIndex, citedPath) {
@@ -322,18 +324,37 @@ function splitLines(content) {
   return lines;
 }
 
-function checkTarget(citedPath, startLine, endLine, resolvedPath) {
-  const content = readFileSync(resolvedPath, "utf8");
-  const lines = splitLines(content);
-  const lineCount = lines.length;
-  const last = endLine ?? startLine;
+// Range-bound checks shared by a full citation's own range (via
+// checkTarget below) and a cont-ext atom's extension (via
+// checkRangeBoundOnly): a citation's end before its start, or either bound
+// past the end of the file. Both are pure "does this range make sense"
+// checks, independent of what the start line's content actually is.
+function checkRangeBound(startLine, endLine, lineCount) {
+  if (endLine !== undefined && endLine !== null && endLine < startLine) {
+    return {
+      rule: "inverted-range",
+      message: `range end (${endLine}) is before its start (${startLine})`,
+    };
+  }
 
+  const last = endLine ?? startLine;
   if (startLine > lineCount || last > lineCount) {
     return {
       rule: "range-exceeds-file",
       message: `citation exceeds file length (${lineCount} line(s))`,
     };
   }
+
+  return null;
+}
+
+function checkTarget(citedPath, startLine, endLine, resolvedPath) {
+  const content = readFileSync(resolvedPath, "utf8");
+  const lines = splitLines(content);
+  const lineCount = lines.length;
+
+  const bound = checkRangeBound(startLine, endLine, lineCount);
+  if (bound) return bound;
 
   const startText = lines[startLine - 1] ?? "";
   const trimmed = startText.trim();
@@ -352,6 +373,19 @@ function checkTarget(citedPath, startLine, endLine, resolvedPath) {
   return null;
 }
 
+// A cont-ext atom only ever extends the *end* of a range whose start line
+// was already fully checked (blank / closing-brace) when it was cited as
+// its own full citation or cont-fresh atom -- re-running checkTarget here
+// would re-derive that same start-line check against the identical line
+// and, on a real drift, double-report it as a second finding. This checks
+// only whether the (possibly inverted, possibly out-of-file) range itself
+// is sound.
+function checkRangeBoundOnly(startLine, endLine, resolvedPath) {
+  const content = readFileSync(resolvedPath, "utf8");
+  const lineCount = splitLines(content).length;
+  return checkRangeBound(startLine, endLine, lineCount);
+}
+
 /**
  * Collects every continuation-citation atom (see the "Continuation
  * citations" doc block above) in `content`, sorted by document position.
@@ -362,11 +396,12 @@ function checkTarget(citedPath, startLine, endLine, resolvedPath) {
  *     citation's start (blank / closing-brace / range-exceeds).
  *   - "cont-ext": purely extends the *end* of whatever start line came
  *     immediately before it (a `` -`M` `` / `` –`M` `` tail, or a `` `:M` ``
- *     directly preceded by a `-`/`–`) — e.g. the `264` half of `` `src/cli
+ *     directly preceded by a `-`/`–`), e.g. the `264` half of `` `src/cli
  *     .ts:260`-`264` ``. Ending a range on a closing brace is completely
- *     normal, so an extension is checked ONLY for range-exceeds-file, never
- *     blank/closing-brace (that would misflag every range that legitimately
- *     ends at a function's closing `}`).
+ *     normal, so an extension is checked ONLY for the range-bound checks
+ *     (inverted-range, range-exceeds-file), never blank/closing-brace (that
+ *     would misflag every range that legitimately ends at a function's
+ *     closing `}`).
  * A colon-form match (`` `:N` ``) is "cont-ext" exactly when the nearest
  * non-whitespace character before its opening backtick is `-` or `–`;
  * otherwise it is "cont-fresh". Dash-form (`` -`M` ``/`` –`M` ``) is always
@@ -445,7 +480,7 @@ function scanDoc(root, docPath) {
     if (atom.kind === "cont-ext") {
       if (!governing || lastStartLine === null) continue; // nothing to extend
       const citation = `${governing.citedPath}:${lastStartLine}-${atom.value} (continuation)`;
-      const problem = checkTarget(governing.citedPath, lastStartLine, atom.value, governing.resolvedPath);
+      const problem = checkRangeBoundOnly(lastStartLine, atom.value, governing.resolvedPath);
       if (problem) {
         findings.push({
           doc: relative(root, docPath),

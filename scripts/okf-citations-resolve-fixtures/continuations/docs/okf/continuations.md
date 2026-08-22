@@ -30,4 +30,14 @@ Path-traversal citedPath, rejected without ever being resolved:
 
 A continuation right after a rejected citation has nothing to validate
 against and is silently skipped, not falsely inherited from further up the
-doc: `:5`.
+doc: `:4` (the blank line, so a wrong inheritance would actually flag it).
+
+Full citation with an inverted embedded range, end before start:
+`src/target.ts:5-3`.
+
+Dash-form split range whose end is before its start, an inverted range:
+`src/target.ts:5`-`3`.
+
+Dash-form split range whose start is blank: the full citation alone already
+flags it, so the cont-ext extension must not re-flag the same start line a
+second time: `src/target.ts:4`-`6`.

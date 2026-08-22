@@ -172,22 +172,58 @@ test("continuations: a citedPath with a '..' segment is rejected without being r
 
 test("continuations: a continuation right after a rejected citation is silently skipped, not misattributed", () => {
   const { findings } = run(CONT_FIXTURE_ROOT);
-  // The doc's trailing `:5` immediately follows the rejected `../evil.ts:1`
-  // citation, which resets `governing` to null. If the reset didn't happen,
-  // `:5` would wrongly inherit src/target.ts (line 5, real content) or some
-  // earlier governing path instead of being skipped outright.
-  assert.equal(
-    findings.some((f) => f.citation.startsWith("../evil.ts:5") || f.citation.startsWith("src/target.ts:5 (")),
-    false,
-  );
-  assert.equal(findings.length, 4);
+  // The doc's trailing `:4` immediately follows the rejected `../evil.ts:1`
+  // citation, which resets `governing` to null. Deliberately the blank line
+  // in src/target.ts, not a real-content line: if the reset didn't happen,
+  // `:4` would wrongly inherit the still-set src/target.ts governing from
+  // the earlier `src/target.ts:1` (`3`) citation and produce a SECOND
+  // "blank-start-line" finding for "src/target.ts:4 (continuation)" -- a
+  // real-content line here would let a missing reset pass silently, same
+  // as the bug this test is meant to catch. An earlier, unrelated fixture
+  // paragraph (the blank-line continuation right after `src/target.ts:1`)
+  // legitimately produces one finding with this exact citation string, so
+  // the count must stay at exactly one, not grow to two.
+  const matches = findings.filter((f) => f.citation === "src/target.ts:4 (continuation)");
+  assert.equal(matches.length, 1);
+  assert.equal(findings.length, 7);
 });
 
-test("continuations fixture: exactly the four expected findings, no extras", () => {
+test("continuations: a full citation with an inverted embedded range (end before start) is flagged inverted-range", () => {
+  const { findings } = run(CONT_FIXTURE_ROOT);
+  const f = findingFor(findings, "src/target.ts:5-3");
+  assert.ok(f, "expected a finding for src/target.ts:5-3");
+  assert.equal(f.rule, "inverted-range");
+});
+
+test("continuations: a cont-ext atom extending a range to before its start is flagged inverted-range, not silently accepted", () => {
+  const { findings } = run(CONT_FIXTURE_ROOT);
+  // Before the range-bound-only fix, cont-ext re-ran the full checkTarget
+  // against the (real-content) start line and never checked the range's
+  // own shape at all, so an inverted split range like this one silently
+  // passed with no finding.
+  const f = findingFor(findings, "src/target.ts:5-3 (continuation)");
+  assert.ok(f, "expected a finding for src/target.ts:5-3 (continuation)");
+  assert.equal(f.rule, "inverted-range");
+});
+
+test("continuations: a cont-ext atom extending a blank-start range does not re-flag the already-reported start line", () => {
+  const { findings } = run(CONT_FIXTURE_ROOT);
+  // `src/target.ts:4`-`6`: the full citation "4" alone already reports
+  // blank-start-line. Before the range-bound-only fix, the cont-ext "6"
+  // extension re-ran the full start-line check against the same blank
+  // line 4 and reported it a second time as "src/target.ts:4-6
+  // (continuation)".
+  assert.equal(findingFor(findings, "src/target.ts:4-6 (continuation)"), undefined);
+  const startFindings = findings.filter((f) => f.citation === "src/target.ts:4");
+  assert.equal(startFindings.length, 1);
+  assert.equal(startFindings[0].rule, "blank-start-line");
+});
+
+test("continuations fixture: exactly the seven expected findings, no extras", () => {
   const { docFiles, findings, unresolved } = run(CONT_FIXTURE_ROOT);
   assert.deepEqual(docFiles, ["docs/okf/continuations.md"]);
   assert.equal(unresolved.length, 0);
-  assert.equal(findings.length, 4);
+  assert.equal(findings.length, 7);
 });
 
 // -- EXCLUDED_DIRS: this script's own fixtures never pollute basename search -

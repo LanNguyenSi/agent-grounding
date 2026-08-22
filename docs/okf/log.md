@@ -2,6 +2,23 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-08-22T06:31:26Z, okf-citations-resolve review round-3 fix (task
+  28ee6911): the round-1 fix (commit f802013) had grown the
+  review-claim-gate pin-bump comment in `.github/workflows/merge-approval.yml`
+  from 6 to 13 lines, sitting above the `uses:`/`with:` block it annotates,
+  which shifted `uses:` from line 47 to 60 and every line under `with:`
+  along with it, without a restamp — breaking five citations across
+  merge-approval-gate-mechanics.md (`:47`, `:51-55`, `:49`) and
+  evidence-ledger-session-key-shapes.md (`:49`, `:47`). Fixed by moving the
+  comment below the `with:` block instead of shortening it, which restores
+  every line number the comment had shifted (uses: back to 47, task-id
+  back to 49, tests-pass..evidence-logged back to 51-55) without touching
+  the docs. Re-measured all nine `merge-approval.yml:N[-M]` citations in
+  docs/okf/ against the fixed file (`:47`, `:49` x2, `:51-55`, `:31-44`,
+  `:40-44` x2, `:4-11`, `:19-21`); all nine match. Restamped both docs'
+  frontmatter timestamps since their cited lines were re-verified, though
+  no citation content needed to change.
+
 - 2026-08-22T06:05:30Z, okf-citations-resolve follow-up fix round (task
   28ee6911): merge-approval-gate-mechanics.md's README.md citation fix
   (line 74-78, shifted to 75-78; commit 085e062, prior round of this same
