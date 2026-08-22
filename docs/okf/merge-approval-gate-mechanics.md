@@ -51,9 +51,14 @@ prereq column matches the policy table at `README.md:28-34` and the rollout
 table at `merge-approval-rollout.md:15-21`.
 
 Apply labels **truthfully only.** Each label asserts that a real review step
-happened — `review:evidence-logged` in particular is today an honour-system tick
-that nothing in CI cross-checks (`merge-approval-rollout.md:31-37`). Ticking a
-label you did not earn defeats the whole gate.
+happened. Four of the five (`tests-pass`, `checklist-complete`,
+`comments-resolved`, `scope-matches-task`) are still honour-system ticks that
+nothing in CI cross-checks. `review:evidence-logged` is different: as covered
+above, a committed evidence file already satisfies `evidence_logged` in CI
+without the label, so that prereq is only honour-system when the reviewer
+uses the label's force-override instead of committing evidence
+(`merge-approval-rollout.md:31-43`). Ticking a label you did not earn
+defeats the whole gate.
 
 ## The task-id key: PR HEAD BRANCH NAME, not a task UUID
 

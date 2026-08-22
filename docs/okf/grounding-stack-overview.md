@@ -52,7 +52,7 @@ Consequences an agent gets wrong without this:
 - Bumping one of the four locked packages means bumping all four; a PR that
   bumps only `claim-gate` breaks the lock invariant.
 - A grounding-mcp change does NOT require a root-tag release, and vice versa.
-- Version numbers across packages carry no relationship: `grounding-mcp@0.7.0`
+- Version numbers across packages carry no relationship: `grounding-mcp@0.8.0`
   is not "newer than" `evidence-ledger@0.6.0` in any meaningful sense.
 
 The root `package.json` is private (`agent-grounding`, workspaces `packages/*`);

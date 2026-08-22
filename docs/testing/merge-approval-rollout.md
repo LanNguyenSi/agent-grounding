@@ -9,8 +9,12 @@ on every pull request and posts a `merge-approval` Check-Run. When the
 
 ## How the gate is driven
 
-Today (iteration 1) all five prerequisites come from **PR labels**. As
-the reviewer confirms each dimension, they add the corresponding label:
+Four of the five prerequisites (`tests_pass`, `review_checklist_complete`,
+`no_unresolved_review_comments`, `scope_matches_task`) come only from **PR
+labels**. `evidence_logged` can be satisfied either way: by the
+`review:evidence-logged` label (forces it true) or by a committed evidence
+file, per the section below. As the reviewer confirms each dimension, they
+add the corresponding label:
 
 | Label                             | Gate prereq                        |
 | --------------------------------- | ---------------------------------- |
