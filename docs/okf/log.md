@@ -2,6 +2,20 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-08-22T04:54:02Z, docs-freshness audit round-2 review fix (task 4f61601d,
+  medium/low batch): merge-approval-gate-mechanics.md hard-gate bullet
+  (107-110) said the Merge button is blocked "until all five labels are
+  present"; corrected to "all five prereqs are satisfied" to match the
+  evidence_logged dual-route wording added in the prior round. Widened its
+  rollout.md citation from `6-8, 99` to `6-8, 99-100` (the ALLOWED sentence
+  spans both lines). Changed "counting non-empty JSON lines" (line 86) to
+  "counting valid JSON lines", matching countEvidenceFileLines
+  (cli.ts:178-193), which skips both blank and malformed lines. Restamped
+  grounding-stack-overview.md's frontmatter (00:00:00Z placeholder to a real
+  `date -u` value; content itself was already re-verified in round 1) and
+  fixed the round-1 log entry header timestamp to match, so the round-1
+  entry's own claim about real timestamps is true.
+
 - 2026-08-22T04:45:51Z, docs-freshness audit fix round (task 4f61601d,
   medium/low batch, reviewer follow-up): re-resolved the seven
   `merge-approval-rollout.md:NNN` line citations in
@@ -26,7 +40,7 @@
   mismatch is unchanged and out of scope). Frontmatter and this entry use
   real UTC timestamps instead of the prior round's 00:00:00Z placeholder.
 
-- 2026-08-22T00:00:00Z, docs-freshness audit follow-up (task 4f61601d,
+- 2026-08-22T04:32:48Z, docs-freshness audit follow-up (task 4f61601d,
   medium/low batch): grounding-stack-overview.md re-stamped, grounding-mcp
   0.7.0 -> 0.8.0 and runtime-reality-checker 0.3.0 -> 0.3.2 (both
   package.json-verified). merge-approval-gate-mechanics.md re-stamped: the

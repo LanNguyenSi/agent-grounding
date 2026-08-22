@@ -83,7 +83,7 @@ three sources, highest precedence first (`README.md:69-80`):
    `evidence_logged=true` regardless of any other signal.
 2. **Committed evidence file** — `--evidence-file <path>` if given and it exists;
    otherwise auto-detect `./.agent-grounding/evidence/<task-id>.jsonl` relative
-   to `process.cwd()`, counting non-empty JSON lines. (`<task-id>` = branch name.)
+   to `process.cwd()`, counting valid JSON lines. (`<task-id>` = branch name.)
    An explicit `--evidence-file` pointing at a non-existent path **throws** rather
    than silently falling back (`README.md:80`).
 3. **Ledger fallback** — local evidence-ledger DB keyed by `session = <task-id>`
@@ -106,8 +106,8 @@ the branch's **required status checks** in branch protection
 
 - **Hard gate (end state the rollout doc describes).** `merge-approval` is a
   required check on `master`; a red / `allowed: false` verdict blocks the Merge
-  button until all five labels are present and the check flips to ALLOWED
-  (`merge-approval-rollout.md:6-8, 99`).
+  button until all five prereqs are satisfied and the check flips to ALLOWED
+  (`merge-approval-rollout.md:6-8, 99-100`).
 - **Advisory in fact (the live state on agent-grounding today).** Verified by the
   orchestrator via the GitHub API on 2026-07-10: agent-grounding's `master` is
   **not branch-protected**, so `merge-approval` is **not** a required check. The
