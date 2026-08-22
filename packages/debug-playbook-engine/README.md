@@ -47,6 +47,8 @@ debug-playbook run -d clawd-monitor -p "agent not visible" --json
        → Verify authoritative env/token source
     5. check-network [optional]
        → Verify target URL reachability (only after process/config confirmed)
+    6. verify-fix [mandatory]
+       → Verify the original problem is no longer reproducible
 
   ▶ Start with: Verify architecture summary from README
 ```
@@ -55,9 +57,9 @@ debug-playbook run -d clawd-monitor -p "agent not visible" --json
 
 | Domain | Playbook |
 |--------|----------|
-| `clawd-monitor` | Basic connectivity: process → start mode → config → network |
-| `github` | API connectivity: token → rate limit → repo access → permissions |
-| `generic` | Read docs → check process → verify config → deps → logs |
+| `clawd-monitor` | Basic connectivity: process → start mode → config → network → verify-fix |
+| `github` | API connectivity: token → rate limit → repo access → permissions → verify-fix |
+| `generic` | Read docs → check process → verify config → deps → logs → verify-fix |
 
 ## API
 

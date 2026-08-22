@@ -9,8 +9,12 @@ on every pull request and posts a `merge-approval` Check-Run. When the
 
 ## How the gate is driven
 
-Today (iteration 1) all five prerequisites come from **PR labels**. As
-the reviewer confirms each dimension, they add the corresponding label:
+Four of the five prerequisites (`tests_pass`, `review_checklist_complete`,
+`no_unresolved_review_comments`, `scope_matches_task`) come only from **PR
+labels**. `evidence_logged` can be satisfied either way: by the
+`review:evidence-logged` label (forces it true) or by a committed evidence
+file, per the section below. As the reviewer confirms each dimension, they
+add the corresponding label:
 
 | Label                             | Gate prereq                        |
 | --------------------------------- | ---------------------------------- |
@@ -27,14 +31,24 @@ ticks boxes.
 `task-id` is the PR's head branch name — stable across commits on the
 branch and visible in both the PR UI and the Check-Run summary.
 
-## What is NOT enforced yet
+## What is enforced, and what is still honour-system
 
-The `evidence_logged` label is an honour-system tick: nothing in CI
-cross-checks that actual evidence exists for that task id. Iteration 2
-replaces the label with a **committed evidence file**
-(`.agent-grounding/evidence/<task-id>.jsonl`) exported by the reviewer
-from their local evidence-ledger. See follow-up task
-[`5ea6d7cf`](https://agent-tasks.opentriologue.ai/tasks/5ea6d7cf-51ee-4669-9832-2f58a44d424c).
+Iteration 2 has shipped on the CLI/action side: the `review-claim-gate`
+action auto-detects a **committed evidence file**
+(`.agent-grounding/evidence/<task-id>.jsonl`) in the checked-out workspace
+and counts it, provided the file has at least one valid JSONL entry, with no
+workflow wiring needed. When the reviewer commits that file via
+`review-claim-gate export`, CI does cross-check that actual evidence exists
+for the task id.
+
+What remains honour-system is the `review:evidence-logged` label
+force-override: adding that label sets `evidence_logged=true` regardless of
+whether a committed evidence file backs it up, the same as the other four
+label-driven prereqs (`tests_pass`, `review_checklist_complete`,
+`no_unresolved_review_comments`, `scope_matches_task`), which still have no
+CI-side check beyond the reviewer's own label tick. See follow-up task
+[`5ea6d7cf`](https://agent-tasks.opentriologue.ai/tasks/5ea6d7cf-51ee-4669-9832-2f58a44d424c)
+for tracking history.
 
 ## Making the check Required
 
@@ -75,8 +89,12 @@ alongside it.)
    add `review:checklist-complete`.
 3. Confirm no unresolved review comments → `review:comments-resolved`.
 4. Confirm the diff stays inside the task scope → `review:scope-matches-task`.
-5. Log ≥1 evidence-ledger entry under `session = <branch-name>`
-   (e.g. `ledger fact "…" --session feat/foo`).
-   Add `review:evidence-logged`.
+5. Satisfy `evidence_logged` one of two ways: commit
+   `.agent-grounding/evidence/<branch-name>.jsonl` via `review-claim-gate
+   export` (with at least one valid JSONL entry, no label needed), or log
+   ≥1 evidence-ledger entry under `session = <branch-name>` (e.g. `ledger
+   fact "…" --session feat/foo`) and add `review:evidence-logged` to force
+   it.
 
-The Check-Run flips to `ALLOWED` once all five are present. Merge.
+The Check-Run flips to `ALLOWED` once all five prereqs are satisfied
+(labels, or a committed evidence file for `evidence_logged`). Merge.
