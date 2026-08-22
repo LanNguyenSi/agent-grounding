@@ -3,7 +3,7 @@ type: runbook
 title: Merge-approval gate — labels, keys, and when it actually blocks
 description: How the merge-approval Check-Run maps five review:* PR labels to merge_approval booleans, keys evidence by the PR HEAD BRANCH NAME, and blocks only when required in branch protection — which on agent-grounding master it is not, so it is advisory in fact today.
 tags: [merge-approval, review-claim-gate, ci, runbook, labels]
-timestamp: 2026-08-22T00:00:00Z
+timestamp: 2026-08-22T04:45:51Z
 sources:
   - .github/workflows/merge-approval.yml
   - packages/review-claim-gate/README.md
@@ -48,7 +48,7 @@ mapping:
 
 All five label names confirmed verbatim at `merge-approval.yml:40-44`; the
 prereq column matches the policy table at `README.md:28-34` and the rollout
-table at `merge-approval-rollout.md:15-21`.
+table at `merge-approval-rollout.md:19-25`.
 
 Apply labels **truthfully only.** Each label asserts that a real review step
 happened. Four of the five (`tests-pass`, `checklist-complete`,
@@ -57,7 +57,7 @@ nothing in CI cross-checks. `review:evidence-logged` is different: as covered
 above, a committed evidence file already satisfies `evidence_logged` in CI
 without the label, so that prereq is only honour-system when the reviewer
 uses the label's force-override instead of committing evidence
-(`merge-approval-rollout.md:31-43`). Ticking a label you did not earn
+(`merge-approval-rollout.md:44-51`). Ticking a label you did not earn
 defeats the whole gate.
 
 ## The task-id key: PR HEAD BRANCH NAME, not a task UUID
@@ -71,7 +71,7 @@ task-id: ${{ github.event.pull_request.head.ref }}
 (`merge-approval.yml:49`.) That is the **PR head branch name** (e.g. `feat/foo`),
 **not** an agent-tasks task UUID. The rollout doc confirms: "`task-id` is the
 PR's head branch name — stable across commits on the branch"
-(`merge-approval-rollout.md:27-28`). Everywhere the gate says "task id" for
+(`merge-approval-rollout.md:31-32`). Everywhere the gate says "task id" for
 evidence lookup, read **branch name**.
 
 ## Evidence-source precedence (used by `check`)
@@ -93,10 +93,10 @@ three sources, highest precedence first (`README.md:69-80`):
 "none"` (`README.md:109`). The workflow wires the `review:evidence-logged`
 label to the `evidence-logged` input, but that label is optional: absent it,
 the action falls through to the committed-file auto-detect above, so a
-committed `.agent-grounding/evidence/<task-id>.jsonl` in the PR branch
-already satisfies `evidence_logged` in CI today, no label required
-(`merge-approval-rollout.md:31-43`, follow-up task `5ea6d7cf` tracks
-history).
+committed `.agent-grounding/evidence/<task-id>.jsonl` in the PR branch,
+with at least one valid JSONL entry, already satisfies `evidence_logged`
+in CI today, no label required (`merge-approval-rollout.md:36-42`,
+follow-up task `5ea6d7cf` tracks history).
 
 ## When it actually blocks (two states — know which is live)
 
@@ -107,7 +107,7 @@ the branch's **required status checks** in branch protection
 - **Hard gate (end state the rollout doc describes).** `merge-approval` is a
   required check on `master`; a red / `allowed: false` verdict blocks the Merge
   button until all five labels are present and the check flips to ALLOWED
-  (`merge-approval-rollout.md:6-8, 82`).
+  (`merge-approval-rollout.md:6-8, 99`).
 - **Advisory in fact (the live state on agent-grounding today).** Verified by the
   orchestrator via the GitHub API on 2026-07-10: agent-grounding's `master` is
   **not branch-protected**, so `merge-approval` is **not** a required check. The
@@ -126,13 +126,13 @@ If the call 404s / errors "Branch not protected", or the returned list does not
 contain `merge-approval`, the gate is **advisory** — a red check is informational
 and does not stop the merge. If the list contains `merge-approval`, it is a
 **hard gate**. To promote it to a hard gate, add `merge-approval` (alongside the
-existing `ci`) to the required checks per `merge-approval-rollout.md:40-67`
+existing `ci`) to the required checks per `merge-approval-rollout.md:53-81`
 (requires Admin).
 
 ## How to make it pass legitimately
 
 Do the review, then add each label only when its dimension is genuinely met
-(reviewer cheat sheet, `merge-approval-rollout.md:69-82`):
+(reviewer cheat sheet, `merge-approval-rollout.md:83-97`):
 
 1. CI green → `review:tests-pass`.
 2. Walk the full checklist (correctness, security/scope, permissions, minimal
@@ -140,11 +140,13 @@ Do the review, then add each label only when its dimension is genuinely met
    coverage of risky bits, integration touchpoints) → `review:checklist-complete`.
 3. No unresolved review comments → `review:comments-resolved`.
 4. Diff stays inside task scope → `review:scope-matches-task`.
-5. Log ≥1 evidence-ledger entry under `session = <branch-name>` (e.g.
-   `ledger fact "…" --session feat/foo`), or in iteration 2
-   commit `.agent-grounding/evidence/<branch-name>.jsonl` → `review:evidence-logged`.
+5. Satisfy `evidence_logged` one of two ways: commit
+   `.agent-grounding/evidence/<branch-name>.jsonl` via `review-claim-gate
+   export` (with at least one valid JSONL entry, no label needed), or add
+   `review:evidence-logged` to force it.
 
-The Check-Run flips to ALLOWED once all five labels are present.
+The Check-Run flips to ALLOWED once all five prereqs are satisfied
+(labels, or a committed evidence file for `evidence_logged`).
 
 ## Reading a BLOCKED verdict
 

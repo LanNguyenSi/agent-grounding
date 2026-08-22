@@ -2,6 +2,30 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-08-22T04:45:51Z, docs-freshness audit fix round (task 4f61601d,
+  medium/low batch, reviewer follow-up): re-resolved the seven
+  `merge-approval-rollout.md:NNN` line citations in
+  merge-approval-gate-mechanics.md that had drifted after the prior round's
+  edits (label table 15-21 -> 19-25; force-override paragraph 31-43 ->
+  44-51; committed-evidence paragraph 31-43 -> 36-42; task-id sentence
+  27-28 -> 31-32; ALLOWED-verdict citation 6-8,82 -> 6-8,99; "Making the
+  check Required" 40-67 -> 53-81; reviewer cheat sheet 69-82 -> 83-97; the
+  6-8 branch-protection citation was unchanged and left alone). Rewrote
+  merge-approval-gate-mechanics.md step 5 and merge-approval-rollout.md's
+  cheat-sheet step 5 to describe both routes for `evidence_logged`
+  (committed file via `review-claim-gate export`, or the
+  `review:evidence-logged` label force-override), not just the label.
+  Added the "at least one valid JSONL entry" precondition to both docs'
+  committed-file claims (countEvidenceFileLines / buildContext in
+  packages/review-claim-gate/src/cli.ts). Renamed
+  merge-approval-rollout.md's "What is NOT enforced yet" heading to "What
+  is enforced, and what is still honour-system" to stop contradicting its
+  own first paragraph, and updated the gate-mechanics citations that name
+  it. Appended a verify-fix step to the debug-playbook-engine README
+  example (not a full regeneration; the pre-existing `-p` vs Problem-line
+  mismatch is unchanged and out of scope). Frontmatter and this entry use
+  real UTC timestamps instead of the prior round's 00:00:00Z placeholder.
+
 - 2026-08-22T00:00:00Z, docs-freshness audit follow-up (task 4f61601d,
   medium/low batch): grounding-stack-overview.md re-stamped, grounding-mcp
   0.7.0 -> 0.8.0 and runtime-reality-checker 0.3.0 -> 0.3.2 (both

@@ -31,14 +31,15 @@ ticks boxes.
 `task-id` is the PR's head branch name — stable across commits on the
 branch and visible in both the PR UI and the Check-Run summary.
 
-## What is NOT enforced yet
+## What is enforced, and what is still honour-system
 
 Iteration 2 has shipped on the CLI/action side: the `review-claim-gate`
 action auto-detects a **committed evidence file**
 (`.agent-grounding/evidence/<task-id>.jsonl`) in the checked-out workspace
-and counts it, with no workflow wiring needed. When the reviewer commits
-that file via `review-claim-gate export`, CI does cross-check that actual
-evidence exists for the task id.
+and counts it, provided the file has at least one valid JSONL entry, with no
+workflow wiring needed. When the reviewer commits that file via
+`review-claim-gate export`, CI does cross-check that actual evidence exists
+for the task id.
 
 What remains honour-system is the `review:evidence-logged` label
 force-override: adding that label sets `evidence_logged=true` regardless of
@@ -88,8 +89,12 @@ alongside it.)
    add `review:checklist-complete`.
 3. Confirm no unresolved review comments → `review:comments-resolved`.
 4. Confirm the diff stays inside the task scope → `review:scope-matches-task`.
-5. Log ≥1 evidence-ledger entry under `session = <branch-name>`
-   (e.g. `ledger fact "…" --session feat/foo`).
-   Add `review:evidence-logged`.
+5. Satisfy `evidence_logged` one of two ways: commit
+   `.agent-grounding/evidence/<branch-name>.jsonl` via `review-claim-gate
+   export` (with at least one valid JSONL entry, no label needed), or log
+   ≥1 evidence-ledger entry under `session = <branch-name>` (e.g. `ledger
+   fact "…" --session feat/foo`) and add `review:evidence-logged` to force
+   it.
 
-The Check-Run flips to `ALLOWED` once all five are present. Merge.
+The Check-Run flips to `ALLOWED` once all five prereqs are satisfied
+(labels, or a committed evidence file for `evidence_logged`). Merge.
