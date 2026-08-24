@@ -55,9 +55,10 @@ jobs:
         run: npm test --workspace=@lannguyensi/${{ matrix.package }}
 
       - name: Upgrade npm to v11
-        # npm >= 11.5.1 required for OIDC-based publishing against this
-        # workflow's Trusted Publisher entry; Node 22 bundles npm 10.
-        # Using id-token permission (no NPM_TOKEN secret).
+        # npm >= 11.5.1 required for OIDC-based publishing against each
+        # package's Trusted Publisher entry on npmjs.com (repo
+        # LanNguyenSi/agent-grounding, workflow publish-npm.yml (4-package matrix));
+        # Node 22 bundles npm 10. Auth via id-token permission, no NPM_TOKEN.
         run: npm install -g npm@11
 
       - name: Publish
