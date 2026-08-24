@@ -1,4 +1,0 @@
-
-# Note
-
-Body text.
