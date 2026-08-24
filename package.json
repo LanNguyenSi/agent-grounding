@@ -16,9 +16,7 @@
     "check:deps": "node scripts/check-deps.js",
     "test:check-deps": "node --test scripts/check-deps.test.js",
     "check:lockfile-integrity": "node scripts/check-lockfile-integrity.js",
-    "test:check-lockfile-integrity": "node --test scripts/check-lockfile-integrity.test.js",
-    "check:okf-citations": "node scripts/okf-citations-resolve.mjs",
-    "test:check-okf-citations": "node --test scripts/okf-citations-resolve.test.mjs"
+    "test:check-lockfile-integrity": "node --test scripts/check-lockfile-integrity.test.js"
   },
   "overrides": {
     "js-yaml": "^4.3.1",

@@ -2,6 +2,47 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-08-24, okf-kit citations-resolve replaces the repo-local script
+  (task 21f76bfe): this repo's own `scripts/okf-citations-resolve.mjs`
+  (PR #185) and its tests/fixtures are deleted; okf-staleness.yml is
+  bumped to `okf-kit@0.5.0` and now checks citations via that pin's
+  `citations-resolve` rule in the same `okf-kit check --json docs/okf`
+  pass as `sources-fresh`, replacing the separate "Check okf citations"
+  CI step and the `check:okf-citations` / `test:check-okf-citations` npm
+  scripts (both removed, ci.yml's unit-test step for them removed too).
+  agent-dx PR #111 ported the resolver into okf-kit with exact parity on
+  this repo's bundle: local script vs okf-kit 0.5.0, same commit, same
+  result -- 0 citation findings, 1 ambiguous notice, measured before this
+  entry was added (the notice is an older log entry citing lines 178-193
+  of a bare `cli.ts`, which matches four same-basename candidates:
+  packages/claim-gate, evidence-ledger, review-claim-gate,
+  understanding-gate `src/cli.ts`; the bare form is quoted here without
+  the colon syntax so this entry does not add a second notice).
+  The pin jump 0.3.1 to 0.5.0 also adopts okf-kit 0.4.0's sources-fresh
+  change: a doc whose own last commit is at or after its source's last
+  commit no longer reports STALE (fixes squash-merge stale-on-arrival,
+  with the documented limitation that any commit touching a doc
+  suppresses staleness for sources changed before it), so STALE counts
+  on this bundle can drop after this merge without any re-verification
+  having happened. The kit differs from the old script
+  in two documented ways: a bare filename citation resolves doc-relative
+  and via ancestor directories before falling back to the repo root, and
+  a citation at column 0 on a line that itself ends in `-` is skipped as
+  a wrapped path, not treated as a fresh citation.
+  `scripts/okf-citation-anchor-spike.mjs` (task 42c5d5fd, throwaway,
+  never CI-wired) imported seven helpers from the deleted script
+  (`CITATION_RE`, `findDocFiles`, `parseArgs`, `parseFrontmatterSources`,
+  `resolveCitation`, `splitLines`, `hasParentSegment`); `resolveCitation`
+  itself calls several more private, unexported helpers (basename search
+  with a repo-wide cache, prior-qualified-citation lookup), so vendoring
+  would mean copying most of the ~630-line resolver into spike-only
+  tooling that was already documented as disposable. Removed instead of
+  vendored; nothing else referenced it.
+  Note: the pinned `okf-kit@0.5.0` in okf-staleness.yml only resolves
+  once agent-dx's OIDC-driven npm publish for that version has run;
+  until then the workflow's install step 404s on PRs against this
+  branch.
+
 - 2026-08-22T07:33:36Z, citation-anchor detection spike (task 42c5d5fd,
   NOT MET, nothing shipped, corrected after review): tested whether the
   seven citation drifts hand-caught in PR #184
