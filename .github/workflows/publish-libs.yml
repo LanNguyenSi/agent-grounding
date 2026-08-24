@@ -44,15 +44,6 @@ jobs:
           cache: npm
           registry-url: "https://registry.npmjs.org"
 
-      - name: Preflight, verify NPM_TOKEN secret is set
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          if [ -z "${NPM_TOKEN}" ]; then
-            echo "::error::NPM_TOKEN secret is not configured. Add it under Settings -> Secrets and variables -> Actions before tagging a release." >&2
-            exit 1
-          fi
-
       - name: Install dependencies
         run: npm ci
 
@@ -73,7 +64,15 @@ jobs:
       - name: Test the package being published
         run: npm test --workspace=@lannguyensi/${{ steps.parse.outputs.pkg }}
 
-      - name: Publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # npm Trusted Publishing (OIDC) needs npm >= 11.5.1; node 22 bundles
+      # npm 10, so upgrade right before the publish step (wave standard:
+      # install/build/test run under the node-bundled npm, matching ci.yml).
+      # Auth comes from the GitHub OIDC token (permissions.id-token: write
+      # above) matched against each package's Trusted Publisher entry on
+      # npmjs.com (repo LanNguyenSi/agent-grounding, workflow
+      # publish-libs.yml) — no NPM_TOKEN secret involved.
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@11
+
+      - name: Publish (OIDC trusted publishing, tokenless)
         run: npm publish --workspace=@lannguyensi/${{ steps.parse.outputs.pkg }} --access public --provenance
