@@ -12,10 +12,19 @@
   scripts (both removed, ci.yml's unit-test step for them removed too).
   agent-dx PR #111 ported the resolver into okf-kit with exact parity on
   this repo's bundle: local script vs okf-kit 0.5.0, same commit, same
-  result -- 0 citation findings, 1 ambiguous notice
-  (`log.md` cites `cli.ts:178-193`, four same-basename candidates:
+  result -- 0 citation findings, 1 ambiguous notice, measured before this
+  entry was added (the notice is an older log entry citing lines 178-193
+  of a bare `cli.ts`, which matches four same-basename candidates:
   packages/claim-gate, evidence-ledger, review-claim-gate,
-  understanding-gate `src/cli.ts`). The kit differs from the old script
+  understanding-gate `src/cli.ts`; the bare form is quoted here without
+  the colon syntax so this entry does not add a second notice).
+  The pin jump 0.3.1 to 0.5.0 also adopts okf-kit 0.4.0's sources-fresh
+  change: a doc whose own last commit is at or after its source's last
+  commit no longer reports STALE (fixes squash-merge stale-on-arrival,
+  with the documented limitation that any commit touching a doc
+  suppresses staleness for sources changed before it), so STALE counts
+  on this bundle can drop after this merge without any re-verification
+  having happened. The kit differs from the old script
   in two documented ways: a bare filename citation resolves doc-relative
   and via ancestor directories before falling back to the repo root, and
   a citation at column 0 on a line that itself ends in `-` is skipped as
