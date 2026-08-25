@@ -1,5 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { handlePreToolUse } from "../src/adapters/claude-code/handle-pre-tool-use.js";
+import { handleUserPromptSubmit } from "../src/adapters/claude-code/handle.js";
 import type { ReportEntry } from "../src/core/persistence.js";
 import type { AuditEvent } from "../src/core/audit.js";
 
@@ -241,5 +245,146 @@ describe("handlePreToolUse: enforcement decisions", () => {
     expect(() => handlePreToolUse(PAYLOAD(), {}, deps)).not.toThrow();
     const r = handlePreToolUse(PAYLOAD(), {}, deps);
     expect(r.exitCode).toBe(2); // decision unchanged by audit failure
+  });
+});
+
+describe("handlePreToolUse: pause sentinel (shared with UserPromptSubmit, no second parser)", () => {
+  let dir: string;
+
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  });
+
+  function sentinelFile(content: unknown): string {
+    dir = mkdtempSync(join(tmpdir(), "understanding-gate-pretooluse-pause-"));
+    const file = join(dir, "sentinel.json");
+    writeFileSync(
+      file,
+      typeof content === "string" ? content : JSON.stringify(content),
+    );
+    return file;
+  }
+
+  // AC1: an active, unexpired sentinel yields no deny and exit 0. Would
+  // otherwise deny (no report exists for the default PAYLOAD()'s Edit
+  // tool_name) -- pause must override that.
+  it("AC1: an active (future expiresAt) sentinel suppresses the deny, exit 0", () => {
+    const { deps, audits } = makeDeps();
+    const file = sentinelFile({
+      pausedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      reason: "test",
+      pausedBy: "test",
+    });
+    const r = handlePreToolUse(
+      PAYLOAD(),
+      { UNDERSTANDING_GATE_PAUSE_FILE: file },
+      deps,
+    );
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toBe("");
+    expect(r.decision.decision).toBe("allow");
+    expect(audits).toHaveLength(0);
+  });
+
+  // AC2 negative controls: fail-open direction is "NOT paused" -- each of
+  // these must still deny (exitCode 2), same as with no pause file at all.
+  it("AC2: an EXPIRED sentinel does not suppress the deny", () => {
+    const { deps } = makeDeps();
+    const file = sentinelFile({
+      pausedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+      expiresAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      reason: "test",
+      pausedBy: "test",
+    });
+    const r = handlePreToolUse(
+      PAYLOAD(),
+      { UNDERSTANDING_GATE_PAUSE_FILE: file },
+      deps,
+    );
+    expect(r.exitCode).toBe(2);
+  });
+
+  it("AC2: a missing sentinel file does not suppress the deny", () => {
+    const { deps } = makeDeps();
+    const r = handlePreToolUse(
+      PAYLOAD(),
+      { UNDERSTANDING_GATE_PAUSE_FILE: "/nonexistent/path/does-not-exist.json" },
+      deps,
+    );
+    expect(r.exitCode).toBe(2);
+  });
+
+  it("AC2: an empty sentinel file does not suppress the deny", () => {
+    const { deps } = makeDeps();
+    const file = sentinelFile("");
+    const r = handlePreToolUse(
+      PAYLOAD(),
+      { UNDERSTANDING_GATE_PAUSE_FILE: file },
+      deps,
+    );
+    expect(r.exitCode).toBe(2);
+  });
+
+  it("AC2: unparsable JSON in the sentinel file does not suppress the deny", () => {
+    const { deps } = makeDeps();
+    const file = sentinelFile("not json at all {");
+    const r = handlePreToolUse(
+      PAYLOAD(),
+      { UNDERSTANDING_GATE_PAUSE_FILE: file },
+      deps,
+    );
+    expect(r.exitCode).toBe(2);
+  });
+
+  it("AC2: a directory at the sentinel path does not suppress the deny", () => {
+    dir = mkdtempSync(join(tmpdir(), "understanding-gate-pretooluse-pause-"));
+    const { deps } = makeDeps();
+    const r = handlePreToolUse(
+      PAYLOAD(),
+      { UNDERSTANDING_GATE_PAUSE_FILE: dir },
+      deps,
+    );
+    expect(r.exitCode).toBe(2);
+  });
+
+  // AC4: same function, no second parser -- both Claude hooks must agree
+  // on the same sentinel file. Pins parity directly rather than trusting
+  // that the import alone proves it.
+  it("AC4: PreToolUse and UserPromptSubmit agree on the same sentinel file (shared isPaused, no second parser)", () => {
+    const cases: Array<{ label: string; content: unknown }> = [
+      {
+        label: "active",
+        content: {
+          pausedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        },
+      },
+      {
+        label: "expired",
+        content: {
+          pausedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+          expiresAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        },
+      },
+    ];
+
+    for (const { content } of cases) {
+      const file = sentinelFile(content);
+      const { deps } = makeDeps();
+      const preToolUseResult = handlePreToolUse(
+        PAYLOAD(),
+        { UNDERSTANDING_GATE_PAUSE_FILE: file },
+        deps,
+      );
+      const promptOut = handleUserPromptSubmit(
+        JSON.stringify({ prompt: "add a logout button to src/Header.tsx" }),
+        { UNDERSTANDING_GATE_PAUSE_FILE: file },
+      );
+
+      const preToolUsePaused = preToolUseResult.exitCode === 0;
+      const promptPaused = promptOut === "";
+      expect(preToolUsePaused).toBe(promptPaused);
+    }
   });
 });

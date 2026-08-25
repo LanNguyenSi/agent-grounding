@@ -98,7 +98,7 @@ In Phase 0/0.5, these states are implicit (agent and user share a session). Phas
 |---|---|---|
 | ENV `UNDERSTANDING_GATE_MODE` | 0 | force `fast_confirm` or `grill_me` |
 | ENV `UNDERSTANDING_GATE_DISABLE` | 0 | kill-switch, hook returns immediately |
-| ENV `UNDERSTANDING_GATE_PAUSE_FILE` | 0 | path to a pause sentinel; while active, the `UserPromptSubmit` hook stays silent. Optional and read-only. |
+| ENV `UNDERSTANDING_GATE_PAUSE_FILE` | 0 / 2 | path to a pause sentinel; while active, both the `UserPromptSubmit` hook and the `PreToolUse` hook stay silent (same shared, unsigned, read-only reader on both paths -- see README's "Pause sentinel" section, including the both-hook-lines caveat). Optional. |
 | Prompt marker `grill me` / `/grill` | 0 / 0.5 | user-side mode escalation |
 | ENV `UNDERSTANDING_GATE_REPORT_DIR` | 1 | override report persistence path |
 | ENV `UNDERSTANDING_GATE_TASK_ID` | 1 | bind reports to a logical task identifier |

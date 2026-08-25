@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Claude Code adapter: the `PreToolUse` hook now honors the pause
+  sentinel too, not just `UserPromptSubmit`.** 0.5.0 added
+  `UNDERSTANDING_GATE_PAUSE_FILE` support to the `UserPromptSubmit` hook
+  only; `handlePreToolUse` had no awareness of it at all and kept denying
+  unapproved writes with `permissionDecision: "deny"` / exit 2 regardless
+  of an active sentinel. A harness-wide `pause` is documented to silence
+  all hooks, the harness's own `PreToolUse` pack hook already honors the
+  sentinel, and the unsigned-sentinel forgery risk is identical for every
+  hook, so a partial pause was a real gap. Fixed by exporting `isPaused`
+  from `handle.ts` and importing it into `handle-pre-tool-use.ts` (no
+  second parser); both hooks now reach an identical answer for the same
+  sentinel file, pinned by a parity test. A consumer that wires
+  `understanding-gate-claude-pre-tool-use` directly (not through env
+  plumbing that exports the var for the whole process) must set
+  `UNDERSTANDING_GATE_PAUSE_FILE` on both hook lines. README and
+  architecture.md updated.
+
 ## [0.5.0] - 2026-08-25
 
 ### Fixed

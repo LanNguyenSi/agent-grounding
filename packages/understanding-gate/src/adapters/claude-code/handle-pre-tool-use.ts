@@ -19,6 +19,7 @@ import {
 } from "../../core/enforcement.js";
 import { findLatestForTask, isApproved } from "../../core/approval.js";
 import type { AuditEvent } from "../../core/audit.js";
+import { isPaused } from "./handle.js";
 
 const HOOK_EVENT_NAME = "PreToolUse";
 
@@ -28,6 +29,16 @@ export interface PreToolUseEnv {
   UNDERSTANDING_GATE_FORCE_REASON?: string;
   UNDERSTANDING_GATE_TASK_ID?: string;
   UNDERSTANDING_GATE_REPORT_DIR?: string;
+  /**
+   * Path to the same pause-sentinel JSON file the UserPromptSubmit hook
+   * reads (see handle.ts's isPaused for the shape and semantics). Reused
+   * verbatim here -- no second parser -- so a harness-wide `pause`
+   * silences both Claude Code hooks identically. A consumer that wires
+   * this hook directly (not through the harness's own env plumbing) must
+   * set UNDERSTANDING_GATE_PAUSE_FILE on BOTH hook lines for the pause
+   * to actually cover both.
+   */
+  UNDERSTANDING_GATE_PAUSE_FILE?: string;
 }
 
 export interface PreToolUsePayload {
@@ -70,6 +81,23 @@ export function handlePreToolUse(
   env: PreToolUseEnv,
   deps: PreToolUseDeps,
 ): PreToolUseResult {
+  // Same sentinel, same reader, same answer as the UserPromptSubmit hook
+  // (isPaused is imported, not reimplemented) -- a harness-wide `pause`
+  // must silence enforcement on both hooks identically, not just the
+  // prompt-injection one. Checked first, before payload parsing, so a
+  // pause skips this hook's entire body (no audit entry either, same as
+  // the prompt path).
+  if (isPaused(env.UNDERSTANDING_GATE_PAUSE_FILE)) {
+    return {
+      ...ALLOW_SILENT,
+      decision: {
+        decision: "allow",
+        mode: "disabled",
+        reason: "understanding-gate is paused (pause sentinel active)",
+      },
+    };
+  }
+
   const payload = parsePayload(rawStdin);
   if (!payload) {
     // Malformed input: degrade to allow, but LOUDLY. The gate never

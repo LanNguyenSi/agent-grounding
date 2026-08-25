@@ -94,7 +94,11 @@ function warnIndefiniteFromCorruptExpiry(): void {
   );
 }
 
-function isPaused(pauseFilePath: string | undefined): boolean {
+// Exported so the PreToolUse adapter (handle-pre-tool-use.ts) can honor
+// the same pause sentinel without a second parser. Both hooks must reach
+// an identical answer for the same sentinel file -- see the parity test
+// in tests/claude-code-pre-tool-use.test.ts.
+export function isPaused(pauseFilePath: string | undefined): boolean {
   if (!pauseFilePath) return false;
   let raw: string;
   try {

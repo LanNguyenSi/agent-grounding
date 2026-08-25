@@ -119,16 +119,24 @@ claude
 ### Pause sentinel (optional, read-only)
 
 Set `UNDERSTANDING_GATE_PAUSE_FILE` to the path of a pause-sentinel JSON
-file (`{pausedAt, expiresAt, reason, pausedBy}`) to make the Claude Code
-`UserPromptSubmit` hook stay silent while that sentinel is active. This
-package only ever reads the file; it never creates, writes, or deletes it,
-and never manages expiry. Unset (the default) means no pause check at all.
+file (`{pausedAt, expiresAt, reason, pausedBy}`) to make both Claude Code
+hooks stay silent while that sentinel is active: the `UserPromptSubmit`
+hook skips the Understanding Report injection, and the `PreToolUse` hook
+skips its deny (both use the exact same reader, so a given sentinel file
+reads the same way on both paths). This package only ever reads the
+file; it never creates, writes, or deletes it, and never manages expiry.
+Unset (the default) means no pause check at all on either hook.
 
-The sentinel only silences the `UserPromptSubmit` hook (the injection that
-asks for an Understanding Report). It has no effect on the `PreToolUse`
-hook: tool-use enforcement (see "When does the block actually fire?"
-above) keeps blocking unapproved writes while the sentinel is active, so a
-pause is not a way to suspend enforcement.
+`UNDERSTANDING_GATE_PAUSE_FILE` must be set on **both** hook lines by any
+consumer that wires `understanding-gate-claude-pre-tool-use` directly
+(rather than through env plumbing that already exports it for the whole
+process) -- each hook only sees the env var on its own command line, so a
+sentinel wired to one hook and not the other silences only that one.
+
+The sentinel is unsigned and operator-owned: this package trusts whatever
+is at the configured path and applies no signature or origin check, so
+treat write access to the sentinel file itself as equivalent to write
+access to pause both hooks.
 
 ## Not implemented yet
 
