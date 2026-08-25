@@ -58,6 +58,21 @@ export type AuditEvent =
       adapter: "claude-code" | "opencode";
     }
   | {
+      // The pause sentinel was active AND the underlying decision would
+      // otherwise have blocked (or force-bypassed) the tool call. Logged
+      // so a paused allow still leaves a trace, the same standard every
+      // other allow-that-would-have-blocked path (force_bypass) already
+      // meets; a pause that overrides a would-have-been-allow (a
+      // read-only tool) stays silent, matching that path's own zero-audit
+      // behavior.
+      kind: "paused_allow";
+      tool: string;
+      reason: string;
+      sessionId: string | null;
+      taskId: string | null;
+      adapter: "claude-code" | "opencode";
+    }
+  | {
       // The gate could not evaluate the request (malformed / empty payload)
       // and failed OPEN. Logged so the degradation is observable rather than
       // a silent false-confidence allow. `tool` is null when the payload was

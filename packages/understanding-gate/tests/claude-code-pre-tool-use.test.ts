@@ -267,8 +267,10 @@ describe("handlePreToolUse: pause sentinel (shared with UserPromptSubmit, no sec
 
   // AC1: an active, unexpired sentinel yields no deny and exit 0. Would
   // otherwise deny (no report exists for the default PAYLOAD()'s Edit
-  // tool_name) -- pause must override that.
-  it("AC1: an active (future expiresAt) sentinel suppresses the deny, exit 0", () => {
+  // tool_name) -- pause must override that. A paused override of a
+  // would-be block must still leave exactly one audit trace (a governance
+  // override is never as silent as an ordinary allow).
+  it("AC1: an active (future expiresAt) sentinel suppresses the deny, exit 0, and leaves ONE paused_allow audit entry", () => {
     const { deps, audits } = makeDeps();
     const file = sentinelFile({
       pausedAt: new Date().toISOString(),
@@ -283,6 +285,35 @@ describe("handlePreToolUse: pause sentinel (shared with UserPromptSubmit, no sec
     );
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toBe("");
+    expect(r.decision.decision).toBe("allow");
+    expect(r.stderr).not.toBe("");
+    expect(audits).toHaveLength(1);
+    expect(audits[0].event.kind).toBe("paused_allow");
+    if (audits[0].event.kind === "paused_allow") {
+      expect(audits[0].event.tool).toBe("Edit");
+    }
+  });
+
+  // Companion to AC1: when the underlying decision would already have
+  // been an allow (a read-only tool, nothing to override), the pause
+  // changes nothing observable -- stay on the zero-overhead, zero-audit
+  // silent path instead of manufacturing a trace for a no-op override.
+  it("a read-only tool under an active pause writes no audit entry and stays silent", () => {
+    const { deps, audits } = makeDeps();
+    const file = sentinelFile({
+      pausedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      reason: "test",
+      pausedBy: "test",
+    });
+    const r = handlePreToolUse(
+      PAYLOAD({ tool_name: "Read" }),
+      { UNDERSTANDING_GATE_PAUSE_FILE: file },
+      deps,
+    );
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toBe("");
     expect(r.decision.decision).toBe("allow");
     expect(audits).toHaveLength(0);
   });
@@ -350,41 +381,117 @@ describe("handlePreToolUse: pause sentinel (shared with UserPromptSubmit, no sec
 
   // AC4: same function, no second parser -- both Claude hooks must agree
   // on the same sentinel file. Pins parity directly rather than trusting
-  // that the import alone proves it.
-  it("AC4: PreToolUse and UserPromptSubmit agree on the same sentinel file (shared isPaused, no second parser)", () => {
-    const cases: Array<{ label: string; content: unknown }> = [
+  // that the import alone proves it. Load-bearing: covers every shape
+  // isPaused branches on (see pause.ts's isPaused doc comment), not just
+  // the two happy-path shapes, so a divergence introduced on only one of
+  // the indefinite-pause branches (missing/null/unparsable expiresAt,
+  // non-string expiresAt, missing/empty pausedAt) actually turns this red.
+  it("AC4: PreToolUse and UserPromptSubmit agree on every sentinel shape isPaused branches on (shared isPaused, no second parser)", () => {
+    const tmpDirs: string[] = [];
+    function tmpFile(): { dir: string; file: string } {
+      const d = mkdtempSync(join(tmpdir(), "understanding-gate-parity-"));
+      tmpDirs.push(d);
+      return { dir: d, file: join(d, "sentinel.json") };
+    }
+    function objectFile(content: unknown): string {
+      const { file } = tmpFile();
+      writeFileSync(file, JSON.stringify(content));
+      return file;
+    }
+    function rawFile(raw: string): string {
+      const { file } = tmpFile();
+      writeFileSync(file, raw);
+      return file;
+    }
+    function directoryPath(): string {
+      const { dir } = tmpFile();
+      return dir;
+    }
+    function missingPath(): string {
+      const { dir } = tmpFile();
+      return join(dir, "does-not-exist.json");
+    }
+
+    const activePausedAt = new Date().toISOString();
+    const futureExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const pastPausedAt = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const pastExpiresAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+    const cases: Array<{ label: string; file: () => string }> = [
       {
         label: "active",
-        content: {
-          pausedAt: new Date().toISOString(),
-          expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-        },
+        file: () => objectFile({ pausedAt: activePausedAt, expiresAt: futureExpiresAt }),
       },
       {
         label: "expired",
-        content: {
-          pausedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-          expiresAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-        },
+        file: () => objectFile({ pausedAt: pastPausedAt, expiresAt: pastExpiresAt }),
+      },
+      {
+        label: "expiresAt missing",
+        file: () => objectFile({ pausedAt: activePausedAt }),
+      },
+      {
+        label: "expiresAt null",
+        file: () => objectFile({ pausedAt: activePausedAt, expiresAt: null }),
+      },
+      {
+        label: "expiresAt non-parsable non-empty string",
+        file: () => objectFile({ pausedAt: activePausedAt, expiresAt: "not-a-date" }),
+      },
+      {
+        label: "expiresAt a number",
+        file: () => objectFile({ pausedAt: activePausedAt, expiresAt: 12345 }),
+      },
+      {
+        label: "expiresAt a boolean",
+        file: () => objectFile({ pausedAt: activePausedAt, expiresAt: true }),
+      },
+      {
+        label: "pausedAt missing",
+        file: () => objectFile({ expiresAt: futureExpiresAt }),
+      },
+      {
+        label: "pausedAt empty string",
+        file: () => objectFile({ pausedAt: "", expiresAt: futureExpiresAt }),
+      },
+      {
+        label: "directory at the sentinel path",
+        file: directoryPath,
+      },
+      {
+        label: "missing file",
+        file: missingPath,
+      },
+      {
+        label: "empty file",
+        file: () => rawFile(""),
+      },
+      {
+        label: "unparsable JSON",
+        file: () => rawFile("not json at all {"),
       },
     ];
 
-    for (const { content } of cases) {
-      const file = sentinelFile(content);
-      const { deps } = makeDeps();
-      const preToolUseResult = handlePreToolUse(
-        PAYLOAD(),
-        { UNDERSTANDING_GATE_PAUSE_FILE: file },
-        deps,
-      );
-      const promptOut = handleUserPromptSubmit(
-        JSON.stringify({ prompt: "add a logout button to src/Header.tsx" }),
-        { UNDERSTANDING_GATE_PAUSE_FILE: file },
-      );
+    try {
+      for (const { label, file: makeFile } of cases) {
+        const file = makeFile();
+        const { deps } = makeDeps();
+        const preToolUseResult = handlePreToolUse(
+          PAYLOAD(),
+          { UNDERSTANDING_GATE_PAUSE_FILE: file },
+          deps,
+        );
+        const promptOut = handleUserPromptSubmit(
+          JSON.stringify({ prompt: "add a logout button to src/Header.tsx" }),
+          { UNDERSTANDING_GATE_PAUSE_FILE: file },
+        );
 
-      const preToolUsePaused = preToolUseResult.exitCode === 0;
-      const promptPaused = promptOut === "";
-      expect(preToolUsePaused).toBe(promptPaused);
+        const preToolUsePaused = preToolUseResult.exitCode === 0;
+        const promptPaused = promptOut === "";
+        expect(preToolUsePaused, `case "${label}"`).toBe(promptPaused);
+      }
+    } finally {
+      for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
     }
   });
 });

@@ -19,7 +19,7 @@ import {
 } from "../../core/enforcement.js";
 import { findLatestForTask, isApproved } from "../../core/approval.js";
 import type { AuditEvent } from "../../core/audit.js";
-import { isPaused } from "./handle.js";
+import { isPaused } from "./pause.js";
 
 const HOOK_EVENT_NAME = "PreToolUse";
 
@@ -31,12 +31,14 @@ export interface PreToolUseEnv {
   UNDERSTANDING_GATE_REPORT_DIR?: string;
   /**
    * Path to the same pause-sentinel JSON file the UserPromptSubmit hook
-   * reads (see handle.ts's isPaused for the shape and semantics). Reused
+   * reads (see pause.ts's isPaused for the shape and semantics). Reused
    * verbatim here -- no second parser -- so a harness-wide `pause`
    * silences both Claude Code hooks identically. A consumer that wires
    * this hook directly (not through the harness's own env plumbing) must
    * set UNDERSTANDING_GATE_PAUSE_FILE on BOTH hook lines for the pause
-   * to actually cover both.
+   * to actually cover both. A paused allow still leaves an audit trace
+   * (`paused_allow`) whenever the underlying decision would otherwise
+   * have blocked or force-bypassed -- see the pause-check block below.
    */
   UNDERSTANDING_GATE_PAUSE_FILE?: string;
 }
@@ -81,23 +83,6 @@ export function handlePreToolUse(
   env: PreToolUseEnv,
   deps: PreToolUseDeps,
 ): PreToolUseResult {
-  // Same sentinel, same reader, same answer as the UserPromptSubmit hook
-  // (isPaused is imported, not reimplemented) -- a harness-wide `pause`
-  // must silence enforcement on both hooks identically, not just the
-  // prompt-injection one. Checked first, before payload parsing, so a
-  // pause skips this hook's entire body (no audit entry either, same as
-  // the prompt path).
-  if (isPaused(env.UNDERSTANDING_GATE_PAUSE_FILE)) {
-    return {
-      ...ALLOW_SILENT,
-      decision: {
-        decision: "allow",
-        mode: "disabled",
-        reason: "understanding-gate is paused (pause sentinel active)",
-      },
-    };
-  }
-
   const payload = parsePayload(rawStdin);
   if (!payload) {
     // Malformed input: degrade to allow, but LOUDLY. The gate never
@@ -175,6 +160,41 @@ export function handlePreToolUse(
       UNDERSTANDING_GATE_FORCE_REASON: env.UNDERSTANDING_GATE_FORCE_REASON,
     },
   });
+
+  // Pause check runs AFTER the tool-name / enforcement-decision
+  // computation (not before) so a paused allow that overrides a would-be
+  // block or force-bypass still leaves exactly one audit trace and one
+  // stderr line -- a governance override must never be as silent as an
+  // ordinary read-only allow. Same sentinel, same reader as the
+  // UserPromptSubmit hook (isPaused is imported from ./pause.js, not
+  // reimplemented) -- a harness-wide `pause` silences enforcement on both
+  // hooks identically.
+  if (isPaused(env.UNDERSTANDING_GATE_PAUSE_FILE)) {
+    const wouldOverride =
+      decision.decision === "block" || decision.mode === "force_bypass";
+    if (wouldOverride) {
+      const overriddenKind = decision.decision === "block" ? "block" : "force-bypass";
+      const reason = `understanding-gate is paused (pause sentinel active); overrides what would otherwise have been a ${overriddenKind} decision (${decision.mode}): ${decision.reason}`;
+      safeAudit(deps, cwd, {
+        kind: "paused_allow",
+        tool,
+        reason,
+        sessionId,
+        taskId: taskId || null,
+        adapter: "claude-code",
+      });
+      return {
+        ...ALLOW_SILENT,
+        stderr: `understanding-gate: paused (pause sentinel active); overriding a ${overriddenKind} decision for tool "${tool}".\n`,
+        decision: { decision: "allow", mode: "paused", reason },
+      };
+    }
+    // The underlying decision was already an allow (e.g. a read-only
+    // tool, an already-approved report, or UNDERSTANDING_GATE_DISABLE):
+    // the pause changes nothing observable, so stay on the current
+    // silent, zero-overhead, zero-audit path.
+    return { ...ALLOW_SILENT, decision };
+  }
 
   // Audit side-effects. Best-effort: never let an audit-write failure
   // change the decision the gate already made. Force-bypass + block are

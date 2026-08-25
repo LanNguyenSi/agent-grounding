@@ -12,14 +12,29 @@
   of an active sentinel. A harness-wide `pause` is documented to silence
   all hooks, the harness's own `PreToolUse` pack hook already honors the
   sentinel, and the unsigned-sentinel forgery risk is identical for every
-  hook, so a partial pause was a real gap. Fixed by exporting `isPaused`
-  from `handle.ts` and importing it into `handle-pre-tool-use.ts` (no
-  second parser); both hooks now reach an identical answer for the same
-  sentinel file, pinned by a parity test. A consumer that wires
-  `understanding-gate-claude-pre-tool-use` directly (not through env
-  plumbing that exports the var for the whole process) must set
-  `UNDERSTANDING_GATE_PAUSE_FILE` on both hook lines. README and
-  architecture.md updated.
+  hook, so a partial pause was a real gap. Fixed by moving `isPaused` (and
+  its sentinel-shape helpers) into a leaf module, `pause.ts`, imported by
+  both `handle.ts` (`UserPromptSubmit`) and `handle-pre-tool-use.ts`
+  (`PreToolUse`, no second parser, and no longer pulling in the
+  classifier/prompt module graph on its hot path); both hooks now reach an
+  identical answer for the same sentinel file, pinned by a parity test
+  covering every shape `isPaused` branches on (active, expired, missing or
+  unparsable expiry, non-string expiry, missing or empty `pausedAt`, a
+  directory or missing file at the sentinel path, an empty or unparsable
+  file). A consumer that wires `understanding-gate-claude-pre-tool-use`
+  directly (not through env plumbing that exports the var for the whole
+  process) must set `UNDERSTANDING_GATE_PAUSE_FILE` on both hook lines.
+  A paused `PreToolUse` allow is no longer silent when it overrides a
+  decision that would otherwise have blocked or force-bypassed: it now
+  emits one stderr line and one `paused_allow` audit entry (a new
+  `EnforcementMode` value, `"paused"`), matching the audit standard the
+  `force_bypass` path already meets. A pause that changes nothing
+  observable (a read-only tool, an already-approved report) stays on the
+  original silent, zero-audit path. README and architecture.md updated,
+  including the threat-model section (a pause sentinel is now named as
+  the second route through enforcement, alongside force-bypass) and the
+  hook list (`UserPromptSubmit` and `PreToolUse`; the `Stop` hook, which
+  only persists reports, is unaffected by a pause).
 
 ## [0.5.0] - 2026-08-25
 

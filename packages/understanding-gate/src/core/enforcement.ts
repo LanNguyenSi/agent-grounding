@@ -9,6 +9,7 @@
 
 export type EnforcementMode =
   | "disabled"        // UNDERSTANDING_GATE_DISABLE=1, gate is off
+  | "paused"          // pause sentinel active, allow (audited if it would have blocked)
   | "force_bypass"    // valid force env present, allow + audit
   | "force_invalid"   // force flag set but reason missing/short, block
   | "readonly_tool"   // tool not in deny-list, always allowed
