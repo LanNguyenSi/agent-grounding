@@ -53,24 +53,47 @@ function isTaskNotificationHull(prompt: string): boolean {
 
 // Read-only, best-effort check of a pause sentinel file. The shape and the
 // "absent/parsable" semantics below are chosen to match how a pause
-// sentinel of this shape is read elsewhere: no file, an unreadable file,
-// a non-regular file (see the statSync guard, which keeps this from
-// blocking forever on a FIFO), malformed JSON, or a non-object/array JSON
-// value all degrade to "not paused". Within a parsable sentinel OBJECT:
+// sentinel of this shape is read elsewhere -- see the "Pause sentinel"
+// section of this package's own README for the documented shape and
+// semantics. no file, an unreadable file, a non-regular file (see the
+// statSync guard, which keeps this from blocking forever on a FIFO;
+// statSync follows symlinks, so a sentinel path that is itself a symlink
+// to a regular file is still honored), malformed JSON, or a
+// non-object/array JSON value all degrade to "not paused". Within a
+// parsable sentinel OBJECT:
 //   - a missing or empty-string `pausedAt` makes the whole sentinel count
 //     as absent (not paused) -- a sentinel writer never omits it, so this
 //     is reserved for a corrupted file.
 //   - `expiresAt` missing entirely, or explicitly `null`, means paused
-//     INDEFINITELY.
+//     INDEFINITELY. A missing `expiresAt` is indistinguishable from a
+//     truncated or half-written file, so this branch also emits a stderr
+//     diagnostic (see warnIndefiniteFromCorruptExpiry below); an explicit
+//     `null` is an unambiguous, deliberate signal and stays silent.
 //   - `expiresAt` as a non-empty string that fails to parse as a date
 //     ALSO means paused indefinitely (a malformed but present expiry
-//     doesn't get to silently unblock things).
+//     doesn't get to silently unblock things) and ALSO emits that stderr
+//     diagnostic, since this is the other shape a corrupted or
+//     half-written sentinel can take.
 //   - `expiresAt` as anything else (a number, array, object, boolean, or
 //     empty string) makes the whole sentinel count as absent.
 //   - `expiresAt` as a valid, parsable date means paused only while it is
 //     strictly in the future; equal-to-now or past means not paused.
 // Nothing here is ever written or deleted -- expiry cleanup is not this
 // hook's job.
+
+// A corrupted-but-parsable sentinel that falls into an INDEFINITE pause
+// (missing or unparsable expiresAt) would otherwise suppress every prompt
+// silently forever. Claude Code surfaces hook stderr in its diagnostic
+// stream, so a single line here at least makes a stale or half-written
+// sentinel visible instead of indistinguishable from a deliberate pause.
+// Deliberately evidence-free and tool-agnostic: no paths, ids, or
+// timestamps, just the fact that the read degraded this way.
+function warnIndefiniteFromCorruptExpiry(): void {
+  process.stderr.write(
+    "understanding-gate: pause sentinel expiresAt missing or unparsable; treating pause as indefinite\n",
+  );
+}
+
 function isPaused(pauseFilePath: string | undefined): boolean {
   if (!pauseFilePath) return false;
   let raw: string;
@@ -95,8 +118,12 @@ function isPaused(pauseFilePath: string | undefined): boolean {
   }
 
   const expiresAtRaw = shape.expiresAt;
+  if (expiresAtRaw === undefined) {
+    warnIndefiniteFromCorruptExpiry();
+    return true;
+  }
   let expiresAt: string | null;
-  if (expiresAtRaw === null || expiresAtRaw === undefined) {
+  if (expiresAtRaw === null) {
     expiresAt = null;
   } else if (typeof expiresAtRaw === "string" && expiresAtRaw.length > 0) {
     expiresAt = expiresAtRaw;
@@ -105,7 +132,10 @@ function isPaused(pauseFilePath: string | undefined): boolean {
   }
   if (expiresAt === null) return true;
   const expires = Date.parse(expiresAt);
-  if (!Number.isFinite(expires)) return true;
+  if (!Number.isFinite(expires)) {
+    warnIndefiniteFromCorruptExpiry();
+    return true;
+  }
   return expires > Date.now();
 }
 

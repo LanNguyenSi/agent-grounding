@@ -7,10 +7,22 @@ import {
   vi,
 } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { handleUserPromptSubmit } from "../src/adapters/claude-code/handle.js";
+
+// Repo root (packages/understanding-gate/.. /..): where npm hoists devDeps
+// like tsx in this npm-workspace repo. Used only by the FIFO regression
+// test below, which must run the handler in a REAL child process.
+const REPO_ROOT = resolve(__dirname, "../../..");
+const TSX_BIN = resolve(REPO_ROOT, "node_modules/.bin/tsx");
+const RUN_HANDLE_CHILD = resolve(__dirname, "fixtures/run-handle-child.ts");
 
 const TASK_PROMPT = "add a logout button to src/Header.tsx";
 const NON_TASK_PROMPT = "what does jq -r do?";
@@ -439,21 +451,148 @@ describe("handleUserPromptSubmit", () => {
       });
     });
 
-    it("a named pipe at the pause-file path does not block the hook (kills the readFileSync-without-statSync regression)", () => {
-      if (process.platform === "win32") {
-        // Named pipes on Windows are not filesystem paths in the POSIX
-        // sense mkfifo assumes; this hazard is POSIX-specific (CI runs
-        // ubuntu-latest), so the check is skipped rather than faked here.
-        return;
-      }
-      dir = mkdtempSync(join(tmpdir(), "understanding-gate-pause-fifo-"));
-      const fifo = join(dir, "sentinel.fifo");
-      execFileSync("mkfifo", [fifo]);
+    describe("stderr diagnostic on a corrupt indefinite pause (AC-M3)", () => {
+      let stderrSpy: ReturnType<typeof vi.spyOn>;
+
+      beforeEach(() => {
+        stderrSpy = vi
+          .spyOn(process.stderr, "write")
+          .mockImplementation(() => true);
+      });
+
+      afterEach(() => {
+        stderrSpy.mockRestore();
+      });
+
+      it("writes a stderr line when expiresAt is missing entirely (indefinite pause from a corrupted/half-written file)", () => {
+        const file = sentinelFile({
+          pausedAt: new Date().toISOString(),
+          reason: "test",
+          pausedBy: "test",
+        });
+        const out = handleUserPromptSubmit(
+          JSON.stringify({ prompt: TASK_PROMPT }),
+          { UNDERSTANDING_GATE_PAUSE_FILE: file },
+        );
+        expect(out).toBe("");
+        expect(stderrSpy).toHaveBeenCalledTimes(1);
+        expect(stderrSpy.mock.calls[0]?.[0]).toMatch(
+          /expiresAt.*(missing|unparsable)/i,
+        );
+      });
+
+      it("writes a stderr line when expiresAt is present but unparsable as a date", () => {
+        const file = sentinelFile({
+          pausedAt: new Date().toISOString(),
+          expiresAt: "not-a-date",
+          reason: "test",
+          pausedBy: "test",
+        });
+        const out = handleUserPromptSubmit(
+          JSON.stringify({ prompt: TASK_PROMPT }),
+          { UNDERSTANDING_GATE_PAUSE_FILE: file },
+        );
+        expect(out).toBe("");
+        expect(stderrSpy).toHaveBeenCalledTimes(1);
+        expect(stderrSpy.mock.calls[0]?.[0]).toMatch(
+          /expiresAt.*(missing|unparsable)/i,
+        );
+      });
+
+      it("does NOT write a stderr line for an explicit expiresAt: null (deliberate, unambiguous indefinite pause)", () => {
+        const file = sentinelFile({
+          pausedAt: new Date().toISOString(),
+          expiresAt: null,
+          reason: "test",
+          pausedBy: "test",
+        });
+        const out = handleUserPromptSubmit(
+          JSON.stringify({ prompt: TASK_PROMPT }),
+          { UNDERSTANDING_GATE_PAUSE_FILE: file },
+        );
+        expect(out).toBe("");
+        expect(stderrSpy).not.toHaveBeenCalled();
+      });
+
+      it("does NOT write a stderr line for a normal active sentinel with a valid future expiresAt", () => {
+        const file = sentinelFile({
+          pausedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+          reason: "test",
+          pausedBy: "test",
+        });
+        const out = handleUserPromptSubmit(
+          JSON.stringify({ prompt: TASK_PROMPT }),
+          { UNDERSTANDING_GATE_PAUSE_FILE: file },
+        );
+        expect(out).toBe("");
+        expect(stderrSpy).not.toHaveBeenCalled();
+      });
+
+      it("does NOT write a stderr line when there is no pause at all (not task-notification, no sentinel)", () => {
+        const out = handleUserPromptSubmit(
+          JSON.stringify({ prompt: TASK_PROMPT }),
+        );
+        expect(out).not.toBe("");
+        expect(stderrSpy).not.toHaveBeenCalled();
+      });
+    });
+
+    it("follows a symlink to an active sentinel and suppresses injection (kills the statSync-to-lstatSync mutant)", () => {
+      dir = mkdtempSync(join(tmpdir(), "understanding-gate-pause-symlink-"));
+      const real = join(dir, "sentinel-real.json");
+      writeFileSync(
+        real,
+        JSON.stringify({
+          pausedAt: new Date().toISOString(),
+          expiresAt: null,
+          reason: "test",
+          pausedBy: "test",
+        }),
+      );
+      const link = join(dir, "sentinel-link.json");
+      symlinkSync(real, link);
       const out = handleUserPromptSubmit(
         JSON.stringify({ prompt: TASK_PROMPT }),
-        { UNDERSTANDING_GATE_PAUSE_FILE: fifo },
+        { UNDERSTANDING_GATE_PAUSE_FILE: link },
       );
-      expect(out).not.toBe("");
-    }, 2000);
+      expect(out).toBe("");
+    });
+
+    // Named pipes on Windows are not filesystem paths in the POSIX sense
+    // mkfifo assumes; this hazard is POSIX-specific (CI runs
+    // ubuntu-latest), so the check is skipped rather than faked here.
+    // Using it.skipIf (not a bare early `return`) so the platform gap
+    // shows up in the report as a skip, not a silent pass.
+    it.skipIf(process.platform === "win32")(
+      "a named pipe at the pause-file path fails FAST if the statSync guard regresses, instead of hanging the suite",
+      () => {
+        dir = mkdtempSync(join(tmpdir(), "understanding-gate-pause-fifo-"));
+        const fifo = join(dir, "sentinel.fifo");
+        execFileSync("mkfifo", [fifo]);
+
+        // Run the handler in a REAL child process (not imported in-process)
+        // so that if the statSync guard regresses and readFileSync blocks
+        // on the writer-less FIFO, execFileSync's own `timeout` option
+        // kills the CHILD with a real OS signal -- turning the regression
+        // into a thrown error (assertion failure) instead of a hang that
+        // no `it(..., timeout)` can interrupt, because a synchronous
+        // blocking read never yields to the event loop that runs vitest's
+        // timers.
+        const start = Date.now();
+        const out = execFileSync(
+          TSX_BIN,
+          [RUN_HANDLE_CHILD, TASK_PROMPT, fifo],
+          { encoding: "utf8", timeout: 2000 },
+        );
+        // eslint-disable-next-line no-console -- reported runtime for
+        // AC-M1, not left-over debugging.
+        console.log(
+          `[AC-M1] FIFO probe (guard intact) took ${Date.now() - start}ms`,
+        );
+        expect(out).not.toBe("");
+      },
+      5000,
+    );
   });
 });

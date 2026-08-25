@@ -124,6 +124,12 @@ file (`{pausedAt, expiresAt, reason, pausedBy}`) to make the Claude Code
 package only ever reads the file; it never creates, writes, or deletes it,
 and never manages expiry. Unset (the default) means no pause check at all.
 
+The sentinel only silences the `UserPromptSubmit` hook (the injection that
+asks for an Understanding Report). It has no effect on the `PreToolUse`
+hook: tool-use enforcement (see "When does the block actually fire?"
+above) keeps blocking unapproved writes while the sentinel is active, so a
+pause is not a way to suspend enforcement.
+
 ## Not implemented yet
 
 Phases -1, 0, 0.5, 1, 2 are live. The following items are deliberately out of scope for the current release; some are scheduled for later phases, some are deferred indefinitely:
