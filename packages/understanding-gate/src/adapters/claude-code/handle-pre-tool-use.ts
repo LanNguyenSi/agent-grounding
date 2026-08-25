@@ -10,6 +10,11 @@
 // audit entry — so a broken gate never holds up legitimate work yet never
 // silently manufactures false confidence (the no-silent-errors standard
 // the harness-side pack hook already meets).
+//
+// Note: the shared pause reader (./pause.js) writes its own stale-sentinel
+// diagnostic straight to process.stderr when isPaused degrades a corrupted
+// sentinel to an indefinite pause; that line is not part of this handler's
+// returned `stderr` field and callers checking `stderr` alone will miss it.
 
 import type { ReportEntry } from "../../core/persistence.js";
 import {
@@ -38,7 +43,9 @@ export interface PreToolUseEnv {
    * set UNDERSTANDING_GATE_PAUSE_FILE on BOTH hook lines for the pause
    * to actually cover both. A paused allow still leaves an audit trace
    * (`paused_allow`) whenever the underlying decision would otherwise
-   * have blocked or force-bypassed -- see the pause-check block below.
+   * have blocked -- see the pause-check block below. A force-bypass
+   * decision under an active pause keeps its own `force_bypass` audit
+   * kind instead; the pause changes nothing observable for it.
    */
   UNDERSTANDING_GATE_PAUSE_FILE?: string;
 }
@@ -163,18 +170,19 @@ export function handlePreToolUse(
 
   // Pause check runs AFTER the tool-name / enforcement-decision
   // computation (not before) so a paused allow that overrides a would-be
-  // block or force-bypass still leaves exactly one audit trace and one
-  // stderr line -- a governance override must never be as silent as an
-  // ordinary read-only allow. Same sentinel, same reader as the
-  // UserPromptSubmit hook (isPaused is imported from ./pause.js, not
-  // reimplemented) -- a harness-wide `pause` silences enforcement on both
-  // hooks identically.
+  // block still leaves exactly one audit trace and one stderr line -- a
+  // governance override must never be as silent as an ordinary read-only
+  // allow. Same sentinel, same reader as the UserPromptSubmit hook
+  // (isPaused is imported from ./pause.js, not reimplemented) -- a
+  // harness-wide `pause` silences enforcement on both hooks identically.
+  // A force-bypass decision is NOT treated as an override here: it falls
+  // through to the force_bypass audit branch below (which already returns
+  // a silent allow) so it keeps its own `force_bypass` audit kind instead
+  // of being folded into `paused_allow`.
   if (isPaused(env.UNDERSTANDING_GATE_PAUSE_FILE)) {
-    const wouldOverride =
-      decision.decision === "block" || decision.mode === "force_bypass";
+    const wouldOverride = decision.decision === "block";
     if (wouldOverride) {
-      const overriddenKind = decision.decision === "block" ? "block" : "force-bypass";
-      const reason = `understanding-gate is paused (pause sentinel active); overrides what would otherwise have been a ${overriddenKind} decision (${decision.mode}): ${decision.reason}`;
+      const reason = `understanding-gate is paused (pause sentinel active); overrides what would otherwise have been a block decision (${decision.mode}): ${decision.reason}`;
       safeAudit(deps, cwd, {
         kind: "paused_allow",
         tool,
@@ -185,15 +193,18 @@ export function handlePreToolUse(
       });
       return {
         ...ALLOW_SILENT,
-        stderr: `understanding-gate: paused (pause sentinel active); overriding a ${overriddenKind} decision for tool "${tool}".\n`,
+        stderr: `understanding-gate: paused (pause sentinel active); overriding a would-be block decision for tool "${tool}".\n`,
         decision: { decision: "allow", mode: "paused", reason },
       };
     }
-    // The underlying decision was already an allow (e.g. a read-only
-    // tool, an already-approved report, or UNDERSTANDING_GATE_DISABLE):
-    // the pause changes nothing observable, so stay on the current
-    // silent, zero-overhead, zero-audit path.
-    return { ...ALLOW_SILENT, decision };
+    if (decision.mode !== "force_bypass") {
+      // The underlying decision was already an allow (e.g. a read-only
+      // tool, an already-approved report, or UNDERSTANDING_GATE_DISABLE):
+      // the pause changes nothing observable, so stay on the current
+      // silent, zero-audit path.
+      return { ...ALLOW_SILENT, decision };
+    }
+    // Force-bypass: fall through to the force_bypass audit branch below.
   }
 
   // Audit side-effects. Best-effort: never let an audit-write failure

@@ -318,6 +318,35 @@ describe("handlePreToolUse: pause sentinel (shared with UserPromptSubmit, no sec
     expect(audits).toHaveLength(0);
   });
 
+  // A force-bypass decision under an active pause must keep its own
+  // force_bypass audit trace, not be folded into paused_allow: the pause
+  // did not change anything observable about a force-bypass, so it must
+  // not swallow the override-of-legitimate-authority signal that
+  // force_bypass exists to record.
+  it("an active pause + valid UNDERSTANDING_GATE_FORCE does not change the audit kind: exactly one force_bypass entry, no paused_allow", () => {
+    const { deps, audits } = makeDeps();
+    const file = sentinelFile({
+      pausedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      reason: "test",
+      pausedBy: "test",
+    });
+    const r = handlePreToolUse(
+      PAYLOAD(),
+      {
+        UNDERSTANDING_GATE_PAUSE_FILE: file,
+        UNDERSTANDING_GATE_FORCE: "1",
+        UNDERSTANDING_GATE_FORCE_REASON: "incident recovery now",
+      },
+      deps,
+    );
+    expect(r.exitCode).toBe(0);
+    expect(r.decision.decision).toBe("allow");
+    expect(audits).toHaveLength(1);
+    expect(audits[0].event.kind).toBe("force_bypass");
+    expect(audits.some((a) => a.event.kind === "paused_allow")).toBe(false);
+  });
+
   // AC2 negative controls: fail-open direction is "NOT paused" -- each of
   // these must still deny (exitCode 2), same as with no pause file at all.
   it("AC2: an EXPIRED sentinel does not suppress the deny", () => {
@@ -486,9 +515,14 @@ describe("handlePreToolUse: pause sentinel (shared with UserPromptSubmit, no sec
           { UNDERSTANDING_GATE_PAUSE_FILE: file },
         );
 
-        const preToolUsePaused = preToolUseResult.exitCode === 0;
+        const preToolUsePaused = preToolUseResult.decision.mode === "paused";
         const promptPaused = promptOut === "";
         expect(preToolUsePaused, `case "${label}"`).toBe(promptPaused);
+        // Secondary signal: a paused decision always maps to exit 0, so
+        // this stays in lockstep with the primary decision.mode check.
+        expect(preToolUseResult.exitCode === 0, `case "${label}"`).toBe(
+          preToolUsePaused,
+        );
       }
     } finally {
       for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
