@@ -3,7 +3,7 @@
 // All defensive: any failure mode degrades to "" so the hook never crashes
 // the harness. Phase 0 is non-blocking by design.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 
 import { isTaskLike } from "../../classifier.js";
 import { pickMode } from "../../mode.js";
@@ -13,12 +13,12 @@ interface ClaudeCodeHookEnv {
   UNDERSTANDING_GATE_DISABLE?: string;
   UNDERSTANDING_GATE_MODE?: string;
   /**
-   * Path to a harness pause-sentinel JSON file (shape:
-   * {pausedAt, expiresAt, reason, pausedBy}, mirroring
-   * harness's `readSentinel`). Read-only: this package never writes or
-   * deletes the file, and auto-resume cleanup is the harness's job, not
-   * this hook's. Unset means "no pause check at all" so the package stays
-   * standalone-runnable without any harness on disk.
+   * Path to a pause-sentinel JSON file (shape: {pausedAt, expiresAt,
+   * reason, pausedBy}). Read-only: this package never writes or deletes
+   * the file, and auto-resume cleanup is whatever produces the sentinel's
+   * job, not this hook's. Unset means "no pause check at all" so the
+   * package stays standalone-runnable without any external sentinel
+   * writer on disk.
    */
   UNDERSTANDING_GATE_PAUSE_FILE?: string;
 }
@@ -28,17 +28,17 @@ interface HookInput {
 }
 
 interface PauseSentinelShape {
+  pausedAt?: unknown;
   expiresAt?: unknown;
 }
 
 const HOOK_EVENT_NAME = "UserPromptSubmit";
 
-// Claude Code hands this hook the harness's own `<task-notification>` XML
-// wrapper text AS the `prompt` field on some turns (subagent completion
-// notices), not just genuine operator input. Match it as a PREFIX (after
-// leading whitespace) so an operator who happens to type the words
-// "task-notification" mid-message still gets gated; only a prompt that
-// actually BEGINS with the tag is treated as a harness hull.
+// Claude Code delivers a task-notification wrapper as the `prompt` field
+// on subagent-completion turns, not just genuine operator input. Match it
+// as a PREFIX (after leading whitespace) so an operator who happens to
+// type the words "task-notification" mid-message still gets gated; only a
+// prompt that actually BEGINS with the tag is treated as this wrapper.
 const TASK_NOTIFICATION_HULL = /^\s*<task-notification(?:[\s/>]|$)/;
 
 function isTruthyEnv(value: string | undefined): boolean {
@@ -47,23 +47,35 @@ function isTruthyEnv(value: string | undefined): boolean {
   return v === "1" || v === "true" || v === "yes" || v === "on";
 }
 
-function isHarnessHull(prompt: string): boolean {
+function isTaskNotificationHull(prompt: string): boolean {
   return TASK_NOTIFICATION_HULL.test(prompt);
 }
 
-// Read-only, best-effort check of a harness pause sentinel. Mirrors the
-// read side of harness's `readSentinel` (pause-sentinel.ts) without taking
-// a dependency on harness: no file, an unreadable file, malformed JSON, or
-// a missing/unparsable `expiresAt` all degrade to "not paused" so a broken
-// sentinel can never freeze this hook's normal behavior. `expiresAt: null`
-// means paused indefinitely; a valid ISO string in the future means paused
-// until then; anything else (including an already-past timestamp) means
-// not paused. Nothing here is ever written or deleted -- expiry cleanup is
-// the harness's job, not this hook's.
+// Read-only, best-effort check of a pause sentinel file. The shape and the
+// "absent/parsable" semantics below are chosen to match how a pause
+// sentinel of this shape is read elsewhere: no file, an unreadable file,
+// a non-regular file (see the statSync guard, which keeps this from
+// blocking forever on a FIFO), malformed JSON, or a non-object/array JSON
+// value all degrade to "not paused". Within a parsable sentinel OBJECT:
+//   - a missing or empty-string `pausedAt` makes the whole sentinel count
+//     as absent (not paused) -- a sentinel writer never omits it, so this
+//     is reserved for a corrupted file.
+//   - `expiresAt` missing entirely, or explicitly `null`, means paused
+//     INDEFINITELY.
+//   - `expiresAt` as a non-empty string that fails to parse as a date
+//     ALSO means paused indefinitely (a malformed but present expiry
+//     doesn't get to silently unblock things).
+//   - `expiresAt` as anything else (a number, array, object, boolean, or
+//     empty string) makes the whole sentinel count as absent.
+//   - `expiresAt` as a valid, parsable date means paused only while it is
+//     strictly in the future; equal-to-now or past means not paused.
+// Nothing here is ever written or deleted -- expiry cleanup is not this
+// hook's job.
 function isPaused(pauseFilePath: string | undefined): boolean {
   if (!pauseFilePath) return false;
   let raw: string;
   try {
+    if (!statSync(pauseFilePath).isFile()) return false;
     raw = readFileSync(pauseFilePath, "utf8");
   } catch {
     return false;
@@ -77,12 +89,23 @@ function isPaused(pauseFilePath: string | undefined): boolean {
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     return false;
   }
-  if (!("expiresAt" in parsed)) return false;
-  const expiresAt = (parsed as PauseSentinelShape).expiresAt;
+  const shape = parsed as PauseSentinelShape;
+  if (typeof shape.pausedAt !== "string" || shape.pausedAt.length === 0) {
+    return false;
+  }
+
+  const expiresAtRaw = shape.expiresAt;
+  let expiresAt: string | null;
+  if (expiresAtRaw === null || expiresAtRaw === undefined) {
+    expiresAt = null;
+  } else if (typeof expiresAtRaw === "string" && expiresAtRaw.length > 0) {
+    expiresAt = expiresAtRaw;
+  } else {
+    return false;
+  }
   if (expiresAt === null) return true;
-  if (typeof expiresAt !== "string") return false;
   const expires = Date.parse(expiresAt);
-  if (!Number.isFinite(expires)) return false;
+  if (!Number.isFinite(expires)) return true;
   return expires > Date.now();
 }
 
@@ -109,7 +132,7 @@ export function handleUserPromptSubmit(
   const promptValue = (parsed as HookInput).prompt;
   const prompt = typeof promptValue === "string" ? promptValue : "";
   if (!prompt) return "";
-  if (isHarnessHull(prompt)) return "";
+  if (isTaskNotificationHull(prompt)) return "";
   if (!isTaskLike(prompt)) return "";
 
   const mode = pickMode(prompt, {
