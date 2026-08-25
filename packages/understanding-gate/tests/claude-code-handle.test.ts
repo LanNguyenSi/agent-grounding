@@ -1,8 +1,33 @@
-import { describe, it, expect } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  afterEach,
+  beforeEach,
+  vi,
+} from "vitest";
+import { execFileSync } from "node:child_process";
+import {
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { handleUserPromptSubmit } from "../src/adapters/claude-code/handle.js";
+
+// Repo root (packages/understanding-gate/.. /..): where npm hoists devDeps
+// like tsx in this npm-workspace repo. Used only by the FIFO regression
+// test below, which must run the handler in a REAL child process.
+const REPO_ROOT = resolve(__dirname, "../../..");
+const TSX_BIN = resolve(REPO_ROOT, "node_modules/.bin/tsx");
+const RUN_HANDLE_CHILD = resolve(__dirname, "fixtures/run-handle-child.ts");
 
 const TASK_PROMPT = "add a logout button to src/Header.tsx";
 const NON_TASK_PROMPT = "what does jq -r do?";
+const TASK_NOTIFICATION_HULL_PROMPT =
+  '<task-notification kind="subagent_completion">add a logout button to src/Header.tsx</task-notification>';
 
 interface HookOutput {
   hookSpecificOutput: {
@@ -144,5 +169,430 @@ describe("handleUserPromptSubmit", () => {
       const parsed = parseOutput(out);
       expect(parsed.hookSpecificOutput.hookEventName).toBe("UserPromptSubmit");
     });
+  });
+
+  describe("harness hull guard (AC4)", () => {
+    it("does not inject when the prompt IS a task-notification hull", () => {
+      expect(
+        handleUserPromptSubmit(
+          JSON.stringify({ prompt: TASK_NOTIFICATION_HULL_PROMPT }),
+        ),
+      ).toBe("");
+    });
+
+    it("does not inject when the hull is preceded only by whitespace", () => {
+      expect(
+        handleUserPromptSubmit(
+          JSON.stringify({ prompt: `  \n${TASK_NOTIFICATION_HULL_PROMPT}` }),
+        ),
+      ).toBe("");
+    });
+
+    it("still injects for a genuine operator prompt (positive control)", () => {
+      const out = handleUserPromptSubmit(
+        JSON.stringify({ prompt: TASK_PROMPT }),
+      );
+      expect(out).not.toBe("");
+    });
+
+    it("still injects when the operator merely mentions the words task-notification mid-message", () => {
+      const out = handleUserPromptSubmit(
+        JSON.stringify({
+          prompt:
+            "fix src/Header.tsx: the task-notification handler in it is broken",
+        }),
+      );
+      expect(out).not.toBe("");
+    });
+
+    it("still injects when the literal <task-notification tag appears mid-prompt, not as a prefix (kills the anchor mutant)", () => {
+      const out = handleUserPromptSubmit(
+        JSON.stringify({
+          prompt:
+            "fix src/Header.tsx: <task-notification> appears in the log",
+        }),
+      );
+      expect(out).not.toBe("");
+    });
+
+    it("still injects for a prefix that only shares the hull's stem, <task-notifications> (kills the boundary-class mutant)", () => {
+      const out = handleUserPromptSubmit(
+        JSON.stringify({
+          prompt:
+            '<task-notifications kind="x">add a logout button to src/Header.tsx</task-notifications>',
+        }),
+      );
+      expect(out).not.toBe("");
+    });
+
+    it("still injects for a prefix that only shares the hull's stem, <task-notification-x> (kills the boundary-class mutant)", () => {
+      const out = handleUserPromptSubmit(
+        JSON.stringify({
+          prompt:
+            '<task-notification-x kind="x">add a logout button to src/Header.tsx</task-notification-x>',
+        }),
+      );
+      expect(out).not.toBe("");
+    });
+
+    it("still injects for an upper-case <TASK-NOTIFICATION> prefix (kills the case-insensitive-flag mutant)", () => {
+      const out = handleUserPromptSubmit(
+        JSON.stringify({
+          prompt:
+            '<TASK-NOTIFICATION kind="x">add a logout button to src/Header.tsx</TASK-NOTIFICATION>',
+        }),
+      );
+      expect(out).not.toBe("");
+    });
+  });
+
+  describe("pause sentinel (AC1-AC3)", () => {
+    let dir: string;
+
+    afterEach(() => {
+      if (dir) rmSync(dir, { recursive: true, force: true });
+    });
+
+    function sentinelFile(content: unknown): string {
+      dir = mkdtempSync(join(tmpdir(), "understanding-gate-pause-"));
+      const file = join(dir, "sentinel.json");
+      writeFileSync(
+        file,
+        typeof content === "string" ? content : JSON.stringify(content),
+      );
+      return file;
+    }
+
+    it("AC1: suppresses injection when the sentinel is active (future expiresAt)", () => {
+      const file = sentinelFile({
+        pausedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        reason: "test",
+        pausedBy: "test",
+      });
+      const out = handleUserPromptSubmit(
+        JSON.stringify({ prompt: TASK_PROMPT }),
+        { UNDERSTANDING_GATE_PAUSE_FILE: file },
+      );
+      expect(out).toBe("");
+    });
+
+    it("AC3: expiresAt null (indefinite) suppresses injection", () => {
+      const file = sentinelFile({
+        pausedAt: new Date().toISOString(),
+        expiresAt: null,
+        reason: "test",
+        pausedBy: "test",
+      });
+      const out = handleUserPromptSubmit(
+        JSON.stringify({ prompt: TASK_PROMPT }),
+        { UNDERSTANDING_GATE_PAUSE_FILE: file },
+      );
+      expect(out).toBe("");
+    });
+
+    it("AC2: an EXPIRED sentinel does not suppress injection (negative control)", () => {
+      const file = sentinelFile({
+        pausedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+        expiresAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        reason: "test",
+        pausedBy: "test",
+      });
+      const out = handleUserPromptSubmit(
+        JSON.stringify({ prompt: TASK_PROMPT }),
+        { UNDERSTANDING_GATE_PAUSE_FILE: file },
+      );
+      expect(out).not.toBe("");
+    });
+
+    it("AC2: UNDERSTANDING_GATE_PAUSE_FILE unset does not suppress injection", () => {
+      const out = handleUserPromptSubmit(
+        JSON.stringify({ prompt: TASK_PROMPT }),
+      );
+      expect(out).not.toBe("");
+    });
+
+    it("AC2: a missing sentinel file does not suppress injection", () => {
+      const out = handleUserPromptSubmit(
+        JSON.stringify({ prompt: TASK_PROMPT }),
+        {
+          UNDERSTANDING_GATE_PAUSE_FILE:
+            "/nonexistent/path/does-not-exist.json",
+        },
+      );
+      expect(out).not.toBe("");
+    });
+
+    it("AC2: broken JSON in the sentinel file does not suppress injection", () => {
+      const file = sentinelFile("not json at all {");
+      const out = handleUserPromptSubmit(
+        JSON.stringify({ prompt: TASK_PROMPT }),
+        { UNDERSTANDING_GATE_PAUSE_FILE: file },
+      );
+      expect(out).not.toBe("");
+    });
+
+    it("a sentinel missing the expiresAt field entirely suppresses injection (indefinite pause, mirrors the reference reader)", () => {
+      const file = sentinelFile({
+        pausedAt: new Date().toISOString(),
+        reason: "test",
+        pausedBy: "test",
+      });
+      const out = handleUserPromptSubmit(
+        JSON.stringify({ prompt: TASK_PROMPT }),
+        { UNDERSTANDING_GATE_PAUSE_FILE: file },
+      );
+      expect(out).toBe("");
+    });
+
+    it("a sentinel with an unparsable expiresAt string suppresses injection (indefinite pause, mirrors the reference reader)", () => {
+      const file = sentinelFile({
+        pausedAt: new Date().toISOString(),
+        expiresAt: "not-a-date",
+        reason: "test",
+        pausedBy: "test",
+      });
+      const out = handleUserPromptSubmit(
+        JSON.stringify({ prompt: TASK_PROMPT }),
+        { UNDERSTANDING_GATE_PAUSE_FILE: file },
+      );
+      expect(out).toBe("");
+    });
+
+    it("a sentinel missing pausedAt (even with expiresAt: null) does not suppress injection -- counts as absent, mirrors the reference reader", () => {
+      const file = sentinelFile({
+        expiresAt: null,
+        reason: "test",
+        pausedBy: "test",
+      });
+      const out = handleUserPromptSubmit(
+        JSON.stringify({ prompt: TASK_PROMPT }),
+        { UNDERSTANDING_GATE_PAUSE_FILE: file },
+      );
+      expect(out).not.toBe("");
+    });
+
+    it("a sentinel with an empty-string pausedAt does not suppress injection", () => {
+      const file = sentinelFile({
+        pausedAt: "",
+        expiresAt: null,
+        reason: "test",
+        pausedBy: "test",
+      });
+      const out = handleUserPromptSubmit(
+        JSON.stringify({ prompt: TASK_PROMPT }),
+        { UNDERSTANDING_GATE_PAUSE_FILE: file },
+      );
+      expect(out).not.toBe("");
+    });
+
+    it.each([
+      ["a number", 42],
+      ["an array", [1, 2, 3]],
+      ["a nested object", { foo: "bar" }],
+      ["true", true],
+      ["an empty string", ""],
+    ])(
+      "a sentinel with expiresAt as %s does not suppress injection (malformed, counts as absent)",
+      (_label, expiresAt) => {
+        const file = sentinelFile({
+          pausedAt: new Date().toISOString(),
+          expiresAt,
+          reason: "test",
+          pausedBy: "test",
+        });
+        const out = handleUserPromptSubmit(
+          JSON.stringify({ prompt: TASK_PROMPT }),
+          { UNDERSTANDING_GATE_PAUSE_FILE: file },
+        );
+        expect(out).not.toBe("");
+      },
+    );
+
+    it.each([
+      ["a JSON array", "[1,2,3]"],
+      ["a JSON string", '"just a string"'],
+      ["a JSON null", "null"],
+    ])(
+      "a sentinel file whose top-level JSON is %s does not suppress injection",
+      (_label, raw) => {
+        const file = sentinelFile(raw);
+        const out = handleUserPromptSubmit(
+          JSON.stringify({ prompt: TASK_PROMPT }),
+          { UNDERSTANDING_GATE_PAUSE_FILE: file },
+        );
+        expect(out).not.toBe("");
+      },
+    );
+
+    describe("expiry boundary (> vs >=)", () => {
+      beforeEach(() => {
+        vi.useFakeTimers();
+      });
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it("expiresAt exactly equal to now does not suppress injection (kills the > -> >= mutant)", () => {
+        const now = new Date("2026-08-25T12:00:00.000Z");
+        vi.setSystemTime(now);
+        const file = sentinelFile({
+          pausedAt: new Date(now.getTime() - 1000).toISOString(),
+          expiresAt: now.toISOString(),
+          reason: "test",
+          pausedBy: "test",
+        });
+        const out = handleUserPromptSubmit(
+          JSON.stringify({ prompt: TASK_PROMPT }),
+          { UNDERSTANDING_GATE_PAUSE_FILE: file },
+        );
+        expect(out).not.toBe("");
+      });
+    });
+
+    describe("stderr diagnostic on a corrupt indefinite pause (AC-M3)", () => {
+      let stderrSpy: ReturnType<typeof vi.spyOn>;
+
+      beforeEach(() => {
+        stderrSpy = vi
+          .spyOn(process.stderr, "write")
+          .mockImplementation(() => true);
+      });
+
+      afterEach(() => {
+        stderrSpy.mockRestore();
+      });
+
+      it("writes a stderr line when expiresAt is missing entirely (indefinite pause from a corrupted/half-written file)", () => {
+        const file = sentinelFile({
+          pausedAt: new Date().toISOString(),
+          reason: "test",
+          pausedBy: "test",
+        });
+        const out = handleUserPromptSubmit(
+          JSON.stringify({ prompt: TASK_PROMPT }),
+          { UNDERSTANDING_GATE_PAUSE_FILE: file },
+        );
+        expect(out).toBe("");
+        expect(stderrSpy).toHaveBeenCalledTimes(1);
+        expect(stderrSpy.mock.calls[0]?.[0]).toMatch(
+          /expiresAt.*(missing|unparsable)/i,
+        );
+      });
+
+      it("writes a stderr line when expiresAt is present but unparsable as a date", () => {
+        const file = sentinelFile({
+          pausedAt: new Date().toISOString(),
+          expiresAt: "not-a-date",
+          reason: "test",
+          pausedBy: "test",
+        });
+        const out = handleUserPromptSubmit(
+          JSON.stringify({ prompt: TASK_PROMPT }),
+          { UNDERSTANDING_GATE_PAUSE_FILE: file },
+        );
+        expect(out).toBe("");
+        expect(stderrSpy).toHaveBeenCalledTimes(1);
+        expect(stderrSpy.mock.calls[0]?.[0]).toMatch(
+          /expiresAt.*(missing|unparsable)/i,
+        );
+      });
+
+      it("does NOT write a stderr line for an explicit expiresAt: null (deliberate, unambiguous indefinite pause)", () => {
+        const file = sentinelFile({
+          pausedAt: new Date().toISOString(),
+          expiresAt: null,
+          reason: "test",
+          pausedBy: "test",
+        });
+        const out = handleUserPromptSubmit(
+          JSON.stringify({ prompt: TASK_PROMPT }),
+          { UNDERSTANDING_GATE_PAUSE_FILE: file },
+        );
+        expect(out).toBe("");
+        expect(stderrSpy).not.toHaveBeenCalled();
+      });
+
+      it("does NOT write a stderr line for a normal active sentinel with a valid future expiresAt", () => {
+        const file = sentinelFile({
+          pausedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+          reason: "test",
+          pausedBy: "test",
+        });
+        const out = handleUserPromptSubmit(
+          JSON.stringify({ prompt: TASK_PROMPT }),
+          { UNDERSTANDING_GATE_PAUSE_FILE: file },
+        );
+        expect(out).toBe("");
+        expect(stderrSpy).not.toHaveBeenCalled();
+      });
+
+      it("does NOT write a stderr line when there is no pause at all (not task-notification, no sentinel)", () => {
+        const out = handleUserPromptSubmit(
+          JSON.stringify({ prompt: TASK_PROMPT }),
+        );
+        expect(out).not.toBe("");
+        expect(stderrSpy).not.toHaveBeenCalled();
+      });
+    });
+
+    it("follows a symlink to an active sentinel and suppresses injection (kills the statSync-to-lstatSync mutant)", () => {
+      dir = mkdtempSync(join(tmpdir(), "understanding-gate-pause-symlink-"));
+      const real = join(dir, "sentinel-real.json");
+      writeFileSync(
+        real,
+        JSON.stringify({
+          pausedAt: new Date().toISOString(),
+          expiresAt: null,
+          reason: "test",
+          pausedBy: "test",
+        }),
+      );
+      const link = join(dir, "sentinel-link.json");
+      symlinkSync(real, link);
+      const out = handleUserPromptSubmit(
+        JSON.stringify({ prompt: TASK_PROMPT }),
+        { UNDERSTANDING_GATE_PAUSE_FILE: link },
+      );
+      expect(out).toBe("");
+    });
+
+    // Named pipes on Windows are not filesystem paths in the POSIX sense
+    // mkfifo assumes; this hazard is POSIX-specific (CI runs
+    // ubuntu-latest), so the check is skipped rather than faked here.
+    // Using it.skipIf (not a bare early `return`) so the platform gap
+    // shows up in the report as a skip, not a silent pass.
+    it.skipIf(process.platform === "win32")(
+      "a named pipe at the pause-file path fails FAST if the statSync guard regresses, instead of hanging the suite",
+      () => {
+        dir = mkdtempSync(join(tmpdir(), "understanding-gate-pause-fifo-"));
+        const fifo = join(dir, "sentinel.fifo");
+        execFileSync("mkfifo", [fifo]);
+
+        // Run the handler in a REAL child process (not imported in-process)
+        // so that if the statSync guard regresses and readFileSync blocks
+        // on the writer-less FIFO, execFileSync's own `timeout` option
+        // kills the CHILD with a real OS signal -- turning the regression
+        // into a thrown error (assertion failure) instead of a hang that
+        // no `it(..., timeout)` can interrupt, because a synchronous
+        // blocking read never yields to the event loop that runs vitest's
+        // timers.
+        const start = Date.now();
+        const out = execFileSync(
+          TSX_BIN,
+          [RUN_HANDLE_CHILD, TASK_PROMPT, fifo],
+          { encoding: "utf8", timeout: 2000 },
+        );
+        // eslint-disable-next-line no-console -- reported runtime for
+        // AC-M1, not left-over debugging.
+        console.log(
+          `[AC-M1] FIFO probe (guard intact) took ${Date.now() - start}ms`,
+        );
+        expect(out).not.toBe("");
+      },
+      5000,
+    );
   });
 });

@@ -4,6 +4,34 @@
 
 ### Fixed
 
+- **Claude Code adapter: the `UserPromptSubmit` hook no longer injects on a
+  task-notification wrapper prompt, and now honors an external pause
+  sentinel.** Two symptoms observed live (agent-tasks `63fefe3a`): (1)
+  Claude Code delivers a task-notification wrapper as the `prompt` field on
+  subagent-completion turns, not just genuine operator input; `isTaskLike()`
+  matched the wrapper's contents and injected anyway. Fixed with a prefix
+  guard (`isTaskNotificationHull`) that skips injection only when the
+  prompt actually BEGINS with the `<task-notification` tag (after leading
+  whitespace), so an operator who merely types the words
+  "task-notification" mid-message still gets gated. This guard is
+  unconditional (no env var gates it), so it changes the published
+  `UserPromptSubmit` behavior for every consumer of the next release, not
+  just those who opt in. (2) The adapter had no pause-awareness at all: an
+  external pause of this shape had no effect on this hook. Fixed with a
+  read-only, best-effort check (`isPaused`) of a sentinel file at the new,
+  optional `UNDERSTANDING_GATE_PAUSE_FILE` env var (unset means no pause
+  check at all, so the package stays standalone-runnable). The sentinel is
+  a JSON object `{pausedAt, expiresAt, reason, pausedBy}`: a present,
+  non-empty `pausedAt` plus a missing or `null` `expiresAt` means paused
+  indefinitely; a non-empty `expiresAt` that fails to parse as a date also
+  means paused indefinitely (a malformed-but-present expiry does not get
+  to silently unblock things); a parsable `expiresAt` means paused only
+  while it is strictly in the future. Anything else -- missing/empty
+  `pausedAt`, a non-string/malformed `expiresAt`, an unreadable or
+  non-regular (e.g. a named pipe) file, or malformed/non-object JSON --
+  degrades to "not paused" rather than throwing or blocking. This package
+  never writes or deletes the sentinel; expiry cleanup is not this hook's
+  job.
 - **opencode adapter: deduped the double `message.updated` fire so a
   finished assistant message persists exactly one Understanding Report,
   not two.** Confirmed in the 0.4.10 npm-published-package dogfood
