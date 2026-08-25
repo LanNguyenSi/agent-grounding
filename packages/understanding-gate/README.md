@@ -27,9 +27,9 @@ Cooperative agent + cooperative prompt: rarely. The agent reads the Layer-1 temp
 
 Cooperative agent + aggressive prompt ("do it now, no waiting"): often. The agent may try to edit before the report cycle closes; Layer 2 then denies with a clear deny-reason and writes a `block` event to the audit log. The agent typically reads the deny-reason and falls back to producing the report.
 
-Non-cooperative or prompt-injected agent: this is the case Layer 2 exists for. Every destructive tool call is denied as long as no approved report exists. The audit log is the trail you'll go back to in an incident review.
+Non-cooperative or prompt-injected agent: this is the case Layer 2 exists for. Every destructive tool call is denied as long as no approved report exists and no pause sentinel is active. The audit log is the trail you'll go back to in an incident review.
 
-Force-bypass with `UNDERSTANDING_GATE_FORCE=1` + a `UNDERSTANDING_GATE_FORCE_REASON` of at least 10 characters: the only way through Layer 2 without an approved report. Both the bypass attempt and any attempt with a missing/short reason are audit-logged.
+Two routes through Layer 2 without an approved report: force-bypass with `UNDERSTANDING_GATE_FORCE=1` + a `UNDERSTANDING_GATE_FORCE_REASON` of at least 10 characters, or an active pause sentinel (see "Pause sentinel" below). Both are audit-logged: force-bypass as a `force_bypass` entry, a pause overriding what would otherwise have been a block or force-bypass as a `paused_allow` entry. Any force attempt with a missing/short reason is also audit-logged, as a `block`.
 
 ## Why this exists
 
@@ -119,16 +119,30 @@ claude
 ### Pause sentinel (optional, read-only)
 
 Set `UNDERSTANDING_GATE_PAUSE_FILE` to the path of a pause-sentinel JSON
-file (`{pausedAt, expiresAt, reason, pausedBy}`) to make the Claude Code
-`UserPromptSubmit` hook stay silent while that sentinel is active. This
-package only ever reads the file; it never creates, writes, or deletes it,
-and never manages expiry. Unset (the default) means no pause check at all.
+file (`{pausedAt, expiresAt, reason, pausedBy}`) to make `UserPromptSubmit`
+and `PreToolUse` stay silent (or, for `PreToolUse`, allow instead of deny)
+while that sentinel is active: the `UserPromptSubmit` hook skips the
+Understanding Report injection, and the `PreToolUse` hook skips its deny
+(both use the exact same reader, so a given sentinel file reads the same
+way on both paths). The `Stop` hook only persists reports and is
+unaffected by a pause. A `PreToolUse` pause that overrides what would
+otherwise have been a block or force-bypass is audit-logged as a
+`paused_allow` entry; a pause that changes nothing (a read-only tool, an
+already-approved report) stays silent, same as without a pause. This
+package only ever reads the sentinel file; it never creates, writes, or
+deletes it, and never manages expiry. Unset (the default) means no pause
+check at all on either hook.
 
-The sentinel only silences the `UserPromptSubmit` hook (the injection that
-asks for an Understanding Report). It has no effect on the `PreToolUse`
-hook: tool-use enforcement (see "When does the block actually fire?"
-above) keeps blocking unapproved writes while the sentinel is active, so a
-pause is not a way to suspend enforcement.
+`UNDERSTANDING_GATE_PAUSE_FILE` must be set on **both** hook lines by any
+consumer that wires `understanding-gate-claude-pre-tool-use` directly
+(rather than through env plumbing that already exports it for the whole
+process) -- each hook only sees the env var on its own command line, so a
+sentinel wired to one hook and not the other silences only that one.
+
+The sentinel is unsigned and operator-owned: this package trusts whatever
+is at the configured path and applies no signature or origin check, so
+treat write access to the sentinel file itself as equivalent to write
+access to pause both hooks.
 
 ## Not implemented yet
 
