@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-25
+
 ### Fixed
 
 - **Claude Code adapter: the `PreToolUse` hook now honors the pause
