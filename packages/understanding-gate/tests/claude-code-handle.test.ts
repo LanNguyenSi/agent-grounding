@@ -1,8 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { handleUserPromptSubmit } from "../src/adapters/claude-code/handle.js";
 
 const TASK_PROMPT = "add a logout button to src/Header.tsx";
 const NON_TASK_PROMPT = "what does jq -r do?";
+const TASK_NOTIFICATION_HULL_PROMPT =
+  '<task-notification kind="subagent_completion">add a logout button to src/Header.tsx</task-notification>';
 
 interface HookOutput {
   hookSpecificOutput: {
@@ -143,6 +148,155 @@ describe("handleUserPromptSubmit", () => {
       expect(out).not.toBe("");
       const parsed = parseOutput(out);
       expect(parsed.hookSpecificOutput.hookEventName).toBe("UserPromptSubmit");
+    });
+  });
+
+  describe("harness hull guard (AC4)", () => {
+    it("does not inject when the prompt IS a task-notification hull", () => {
+      expect(
+        handleUserPromptSubmit(
+          JSON.stringify({ prompt: TASK_NOTIFICATION_HULL_PROMPT }),
+        ),
+      ).toBe("");
+    });
+
+    it("does not inject when the hull is preceded only by whitespace", () => {
+      expect(
+        handleUserPromptSubmit(
+          JSON.stringify({ prompt: `  \n${TASK_NOTIFICATION_HULL_PROMPT}` }),
+        ),
+      ).toBe("");
+    });
+
+    it("still injects for a genuine operator prompt (positive control)", () => {
+      const out = handleUserPromptSubmit(
+        JSON.stringify({ prompt: TASK_PROMPT }),
+      );
+      expect(out).not.toBe("");
+    });
+
+    it("still injects when the operator merely mentions the words task-notification mid-message", () => {
+      const out = handleUserPromptSubmit(
+        JSON.stringify({
+          prompt:
+            "fix src/Header.tsx: the task-notification handler in it is broken",
+        }),
+      );
+      expect(out).not.toBe("");
+    });
+  });
+
+  describe("pause sentinel (AC1-AC3)", () => {
+    let dir: string;
+
+    afterEach(() => {
+      if (dir) rmSync(dir, { recursive: true, force: true });
+    });
+
+    function sentinelFile(content: unknown): string {
+      dir = mkdtempSync(join(tmpdir(), "understanding-gate-pause-"));
+      const file = join(dir, "sentinel.json");
+      writeFileSync(
+        file,
+        typeof content === "string" ? content : JSON.stringify(content),
+      );
+      return file;
+    }
+
+    it("AC1: suppresses injection when the sentinel is active (future expiresAt)", () => {
+      const file = sentinelFile({
+        pausedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        reason: "test",
+        pausedBy: "test",
+      });
+      const out = handleUserPromptSubmit(
+        JSON.stringify({ prompt: TASK_PROMPT }),
+        { UNDERSTANDING_GATE_PAUSE_FILE: file },
+      );
+      expect(out).toBe("");
+    });
+
+    it("AC3: expiresAt null (indefinite) suppresses injection", () => {
+      const file = sentinelFile({
+        pausedAt: new Date().toISOString(),
+        expiresAt: null,
+        reason: "test",
+        pausedBy: "test",
+      });
+      const out = handleUserPromptSubmit(
+        JSON.stringify({ prompt: TASK_PROMPT }),
+        { UNDERSTANDING_GATE_PAUSE_FILE: file },
+      );
+      expect(out).toBe("");
+    });
+
+    it("AC2: an EXPIRED sentinel does not suppress injection (negative control)", () => {
+      const file = sentinelFile({
+        pausedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+        expiresAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        reason: "test",
+        pausedBy: "test",
+      });
+      const out = handleUserPromptSubmit(
+        JSON.stringify({ prompt: TASK_PROMPT }),
+        { UNDERSTANDING_GATE_PAUSE_FILE: file },
+      );
+      expect(out).not.toBe("");
+    });
+
+    it("AC2: UNDERSTANDING_GATE_PAUSE_FILE unset does not suppress injection", () => {
+      const out = handleUserPromptSubmit(
+        JSON.stringify({ prompt: TASK_PROMPT }),
+      );
+      expect(out).not.toBe("");
+    });
+
+    it("AC2: a missing sentinel file does not suppress injection", () => {
+      const out = handleUserPromptSubmit(
+        JSON.stringify({ prompt: TASK_PROMPT }),
+        {
+          UNDERSTANDING_GATE_PAUSE_FILE:
+            "/nonexistent/path/does-not-exist.json",
+        },
+      );
+      expect(out).not.toBe("");
+    });
+
+    it("AC2: broken JSON in the sentinel file does not suppress injection", () => {
+      const file = sentinelFile("not json at all {");
+      const out = handleUserPromptSubmit(
+        JSON.stringify({ prompt: TASK_PROMPT }),
+        { UNDERSTANDING_GATE_PAUSE_FILE: file },
+      );
+      expect(out).not.toBe("");
+    });
+
+    it("a sentinel missing the expiresAt field entirely does not suppress injection", () => {
+      const file = sentinelFile({
+        pausedAt: new Date().toISOString(),
+        reason: "test",
+        pausedBy: "test",
+      });
+      const out = handleUserPromptSubmit(
+        JSON.stringify({ prompt: TASK_PROMPT }),
+        { UNDERSTANDING_GATE_PAUSE_FILE: file },
+      );
+      expect(out).not.toBe("");
+    });
+
+    it("a sentinel with an unparsable expiresAt string does not suppress injection", () => {
+      const file = sentinelFile({
+        pausedAt: new Date().toISOString(),
+        expiresAt: "not-a-date",
+        reason: "test",
+        pausedBy: "test",
+      });
+      const out = handleUserPromptSubmit(
+        JSON.stringify({ prompt: TASK_PROMPT }),
+        { UNDERSTANDING_GATE_PAUSE_FILE: file },
+      );
+      expect(out).not.toBe("");
     });
   });
 });

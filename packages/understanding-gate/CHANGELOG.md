@@ -4,6 +4,27 @@
 
 ### Fixed
 
+- **Claude Code adapter: the `UserPromptSubmit` hook no longer injects on a
+  harness task-notification hull, and now honors a harness pause
+  sentinel.** Two symptoms observed live (agent-tasks `63fefe3a`, D-015/
+  D-018 in `.ai/runs/2026-08-25-open-pool-batch27/03-decisions.md`):
+  (1) Claude Code hands this hook the harness's own `<task-notification>`
+  XML wrapper text AS the `prompt` field on subagent-completion turns, not
+  just genuine operator input; `isTaskLike()` matched the wrapper's
+  contents and injected anyway. Fixed with a prefix guard
+  (`isHarnessHull`) that skips injection only when the prompt actually
+  BEGINS with the `<task-notification` tag (after leading whitespace), so
+  an operator who merely types the words "task-notification" mid-message
+  still gets gated. (2) The adapter had no pause-awareness at all: a
+  harness-side `harness pause` had no effect on this hook. Fixed with a
+  read-only, best-effort check (`isPaused`) of a sentinel file at
+  `UNDERSTANDING_GATE_PAUSE_FILE`, mirroring the read side of harness's
+  `readSentinel` (`pause-sentinel.ts`) without taking a dependency on
+  harness itself: the env var is optional (unset means no pause check, so
+  the package stays standalone-runnable), and any missing file, unreadable
+  file, malformed JSON, or missing/unparsable `expiresAt` degrades to "not
+  paused" rather than throwing. This package never writes or deletes the
+  sentinel; expiry cleanup stays the harness's job.
 - **opencode adapter: deduped the double `message.updated` fire so a
   finished assistant message persists exactly one Understanding Report,
   not two.** Confirmed in the 0.4.10 npm-published-package dogfood
