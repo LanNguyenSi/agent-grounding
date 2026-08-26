@@ -3,7 +3,7 @@ type: invariant
 title: Hypothesis state — one library, two consumers, two persistence shapes
 description: hypothesis-tracker is a pure in-memory library; grounding-mcp keeps a disk-backed LRU cache under ~/.grounding-mcp/hypotheses/ (since PR #139) while understanding-gate persists to hypotheses.json, and inside the library addEvidence and supportHypothesis disagree on whether required_checks gate promotion.
 tags: [hypothesis-tracker, persistence, grounding-mcp, understanding-gate]
-timestamp: 2026-08-05T15:56:24Z
+timestamp: 2026-08-26T11:26:08Z
 sources:
   - packages/hypothesis-tracker/src/lib.ts
   - packages/grounding-mcp/src/hypothesis-store.ts
@@ -25,22 +25,22 @@ difference is where it lands and how it is evicted, not whether it survives.
 ## Invariant 1 — the library never touches disk
 
 `packages/hypothesis-tracker/src/lib.ts` is in-memory only. `createStore()` returns a plain
-object `{ session, hypotheses: [] }` (lib.ts:46-48); every mutator (`addHypothesis`,
+object `{ session, hypotheses: [] }` (`lib.ts:46-47#"return { session, hypotheses: [] };"`); every mutator (`addHypothesis`,
 `addEvidence`, `completeCheck`, `rejectHypothesis`, `supportHypothesis`) mutates that object
-in place. The only I/O-adjacent functions are `exportStore` (JSON string out, lib.ts:154)
-and `importStore` (validated parse in, lib.ts:206) — neither reads or writes a file. A
+in place. The only I/O-adjacent functions are `exportStore` (JSON string out, `lib.ts:154#"export function exportStore"`)
+and `importStore` (validated parse in, `lib.ts:206#"export function importStore"`) — neither reads or writes a file. A
 coding agent must not assume calling a mutator persists anything.
 
 ### State machine — exactly three statuses
 
 ```
-HypothesisStatus = "unverified" | "supported" | "rejected"   // lib.ts:9
+HypothesisStatus = "unverified" | "supported" | "rejected"   // lib.ts:9#"export type HypothesisStatus"
 ```
 
-There are only these three. New hypotheses start `"unverified"` (lib.ts:59). This union is
+There are only these three. New hypotheses start `"unverified"` (`lib.ts:59#"status:"`). This union is
 duplicated as a runtime guard in **two** other places, both of which will *silently drop
-rows* if the union ever grows: `HYPOTHESIS_STATUSES` in lib.ts:158-162 (used by `importStore`)
-and `VALID_STATUSES` in understanding-gate's `hypothesis-store-fs.ts:66` (explicitly
+rows* if the union ever grows: `HYPOTHESIS_STATUSES` in `lib.ts:158-161#"rejected"` (used by `importStore`)
+and `VALID_STATUSES` in understanding-gate's `hypothesis-store-fs.ts:66#"VALID_STATUSES = new Set"` (explicitly
 commented "If the upstream union grows, this guard will silently drop valid rows").
 
 ## Invariant 2 — TWO confirmation paths that disagree on required_checks (the trap)
@@ -48,52 +48,52 @@ commented "If the upstream union grows, this guard will silently drop valid rows
 Both promote a hypothesis to `"supported"`, but only one respects `required_checks`. Conflating
 them is the central footgun.
 
-- **`supportHypothesis(store, id)`** (lib.ts:125-132) — the *manual* confirm path. It
+- **`supportHypothesis(store, id)`** (`lib.ts:125-131#"return hyp;"`) — the *manual* confirm path. It
   **refuses** while any required check is pending:
   ```ts
   if (!hyp || hyp.status === "rejected") return null;
-  if (hyp.required_checks.some((c) => !c.done)) return null;   // lib.ts:128 — the gate
+  if (hyp.required_checks.some((c) => !c.done)) return null;   // lib.ts:128#"required_checks.some" — the gate
   hyp.status = "supported";
   ```
   Returns `null` for unknown, already-rejected, **or checks-pending**. Evidence is
   intentionally NOT required here (it is the escape hatch for out-of-band evidence).
 
-- **`addEvidence(store, id, text, source?)`** (lib.ts:75-91) — attaching the *first* piece of
+- **`addEvidence(store, id, text, source?)`** (`lib.ts:75-90#"return hyp;"`) — attaching the *first* piece of
   evidence **auto-promotes regardless of pending checks**:
   ```ts
   hyp.evidence.push({ text, source, addedAt: now() });
-  if (hyp.status === "unverified") hyp.status = "supported";   // lib.ts:86-88 — no check gate
+  if (hyp.status === "unverified") hyp.status = "supported";   // lib.ts:86-87#"hyp.status = " — no check gate
   ```
 
 **The trap:** `required_checks` gate `supportHypothesis` but do **not** gate `addEvidence`.
 An agent that thinks "checks must pass before a hypothesis can be supported" is wrong for the
 evidence path — a single `addEvidence` call flips `unverified → supported` with every check
 still `done: false`. This is by design (the tracker treats evidence attachment as itself a
-form of support; see the doc-comment at lib.ts:115-124), not a bug, but it means the
+form of support; see the doc-comment at `lib.ts:115-123#"or already-rejected hypothesis."`), not a bug, but it means the
 "checks-drain-first" contract only holds for the manual verb.
 
 ## Consumer A — grounding-mcp: disk-backed LRU cache, survives restart
 
 `packages/grounding-mcp/src/hypothesis-store.ts` backs an in-process
-`Map<string, HypothesisStore>` (hypothesis-store.ts:65) with JSON files under
+`Map<string, HypothesisStore>` (`hypothesis-store.ts:65#"const stores = new Map"`) with JSON files under
 `~/.grounding-mcp/hypotheses/<sessionId>.json` (override via `GROUNDING_MCP_HYPOTHESES_DIR`,
-`hypothesesRoot()` at hypothesis-store.ts:76-78). This replaced the tracker's original
+`hypothesesRoot()` at `hypothesis-store.ts:76-77#"defaultHypothesesRoot();"`). This replaced the tracker's original
 volatile design (PR #139, 2026-07-13): the Map stays the hot path, but a cache miss (e.g.
-right after a restart) hydrates from disk via `loadStoreFromDisk` (hypothesis-store.ts:132);
-writers save via `saveStore` (atomic tmp+rename, hypothesis-store.ts:165-172), which
-server.ts's `hypothesis_*` verbs call after every successful mutation (server.ts:391, :437,
+right after a restart) hydrates from disk via `loadStoreFromDisk` (`hypothesis-store.ts:132#"function loadStoreFromDisk"`);
+writers save via `saveStore` (atomic tmp+rename, `hypothesis-store.ts:165-171#"renameSync(tmp, final);"`), which
+server.ts's `hypothesis_*` verbs call after every successful mutation (`server.ts:391#"saveStore(sessionId, store);"`, :437,
 :469, :491, :518). **A grounding-mcp process restart no longer loses hypothesis state** — it
 now has disk backing at parity with the session store and the evidence ledger
-(`packages/grounding-mcp/README.md:156`).
+(`packages/grounding-mcp/README.md:156-157#"the root cause is the backend container's missing OPENAI_API_KEY env var"`).
 
-The in-process Map is LRU-bounded. `getMaxSessions()` (hypothesis-store.ts:190-196)
+The in-process Map is LRU-bounded. `getMaxSessions()` (`hypothesis-store.ts:190-195#"return parsed;"`)
 reads `GROUNDING_HYPOTHESIS_MAX_SESSIONS` lazily per call. **Default is `200`**; unset, empty,
 non-integer (e.g. `"3.9"`), zero, or negative all fall back to `200`; the minimum honored cap
 is `1`. On insert past the cap the least-recently-used key is evicted from the Map
-(`cacheAndEvict`, hypothesis-store.ts:200-208); both reads (`getStore`) and writes
+(`cacheAndEvict`, `hypothesis-store.ts:200-207#"return store;"`); both reads (`getStore`) and writes
 touch-reorder the key for true LRU recency. Because the disk file persists, **eviction is no
 longer data loss**: the on-disk file for an evicted session is untouched and is re-hydrated on
-the next `getStore`/`getOrCreateStore` call (hypothesis-store.ts:42-48 comment;
+the next `getStore`/`getOrCreateStore` call (`hypothesis-store.ts:42-48#"eviction is not data loss, only a future disk read."` comment;
 `loadStoreFromDisk` at :132), at the cost of one extra disk read, not the hypotheses
 themselves.
 
@@ -101,14 +101,14 @@ themselves.
 
 Seven verbs, registered by name:
 
-- `hypothesis_record` (server.ts:377) — add a competing hypothesis with required checks
-- `hypothesis_list` (server.ts:397) — all hypotheses for a session + status summary
-- `hypothesis_evidence` (server.ts:420) — attach evidence; **auto-promotes** (the `addEvidence` path above)
-- `hypothesis_check_done` (server.ts:443) — mark a `required_checks[i]` done; drains `pending_checks`
-- `hypothesis_reject` (server.ts:475) — reject with reason (appended as `[rejected]` evidence)
-- `hypothesis_support` (server.ts:497) — explicit support; the checks-gated path; error
-  `hypothesis_not_found_rejected_or_checks_pending` when it returns null (server.ts:513)
-- `hypothesis_reset` (server.ts:524) — purge a session's hypotheses (MCP counterpart of `resetStore`), also deletes the on-disk file (hypothesis-store.ts:257-262)
+- `hypothesis_record` (`server.ts:377#"'hypothesis_record',"`) — add a competing hypothesis with required checks
+- `hypothesis_list` (`server.ts:397#"'hypothesis_list',"`) — all hypotheses for a session + status summary
+- `hypothesis_evidence` (`server.ts:420#"'hypothesis_evidence',"`) — attach evidence; **auto-promotes** (the `addEvidence` path above)
+- `hypothesis_check_done` (`server.ts:443#"'hypothesis_check_done',"`) — mark a `required_checks[i]` done; drains `pending_checks`
+- `hypothesis_reject` (`server.ts:475#"'hypothesis_reject',"`) — reject with reason (appended as `[rejected]` evidence)
+- `hypothesis_support` (`server.ts:497#"'hypothesis_support',"`) — explicit support; the checks-gated path; error
+  `hypothesis_not_found_rejected_or_checks_pending` when it returns null (`server.ts:513#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`)
+- `hypothesis_reset` (`server.ts:524#"'hypothesis_reset',"`) — purge a session's hypotheses (MCP counterpart of `resetStore`), also deletes the on-disk file (`hypothesis-store.ts:257-261#"return existedInMemory || existedOnDisk;"`)
 
 Writers use `getOrCreateStore`; mutating verbs other than record require an existing store and
 return `{ error: 'no_store_for_session' }` rather than creating one.
@@ -120,29 +120,29 @@ same library. `loadOrCreateStore(path, session)` reads + validates JSON (droppin
 rows, counting them as `droppedCount`); `saveStore(path, store)` writes atomically via
 `writeAtomicJSON`. **This state survives restarts.**
 
-Exact path construction (`hypothesis-sync.ts:47`):
+Exact path construction (`hypothesis-sync.ts:47#"resolve(opts.reportDir,"`):
 ```ts
 const storePath = resolve(opts.reportDir, "..", HYPOTHESES_STORE_FILENAME);
 ```
-where `HYPOTHESES_STORE_FILENAME = "hypotheses.json"` (hypothesis-store-fs.ts:18) and
+where `HYPOTHESES_STORE_FILENAME = "hypotheses.json"` (`hypothesis-store-fs.ts:18#"HYPOTHESES_STORE_FILENAME = "`) and
 `opts.reportDir` is the directory the report was saved into (typically
 `.understanding-gate/reports/`). The store therefore lands **one level up** from the report
 dir, i.e. `.understanding-gate/hypotheses.json`, so dogfood inspection is
-`cat .understanding-gate/hypotheses.json` (comment at hypothesis-store-fs.ts:6-8 and
-hypothesis-sync.ts:31-36).
+`cat .understanding-gate/hypotheses.json` (comment at `hypothesis-store-fs.ts:6-8#"cat .understanding-gate/hypotheses.json"` and
+`hypothesis-sync.ts:31-35#"hypotheses.json"`).
 
 ## Consumer B also *seeds* the store from the Stop hook
 
 On the understanding-gate Stop-hook path, `syncHypothesesFromReport`
-(`hypothesis-sync.ts:42-64`) loads the fs store and calls `registerReportHypotheses`
+(`hypothesis-sync.ts:42-62#"message: String(err)"`) loads the fs store and calls `registerReportHypotheses`
 (`packages/understanding-gate/src/core/hypothesis-bridge.ts`), which walks the report and
 registers each entry via the library's `addHypothesis`:
 
-- `report.assumptions` → registered as kind `"assumption"` (hypothesis-bridge.ts:52-53)
-- `report.openQuestions` → registered as kind `"open_question"` (hypothesis-bridge.ts:55-56)
+- `report.assumptions` → registered as kind `"assumption"` (`hypothesis-bridge.ts:52-53#"addOrSkip(store, reportId, "`)
+- `report.openQuestions` → registered as kind `"open_question"` (`hypothesis-bridge.ts:55-56#"addOrSkip(store, reportId, "`)
 
 It persists back only when something was added or corrupt rows were dropped
-(hypothesis-sync.ts:52-53). It is best-effort and never throws. So an understanding report's
+(`hypothesis-sync.ts:52-53#"saveStore(storePath, store);"`). It is best-effort and never throws. So an understanding report's
 assumptions and open questions become durable hypotheses on disk — a side effect grounding-mcp
 has no equivalent of.
 

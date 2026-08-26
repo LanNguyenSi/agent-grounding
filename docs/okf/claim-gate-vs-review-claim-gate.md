@@ -3,7 +3,7 @@ type: invariant
 title: claim-gate vs review-claim-gate — same word, opposite trust models
 description: Two sibling packages both gate on "evidence" but claim-gate trusts a caller-supplied boolean (self-discipline) while review-claim-gate reads a store (CI gate) — never treat them as interchangeable.
 tags: [claim-gate, review-claim-gate, evidence, trust-boundary]
-timestamp: 2026-08-05T15:56:24Z
+timestamp: 2026-08-26T11:26:42Z
 sources:
   - packages/claim-gate/src/lib.ts
   - packages/claim-gate/src/cli.ts
@@ -39,16 +39,16 @@ review-claim-gate's non-`evidence_logged` flags are verified — defeats the gat
 - A *claim* is free text. `detectClaimType(claim)` regex-maps it to one of nine
   `ClaimType`s (`root_cause`, `architecture`, `security`, `network`,
   `configuration`, `process`, `availability`, `token`, `generic`);
-  `--type` overrides (`packages/claim-gate/src/lib.ts:108`, `:122`).
+  `--type` overrides (`packages/claim-gate/src/lib.ts:108#"detectClaimType(claim: string): ClaimType"`, `:122`).
 - Each `ClaimType` has a `POLICIES` entry listing which `ClaimContext` boolean
-  flags must be `true` (`packages/claim-gate/src/lib.ts:50`). `evaluateClaim`
+  flags must be `true` (`packages/claim-gate/src/lib.ts:50#"export const POLICIES: ClaimPolicy[]"`). `evaluateClaim`
   computes `missing = requires.filter(req => !context[req])`, `allowed = missing
   .length === 0`, and `score = round(satisfied/requires * 100)`
   (`:126`–`:138`).
 - **`has_evidence` is a caller-supplied boolean.** It is a field of the
-  `ClaimContext` interface at `packages/claim-gate/src/lib.ts:29`
+  `ClaimContext` interface at `packages/claim-gate/src/lib.ts:29#"has_evidence?: boolean;"`
   (`has_evidence?: boolean;`), set on the CLI purely from the `--evidence` flag
-  (`packages/claim-gate/src/cli.ts:63`, `has_evidence: opts.evidence,`).
+  (`packages/claim-gate/src/cli.ts:63#"has_evidence: opts.evidence,"`, `has_evidence: opts.evidence,`).
   Nothing verifies it.
 - **It never touches the evidence ledger.** `grep -rni "ledger"
   packages/claim-gate/src/` returns **zero hits** (exit 1). claim-gate has no
@@ -57,7 +57,7 @@ review-claim-gate's non-`evidence_logged` flags are verified — defeats the gat
   flag is the fact.
 - CLI: `claim-gate check <claim> [--readme --process --config --health
   --evidence --alternatives --type <t> --json]`. On a blocked claim it prints
-  missing prerequisites and **exits 1** (`packages/claim-gate/src/cli.ts:89`,
+  missing prerequisites and **exits 1** (`packages/claim-gate/src/cli.ts:89#"process.exit(1)"`,
   `if (!result.allowed) process.exit(1);`); `policies` lists all policies.
 - **Every input is agent-writable and therefore forgeable.** An agent can pass
   `--evidence` (or any flag) with no underlying work. That is by design: this is
@@ -68,15 +68,15 @@ review-claim-gate's non-`evidence_logged` flags are verified — defeats the gat
 - The claim type is the single `merge_approval`. `MERGE_APPROVAL_PREREQS` has
   five keys: `tests_pass`, `review_checklist_complete`,
   `no_unresolved_review_comments`, `scope_matches_task`, `evidence_logged`
-  (`packages/review-claim-gate/src/lib.ts:43`). All five must be true for
+  (`packages/review-claim-gate/src/lib.ts:43#"MERGE_APPROVAL_PREREQS: readonly ReviewContextKey[]"`). All five must be true for
   `allowed` (`:82`).
 - **`evidence_logged` is the one prerequisite backed by a store, not a bare
   flag.** `runCheck` resolves an evidence *source* with this precedence
-  (`packages/review-claim-gate/src/cli.ts:248`–`:294`; README "Evidence source
+  (`packages/review-claim-gate/src/cli.ts:248#"export function runCheck(opts: CheckOptions): CheckReport"`–`:294`; README "Evidence source
   precedence"):
   1. **forced** — `--evidence-logged` sets `evidence_logged=true` unconditionally,
-     bypassing any lookup (`runCheck`, `src/cli.ts:260`-`264`; `buildContext` then
-   applies it at `src/cli.ts:209`-`219`).
+     bypassing any lookup (`runCheck`, `src/cli.ts:260#"opts.evidenceLogged === true"`-`264`; `buildContext` then
+   applies it at `src/cli.ts:209#"function buildContext(opts: CheckOptions, evidenceEntries: number): ReviewContext"`-`219`).
   2. **committed file** — an explicit `--evidence-file <path>` (must exist, else
      throws) or the auto-detected convention path
      `./.agent-grounding/evidence/<task-id>.jsonl` under `process.cwd()`; counts
@@ -94,8 +94,8 @@ review-claim-gate's non-`evidence_logged` flags are verified — defeats the gat
   both a lexical resolved-path containment check and a symlink-aware
   (`realpathSync`) containment check, so a committed symlink inside the evidence
   dir cannot smuggle a read outside it
-  (`packages/review-claim-gate/src/cli.ts:76`-`159`).
-- CLI: `check` exits `0`/`1` on the verdict (`src/cli.ts:396`); `export` dumps
+  (`packages/review-claim-gate/src/cli.ts:76#"function defaultEvidenceFilePath(taskId: string, cwd = process.cwd())"`-`159`).
+- CLI: `check` exits `0`/`1` on the verdict (`src/cli.ts:396#"report.result.allowed ? 0 : 1"`); `export` dumps
   ledger entries for a session to JSONL for committing; `describe` lists prereqs.
 - **Still partly forgeable — know the residual trust.** The other four prereqs
   (`tests_pass` etc.) are plain caller flags, and `--evidence-logged` force-bypasses
@@ -109,9 +109,9 @@ review-claim-gate's non-`evidence_logged` flags are verified — defeats the gat
 
 review-claim-gate is a deliberate sibling, not a 10th claim-gate `ClaimType`, so
 its CLI, evidence-ledger integration, and policy can evolve without churning
-claim-gate's core policies (`packages/review-claim-gate/src/lib.ts:7`). It
+claim-gate's core policies (`packages/review-claim-gate/src/lib.ts:7#"Kept as a sibling package rather than a 10th built-in ClaimType"`). It
 mirrors claim-gate's verdict shape on purpose so existing parsers keep working
-(`src/lib.ts:31`).
+(`src/lib.ts:31#"export interface MergeApprovalResult"`).
 
 ## Cross-reference
 

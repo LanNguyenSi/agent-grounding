@@ -16,7 +16,11 @@
     "check:deps": "node scripts/check-deps.js",
     "test:check-deps": "node --test scripts/check-deps.test.js",
     "check:lockfile-integrity": "node scripts/check-lockfile-integrity.js",
-    "test:check-lockfile-integrity": "node --test scripts/check-lockfile-integrity.test.js"
+    "test:check-lockfile-integrity": "node --test scripts/check-lockfile-integrity.test.js",
+    "check:okf-kit-pin": "node scripts/check-okf-kit-pin.js",
+    "test:check-okf-kit-pin": "node --test scripts/check-okf-kit-pin.test.js",
+    "check:okf-anchors": "node scripts/check-okf-anchors.js",
+    "test:check-okf-anchors": "node --test scripts/check-okf-anchors.test.js"
   },
   "overrides": {
     "js-yaml": "^4.3.1",

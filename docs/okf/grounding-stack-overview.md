@@ -3,7 +3,7 @@ type: overview
 title: The grounding stack — where to read, and how releases are split
 description: Pointer doc — the root README already diagrams the whole stack; this entry adds the release topology (four version-locked packages under one root tag, eight independently-versioned ones) that the diagram does not show.
 tags: [overview, monorepo, releases, versioning, pointer]
-timestamp: 2026-08-22T04:32:48Z
+timestamp: 2026-08-26T11:19:05Z
 sources:
   - README.md
   - CHANGELOG.md
@@ -15,7 +15,7 @@ sources:
 ## Read this first
 
 [../../README.md](../../README.md) contains a mermaid diagram of the whole
-stack (lines 9-50) and a runnable evidence-ledger CLI demo. It is current and
+stack (`README.md:13-49#"helpers --> el"`) and a runnable evidence-ledger CLI demo. It is current and
 deliberately NOT duplicated here: one copy, no drift. Per-package READMEs cover
 each package's own surface.
 
@@ -25,7 +25,7 @@ READMEs; they have no bundle doc by design.
 
 ## What the diagram does not show: two release lanes
 
-`CHANGELOG.md` (lines 9-30) records a split release topology that surprises
+`CHANGELOG.md` (`CHANGELOG.md:9-30#"readme-first-resolver"`) records a split release topology that surprises
 anyone who assumes one monorepo means one version:
 
 **Version-locked, released together under a single root tag `vX.Y.Z`** (all at
