@@ -408,11 +408,11 @@
   deleted from `grounding-stack-overview.md`) -> exit 1 via `errors=1`;
   a NEW ambiguous bare `cli.ts:1` mention added to
   `hypothesis-tracker-persistence-split.md` (not `log.md`) -> exit 1,
-  `unresolved-ambiguous notices: 1`; a drifted `log.md`-ONLY citation
-  (its own `hypothesis-sync.ts:31-36` mention hand-edited to
-  `:200-210`, no source file touched) -> exit 0, surfaced instead as
-  `log.md findings (non-blocking): 1` in the step summary, proving item
-  3's fix actually holds.
+  unresolved-ambiguous notices: 1; a drifted `log.md`-ONLY citation (this
+  file's own hypothesis-sync.ts prose-citation range hand-edited to point
+  at lines 200 through 210 instead, no source file touched) -> exit 0,
+  surfaced instead as `log.md findings (non-blocking): 1` in the step
+  summary, proving item 3's fix actually holds.
 
 - 2026-08-24, okf-kit citations-resolve replaces the repo-local script
   (task 21f76bfe): this repo's own `scripts/okf-citations-resolve.mjs`
