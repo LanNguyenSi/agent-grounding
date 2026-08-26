@@ -2,12 +2,12 @@
 
 <!-- Add new entries at the top, newest first. -->
 
-- 2026-08-26, citation anchors normalized bundle-wide, plus a blocking
-  CI guard (task 79f9e0fd, refiled from the halt in task 9b6c4beb:
-  citations drifted in three consecutive review rounds of that PR
-  because nothing mechanical failed when a commit shifted lines). Two
-  rounds, both against okf-kit 0.6.0 (already pinned in
-  okf-staleness.yml on this branch):
+- 2026-08-26, citation anchors normalized bundle-wide, plus a red-on-drift
+  CI guard, advisory for PR merges and blocking for releases (task
+  79f9e0fd, refiled from the halt in task 9b6c4beb: citations drifted in
+  three consecutive review rounds of that PR because nothing mechanical
+  failed when a commit shifted lines). Three rounds, all against okf-kit
+  0.6.0 (already pinned in okf-staleness.yml on this branch):
 
   Round 1 (line-citation inventory and drift fix, scoped initially to
   `solution-acceptance-verdict-contract.md`): 61 line citations found in
@@ -31,8 +31,9 @@
 
   Round 2, three follow-up gaps from review: (a) round 1 used PLAIN line
   ranges, not okf-kit's anchored-citation feature -- exactly the class of
-  check batch 27 already proved insufficient (a 15-line drift stayed
-  green). Every full citation across all five `docs/okf/*.md` files whose
+  check already proved insufficient by an earlier run where a 15-line
+  drift stayed green under plain line ranges. Every full citation across
+  all five `docs/okf/*.md` files whose
   target lives inside this repo (131 total: the 61 above plus 70 more in
   `claim-gate-vs-review-claim-gate.md` (13), `evidence-ledger-session-key-shapes.md`
   (25), `hypothesis-tracker-persistence-split.md` (4), and
@@ -52,18 +53,16 @@
   anchor on the last line detects an insertion of any size above it),
   narrowing 36 ranges in the main doc (and more elsewhere) whose natural
   last line was generic (`}`, blank, `);`) back to their last real
-  claim-bearing line, and verified to occur at most a handful of times in
-  the whole target file (never a bare keyword). One documented exception:
-  evidence-ledger/src/types.ts, lines 9 through 14's anchor, `policy_decision`
-  (the `EntryType` union's own last member), occurs 4 times in that file
-  because the same identifier is named in three surrounding comments;
-  every alternative substring on that line requires crossing a `"`
-  character, which okf-kit's own anchor-quote scanner cannot support (an
-  embedded `"` inside the anchor text silently truncates the anchor at
-  that character -- confirmed empirically against a throwaway probe
-  bundle before relying on it). Not fixable without either weakening the
-  claim or losing anchoring on that citation entirely; 4 (not <=3) is a
-  measured, accepted residual, not an oversight. Also fixed one anchor
+  claim-bearing line, verified against the WHOLE TARGET FILE's occurrence
+  count rather than against the cited range itself. That file-wide measure
+  turned out to be the wrong criterion (round 3 below corrects it): it
+  passed evidence-ledger/src/types.ts lines 9 through 14's anchor,
+  `policy_decision`, as an "accepted residual" because the identifier
+  recurs 4 times file-wide (three surrounding comments plus the union
+  member itself), when the only count that actually matters is 1
+  occurrence within the cited range 9 through 14, on its last line -- which
+  it already was, so nothing there needed re-anchoring in round 3, just
+  the stale round-2 rationale correcting here. Also fixed one anchor
   discovered non-robust after fix (c) below: `resolveOwKnob`'s two
   identical `return 'auto';` statements (lines 307 and 309) meant a
   1-line shift could still coincidentally match the wrong one; re-pointed
@@ -78,28 +77,237 @@
   `packages/grounding-mcp/package.json`'s `version` field (not a cited
   target) changes 0 findings; reverted.
 
-  `okf-kit check --json docs/okf`: before round 1, after round 1, after
-  round 2, and after both negative controls were reverted -- errors 0,
-  warnings 6, notices 1 throughout, unchanged. The 6 warnings are
-  pre-existing `sources-fresh` staleness on three unrelated docs (out of
-  this task's scope); the 1 notice is the pre-existing `unresolved-ambiguous`
-  bare cli.ts mention (line 178 through 193, no colon here on purpose, see that entry's own note on why) in this file's own 2026-08-24 entry below.
+  `okf-kit check --json docs/okf` on the UNCOMMITTED round-1/round-2
+  working tree measured errors 0, warnings 6, notices 1, and this entry
+  originally (wrongly) reported that as "unchanged" through both rounds
+  and both negative controls. Round 3 below corrects this: measured again
+  on the actually-COMMITTED round-2 tree (commit `b595903`, this task's
+  branch before its round-3 rebase), the real numbers are errors 0,
+  warnings 1, notices 1 -- 5 of the 6 "pre-existing" warnings were never
+  real; they were `sources-fresh` STALE findings on docs this same PR's
+  own round-1/round-2 commits had just touched, which reset via
+  `sources-fresh`'s doc-commit-epoch rule (a doc committed at/after its
+  source's own last commit is not reported stale, regardless of its
+  frontmatter `timestamp:`) the moment those edits were committed, without
+  anyone re-verifying the content was actually still fresh. The 1
+  remaining warning (grounding-stack-overview.md's `package.json`
+  staleness) and the 1 notice (the ambiguous bare `cli.ts` citation,
+  line 178 through 193, in this file's own history) are addressed in
+  round 3 below.
 
-  New blocking job `okf-anchor-guard` in `.github/workflows/ci.yml`
-  (installs okf-kit@0.6.0 with the identical exact-pin recipe
-  `okf-staleness.yml` uses, runs the identical `okf-kit check --json
-  docs/okf`, then fails the build on any `citations-resolve` finding at
-  WARNING severity -- every base and anchor subtype, but never a NOTICE,
-  matching `--strict`'s own severity split so the pre-existing
-  `unresolved-ambiguous` notice above never trips it). `okf-staleness.yml`
-  itself stays warn-only and unmodified for `sources-fresh`; this is a
-  separate, additive job, not a change to that one's exit contract.
-  Verified by running the job's exact jq/exit shell logic locally (not
-  just reading it): clean bundle -> count=0, exit 0; the same
-  insert-1-line mutation used above -> count=31, exit 1; reverted ->
-  count=0, exit 0; the package.json version-bump false-positive probe
-  -> count=0, exit 0. `python3 -c "import yaml; yaml.safe_load(...)"`
-  confirms `ci.yml` still parses after the new job is added.
+  New job `okf-anchor-guard` in `.github/workflows/ci.yml` (installs
+  okf-kit@0.6.0 with the identical exact-pin recipe `okf-staleness.yml`
+  uses, runs the identical `okf-kit check --json docs/okf`, then fails
+  the build on any `citations-resolve` finding at WARNING severity --
+  every base and anchor subtype, but never a NOTICE, matching `--strict`'s
+  own severity split so the pre-existing `unresolved-ambiguous` notice
+  above never trips it). `okf-staleness.yml` itself stays warn-only and
+  unmodified for `sources-fresh`; this is a separate, additive job, not a
+  change to that one's exit contract. Verified by running the job's exact
+  jq/exit shell logic locally (not just reading it): clean bundle ->
+  count=0, exit 0; the same insert-1-line mutation used above -> count=31,
+  exit 1; reverted -> count=0, exit 0; the package.json version-bump
+  false-positive probe -> count=0, exit 0. `python3 -c "import yaml;
+  yaml.safe_load(...)"` confirms `ci.yml` still parses after the new job
+  is added. Round 3 below finds and fixes a real gap in this posture: it
+  never blocked on `.summary.errors` or on an `unresolved-ambiguous`
+  notice, so it was still green on a structurally broken bundle.
+
+  Round 3 (review fix round): rebased onto `origin/master` (the pin
+  commit this branch started from, `722ee4a`, had already been
+  squash-merged there as `#193`; `git rebase --onto origin/master
+  931aec7` replayed only this task's own two commits, cleanly, no
+  conflicts). Re-parsed `docs/okf/*.md` with okf-kit's own `CITATION_RE`
+  (backtick-optional) directly, not trusting round 2's "131 anchored"
+  count: 166 full citations outside log.md, 131 anchored, 35 unanchored
+  (34 in `hypothesis-tracker-persistence-split.md`, doc lines 28 through
+  145, targeting `lib.ts`/`hypothesis-store.ts`/`server.ts`/
+  `hypothesis-store-fs.ts`/`hypothesis-sync.ts`/`hypothesis-bridge.ts`;
+  1 in `merge-approval-gate-mechanics.md`:110), plus 2 pre-existing
+  unanchored citations in `log.md` itself, excluded from this coverage
+  scope as instructed (reserved/append-only, matches okf-kit's own
+  `short-form` carve-out for that file, though full citations there --
+  see the bare `cli.ts` fix below -- are still in scope for
+  drift/ambiguity). All 35 in-scope citations re-verified against the
+  real current source first (semantic check before anchoring, per this
+  round's brief) -- no drift found in any of them, all 34
+  hypothesis-tracker citations and the 1 merge-approval one landed
+  exactly where the doc already said -- then anchored. Also normalized 5
+  in-repo prose citations never in citable form at all (bare "lines N-M",
+  invisible to `CITATION_RE`, not the 4 this round's own brief estimated):
+  `runtime-reality-policy-pointer.md`'s "lines 26-36" / "line 88" /
+  "lines 113-116" into `handle-pre-tool-use.ts` (re-verified: `PolicyEnv`
+  spans exactly 26 through 36 as claimed, `envOn` is exactly line 88, the
+  `auditEnv` object literal's four fields are exactly 113 through 116 --
+  no drift, just never citable), and `grounding-stack-overview.md`'s
+  "lines 9-50" into the root `README.md`'s mermaid diagram (actually the
+  fenced block, lines 13 through 50; anchored 13 through 49 to land the
+  anchor on real content, not the closing fence) and "lines 9-30" into
+  the root `CHANGELOG.md` (verified: still exactly the version-lock
+  paragraph through the `readme-first-resolver` bullet, no drift).
+  Bundle total after this round: 171 full citations outside log.md, all
+  171 anchored.
+
+  Anchor rule was wrong (review MEDIUM): okf-kit's own `checkAnchor` only
+  asks "does the anchor text occur ANYWHERE in the cited range", so an
+  anchor whose text also occurs EARLIER in the same range still passes
+  okf-kit today even though a line-shift that only moves the LATER
+  occurrence leaves the earlier one to falsely keep the check green.
+  Corrected rule, now enforced mechanically (see `check-okf-anchors.js`
+  below) for every string anchor in the bundle outside log.md: the anchor
+  text must occur on the cited range's own LAST line, AND exactly once
+  within the range -- file-wide rarity (round 2's own criterion) is no
+  longer it, and never was the right one. Re-scanned the whole bundle
+  under the corrected rule and found exactly 2 real violations, both
+  named by the review and both confirmed reproducing:
+  `solution-acceptance-verdict-contract.md`:128 (`verdict-signing.ts:100-109`,
+  anchor `return newPath;` also matches line 107, not just the last line
+  109) and same doc:245 (`ow-run-completeness.ts:397-454`, anchor
+  `return scan;` also matches line 399, not just the last line 454). Both
+  fixed by widening the anchor text to include its own 2-space indent
+  (`  return newPath;` / `  return scan;`), which the shallower-indented
+  earlier occurrence on each target's own line (`if (...) return X;`,
+  1-space before `return`) does not contain, so the substring is now
+  unique to the deeper-indented bare `return` on the range's actual last
+  line -- verified via direct line-by-line inspection of both targets,
+  not assumed. The review's third named example,
+  `evidence-ledger-session-key-shapes.md`:32/:37 (evidence-ledger's
+  `types.ts`, lines 9 through 14, anchor `policy_decision`),
+  was checked directly against `types.ts` and turned out to be a false
+  alarm under the CORRECTED rule: `policy_decision` occurs exactly once
+  within lines 9 through 14 (on line 14, the range's own last line); round
+  2's "occurs 4 times, accepted residual" note was measuring file-wide
+  occurrence, the wrong scope, corrected above where that note lives. The
+  mechanical scan also caught two citations THIS round's own prose-anchoring
+  work introduced: `hypothesis-sync.ts:31-36`'s anchor `hypotheses.json`
+  landed one line short of the range's real last line (`*/`, the JSDoc
+  close, at 36; the content itself is at 35) -- narrowed to 31 through 35;
+  and the addendum's new *.test.ts shape rule (below) reshaped
+  `evidence-ledger-session-key-shapes.md`:51's citation into
+  `grounding-gate-mcp-roundtrip.test.ts:648-662`, spanning the whole
+  `it(...)` block it names instead of a single line.
+
+  CI guard was green on a structurally broken bundle (review MEDIUM):
+  `okf-anchor-guard` treated any okf-kit exit 1 as "findings, keep going"
+  and only ever counted `citations-resolve` WARNINGs, so (a) a
+  frontmatter error (`.summary.errors > 0`, e.g. a missing `type:` field)
+  passed with exit 0, and (b) an `unresolved-ambiguous` citation --
+  meaning citations-resolve never evaluated it at all -- was silently
+  excluded from the count as "just a notice", the same non-evaluation
+  reading as a clean bill of health. Fixed: the job now also fails when
+  `.summary.errors > 0`, and also fails on any citations-resolve
+  `unresolved-ambiguous` notice specifically (every other notice is still
+  non-blocking, surfaced in the step summary instead). Simulated all four
+  scenarios against the job's own literal `run:` block, extracted via
+  `python3 -c "import yaml; ... doc['jobs']['okf-anchor-guard']['steps']"`
+  (not a paraphrase of the shell): clean bundle -> exit 0; drifted
+  (inserted 1 line at the top of `lib.ts`) -> exit 1, 11
+  `citations-resolve` errors reported for
+  `hypothesis-tracker-persistence-split.md`, file reverted after (empty
+  diff); wrong bundle path (`docs/does-not-exist`) -> exit 2, tool/usage
+  posture unchanged; frontmatter error (deleted `type:` from
+  `grounding-stack-overview.md`) -> now exit 1 via `errors=1` in the step
+  summary (previously exit 0 on this exact scenario, the vacuous-green bug
+  the review measured), file reverted after (empty diff). Fixed the
+  bundle's own instance of the ambiguity gap as a prerequisite (this
+  round's guard fix would otherwise turn log.md's pre-existing
+  `unresolved-ambiguous` notice into a permanent CI failure): the historical
+  bare `cli.ts` citation (line 178 through 193) in this file's own
+  2026-08-22T04:54:02Z entry is qualified to
+  `packages/review-claim-gate/src/cli.ts:178-193`, the
+  file this same entry's later cross-reference (`countEvidenceFileLines` /
+  `buildContext` in `packages/review-claim-gate/src/cli.ts`) already names;
+  re-verified against current source (still exactly the
+  `countEvidenceFileLines` function body through its closing `for` loop,
+  no drift) before re-pointing, per this round's instruction to fix
+  rather than mask a drifted/ambiguous historical citation, recorded here
+  as that fix's own log entry.
+
+  Pin coupling (review MEDIUM): `okf-kit@0.6.0` was hardcoded
+  independently in `okf-staleness.yml` and `ci.yml` with nothing coupling
+  the two pin strings. Added `scripts/check-okf-kit-pin.js` (+
+  `scripts/check-okf-kit-pin.test.js`, 9 tests, including a negative
+  control: a deliberately diverging pin fixture fails), same
+  fixture-tested idiom as `check-pins.js`/`check-deps.js`/
+  `check-lockfile-integrity.js`; wired into `ci.yml`'s `okf-anchor-guard`
+  job and `package.json` (`check:okf-kit-pin` / `test:check-okf-kit-pin`).
+
+  Mechanical anchor discipline (orchestrator decision D21): added
+  `scripts/check-okf-anchors.js` (+ `scripts/check-okf-anchors.test.js`,
+  23 tests) as this repo's own, stricter check on top of okf-kit, which
+  only validates an anchor IF one is present and only that its text
+  occurs somewhere in the range. Walks `docs/okf/*.md` (log.md excluded),
+  parses full citations with a `CITATION_RE` copied verbatim from okf-kit
+  0.6.0 (backtick-optional; deliberately NOT skipping fenced code blocks
+  for full citations, confirmed by reading okf-kit's `scanDoc` directly --
+  its own full-citation scan does not skip fences either, only its
+  separate short-form matcher does), resolves in-repo targets mirroring
+  okf-kit's own `resolveCitation` precedence (doc `sources:` match,
+  ancestor climb, root-relative, doc-relative, prior-qualified-citation,
+  repo-wide basename search), and asserts (a) every resolved citation
+  carries a `#"..."` anchor unless allowlisted with a reason (empty
+  today), (b) the anchor text sits on the range's own last line, (c) it
+  occurs exactly once within the range. A `*.test.ts` target gets a shape
+  rule instead of (b): the range must start on the test's own
+  `describe(`/`it(`/`test(` head and end on that test's own closing
+  `});`, with (c) relaxed to "occurs exactly once, anywhere in range"
+  since a bare `});` recurs at every nesting depth inside a test body and
+  would otherwise fight the shape rule. Wired into the `okf-anchor-guard`
+  job and `package.json` (`check:okf-anchors` / `test:check-okf-anchors`).
+  Three required negative controls, all fixture-based (disposable temp
+  dirs, never the real bundle), each restored after: removing an anchor
+  entirely -> fails, naming the citation (`missing-anchor`); shifting the
+  anchor off the range's last line -> fails (`anchor-not-on-last-line`);
+  duplicating the anchor token inside the range -> fails
+  (`anchor-not-unique-in-range`).
+
+  Numbers (review MEDIUM) and wording (review LOWs): job renamed from
+  "OKF bundle citation guard (blocking)" to "OKF bundle citation guard";
+  its header comment now says plainly that `master` carries no required
+  status checks today (verified via the GitHub API), so this job is
+  advisory for a PR's Merge button, but DOES gate `release.yml`'s
+  tag-triggered release (that workflow's `release` job `needs: ci`, and
+  `ci` there is this whole `ci.yml` invoked via `workflow_call`). Noted
+  that `npm install -g okf-kit@0.6.0` is a registry install with no
+  lockfile entry and no integrity hash, a deliberate, narrow exception to
+  this repo's lockfile-integrity posture. `verdict-signing-interop.test.ts
+  (14 tests)` corrected to 15 (re-counted `^\s*it\(` against the real
+  file). "batch 27" in this log replaced with what it actually was (an
+  earlier run where a 15-line drift stayed green under plain line ranges).
+
+  Negative-control measurement, per file per k, insert-k-lines at the
+  very top of each target (shifts every one of that file's citations' line
+  numbers by k, none landing back on real content by chance): solution-verdict.ts
+  k=1 -> 31/31 fired, k=2 -> 31/31 fired; hypothesis-store.ts k=1 -> 8/8
+  fired, k=2 -> 8/8 fired (this file's citations did not exist before this
+  round, so there was nothing to fire at either k previously); ow-run-completeness.ts
+  k=1 -> 17/17 fired, k=2 -> 17/17 fired. All three files reverted (diff
+  empty afterward). False-positive probe unchanged: bumping
+  `packages/grounding-mcp/package.json`'s `version` field changes 0
+  findings (`.summary` byte-identical before/after), reverted.
+
+  Staleness (review MEDIUM): six docs' frontmatter `timestamp:` restamped
+  after genuine re-verification (their cited lines and factual claims
+  checked against current source content, no drift found):
+  `grounding-stack-overview.md`, `hypothesis-tracker-persistence-split.md`
+  (re-verified as part of anchoring its 34 citations),
+  `claim-gate-vs-review-claim-gate.md`, `evidence-ledger-session-key-shapes.md`,
+  `merge-approval-gate-mechanics.md`, `solution-acceptance-verdict-contract.md`.
+  The last four were genuinely stale by frontmatter-timestamp comparison
+  (a listed source committed after the doc's own `timestamp:`) even
+  though `sources-fresh` never reported it on this branch, because this
+  same PR's own earlier commits already carried the doc-commit-epoch
+  escape hatch (see the correction near the top of this entry);
+  re-verifying instead of trusting that escape hatch is the point.
+
+  `okf-kit check --json docs/okf` on this round's tree, measured BEFORE
+  commit (an uncommitted file has no git history yet, so `sources-fresh`
+  falls back to a pure frontmatter-timestamp comparison with no
+  doc-commit-epoch benefit -- stricter than the post-commit measurement,
+  not looser): errors 0, warnings 0, notices 0.
+  `node scripts/check-okf-anchors.js`: 171 full citations across 8 docs
+  (log.md excluded from scope), 171 anchored, 0 unresolved, 0 ambiguous,
+  0 violations.
 
 - 2026-08-24, okf-kit citations-resolve replaces the repo-local script
   (task 21f76bfe): this repo's own `scripts/okf-citations-resolve.mjs`
@@ -259,7 +467,7 @@
   rollout.md citation from `6-8, 99` to `6-8, 99-100` (the ALLOWED sentence
   spans both lines). Changed "counting non-empty JSON lines" (line 86) to
   "counting valid JSON lines", matching countEvidenceFileLines
-  (cli.ts:178-193), which skips both blank and malformed lines. Restamped
+  (packages/review-claim-gate/src/cli.ts:178-193), which skips both blank and malformed lines. Restamped
   grounding-stack-overview.md's frontmatter (00:00:00Z placeholder to a real
   `date -u` value; content itself was already re-verified in round 1) and
   fixed the round-1 log entry header timestamp to match, so the round-1

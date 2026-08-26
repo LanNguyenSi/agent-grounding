@@ -29,8 +29,8 @@ any given install.
 
 The escalation environment variables are **read and interpreted inside this
 package**, not by harness. `handle-pre-tool-use.ts` declares them on its
-`PolicyEnv` type (lines 26-36) and resolves each through the local `envOn`
-helper (line 88) when it builds its options (lines 113-116):
+`PolicyEnv` type (`handle-pre-tool-use.ts:26-35#"RUNTIME_REALITY_PROBE_FAIL_BLOCK?: string;"`) and resolves each through the local `envOn`
+helper (`handle-pre-tool-use.ts:88#"function envOn"`) when it builds its options (`handle-pre-tool-use.ts:113-116#"probe_fail_block: envOn(env.RUNTIME_REALITY_PROBE_FAIL_BLOCK)"`):
 
 - `RUNTIME_REALITY_DISABLE`
 - `RUNTIME_REALITY_WARN_AS_BLOCK`

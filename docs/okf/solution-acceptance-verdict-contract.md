@@ -3,7 +3,7 @@ type: invariant
 title: Solution-acceptance verdict contract — why the marker lives outside the ledger
 description: A "done" verdict is derived from a real preflight+OW run, HEAD-pinned, and written to an XDG state marker outside the agent-writable evidence-ledger because ledger rows are forgeable via ledger_add.
 tags: [solution-acceptance, verdicts, anti-hacking, trust-boundary]
-timestamp: 2026-08-19T11:34:00Z
+timestamp: 2026-08-26T11:27:38Z
 sources:
   - packages/grounding-mcp/src/solution-verdict.ts
   - packages/grounding-mcp/src/verdict-signing.ts
@@ -125,7 +125,7 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
   non-harness-managed setups. `getOrCreateSigningKey` (`verdict-signing.ts:156-189#"fs.readFileSync(filePath), filePath, created: false"`)
   resolves through it, so `getOrCreate` semantics apply at the projected
   path too.
-- **`<harness-home>` resolution**: `resolveHarnessHome()` (`verdict-signing.ts:100-109#"return newPath;"`),
+- **`<harness-home>` resolution**: `resolveHarnessHome()` (`verdict-signing.ts:100-109#"  return newPath;"`),
   mirrors harness `resolveHomeDir`. Precedence, exactly:
   1. `$HARNESS_HOME` env var, if non-empty (also the test-isolation knob).
   2. `~/.harness/` if it already exists on disk (`existsDir`, `verdict-signing.ts:112-116#"return false;"`).
@@ -189,7 +189,7 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
   deliberately NOT derived from this package's own producer mirror (copying the
   producer to test itself would not catch a drift between the two independently
   mirrored implementations; that drift is exactly the risk D-003 names).
-  `verdict-signing-interop.test.ts` (14 tests) runs the REAL `writeVerdict` against a
+  `verdict-signing-interop.test.ts` (15 tests) runs the REAL `writeVerdict` against a
   tempdir `HARNESS_HOME`, reads the marker back off disk, and feeds it to the vendored
   verifier: a positive round-trip, tamper negatives (`ready`/`head`/`confidence`/
   `blockers`/one signature byte each independently flipped), cross-id replay at both
@@ -242,7 +242,7 @@ OW run files under `<repoPath>/.ai/runs/`:
   blocker (`findingsFormatBlocker`, `ow-run-completeness.ts:499#"function findingsFormatBlocker"`).
 - **Mixed-state bypass guard** (task `8f173547`): completeness above is not enough —
   an operator could flip the acceptance markers to an accepted value without ever
-  transferring the reviewer's findings into the table. `scanFindings` (`ow-run-completeness.ts:397-454#"return scan;"`)
+  transferring the reviewer's findings into the table. `scanFindings` (`ow-run-completeness.ts:397-454#"  return scan;"`)
   additionally tracks whether the shipped review template's placeholder/legend row
   survived untouched (`placeholderRowSeen`, matched byte-exactly cell-by-cell by
   `isPlaceholderRow`, `ow-run-completeness.ts:462-465#"PLACEHOLDER_ROW_CELLS[idx]"`, against `OW_FINDINGS_PLACEHOLDER_ROW`,

@@ -13,23 +13,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Blocking counterpart to the warn-only okf-staleness.yml drift watch:
+  # Red-on-drift counterpart to the warn-only okf-staleness.yml drift watch:
   # that workflow never fails a build (see its own header comment), so a
   # commit that shifts a docs/okf citation's cited range out of the
   # section or content it names would go unnoticed there. This job runs
-  # the identical bundle check (same okf-kit pin, same command) and fails
-  # the build on any citations-resolve WARNING (both the base subtypes
+  # the identical bundle check (same okf-kit pin, same command) and turns
+  # this job red on any citations-resolve WARNING (both the base subtypes
   # such as missing-file/inverted-range/blank-start-line and the four
   # anchor subtypes anchor-not-found-in-range/anchor-heading-mismatch/
-  # anchor-heading-does-not-enclose/anchor-heading-not-found). Notices
-  # (e.g. an unresolved-ambiguous bare-filename mention) are excluded on
-  # purpose: citations-resolve itself never counts a notice toward
-  # --strict, and this job mirrors that same non-blocking posture for
-  # notices while blocking on every real drift warning. sources-fresh
+  # anchor-heading-does-not-enclose/anchor-heading-not-found), on any
+  # citations-resolve `unresolved-ambiguous` NOTICE (an ambiguous target
+  # means the citation was never evaluated at all -- that is a coverage
+  # gap, not a clean bill of health, so it does not get the same pass the
+  # rest of --strict's notice tier gets), and on `.summary.errors > 0` from
+  # okf-kit itself (e.g. a malformed/missing frontmatter `type:` field) --
+  # a bundle-level error is a stronger signal than a single citation
+  # warning and must not slip through a job that only ever looked at
+  # citations-resolve findings. Every other notice (e.g. an ambiguous
+  # bare-filename mention this repo has deliberately left ambiguous, see
+  # docs/okf/log.md) is surfaced in the step summary for visibility but
+  # does not fail the job, matching --strict's own severity split for
+  # everything except the ambiguous-citation carve-out above. sources-fresh
   # staleness stays entirely out of this job; okf-staleness.yml already
   # surfaces it, warn-only, by design.
+  #
+  # Advisory today, not a hard merge gate: this repo's `master` branch
+  # carries no required status checks (verified via the GitHub API), so a
+  # red run here does not block the PR "Merge" button by itself -- an
+  # operator would need to add "OKF bundle citation guard" to master's
+  # required status checks for that. It DOES gate releases: release.yml's
+  # `release` job `needs: ci`, and `ci` there is this whole ci.yml file
+  # invoked via `workflow_call` (below), so a red job here fails that
+  # reusable-workflow call and blocks the tag-triggered release run.
   okf-anchor-guard:
-    name: OKF bundle citation guard (blocking)
+    name: OKF bundle citation guard
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -48,7 +65,15 @@ jobs:
           node-version: 22
 
       - name: Install okf-kit (exact pin)
-        # Keep this pin identical to okf-staleness.yml's.
+        # Keep this pin identical to okf-staleness.yml's (also asserted by
+        # `npm run check:okf-kit-pin` in the `ci` job below). A plain
+        # `npm install -g` against the public registry, deliberately: this
+        # is a registry install with no lockfile entry and no `--integrity`
+        # hash to verify against, unlike every dependency this repo
+        # installs via `npm ci` from package-lock.json. That is a
+        # conscious, narrow exception to the repo's lockfile-integrity
+        # posture (see check-lockfile-integrity.js) for this one CLI, not
+        # an oversight.
         run: npm install -g okf-kit@0.6.0
 
       - name: Assert CLI is alive (output, not exit code)
@@ -58,7 +83,7 @@ jobs:
           test -n "$v"
           echo "okf-kit ${v}"
 
-      - name: Citation guard (blocking)
+      - name: Citation guard
         shell: bash
         run: |
           set +e
@@ -74,36 +99,107 @@ jobs:
 
           jq -e . okf-anchor-report.json > /dev/null
 
-          # citations-resolve WARNINGs only (base + anchor subtypes); a
-          # citations-resolve NOTICE (e.g. unresolved-ambiguous) never
-          # blocks here, matching --strict's own severity split. Every
-          # other rule (sources-fresh, frontmatter-required, etc.) is out
-          # of scope for this job.
+          errors=$(jq '.summary.errors' okf-anchor-report.json)
+
+          # citations-resolve WARNINGs (base + anchor subtypes) always
+          # block. citations-resolve `unresolved-ambiguous` NOTICEs also
+          # block here even though --strict itself never counts a notice:
+          # an ambiguous target was never evaluated by citations-resolve at
+          # all, so a green run must not read as "every citation checked
+          # out" when one was skipped outright.
           citationFindings=$(jq '[
             .findings[]
             | select(.ruleId == "citations-resolve" and .severity == "warning")
           ]' okf-anchor-report.json)
           count=$(echo "${citationFindings}" | jq 'length')
 
+          ambiguousFindings=$(jq '[
+            .findings[]
+            | select(.ruleId == "citations-resolve" and .severity == "notice" and (.message | contains("[unresolved-ambiguous]")))
+          ]' okf-anchor-report.json)
+          ambiguousCount=$(echo "${ambiguousFindings}" | jq 'length')
+
+          # Every other notice (any severity-"notice" finding not already
+          # counted above -- e.g. a deliberately-left-ambiguous bare
+          # filename mention in log.md, or a sources-fresh "staleness not
+          # assessable" notice) is informational only: surfaced below, but
+          # never a reason to fail this job.
+          otherNotices=$(jq '[
+            .findings[]
+            | select(.severity == "notice")
+            | select((.ruleId == "citations-resolve" and (.message | contains("[unresolved-ambiguous]"))) | not)
+          ]' okf-anchor-report.json)
+          otherNoticeCount=$(echo "${otherNotices}" | jq 'length')
+
           {
-            echo "## OKF bundle citation guard (\`${BUNDLE_PATH}\`), blocking"
+            echo "## OKF bundle citation guard (\`${BUNDLE_PATH}\`)"
             echo ""
-            echo "citations-resolve warnings: ${count}"
+            echo "errors: ${errors}, citations-resolve warnings: ${count}, unresolved-ambiguous notices: ${ambiguousCount}, other notices: ${otherNoticeCount}"
             if [ "${count}" -gt 0 ]; then
               echo ""
+              echo "### citations-resolve warnings"
               echo '```'
               echo "${citationFindings}" | jq -r '.[] | "\(.file): \(.message)"'
               echo '```'
             fi
+            if [ "${ambiguousCount}" -gt 0 ]; then
+              echo ""
+              echo "### unresolved-ambiguous citations (not evaluated -- treated as a coverage gap)"
+              echo '```'
+              echo "${ambiguousFindings}" | jq -r '.[] | "\(.file): \(.message)"'
+              echo '```'
+            fi
+            if [ "${otherNoticeCount}" -gt 0 ]; then
+              echo ""
+              echo "### other notices (informational, non-blocking)"
+              echo '```'
+              echo "${otherNotices}" | jq -r '.[] | "\(.file) [\(.ruleId)]: \(.message)"'
+              echo '```'
+            fi
           } >> "${GITHUB_STEP_SUMMARY}"
 
-          if [ "${count}" -gt 0 ]; then
+          if [ "${errors}" -gt 0 ] || [ "${count}" -gt 0 ] || [ "${ambiguousCount}" -gt 0 ]; then
             echo "${citationFindings}" | jq -r '.[] | "::error title=OKF citation drift::\(.file): \(.message)"'
+            echo "${ambiguousFindings}" | jq -r '.[] | "::error title=OKF citation not evaluated::\(.file): \(.message)"'
+            if [ "${errors}" -gt 0 ]; then
+              echo "::error title=OKF bundle error::${errors} okf-kit error(s), see the report above"
+            fi
             exit 1
           fi
 
-          echo "Clean, 0 citations-resolve warnings."
+          echo "Clean: 0 errors, 0 citations-resolve warnings, 0 unresolved-ambiguous citations."
           exit 0
+
+      - name: OKF anchor-discipline check (repo-local, on top of okf-kit)
+        # okf-kit itself only validates an anchor IF one is present, and
+        # only checks that the anchor text occurs SOMEWHERE in the cited
+        # range -- not where. scripts/check-okf-anchors.js is this repo's
+        # stricter, additive discipline: every full citation in the bundle
+        # must carry a string anchor (unless allowlisted) whose text sits
+        # on the cited range's own last line and occurs there exactly once,
+        # so a line-shift can never leave a stale-but-still-matching
+        # earlier occurrence behind. Pure Node core, no okf-kit dependency.
+        run: npm run check:okf-anchors
+
+      - name: OKF anchor-discipline checker unit tests
+        # Fixture-based unit tests for the checker (including the three
+        # required negative controls: missing anchor, anchor off its last
+        # line, duplicate anchor token inside the range), plus a sanity
+        # check that runs the real checker against this repo's actual
+        # docs/okf/ bundle.
+        run: npm run test:check-okf-anchors
+
+      - name: okf-kit pin-coupling check
+        # Asserts this workflow's own "npm install -g okf-kit@..." pin
+        # (above) matches okf-staleness.yml's -- see check-okf-kit-pin.js
+        # for why nothing else couples the two.
+        run: npm run check:okf-kit-pin
+
+      - name: okf-kit pin-coupling checker unit tests
+        # Fixture-based unit tests for the checker (including a negative
+        # control: a deliberately diverging pin), plus a sanity check
+        # against this repo's real workflow files.
+        run: npm run test:check-okf-kit-pin
 
   ci:
     runs-on: ubuntu-latest
