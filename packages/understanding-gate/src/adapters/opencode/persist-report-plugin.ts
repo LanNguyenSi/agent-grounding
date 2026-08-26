@@ -31,6 +31,7 @@ import {
   writeStampedLog,
 } from "../error-log.js";
 import { runSyncAndLog } from "../sync-and-log.js";
+import { isPaused } from "../claude-code/pause.js";
 import {
   handlePersistReport,
   type PersistReportEnv,
@@ -286,6 +287,48 @@ function enforceBeforeToolExecute(
         process.env.UNDERSTANDING_GATE_FORCE_REASON,
     },
   });
+
+  // Pause check runs AFTER the enforcement decision (not before), mirroring
+  // the Claude Code PreToolUse hook (see handle-pre-tool-use.ts): a paused
+  // allow that overrides a would-be block still leaves exactly one audit
+  // trace, never as silent as an ordinary allow -- but unlike PreToolUse,
+  // that audit trace is the ONLY observable signal: opencode's
+  // enforceBeforeToolExecute never writes to stderr the way
+  // handle-pre-tool-use.ts does on a paused override, so there is no
+  // in-session diagnostic here, only the audit.log entry. Same sentinel,
+  // same reader as the Claude Code hooks (isPaused imported from
+  // ../claude-code/pause.js, not reimplemented). This only takes effect
+  // when UNDERSTANDING_GATE_PAUSE_FILE is actually exported into the
+  // environment that launches opencode: opencode has no per-hook-line
+  // settings.json equivalent, so the plugin re-reads the sentinel FILE
+  // on every gated tool call, but the env var itself is whatever
+  // opencode's process was launched with -- nothing in this package
+  // projects it there today (see README's "Pause sentinel" opencode
+  // subsection). A force-bypass decision is NOT treated as an override
+  // here: it falls through to the force_bypass audit branch below (which
+  // already returns a silent allow) so it keeps its own `force_bypass`
+  // audit kind instead of being folded into `paused_allow`.
+  if (isPaused(process.env.UNDERSTANDING_GATE_PAUSE_FILE)) {
+    if (decision.decision === "block") {
+      safeAppendAudit(cwd, {
+        kind: "paused_allow",
+        tool,
+        reason: `understanding-gate is paused (pause sentinel active); overrides what would otherwise have been a block decision (${decision.mode}): ${decision.reason}`,
+        sessionId,
+        taskId: taskId || null,
+        adapter: "opencode",
+      });
+      return;
+    }
+    if (decision.mode !== "force_bypass") {
+      // The underlying decision was already an allow (e.g. a read-only
+      // tool, an already-approved report, or UNDERSTANDING_GATE_DISABLE):
+      // the pause changes nothing observable, so stay on the silent,
+      // zero-audit path.
+      return;
+    }
+    // Force-bypass: fall through to the force_bypass audit branch below.
+  }
 
   if (decision.mode === "force_bypass") {
     safeAppendAudit(cwd, {

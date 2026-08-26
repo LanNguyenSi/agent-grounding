@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **opencode adapter: `tool.execute.before` enforcement now honors the
+  pause sentinel too, not just the Claude Code hooks.** Since PR #191, both
+  Claude Code hooks (`UserPromptSubmit`, `PreToolUse`) respected
+  `UNDERSTANDING_GATE_PAUSE_FILE`; the opencode adapter's
+  `enforceBeforeToolExecute` had no awareness of it and kept throwing to
+  block unapproved write tools regardless of an active sentinel, making a
+  harness-wide pause Claude-Code-only. Fixed by reusing the same shared
+  `isPaused` reader from `adapters/claude-code/pause.ts` (no second
+  parser) in the opencode plugin, mirroring the `PreToolUse` behavior: an
+  active sentinel overriding what would otherwise have blocked is now
+  audit-logged as `paused_allow` (`adapter: "opencode"`; unlike
+  `PreToolUse`, this audit entry is the only observable signal, with no
+  accompanying stderr diagnostic); a pause that changes nothing (a
+  read-only tool, an already-approved report) stays silent; a
+  force-bypass under an active pause keeps its own `force_bypass` audit
+  kind. Pinned by a parity test against `isPaused` over the same 13
+  sentinel shapes the Claude Code path already covers, the five negative
+  controls (expired, missing, empty, unparsable, a directory at the
+  path), and a FIFO regression probe (real child process,
+  timeout-bounded) confirming the pause check cannot hang on a
+  writer-less named pipe. Unlike Claude Code's per-hook-line
+  `settings.json` wiring, opencode has no per-hook env plumbing: the
+  sentinel FILE is re-read on every gated tool call, but
+  `UNDERSTANDING_GATE_PAUSE_FILE` itself is only present when it was
+  exported into the environment that launched opencode -- today no
+  consumer in this package projects the variable there, so opencode's
+  pause coverage is conditional on that external wiring, not automatic
+  from a Claude Code pause. See README's "Pause sentinel" section
+  (opencode subsection) and `docs/architecture.md`'s
+  configuration-surfaces table for the documented decision.
+
 ## [0.6.0] - 2026-08-25
 
 ### Fixed
