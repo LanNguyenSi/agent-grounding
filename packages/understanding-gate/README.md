@@ -131,7 +131,7 @@ otherwise have been a block or force-bypass is audit-logged as a
 already-approved report) stays silent, same as without a pause. This
 package only ever reads the sentinel file; it never creates, writes, or
 deletes it, and never manages expiry. Unset (the default) means no pause
-check at all on either hook.
+check at all on any hook or plugin.
 
 `UNDERSTANDING_GATE_PAUSE_FILE` must be set on **both** hook lines by any
 consumer that wires `understanding-gate-claude-pre-tool-use` directly
@@ -142,7 +142,33 @@ sentinel wired to one hook and not the other silences only that one.
 The sentinel is unsigned and operator-owned: this package trusts whatever
 is at the configured path and applies no signature or origin check, so
 treat write access to the sentinel file itself as equivalent to write
-access to pause both hooks.
+access to pause enforcement everywhere it is checked.
+
+#### opencode
+
+The opencode `tool.execute.before` enforcement hook honors the same
+pause sentinel, through the exact same `isPaused` reader as the Claude
+Code hooks (no second parser) -- a harness-wide `pause` silences
+enforcement identically on both harnesses. It behaves like the Claude
+Code `PreToolUse` path: an active sentinel overriding what would
+otherwise have blocked a tool call is audit-logged as `paused_allow`
+(`adapter: "opencode"`); a pause that changes nothing (a read-only tool,
+an already-approved report) stays silent; a force-bypass under an active
+pause keeps its own `force_bypass` audit kind rather than being folded
+into `paused_allow`.
+
+How the env value reaches the opencode plugin differs from Claude Code's
+per-hook-command-line wiring: opencode has no equivalent of Claude Code's
+per-hook settings.json entries with their own env. The
+`understanding-gate` plugin runs inside opencode's own long-lived process
+and reads `UNDERSTANDING_GATE_PAUSE_FILE` straight off `process.env` at
+call time -- exactly like `UNDERSTANDING_GATE_TASK_ID`,
+`UNDERSTANDING_GATE_FORCE`, and `UNDERSTANDING_GATE_REPORT_DIR` already
+do. Whatever exported the variable into the process that launched
+opencode (the shell environment, a wrapper script, or a process
+supervisor's env block) is what the plugin sees; no `.opencode/` plugin
+config or `opencode.json` entry is needed or read for this. There is no
+"both hook lines" caveat on opencode: one process, one env, one plugin.
 
 ## Not implemented yet
 

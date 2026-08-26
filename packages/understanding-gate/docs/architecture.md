@@ -98,7 +98,7 @@ In Phase 0/0.5, these states are implicit (agent and user share a session). Phas
 |---|---|---|
 | ENV `UNDERSTANDING_GATE_MODE` | 0 | force `fast_confirm` or `grill_me` |
 | ENV `UNDERSTANDING_GATE_DISABLE` | 0 | kill-switch, hook returns immediately |
-| ENV `UNDERSTANDING_GATE_PAUSE_FILE` | 0 / 2 | path to a pause sentinel; while active, the `UserPromptSubmit` hook and the `PreToolUse` hook both stay silent or allow (same shared, unsigned, read-only reader on both paths -- see README's "Pause sentinel" section, including the both-hook-lines caveat and the `paused_allow` audit trace). The `Stop` hook, which only persists reports, is unaffected by a pause. Optional. |
+| ENV `UNDERSTANDING_GATE_PAUSE_FILE` | 0 / 2 | path to a pause sentinel; while active, the `UserPromptSubmit` hook, the `PreToolUse` hook, and the opencode `tool.execute.before` enforcement hook all stay silent or allow (same shared, unsigned, read-only reader `isPaused` on all three paths -- see README's "Pause sentinel" section, including the both-hook-lines caveat for Claude Code and the `paused_allow` audit trace). Claude Code's two hooks each see the env var only on their own settings.json hook line; opencode's plugin instead reads it straight off `process.env` inside opencode's own long-lived process, same as its other `UNDERSTANDING_GATE_*` vars -- no plugin-config or opencode.json wiring. The `Stop` hook, which only persists reports, is unaffected by a pause. Optional. |
 | Prompt marker `grill me` / `/grill` | 0 / 0.5 | user-side mode escalation |
 | ENV `UNDERSTANDING_GATE_REPORT_DIR` | 1 | override report persistence path |
 | ENV `UNDERSTANDING_GATE_TASK_ID` | 1 | bind reports to a logical task identifier |
