@@ -2,6 +2,65 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-08-26, citation anchors normalized in
+  `solution-acceptance-verdict-contract.md` (task 79f9e0fd, refiled from
+  the halt in task 9b6c4beb: citations drifted in three consecutive
+  review rounds of that PR because nothing mechanical failed when a
+  commit shifted lines). Inventory of every line citation in that doc:
+  61 instances across two prose forms ("line N", "lines N-M", not
+  backtick-wrapped and not resolvable by citations-resolve at all) and
+  two already-valid forms (a bare "path.ts, colon, N" or "path.ts,
+  colon, N-M" inside backticks, already recognised). All 61 are now
+  full backtick "path, colon, N" or "path, colon, N-M" citations
+  against `solution-verdict.ts`, `verdict-signing.ts`, `server.ts`, and
+  `ow-run-completeness.ts` (all four already listed in this doc's
+  `sources`, so a bare filename resolves by the doc's own frontmatter
+  suffix match, rule 1 of the resolver's path-resolution order).
+  Re-reading each cited range against the actual source (not just
+  trusting the existing number) turned up 20 citations whose target had
+  drifted since the doc's last verification -- wrong function, wrong
+  comment lines, or a range that no longer covered the described
+  behavior (e.g. `evaluateSolution` cited at line 574, actually at 577;
+  `writeVerdict`'s `fs.writeFileSync` cited at line 186, actually at
+  189; `owBindingBlockers` cited as spanning 388 through 437, actually
+  391 through 440); all 20 corrected to point at the content the citing
+  sentence actually describes. The other 41 already pointed at the
+  right lines (some files here -- `verdict-signing.ts`,
+  `ow-run-completeness.ts` -- turned out to already be pinned exactly
+  to what this doc cites, per `verdict-signing.ts`'s own EOF comment:
+  "These EOF declarations are placed here deliberately: it keeps every
+  line anchor above (cited by the OKF doc) stable"). The other eight
+  `docs/okf/*.md` files already cite in the recognised full-citation
+  form (0 citations-resolve findings against them before this task) and
+  needed no change.
+  `okf-kit check --json docs/okf` (0.6.0, the pin okf-staleness.yml
+  already carries): before and after this doc's edit, errors 0,
+  warnings 6, notices 1 -- unchanged, and all 6 warnings are
+  pre-existing sources-fresh staleness on unrelated docs (this task's
+  `outOfScope` excludes re-verifying those). Negative control: shifted
+  the `verdictDir()` citation from `solution-verdict.ts` line 116
+  through 123 to line 124 through 131 (one section down, onto the blank
+  line and docblock before `sanitizeVerdictId`) -- citations-resolve
+  reported a new blank-start-line warning naming that exact citation
+  (warnings 6 to 7), and `okf-kit check --json docs/okf --strict`
+  flipped exit 0 to exit 1. Reverted: back to warnings 6, non-strict
+  exit 0. This entry deliberately avoids writing that shifted range as
+  a real backtick citation, the same way the 2026-08-24 entry below
+  avoids the colon form for its own quoted line numbers: a reserved
+  file's full and continuation citations are still checked by
+  citations-resolve (only its short-form matching is excluded), and a
+  colon-joined "path, N-M" written here would either be evaluated for
+  real against the still-broken range or, worse, silently rebind a
+  later bare continuation citation elsewhere in this file to the
+  nearest full citation above it -- exactly the class of drift this
+  task closes, not something to reintroduce into the file that logs it.
+  Note: `okf-staleness.yml` is deliberately warn-only (see its own
+  header comment) and always exits 0 regardless of findings, by design;
+  a citation drift therefore never fails that CI job itself, only its
+  JSON/step-summary output (and --strict, run locally here, not in CI)
+  -- this is the same non-blocking posture sources-fresh already has,
+  not something this task changed.
+
 - 2026-08-24, okf-kit citations-resolve replaces the repo-local script
   (task 21f76bfe): this repo's own `scripts/okf-citations-resolve.mjs`
   (PR #185) and its tests/fixtures are deleted; okf-staleness.yml is
