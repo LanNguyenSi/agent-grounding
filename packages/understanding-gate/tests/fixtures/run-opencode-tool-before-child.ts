@@ -9,16 +9,19 @@
 // signal instead, turning a regression into a failed assertion
 // (ETIMEDOUT) rather than a hang. Mirrors run-handle-child.ts for the
 // Claude Code UserPromptSubmit path.
-// argv: <directory> <tool> [pauseFilePath]
+//
+// Unlike handleUserPromptSubmit (which takes its pause-file path as a
+// function parameter), enforceBeforeToolExecute reads
+// UNDERSTANDING_GATE_PAUSE_FILE straight off process.env, so this
+// process's env has to be exactly what the test intends -- the caller
+// (opencode-tool-execute-before.test.ts) passes an explicit `env` built
+// from process.env with every UNDERSTANDING_GATE_* key stripped except
+// UNDERSTANDING_GATE_PAUSE_FILE, so no ambient var from another test or
+// the developer's shell can change this probe's outcome.
+// argv: <directory> <tool>
 import { persistReportPlugin } from "../../src/adapters/opencode/persist-report-plugin.js";
 
-const [, , directory, tool, pauseFilePath] = process.argv;
-
-if (pauseFilePath) {
-  process.env.UNDERSTANDING_GATE_PAUSE_FILE = pauseFilePath;
-} else {
-  delete process.env.UNDERSTANDING_GATE_PAUSE_FILE;
-}
+const [, , directory, tool] = process.argv;
 
 async function main(): Promise<void> {
   const hooks = await persistReportPlugin({

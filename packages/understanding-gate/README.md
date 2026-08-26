@@ -119,14 +119,16 @@ claude
 ### Pause sentinel (optional, read-only)
 
 Set `UNDERSTANDING_GATE_PAUSE_FILE` to the path of a pause-sentinel JSON
-file (`{pausedAt, expiresAt, reason, pausedBy}`) to make `UserPromptSubmit`
-and `PreToolUse` stay silent (or, for `PreToolUse`, allow instead of deny)
-while that sentinel is active: the `UserPromptSubmit` hook skips the
-Understanding Report injection, and the `PreToolUse` hook skips its deny
-(both use the exact same reader, so a given sentinel file reads the same
-way on both paths). The `Stop` hook only persists reports and is
-unaffected by a pause. A `PreToolUse` pause that overrides what would
-otherwise have been a block or force-bypass is audit-logged as a
+file (`{pausedAt, expiresAt, reason, pausedBy}`) to make `UserPromptSubmit`,
+`PreToolUse`, and opencode's `tool.execute.before` enforcement hook stay
+silent (or, for `PreToolUse` / `tool.execute.before`, allow instead of
+deny/block) while that sentinel is active: the `UserPromptSubmit` hook
+skips the Understanding Report injection, and the `PreToolUse` and
+`tool.execute.before` hooks skip their deny/block (all three use the
+exact same reader, so a given sentinel file reads the same way on every
+path). The `Stop` hook only persists reports and is unaffected by a
+pause. A `PreToolUse` or `tool.execute.before` pause that overrides what
+would otherwise have been a block or force-bypass is audit-logged as a
 `paused_allow` entry; a pause that changes nothing (a read-only tool, an
 already-approved report) stays silent, same as without a pause. This
 package only ever reads the sentinel file; it never creates, writes, or
@@ -148,27 +150,20 @@ access to pause enforcement everywhere it is checked.
 
 The opencode `tool.execute.before` enforcement hook honors the same
 pause sentinel, through the exact same `isPaused` reader as the Claude
-Code hooks (no second parser) -- a harness-wide `pause` silences
-enforcement identically on both harnesses. It behaves like the Claude
-Code `PreToolUse` path: an active sentinel overriding what would
-otherwise have blocked a tool call is audit-logged as `paused_allow`
-(`adapter: "opencode"`); a pause that changes nothing (a read-only tool,
-an already-approved report) stays silent; a force-bypass under an active
+Code hooks (no second parser), behaving like the Claude Code
+`PreToolUse` path: an active sentinel overriding what would otherwise
+have blocked a tool call is audit-logged as `paused_allow` (`adapter:
+"opencode"`, but with no accompanying stderr diagnostic the way
+`PreToolUse` emits one -- the audit entry is the only observable
+signal); a pause that changes nothing (a read-only tool, an
+already-approved report) stays silent; a force-bypass under an active
 pause keeps its own `force_bypass` audit kind rather than being folded
-into `paused_allow`.
-
-How the env value reaches the opencode plugin differs from Claude Code's
-per-hook-command-line wiring: opencode has no equivalent of Claude Code's
-per-hook settings.json entries with their own env. The
-`understanding-gate` plugin runs inside opencode's own long-lived process
-and reads `UNDERSTANDING_GATE_PAUSE_FILE` straight off `process.env` at
-call time -- exactly like `UNDERSTANDING_GATE_TASK_ID`,
-`UNDERSTANDING_GATE_FORCE`, and `UNDERSTANDING_GATE_REPORT_DIR` already
-do. Whatever exported the variable into the process that launched
-opencode (the shell environment, a wrapper script, or a process
-supervisor's env block) is what the plugin sees; no `.opencode/` plugin
-config or `opencode.json` entry is needed or read for this. There is no
-"both hook lines" caveat on opencode: one process, one env, one plugin.
+into `paused_allow`. This only covers opencode when
+`UNDERSTANDING_GATE_PAUSE_FILE` is exported into the environment that
+launches opencode (opencode has no per-hook-line settings.json
+equivalent to wire it through, so it is read off the launching
+process's env instead); unset there means no pause check on opencode at
+all, even if the same variable is set for Claude Code's hooks.
 
 ## Not implemented yet
 

@@ -1,7 +1,10 @@
 // Shared pause-sentinel reader for the Claude Code adapters. Leaf module
 // (no import of the classifier/prompt/mode module graph) so the PreToolUse
 // hot path can import just this, not the whole handle.ts import chain that
-// UserPromptSubmit's prompt-injection logic needs.
+// UserPromptSubmit's prompt-injection logic needs. Also imported by the
+// opencode adapter's persist-report-plugin.ts (tool.execute.before
+// enforcement) as its third consumer, so all three enforcement/injection
+// paths honor the same sentinel with no second parser.
 
 import { readFileSync, statSync } from "node:fs";
 
@@ -53,10 +56,13 @@ export function warnIndefiniteFromCorruptExpiry(): void {
 // Nothing here is ever written or deleted -- expiry cleanup is not this
 // hook's job.
 //
-// Exported so both handle.ts (UserPromptSubmit) and handle-pre-tool-use.ts
-// (PreToolUse) can honor the same pause sentinel without a second parser.
-// Both hooks must reach an identical answer for the same sentinel file --
-// see the parity test in tests/claude-code-pre-tool-use.test.ts.
+// Exported so handle.ts (UserPromptSubmit), handle-pre-tool-use.ts
+// (PreToolUse), and the opencode adapter's persist-report-plugin.ts
+// (tool.execute.before) can all honor the same pause sentinel without a
+// second parser. All three must reach an identical answer for the same
+// sentinel file -- see the parity test in
+// tests/claude-code-pre-tool-use.test.ts (Claude Code's two hooks) and
+// tests/opencode-tool-execute-before.test.ts (opencode vs. Claude Code).
 export function isPaused(pauseFilePath: string | undefined): boolean {
   if (!pauseFilePath) return false;
   let raw: string;

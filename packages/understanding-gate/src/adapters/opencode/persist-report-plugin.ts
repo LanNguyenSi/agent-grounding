@@ -291,18 +291,20 @@ function enforceBeforeToolExecute(
   // Pause check runs AFTER the enforcement decision (not before), mirroring
   // the Claude Code PreToolUse hook (see handle-pre-tool-use.ts): a paused
   // allow that overrides a would-be block still leaves exactly one audit
-  // trace, never as silent as an ordinary allow. Same sentinel, same
-  // reader as both Claude Code hooks (isPaused imported from
-  // ../claude-code/pause.js, not reimplemented) -- a harness-wide `pause`
-  // silences enforcement on opencode identically to Claude Code. Unlike
-  // Claude Code's per-hook-line settings.json, opencode has no per-hook
-  // env plumbing: the plugin runs inside opencode's own long-lived
-  // process and reads UNDERSTANDING_GATE_PAUSE_FILE straight off
-  // process.env, exactly like UNDERSTANDING_GATE_TASK_ID/FORCE/
-  // REPORT_DIR above -- whatever exported the env var into the process
-  // that launched opencode reaches this plugin, no plugin-config or
-  // opencode.json wiring required (see README's "Pause sentinel"
-  // section). A force-bypass decision is NOT treated as an override
+  // trace, never as silent as an ordinary allow -- but unlike PreToolUse,
+  // that audit trace is the ONLY observable signal: opencode's
+  // enforceBeforeToolExecute never writes to stderr the way
+  // handle-pre-tool-use.ts does on a paused override, so there is no
+  // in-session diagnostic here, only the audit.log entry. Same sentinel,
+  // same reader as the Claude Code hooks (isPaused imported from
+  // ../claude-code/pause.js, not reimplemented). This only takes effect
+  // when UNDERSTANDING_GATE_PAUSE_FILE is actually exported into the
+  // environment that launches opencode: opencode has no per-hook-line
+  // settings.json equivalent, so the plugin re-reads the sentinel FILE
+  // on every gated tool call, but the env var itself is whatever
+  // opencode's process was launched with -- nothing in this package
+  // projects it there today (see README's "Pause sentinel" opencode
+  // subsection). A force-bypass decision is NOT treated as an override
   // here: it falls through to the force_bypass audit branch below (which
   // already returns a silent allow) so it keeps its own `force_bypass`
   // audit kind instead of being folded into `paused_allow`.

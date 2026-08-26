@@ -515,12 +515,25 @@ describe("opencode tool.execute.before: pause sentinel (shared with Claude Code,
       const fifo = join(sentinelDir, "sentinel.fifo");
       execFileSync("mkfifo", [fifo]);
 
+      // Build an explicit child env: start from process.env, strip every
+      // UNDERSTANDING_GATE_* key so no ambient value (left over from an
+      // earlier test, or from the developer's own shell) can change this
+      // probe's outcome, then set only UNDERSTANDING_GATE_PAUSE_FILE to
+      // the FIFO. enforceBeforeToolExecute reads process.env directly
+      // (unlike handleUserPromptSubmit, which takes its pause path as a
+      // function argument), so this env has to be exact.
+      const childEnv: NodeJS.ProcessEnv = { ...process.env };
+      for (const key of Object.keys(childEnv)) {
+        if (key.startsWith("UNDERSTANDING_GATE_")) delete childEnv[key];
+      }
+      childEnv.UNDERSTANDING_GATE_PAUSE_FILE = fifo;
+
       const start = Date.now();
-      const out = execFileSync(
-        TSX_BIN,
-        [RUN_TOOL_BEFORE_CHILD, tmp, "write", fifo],
-        { encoding: "utf8", timeout: 2000 },
-      );
+      const out = execFileSync(TSX_BIN, [RUN_TOOL_BEFORE_CHILD, tmp, "write"], {
+        encoding: "utf8",
+        timeout: 2000,
+        env: childEnv,
+      });
       // eslint-disable-next-line no-console -- reported runtime for the
       // opencode FIFO probe, not left-over debugging.
       console.log(
