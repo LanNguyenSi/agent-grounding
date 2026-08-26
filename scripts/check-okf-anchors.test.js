@@ -19,6 +19,7 @@ const {
   collectCitations,
   parseAnchor,
   parseSourcesFrontmatter,
+  hasParentSegment,
   resolveCitedPath,
   buildBasenameIndex,
   run,
@@ -144,6 +145,55 @@ test('resolveCitedPath: a nonexistent path is unresolved', () => {
     const citation = { citedPath: 'nope.ts', matchIndex: 0 };
     const result = resolveCitedPath(tmpRoot, docAbsPath, [], [citation], citation, new Map());
     assert.deepEqual(result, { skipped: 'unresolved' });
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+// ── hasParentSegment / path traversal ───────────────────────────────────
+
+test('hasParentSegment: a ".." path segment is detected', () => {
+  assert.equal(hasParentSegment('../../etc/passwd'), true);
+  assert.equal(hasParentSegment('packages/a/../../etc/passwd'), true);
+});
+
+test('hasParentSegment: a normal path, or one merely containing ".." as a substring, is not flagged', () => {
+  assert.equal(hasParentSegment('packages/a/src/lib.ts'), false);
+  assert.equal(hasParentSegment('packages/a..b/src/lib.ts'), false); // ".." inside a segment, not its own segment
+});
+
+test('resolveCitedPath: a citedPath with a ".." segment is rejected explicitly, not silently unresolved', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-okf-anchors-resolve-traversal-'));
+  try {
+    // Even though ../../etc/passwd happens to exist on disk relative to
+    // some directory, the ".." segment must reject it before any
+    // filesystem check runs (mirrors okf-kit's own hasParentSegment,
+    // checked before resolveCitation).
+    const docAbsPath = path.join(tmpRoot, 'docs', 'okf', 'doc.md');
+    const citation = { citedPath: '../../etc/passwd', matchIndex: 0 };
+    const result = resolveCitedPath(tmpRoot, docAbsPath, [], [citation], citation, new Map());
+    assert.deepEqual(result, { skipped: 'path-traversal-rejected' });
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('run(): negative control -- a citedPath with a ".." segment is a violation, naming the citation', () => {
+  const tmpRoot = buildFixtureRepo();
+  try {
+    fs.writeFileSync(
+      path.join(tmpRoot, 'docs', 'okf', 'fixture.md'),
+      '---\ntype: invariant\nsources:\n  - lib.ts\n---\n\n' +
+        'See `../lib.ts:1-3#"const c = 3;"` for detail.\n',
+    );
+    const result = run(tmpRoot);
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.violations.length, 1);
+    assert.equal(result.violations[0].rule, 'path-traversal-rejected');
+    assert.match(result.violations[0].citation, /\.\.\/lib\.ts/);
+    // Not silently counted as "unresolved" -- that would hide a
+    // traversal attempt inside an innocuous-looking skip count.
+    assert.equal(result.summary.skippedUnresolved, 0);
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -275,6 +325,62 @@ test('run(): a *.test.ts citation shaped head-to-close passes, even with a repea
     );
     const result = run(tmpRoot);
     assert.equal(result.exitCode, 0);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('run(): rule (b) is intentionally DROPPED, not just satisfied by luck, for a *.test.ts citation', () => {
+  // Same fixture shape as the test above, but this one is explicit about
+  // WHY it passes: the anchor "expect(x.a).toBe(1);" sits on line 5 of a
+  // 1-6 range, NOT the range's last line (6, "});"). For a non-test
+  // citation this would be an anchor-not-on-last-line violation (rule b).
+  // For a *.test.ts citation the shape rule (start on the test's own
+  // head, end on its own closing });) REPLACES (b) entirely -- only (c)
+  // ("occurs exactly once, anywhere in range") still applies. A pass here
+  // proves (b) was skipped on purpose for this citation, not merely that
+  // this particular anchor happened to also satisfy it.
+  const tmpRoot = buildFixtureRepo();
+  try {
+    fs.mkdirSync(path.join(tmpRoot, 'tests'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpRoot, 'tests', 'foo.test.ts'),
+      "it('does a thing', () => {\n  const x = fn({\n    a: 1,\n  });\n  expect(x.a).toBe(1);\n});\n",
+    );
+    fs.writeFileSync(
+      path.join(tmpRoot, 'docs', 'okf', 'fixture.md'),
+      '---\ntype: invariant\nsources:\n  - tests/foo.test.ts\n---\n\n' +
+        'See `tests/foo.test.ts:1-6#"expect(x.a).toBe(1);"` for detail.\n',
+    );
+    const result = run(tmpRoot);
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.summary.anchoredTestShaped, 1);
+    assert.equal(result.summary.anchoredLastLineUnique, 0);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('run(): negative control -- a *.test.ts citation whose anchor occurs TWICE in range still fails anchor-not-unique-in-range', () => {
+  // Proves (c) still applies to a *.test.ts citation even though (b) does
+  // not: only the LAST-LINE requirement is relaxed, not the
+  // exactly-once-in-range one.
+  const tmpRoot = buildFixtureRepo();
+  try {
+    fs.mkdirSync(path.join(tmpRoot, 'tests'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpRoot, 'tests', 'foo.test.ts'),
+      "it('does a thing', () => {\n  expect(1).toBe(1);\n  expect(1).toBe(1);\n});\n",
+    );
+    fs.writeFileSync(
+      path.join(tmpRoot, 'docs', 'okf', 'fixture.md'),
+      '---\ntype: invariant\nsources:\n  - tests/foo.test.ts\n---\n\n' +
+        'See `tests/foo.test.ts:1-4#"expect(1).toBe(1);"` for detail.\n',
+    );
+    const result = run(tmpRoot);
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.violations.length, 1);
+    assert.equal(result.violations[0].rule, 'anchor-not-unique-in-range');
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }

@@ -139,7 +139,12 @@
   "lines 113-116" into `handle-pre-tool-use.ts` (re-verified: `PolicyEnv`
   spans exactly 26 through 36 as claimed, `envOn` is exactly line 88, the
   `auditEnv` object literal's four fields are exactly 113 through 116 --
-  no drift, just never citable), and `grounding-stack-overview.md`'s
+  no drift, just never citable; anchored the `PolicyEnv` citation as 26
+  through 35, narrowed by one line off the doc's own 26-36, so the anchor
+  lands on the interface's last real field instead of its closing `}` --
+  same "land on real content, not a generic closer" narrowing the
+  `README.md` fix two sentences below does explicitly), and
+  `grounding-stack-overview.md`'s
   "lines 9-50" into the root `README.md`'s mermaid diagram (actually the
   fenced block, lines 13 through 50; anchored 13 through 49 to land the
   anchor on real content, not the closing fence) and "lines 9-30" into
@@ -248,12 +253,16 @@
   carries a `#"..."` anchor unless allowlisted with a reason (empty
   today), (b) the anchor text sits on the range's own last line, (c) it
   occurs exactly once within the range. A `*.test.ts` target gets a shape
-  rule instead of (b): the range must start on the test's own
+  rule INSTEAD OF (b): the range must start on the test's own
   `describe(`/`it(`/`test(` head and end on that test's own closing
-  `});`, with (c) relaxed to "occurs exactly once, anywhere in range"
-  since a bare `});` recurs at every nesting depth inside a test body and
-  would otherwise fight the shape rule. Wired into the `okf-anchor-guard`
-  job and `package.json` (`check:okf-anchors` / `test:check-okf-anchors`).
+  `});`. It is (b) that is dropped entirely for these citations, not (c):
+  a bare `});` recurs at every nesting depth inside a test body, so
+  requiring the anchor to also sit on that exact closing line would fight
+  the shape rule instead of composing with it. (c) itself is unchanged --
+  it was always "occurs exactly once within the range" with no last-line
+  qualifier of its own, so it still applies to a test citation exactly as
+  written, unrelaxed. Wired into the `okf-anchor-guard` job and
+  `package.json` (`check:okf-anchors` / `test:check-okf-anchors`).
   Three required negative controls, all fixture-based (disposable temp
   dirs, never the real bundle), each restored after: removing an anchor
   entirely -> fails, naming the citation (`missing-anchor`); shifting the
@@ -308,6 +317,102 @@
   `node scripts/check-okf-anchors.js`: 171 full citations across 8 docs
   (log.md excluded from scope), 171 anchored, 0 unresolved, 0 ambiguous,
   0 violations.
+
+  Review fix pass on round 3, same commit chain, before merge (accept
+  with notes; the HIGH from round 3 stayed closed, 171/171 confirmed
+  independently, okf-kit still 0/0/0): (1) `check-okf-anchors.js`'s own
+  docblock wrongly claimed the `*.test.ts` shape rule "composes with
+  (b)"; corrected to say it REPLACES (b) (only (c) still applies), which
+  is what the code at the `isTestCitation` branch actually does and
+  always did. (2) the CLI/step summary printed "N anchored (all last-line
+  + unique-in-range)" unconditionally, false for the one `*.test.ts`
+  citation; `run()` now tracks `anchoredLastLineUnique` and
+  `anchoredTestShaped` separately and both the pass and failure paths
+  print both counts (170 + 1 today). (3) `log.md` is RESERVED in
+  `check-okf-anchors.js` (exempt from the anchor discipline entirely),
+  but okf-kit's own `citations-resolve` still drift/ambiguity-checks its
+  7 full citations at HEAD (2 pre-existing, 5 this round's own entry
+  added while narrating the fixes) like any other doc -- a future SOURCE
+  refactor shifting one of those 7 could turn CI red over an append-only
+  history entry despite the anchor-discipline exemption. Fixed in
+  `ci.yml`: both blocking jq selectors (`citationFindings`,
+  `ambiguousFindings`) now exclude `.file == "log.md"`; every
+  citations-resolve finding against `log.md` is instead collected into
+  its own `logFindings` bucket and surfaced, non-blocking, in its own
+  step-summary section, with the asymmetry stated in the job's own header
+  comment. `PR_BODY.md`'s "Excluded (log.md)" count corrected from 2 to
+  7. (4) added `permissions: contents: read` to the `okf-anchor-guard`
+  job (it only ever reads; matches `okf-staleness.yml`'s own
+  workflow-level grant). (5) `check-okf-kit-pin.js` rewritten: globs
+  `.github/workflows/*.yml` instead of a hardcoded two-file list (a third
+  workflow that starts pinning okf-kit is now automatically in scope),
+  collects EVERY `npm install -g okf-kit@X.Y.Z` match per file (a global
+  regex, not just the first), and asserts every occurrence found agrees,
+  including two differing occurrences inside the SAME file. `PIN_RE` was
+  tightened to require a real semver shape after `okf-kit@`, not a bare
+  `\S+`: the bare form matched this very file's own header comment (the
+  literal string `okf-kit@...` used descriptively), a false positive
+  caught while testing the glob rewrite, not by the review. `readFileSync`
+  is now wrapped so an unreadable file is a named `unreadable-file`
+  violation instead of an uncaught exception; a zero-workspace-style
+  vacuous-pass guard was added (0 pins found anywhere is itself a
+  violation). Tests added: two install lines with different versions in
+  one file, a third workflow file that diverges, a third workflow file
+  that agrees, an unreadable file, and the zero-pins guard (22 tests
+  total, up from 9). (6) `resolveCitedPath` now rejects a `citedPath`
+  containing a `..` segment as an explicit `path-traversal-rejected`
+  violation (mirrors okf-kit's own `hasParentSegment`, checked before any
+  filesystem lookup) instead of letting it fall through and read as
+  merely "unresolved" -- a silent skip would have hidden a traversal
+  attempt inside an innocuous-looking count. Tested directly and via
+  `run()`. (7) doc fixes: this entry's own "(c) relaxed to..." wording
+  was backwards -- it is (b) that is dropped for a `*.test.ts` citation,
+  not (c) (which was always "occurs exactly once within the range" with
+  no last-line qualifier of its own, so it is literally unchanged, not
+  "relaxed"); corrected above. Also added the missing clause that the
+  `PolicyEnv` citation was anchored as 26 through 35, narrowed by one
+  line off the doc's own 26-36, so the anchor lands on the interface's
+  last real field instead of its closing `}` (same narrowing the
+  `README.md` fix right after it already states explicitly). `ci.yml`'s
+  header comment's point-in-time "verified via the GitHub API, no
+  required status checks" observation is replaced with the mechanism
+  (the `gh api .../branches/master/protection` command an operator can
+  re-run) plus a pointer to this log for the state as last verified,
+  since a hardcoded observation goes stale silently the moment an
+  operator changes branch protection. (8) `ci.yml`'s `errors=$(jq
+  '.summary.errors' ...)` now asserts the shape (`jq -e '.summary.errors
+  | numbers'`), so a missing or non-numeric field fails the step loudly
+  instead of being read as zero; the `count`/`ambiguousCount`/
+  `logFindingCount`/`otherNoticeCount` array-length reads got the same
+  `jq -e` treatment for consistency. (9) `check-okf-anchors.test.js`:
+  added a test that pins the `*.test.ts` (b)-relaxation as intentional
+  (asserts `anchoredTestShaped: 1, anchoredLastLineUnique: 0` on a
+  fixture whose anchor is deliberately NOT on the range's last line), and
+  a negative control where a `*.test.ts` citation's anchor occurs TWICE
+  in range (must still fail `anchor-not-unique-in-range`, proving (c)
+  keeps applying even though (b) does not).
+
+  Re-measured after all of the above: `node --test scripts/*.test.js`
+  180 tests, 0 failures (was 161 before this pass; `check-okf-anchors.test.js`
+  grew from 23 to 29, `check-okf-kit-pin.test.js` from 9 to 22).
+  `okf-kit check --json docs/okf`: errors 0, warnings 0, notices 0,
+  unchanged. `node scripts/check-okf-anchors.js`: 171 anchored (170
+  last-line + unique-in-range, 1 test-shaped), 0 violations, unchanged.
+  `node scripts/check-okf-kit-pin.js`: 2 pin occurrences across 8
+  workflow files, all okf-kit@0.6.0. Simulated the `okf-anchor-guard`
+  job's exact `Citation guard` step (extracted via `python3 -c "import
+  yaml; ..."`, not paraphrased) against six scenarios, each reverted
+  after (file diff empty afterward): clean -> exit 0; drifted (1 line
+  inserted at the top of `lib.ts`) -> exit 1; wrong bundle path -> exit
+  2 (tool/usage posture unchanged); frontmatter error (`type:` line
+  deleted from `grounding-stack-overview.md`) -> exit 1 via `errors=1`;
+  a NEW ambiguous bare `cli.ts:1` mention added to
+  `hypothesis-tracker-persistence-split.md` (not `log.md`) -> exit 1,
+  `unresolved-ambiguous notices: 1`; a drifted `log.md`-ONLY citation
+  (its own `hypothesis-sync.ts:31-36` mention hand-edited to
+  `:200-210`, no source file touched) -> exit 0, surfaced instead as
+  `log.md findings (non-blocking): 1` in the step summary, proving item
+  3's fix actually holds.
 
 - 2026-08-24, okf-kit citations-resolve replaces the repo-local script
   (task 21f76bfe): this repo's own `scripts/okf-citations-resolve.mjs`

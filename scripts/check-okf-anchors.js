@@ -28,15 +28,19 @@
  * anchor is allowed to match is the one the range's own end has to keep
  * pointing at.
  *
- * A citation into a `*.test.ts` file gets one more shape rule: the range
- * must start on the `describe(`/`it(`/`test(` head of the test the citing
- * sentence names and end on that test's own closing `});` -- so the range
- * always spans exactly one test, never a mid-test line. This still composes
- * with (b)/(c): the closing `});` line is the required last line, and its
- * anchor text just needs to be unique to that exact line within the range
- * (typically via its own indentation, since a bare `});` recurs at every
- * nesting level inside a test body -- see the ALLOWLIST-free examples in the
- * bundle for the pattern).
+ * A citation into a `*.test.ts` file gets a shape rule INSTEAD OF (b): the
+ * range must start on the `describe(`/`it(`/`test(` head of the test the
+ * citing sentence names and end on that test's own closing `});` -- so the
+ * range always spans exactly one test, never a mid-test line. (b) itself
+ * ("anchor on the LAST line") is deliberately dropped for these citations:
+ * the range's end is now pinned to the test's own closing `});` by the
+ * shape rule, not chosen for anchor distinctiveness, and a bare `});`
+ * recurs at every nesting level inside a test body, so demanding the
+ * anchor also sit on that exact closing line would fight the shape rule
+ * instead of composing with it. (c) ("occurs exactly once") still applies,
+ * just relaxed to "anywhere in the range" rather than "on the last line
+ * specifically" -- see `run()`'s `isTestCitation` branch below, which is
+ * the actual gate this docblock describes.
  *
  * ── CITATION_RE: mirrors okf-kit 0.6.0's, deliberately including fenced
  * code blocks ──────────────────────────────────────────────────────────
@@ -231,8 +235,16 @@ function findPriorQualifiedCitation(citations, beforeIndex, citedPath) {
  * resolves the same file okf-kit itself would use, instead of falling
  * through to a repo-wide search that a same-named file elsewhere in the
  * monorepo (e.g. more than one `server.ts`) would make falsely ambiguous. */
+/** True when `citedPath` has a `..` path segment -- mirrors okf-kit's own
+ * `hasParentSegment`, checked before resolution so a traversal attempt is
+ * an explicit violation, not silently swallowed as "unresolved". */
+function hasParentSegment(citedPath) {
+  return citedPath.split('/').includes('..');
+}
+
 function resolveCitedPath(rootDir, docAbsPath, docSources, allCitations, citation, basenameIndex) {
   const citedPath = citation.citedPath;
+  if (hasParentSegment(citedPath)) return { skipped: 'path-traversal-rejected' };
   const sourceMatches = docSources.filter((s) => s === citedPath || s.endsWith('/' + citedPath));
   if (sourceMatches.length === 1) {
     const candidate = path.resolve(rootDir, sourceMatches[0]);
@@ -289,6 +301,14 @@ function run(rootDir = path.join(__dirname, '..')) {
   const violations = [];
   let total = 0;
   let anchored = 0;
+  // Two populations, tracked separately because they pass DIFFERENT shape
+  // rules (see the docblock's *.test.ts section): a non-test citation must
+  // be last-line + unique-in-range (b)+(c); a *.test.ts citation instead
+  // gets the head-to-close range shape plus only (c), relaxed to "anywhere
+  // in range". Reporting one combined "all last-line + unique-in-range"
+  // count would misdescribe every test-shaped citation.
+  let anchoredLastLineUnique = 0;
+  let anchoredTestShaped = 0;
   let skippedUnresolved = 0;
   let skippedAmbiguous = 0;
 
@@ -304,6 +324,14 @@ function run(rootDir = path.join(__dirname, '..')) {
       }\``;
 
       const resolution = resolveCitedPath(rootDir, docAbsPath, docSources, citations, citation, basenameIndex);
+      if (resolution.skipped === 'path-traversal-rejected') {
+        violations.push({
+          rule: 'path-traversal-rejected',
+          citation: citationLabel,
+          message: `${citationLabel} citedPath contains a ".." segment and was rejected without resolving`,
+        });
+        continue;
+      }
       if (resolution.skipped === 'unresolved') {
         skippedUnresolved++;
         continue;
@@ -337,6 +365,7 @@ function run(rootDir = path.join(__dirname, '..')) {
       const occurrences = rangeLines.reduce((n, l) => n + (l.includes(text) ? 1 : 0), 0);
       const lastLine = rangeLines[rangeLines.length - 1] ?? '';
       const onLastLine = lastLine.includes(text);
+      let clean = true;
 
       // A *.test.ts citation's range end is pinned to the test's own
       // closing `});` by the shape rule below, not chosen for anchor
@@ -346,12 +375,14 @@ function run(rootDir = path.join(__dirname, '..')) {
       // These citations get the relaxed "somewhere in range, exactly once"
       // check instead; every non-test citation still needs both (b) and (c).
       if (!isTestCitation && !onLastLine) {
+        clean = false;
         violations.push({
           rule: 'anchor-not-on-last-line',
           citation: citationLabel,
           message: `${citationLabel} anchor "${text}" is not on the range's last line (${citation.endLine})`,
         });
       } else if (occurrences !== 1) {
+        clean = false;
         violations.push({
           rule: 'anchor-not-unique-in-range',
           citation: citationLabel,
@@ -363,6 +394,7 @@ function run(rootDir = path.join(__dirname, '..')) {
         const headOk = TEST_HEAD_RE.test(targetLines[startIdx] ?? '');
         const closeOk = TEST_CLOSE_RE.test(targetLines[endIdx] ?? '');
         if (!headOk || !closeOk) {
+          clean = false;
           violations.push({
             rule: 'test-citation-shape',
             citation: citationLabel,
@@ -372,6 +404,11 @@ function run(rootDir = path.join(__dirname, '..')) {
           });
         }
       }
+
+      if (clean) {
+        if (isTestCitation) anchoredTestShaped++;
+        else anchoredLastLineUnique++;
+      }
     }
   }
 
@@ -379,6 +416,8 @@ function run(rootDir = path.join(__dirname, '..')) {
     filesChecked: files.length,
     totalCitations: total,
     anchored,
+    anchoredLastLineUnique,
+    anchoredTestShaped,
     skippedUnresolved,
     skippedAmbiguous,
     violations: violations.length,
@@ -388,16 +427,19 @@ function run(rootDir = path.join(__dirname, '..')) {
     console.error(`OKF anchor check failed (${violations.length} violation(s)):\n`);
     for (const v of violations) console.error(`  - [${v.rule}] ${v.message}`);
     console.error(
-      `\n${total} full citation(s) across ${files.length} doc(s), ${anchored} anchored, ` +
-        `${skippedUnresolved} unresolved, ${skippedAmbiguous} ambiguous.`,
+      `\n${total} full citation(s) across ${files.length} doc(s), ${anchored} anchored ` +
+        `(${anchoredLastLineUnique} last-line + unique-in-range, ${anchoredTestShaped} ` +
+        `test-shaped, whole-test range + unique anchor), ${skippedUnresolved} unresolved, ` +
+        `${skippedAmbiguous} ambiguous.`,
     );
     return { exitCode: 1, summary, violations };
   }
 
   console.log(
     `OKF anchor check passed: ${total} full citation(s) across ${files.length} doc(s) (log.md excluded), ` +
-      `${anchored} anchored (all last-line + unique-in-range), ${skippedUnresolved} unresolved, ` +
-      `${skippedAmbiguous} ambiguous target(s) skipped.`,
+      `${anchored} anchored (${anchoredLastLineUnique} last-line + unique-in-range, ` +
+      `${anchoredTestShaped} test-shaped, whole-test range + unique anchor), ` +
+      `${skippedUnresolved} unresolved, ${skippedAmbiguous} ambiguous target(s) skipped.`,
   );
   return { exitCode: 0, summary, violations: [] };
 }
@@ -413,6 +455,7 @@ module.exports = {
   buildBasenameIndex,
   parseSourcesFrontmatter,
   resolveViaAncestorClimb,
+  hasParentSegment,
   resolveCitedPath,
   run,
   ALLOWLIST,

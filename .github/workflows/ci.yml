@@ -29,26 +29,38 @@ jobs:
   # okf-kit itself (e.g. a malformed/missing frontmatter `type:` field) --
   # a bundle-level error is a stronger signal than a single citation
   # warning and must not slip through a job that only ever looked at
-  # citations-resolve findings. Every other notice (e.g. an ambiguous
-  # bare-filename mention this repo has deliberately left ambiguous, see
-  # docs/okf/log.md) is surfaced in the step summary for visibility but
-  # does not fail the job, matching --strict's own severity split for
-  # everything except the ambiguous-citation carve-out above. sources-fresh
-  # staleness stays entirely out of this job; okf-staleness.yml already
-  # surfaces it, warn-only, by design.
+  # citations-resolve findings. `docs/okf/log.md` is the one exception: it
+  # is reserved/append-only history (see scripts/check-okf-anchors.js's own
+  # RESERVED_DOCS), so every citations-resolve finding against it is
+  # excluded from the two blocking selectors below and surfaced instead,
+  # non-blocking, in its own step-summary section (see the "Citation guard"
+  # step). Every OTHER notice is surfaced in the step summary for
+  # visibility but does not fail the job, matching --strict's own severity
+  # split for everything except the ambiguous-citation carve-out above.
+  # sources-fresh staleness stays entirely out of this job; okf-staleness.yml
+  # already surfaces it, warn-only, by design.
   #
-  # Advisory today, not a hard merge gate: this repo's `master` branch
-  # carries no required status checks (verified via the GitHub API), so a
-  # red run here does not block the PR "Merge" button by itself -- an
-  # operator would need to add "OKF bundle citation guard" to master's
-  # required status checks for that. It DOES gate releases: release.yml's
-  # `release` job `needs: ci`, and `ci` there is this whole ci.yml file
-  # invoked via `workflow_call` (below), so a red job here fails that
-  # reusable-workflow call and blocks the tag-triggered release run.
+  # Whether this is a hard merge gate depends on whether an operator has
+  # added "OKF bundle citation guard" to `master`'s required status checks
+  # in branch protection: only then does a red run here block the PR
+  # "Merge" button; check `gh api repos/<owner>/<repo>/branches/master/protection
+  # --jq '.required_status_checks.contexts'` to see the live state (see
+  # docs/okf/log.md's 2026-08-26 entry for the state as last verified, and
+  # docs/okf/merge-approval-gate-mechanics.md for the same mechanism applied
+  # to the `merge-approval` check). It DOES unconditionally gate releases
+  # regardless of branch protection: release.yml's `release` job
+  # `needs: ci`, and `ci` there is this whole ci.yml file invoked via
+  # `workflow_call` (below), so a red job here fails that reusable-workflow
+  # call and blocks the tag-triggered release run.
   okf-anchor-guard:
     name: OKF bundle citation guard
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Read-only: this job only checks out and reads the bundle, never
+    # writes back to the repo or calls the GitHub API. Matches
+    # okf-staleness.yml's own workflow-level `permissions: contents: read`.
+    permissions:
+      contents: read
     env:
       BUNDLE_PATH: docs/okf
     steps:
@@ -99,42 +111,64 @@ jobs:
 
           jq -e . okf-anchor-report.json > /dev/null
 
-          errors=$(jq '.summary.errors' okf-anchor-report.json)
+          errors=$(jq -e '.summary.errors | numbers' okf-anchor-report.json)
+
+          # log.md is RESERVED in scripts/check-okf-anchors.js (append-only
+          # history, exempt from the anchor discipline entirely -- see that
+          # script's own header), but okf-kit's citations-resolve still
+          # checks log.md's full citations for drift/ambiguity like any
+          # other doc (only its short-form matcher skips reserved files).
+          # That is an intentional asymmetry, not an oversight: log.md
+          # narrates past fixes and deliberately leaves some old citations
+          # ambiguous/unqualified on purpose (see its own note on the
+          # pattern). Blocking releases on a future SOURCE refactor shifting
+          # an append-only history entry's citation would be exactly the
+          # wrong failure mode for a file this job otherwise treats as
+          # exempt, so every citations-resolve finding against log.md is
+          # excluded from the two blocking selectors below and surfaced
+          # instead, non-blocking, in its own step-summary section.
+          logFindings=$(jq '[
+            .findings[]
+            | select(.file == "log.md" and .ruleId == "citations-resolve")
+          ]' okf-anchor-report.json)
+          logFindingCount=$(echo "${logFindings}" | jq -e 'length')
 
           # citations-resolve WARNINGs (base + anchor subtypes) always
-          # block. citations-resolve `unresolved-ambiguous` NOTICEs also
-          # block here even though --strict itself never counts a notice:
-          # an ambiguous target was never evaluated by citations-resolve at
-          # all, so a green run must not read as "every citation checked
-          # out" when one was skipped outright.
+          # block, except in log.md (see above). citations-resolve
+          # `unresolved-ambiguous` NOTICEs also block here even though
+          # --strict itself never counts a notice: an ambiguous target was
+          # never evaluated by citations-resolve at all, so a green run
+          # must not read as "every citation checked out" when one was
+          # skipped outright -- again except in log.md.
           citationFindings=$(jq '[
             .findings[]
-            | select(.ruleId == "citations-resolve" and .severity == "warning")
+            | select(.ruleId == "citations-resolve" and .severity == "warning" and .file != "log.md")
           ]' okf-anchor-report.json)
-          count=$(echo "${citationFindings}" | jq 'length')
+          count=$(echo "${citationFindings}" | jq -e 'length')
 
           ambiguousFindings=$(jq '[
             .findings[]
-            | select(.ruleId == "citations-resolve" and .severity == "notice" and (.message | contains("[unresolved-ambiguous]")))
+            | select(.ruleId == "citations-resolve" and .severity == "notice" and (.message | contains("[unresolved-ambiguous]")) and .file != "log.md")
           ]' okf-anchor-report.json)
-          ambiguousCount=$(echo "${ambiguousFindings}" | jq 'length')
+          ambiguousCount=$(echo "${ambiguousFindings}" | jq -e 'length')
 
           # Every other notice (any severity-"notice" finding not already
-          # counted above -- e.g. a deliberately-left-ambiguous bare
-          # filename mention in log.md, or a sources-fresh "staleness not
-          # assessable" notice) is informational only: surfaced below, but
-          # never a reason to fail this job.
+          # counted above -- e.g. a sources-fresh "staleness not assessable"
+          # notice) is informational only: surfaced below, but never a
+          # reason to fail this job. citations-resolve only ever emits a
+          # notice for `unresolved-ambiguous`, so this selector never
+          # overlaps logFindings/ambiguousFindings above.
           otherNotices=$(jq '[
             .findings[]
             | select(.severity == "notice")
             | select((.ruleId == "citations-resolve" and (.message | contains("[unresolved-ambiguous]"))) | not)
           ]' okf-anchor-report.json)
-          otherNoticeCount=$(echo "${otherNotices}" | jq 'length')
+          otherNoticeCount=$(echo "${otherNotices}" | jq -e 'length')
 
           {
             echo "## OKF bundle citation guard (\`${BUNDLE_PATH}\`)"
             echo ""
-            echo "errors: ${errors}, citations-resolve warnings: ${count}, unresolved-ambiguous notices: ${ambiguousCount}, other notices: ${otherNoticeCount}"
+            echo "errors: ${errors}, citations-resolve warnings: ${count}, unresolved-ambiguous notices: ${ambiguousCount}, log.md findings (non-blocking): ${logFindingCount}, other notices: ${otherNoticeCount}"
             if [ "${count}" -gt 0 ]; then
               echo ""
               echo "### citations-resolve warnings"
@@ -147,6 +181,13 @@ jobs:
               echo "### unresolved-ambiguous citations (not evaluated -- treated as a coverage gap)"
               echo '```'
               echo "${ambiguousFindings}" | jq -r '.[] | "\(.file): \(.message)"'
+              echo '```'
+            fi
+            if [ "${logFindingCount}" -gt 0 ]; then
+              echo ""
+              echo "### log.md findings (non-blocking -- reserved append-only history, see this job's own header comment)"
+              echo '```'
+              echo "${logFindings}" | jq -r '.[] | "\(.severity) [\(.ruleId)]: \(.message)"'
               echo '```'
             fi
             if [ "${otherNoticeCount}" -gt 0 ]; then
@@ -167,7 +208,7 @@ jobs:
             exit 1
           fi
 
-          echo "Clean: 0 errors, 0 citations-resolve warnings, 0 unresolved-ambiguous citations."
+          echo "Clean: 0 errors, 0 citations-resolve warnings, 0 unresolved-ambiguous citations (log.md excluded, see above)."
           exit 0
 
       - name: OKF anchor-discipline check (repo-local, on top of okf-kit)
