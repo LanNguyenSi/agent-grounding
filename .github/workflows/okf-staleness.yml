@@ -51,7 +51,7 @@ jobs:
         # spike (see docs/okf/log.md, 2026-08-24): `check` below now
         # covers both timestamp staleness (sources-fresh) and citation
         # drift (citations-resolve) in one pass.
-        run: npm install -g okf-kit@0.5.0
+        run: npm install -g okf-kit@0.6.0
 
       - name: Assert CLI is alive (output, not exit code)
         shell: bash
