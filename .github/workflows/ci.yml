@@ -13,6 +13,98 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Blocking counterpart to the warn-only okf-staleness.yml drift watch:
+  # that workflow never fails a build (see its own header comment), so a
+  # commit that shifts a docs/okf citation's cited range out of the
+  # section or content it names would go unnoticed there. This job runs
+  # the identical bundle check (same okf-kit pin, same command) and fails
+  # the build on any citations-resolve WARNING (both the base subtypes
+  # such as missing-file/inverted-range/blank-start-line and the four
+  # anchor subtypes anchor-not-found-in-range/anchor-heading-mismatch/
+  # anchor-heading-does-not-enclose/anchor-heading-not-found). Notices
+  # (e.g. an unresolved-ambiguous bare-filename mention) are excluded on
+  # purpose: citations-resolve itself never counts a notice toward
+  # --strict, and this job mirrors that same non-blocking posture for
+  # notices while blocking on every real drift warning. sources-fresh
+  # staleness stays entirely out of this job; okf-staleness.yml already
+  # surfaces it, warn-only, by design.
+  okf-anchor-guard:
+    name: OKF bundle citation guard (blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BUNDLE_PATH: docs/okf
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # citations-resolve's repo-root auto-detection runs `git
+          # rev-parse --show-toplevel`; a full checkout keeps this job's
+          # checkout identical to okf-staleness.yml's rather than a
+          # second, subtly different recipe to keep in sync.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install okf-kit (exact pin)
+        # Keep this pin identical to okf-staleness.yml's.
+        run: npm install -g okf-kit@0.6.0
+
+      - name: Assert CLI is alive (output, not exit code)
+        shell: bash
+        run: |
+          v="$(okf-kit --version)"
+          test -n "$v"
+          echo "okf-kit ${v}"
+
+      - name: Citation guard (blocking)
+        shell: bash
+        run: |
+          set +e
+          okf-kit check --json "${BUNDLE_PATH}" > okf-anchor-report.json
+          code=$?
+          set -e
+
+          if [ "${code}" -ne 0 ] && [ "${code}" -ne 1 ]; then
+            echo "::error title=OKF citation guard::okf-kit check exited ${code} (tool/usage error, not bundle findings)"
+            cat okf-anchor-report.json || true
+            exit "${code}"
+          fi
+
+          jq -e . okf-anchor-report.json > /dev/null
+
+          # citations-resolve WARNINGs only (base + anchor subtypes); a
+          # citations-resolve NOTICE (e.g. unresolved-ambiguous) never
+          # blocks here, matching --strict's own severity split. Every
+          # other rule (sources-fresh, frontmatter-required, etc.) is out
+          # of scope for this job.
+          citationFindings=$(jq '[
+            .findings[]
+            | select(.ruleId == "citations-resolve" and .severity == "warning")
+          ]' okf-anchor-report.json)
+          count=$(echo "${citationFindings}" | jq 'length')
+
+          {
+            echo "## OKF bundle citation guard (\`${BUNDLE_PATH}\`), blocking"
+            echo ""
+            echo "citations-resolve warnings: ${count}"
+            if [ "${count}" -gt 0 ]; then
+              echo ""
+              echo '```'
+              echo "${citationFindings}" | jq -r '.[] | "\(.file): \(.message)"'
+              echo '```'
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          if [ "${count}" -gt 0 ]; then
+            echo "${citationFindings}" | jq -r '.[] | "::error title=OKF citation drift::\(.file): \(.message)"'
+            exit 1
+          fi
+
+          echo "Clean, 0 citations-resolve warnings."
+          exit 0
+
   ci:
     runs-on: ubuntu-latest
     timeout-minutes: 10

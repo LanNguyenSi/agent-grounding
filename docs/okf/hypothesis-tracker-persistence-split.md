@@ -40,7 +40,7 @@ HypothesisStatus = "unverified" | "supported" | "rejected"   // lib.ts:9
 There are only these three. New hypotheses start `"unverified"` (lib.ts:59). This union is
 duplicated as a runtime guard in **two** other places, both of which will *silently drop
 rows* if the union ever grows: `HYPOTHESIS_STATUSES` in lib.ts:158-162 (used by `importStore`)
-and `VALID_STATUSES` in understanding-gate's `hypothesis-store-fs.ts:66` (explicitly
+and `VALID_STATUSES` in understanding-gate's `hypothesis-store-fs.ts:66#"VALID_STATUSES = new Set"` (explicitly
 commented "If the upstream union grows, this guard will silently drop valid rows").
 
 ## Invariant 2 — TWO confirmation paths that disagree on required_checks (the trap)
@@ -84,7 +84,7 @@ writers save via `saveStore` (atomic tmp+rename, hypothesis-store.ts:165-172), w
 server.ts's `hypothesis_*` verbs call after every successful mutation (server.ts:391, :437,
 :469, :491, :518). **A grounding-mcp process restart no longer loses hypothesis state** — it
 now has disk backing at parity with the session store and the evidence ledger
-(`packages/grounding-mcp/README.md:156`).
+(`packages/grounding-mcp/README.md:156-157#"the root cause is the backend container's missing OPENAI_API_KEY env var"`).
 
 The in-process Map is LRU-bounded. `getMaxSessions()` (hypothesis-store.ts:190-196)
 reads `GROUNDING_HYPOTHESIS_MAX_SESSIONS` lazily per call. **Default is `200`**; unset, empty,
@@ -120,7 +120,7 @@ same library. `loadOrCreateStore(path, session)` reads + validates JSON (droppin
 rows, counting them as `droppedCount`); `saveStore(path, store)` writes atomically via
 `writeAtomicJSON`. **This state survives restarts.**
 
-Exact path construction (`hypothesis-sync.ts:47`):
+Exact path construction (`hypothesis-sync.ts:47#"resolve(opts.reportDir,"`):
 ```ts
 const storePath = resolve(opts.reportDir, "..", HYPOTHESES_STORE_FILENAME);
 ```
@@ -134,7 +134,7 @@ hypothesis-sync.ts:31-36).
 ## Consumer B also *seeds* the store from the Stop hook
 
 On the understanding-gate Stop-hook path, `syncHypothesesFromReport`
-(`hypothesis-sync.ts:42-64`) loads the fs store and calls `registerReportHypotheses`
+(`hypothesis-sync.ts:42-62#"message: String(err)"`) loads the fs store and calls `registerReportHypotheses`
 (`packages/understanding-gate/src/core/hypothesis-bridge.ts`), which walks the report and
 registers each entry via the library's `addHypothesis`:
 

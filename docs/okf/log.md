@@ -2,64 +2,104 @@
 
 <!-- Add new entries at the top, newest first. -->
 
-- 2026-08-26, citation anchors normalized in
-  `solution-acceptance-verdict-contract.md` (task 79f9e0fd, refiled from
-  the halt in task 9b6c4beb: citations drifted in three consecutive
-  review rounds of that PR because nothing mechanical failed when a
-  commit shifted lines). Inventory of every line citation in that doc:
-  61 instances across two prose forms ("line N", "lines N-M", not
-  backtick-wrapped and not resolvable by citations-resolve at all) and
-  two already-valid forms (a bare "path.ts, colon, N" or "path.ts,
-  colon, N-M" inside backticks, already recognised). All 61 are now
-  full backtick "path, colon, N" or "path, colon, N-M" citations
-  against `solution-verdict.ts`, `verdict-signing.ts`, `server.ts`, and
-  `ow-run-completeness.ts` (all four already listed in this doc's
-  `sources`, so a bare filename resolves by the doc's own frontmatter
-  suffix match, rule 1 of the resolver's path-resolution order).
-  Re-reading each cited range against the actual source (not just
-  trusting the existing number) turned up 20 citations whose target had
-  drifted since the doc's last verification -- wrong function, wrong
-  comment lines, or a range that no longer covered the described
-  behavior (e.g. `evaluateSolution` cited at line 574, actually at 577;
-  `writeVerdict`'s `fs.writeFileSync` cited at line 186, actually at
-  189; `owBindingBlockers` cited as spanning 388 through 437, actually
-  391 through 440); all 20 corrected to point at the content the citing
-  sentence actually describes. The other 41 already pointed at the
-  right lines (some files here -- `verdict-signing.ts`,
-  `ow-run-completeness.ts` -- turned out to already be pinned exactly
-  to what this doc cites, per `verdict-signing.ts`'s own EOF comment:
-  "These EOF declarations are placed here deliberately: it keeps every
-  line anchor above (cited by the OKF doc) stable"). The other eight
-  `docs/okf/*.md` files already cite in the recognised full-citation
-  form (0 citations-resolve findings against them before this task) and
-  needed no change.
-  `okf-kit check --json docs/okf` (0.6.0, the pin okf-staleness.yml
-  already carries): before and after this doc's edit, errors 0,
-  warnings 6, notices 1 -- unchanged, and all 6 warnings are
-  pre-existing sources-fresh staleness on unrelated docs (this task's
-  `outOfScope` excludes re-verifying those). Negative control: shifted
-  the `verdictDir()` citation from `solution-verdict.ts` line 116
-  through 123 to line 124 through 131 (one section down, onto the blank
-  line and docblock before `sanitizeVerdictId`) -- citations-resolve
-  reported a new blank-start-line warning naming that exact citation
-  (warnings 6 to 7), and `okf-kit check --json docs/okf --strict`
-  flipped exit 0 to exit 1. Reverted: back to warnings 6, non-strict
-  exit 0. This entry deliberately avoids writing that shifted range as
-  a real backtick citation, the same way the 2026-08-24 entry below
-  avoids the colon form for its own quoted line numbers: a reserved
-  file's full and continuation citations are still checked by
-  citations-resolve (only its short-form matching is excluded), and a
-  colon-joined "path, N-M" written here would either be evaluated for
-  real against the still-broken range or, worse, silently rebind a
-  later bare continuation citation elsewhere in this file to the
-  nearest full citation above it -- exactly the class of drift this
-  task closes, not something to reintroduce into the file that logs it.
-  Note: `okf-staleness.yml` is deliberately warn-only (see its own
-  header comment) and always exits 0 regardless of findings, by design;
-  a citation drift therefore never fails that CI job itself, only its
-  JSON/step-summary output (and --strict, run locally here, not in CI)
-  -- this is the same non-blocking posture sources-fresh already has,
-  not something this task changed.
+- 2026-08-26, citation anchors normalized bundle-wide, plus a blocking
+  CI guard (task 79f9e0fd, refiled from the halt in task 9b6c4beb:
+  citations drifted in three consecutive review rounds of that PR
+  because nothing mechanical failed when a commit shifted lines). Two
+  rounds, both against okf-kit 0.6.0 (already pinned in
+  okf-staleness.yml on this branch):
+
+  Round 1 (line-citation inventory and drift fix, scoped initially to
+  `solution-acceptance-verdict-contract.md`): 61 line citations found in
+  that one doc across two prose forms ("line N", "lines N-M", not
+  backtick-wrapped, invisible to citations-resolve) and two already-valid
+  forms (bare "path.ts, colon, N[-M]" inside backticks). All 61
+  normalized into full backtick "path, colon, N[-M]" citations against
+  `solution-verdict.ts`, `verdict-signing.ts`, `server.ts`, and
+  `ow-run-completeness.ts` (all four already in this doc's `sources`, so
+  a bare filename resolves via the resolver's rule 1). Re-reading each
+  cited range against the real source (not trusting the existing number)
+  found 20 drifted citations -- wrong function, wrong comment lines, or a
+  range that no longer covered the described behavior (e.g.
+  `evaluateSolution` cited at line 574, actually at 577; `owBindingBlockers`
+  cited as spanning 388 through 437, actually 391 through 440) -- all 20
+  corrected. `verdict-signing.ts` and `ow-run-completeness.ts` turned out
+  to already be pinned exactly to what the doc cites (`verdict-signing.ts`
+  even says so in its own EOF comment: "These EOF declarations are placed
+  here deliberately: it keeps every line anchor above (cited by the OKF
+  doc) stable").
+
+  Round 2, three follow-up gaps from review: (a) round 1 used PLAIN line
+  ranges, not okf-kit's anchored-citation feature -- exactly the class of
+  check batch 27 already proved insufficient (a 15-line drift stayed
+  green). Every full citation across all five `docs/okf/*.md` files whose
+  target lives inside this repo (131 total: the 61 above plus 70 more in
+  `claim-gate-vs-review-claim-gate.md` (13), `evidence-ledger-session-key-shapes.md`
+  (25), `hypothesis-tracker-persistence-split.md` (4), and
+  `merge-approval-gate-mechanics.md` (23) -- reserved files `index.md`/
+  `log.md` and the two docs with no in-repo `.ts`/`.md`/`.yml` full
+  citations needed no work) now carries a string-form range-anchor (hash, quote, text, quote) suffix,
+  chosen from a token that actually carries the citing sentence's claim
+  (never a bare `describe(`/`return`/`});`/`const`). Fixed two more
+  genuine drifts found while anchoring: a citation naming
+  grounding-gate-mcp-roundtrip.test.ts, line 632, as where "preflight:" appears
+  incidentally in a test description string actually pointed at an
+  unrelated `client.callTool` call -- the real string lives at line 648
+  (`it('not-ready preflight: ...')`); corrected. (b) an anchor okf-kit
+  accepts merely needs to occur somewhere in the cited range, which
+  misses any insertion smaller than the range -- so every anchor was
+  additionally placed on the cited range's LAST line specifically (an
+  anchor on the last line detects an insertion of any size above it),
+  narrowing 36 ranges in the main doc (and more elsewhere) whose natural
+  last line was generic (`}`, blank, `);`) back to their last real
+  claim-bearing line, and verified to occur at most a handful of times in
+  the whole target file (never a bare keyword). One documented exception:
+  evidence-ledger/src/types.ts, lines 9 through 14's anchor, `policy_decision`
+  (the `EntryType` union's own last member), occurs 4 times in that file
+  because the same identifier is named in three surrounding comments;
+  every alternative substring on that line requires crossing a `"`
+  character, which okf-kit's own anchor-quote scanner cannot support (an
+  embedded `"` inside the anchor text silently truncates the anchor at
+  that character -- confirmed empirically against a throwaway probe
+  bundle before relying on it). Not fixable without either weakening the
+  claim or losing anchoring on that citation entirely; 4 (not <=3) is a
+  measured, accepted residual, not an oversight. Also fixed one anchor
+  discovered non-robust after fix (c) below: `resolveOwKnob`'s two
+  identical `return 'auto';` statements (lines 307 and 309) meant a
+  1-line shift could still coincidentally match the wrong one; re-pointed
+  to the unique `v === 'auto' || v === 'on' || v === 'off'` check instead
+  (narrowing that citation's range to 301-306). (c) Negative-control
+  measurement, insert-k-lines at the very top of `solution-verdict.ts`
+  (shifts every one of its 31 citations' line numbers by k, none of them
+  landing back on real content by chance): k=1 -> 31/31 anchors fired
+  (`anchor-not-found-in-range` or a base-rule finding); k=2 -> 31/31
+  fired. Both reverted (file diff empty afterward, `okf-kit check`
+  back to baseline). False-positive probe: bumping
+  `packages/grounding-mcp/package.json`'s `version` field (not a cited
+  target) changes 0 findings; reverted.
+
+  `okf-kit check --json docs/okf`: before round 1, after round 1, after
+  round 2, and after both negative controls were reverted -- errors 0,
+  warnings 6, notices 1 throughout, unchanged. The 6 warnings are
+  pre-existing `sources-fresh` staleness on three unrelated docs (out of
+  this task's scope); the 1 notice is the pre-existing `unresolved-ambiguous`
+  bare cli.ts mention (line 178 through 193, no colon here on purpose, see that entry's own note on why) in this file's own 2026-08-24 entry below.
+
+  New blocking job `okf-anchor-guard` in `.github/workflows/ci.yml`
+  (installs okf-kit@0.6.0 with the identical exact-pin recipe
+  `okf-staleness.yml` uses, runs the identical `okf-kit check --json
+  docs/okf`, then fails the build on any `citations-resolve` finding at
+  WARNING severity -- every base and anchor subtype, but never a NOTICE,
+  matching `--strict`'s own severity split so the pre-existing
+  `unresolved-ambiguous` notice above never trips it). `okf-staleness.yml`
+  itself stays warn-only and unmodified for `sources-fresh`; this is a
+  separate, additive job, not a change to that one's exit contract.
+  Verified by running the job's exact jq/exit shell logic locally (not
+  just reading it): clean bundle -> count=0, exit 0; the same
+  insert-1-line mutation used above -> count=31, exit 1; reverted ->
+  count=0, exit 0; the package.json version-bump false-positive probe
+  -> count=0, exit 0. `python3 -c "import yaml; yaml.safe_load(...)"`
+  confirms `ci.yml` still parses after the new job is added.
 
 - 2026-08-24, okf-kit citations-resolve replaces the repo-local script
   (task 21f76bfe): this repo's own `scripts/okf-citations-resolve.mjs`
