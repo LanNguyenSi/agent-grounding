@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-26
+
 ### Fixed
 
 - **opencode adapter: `tool.execute.before` enforcement now honors the
