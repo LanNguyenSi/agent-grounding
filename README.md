@@ -199,6 +199,8 @@ The motivating incident lives in an internal logbook: an agent investigated two 
 
 Experimental, functional tools with tests, APIs may evolve. Each package has its own README with install + usage; this top-level README is a routing index. Build/contribution notes live in [CONTRIBUTING.md](./CONTRIBUTING.md).
 
+The curated `docs/okf/` knowledge bundle is CI-gated: `.github/workflows/ci.yml`'s `okf-anchor-guard` job runs [`okf-kit`](https://github.com/LanNguyenSi/agent-dx/tree/master/packages/okf-kit)'s `check --require-anchors`, which requires every full citation into an in-repo file to carry a string or heading anchor pinned to the cited range so a line-number shift can't silently drift a citation. One rule has no `okf-kit` equivalent and stays a small repo-local script: `scripts/check-okf-test-citation-shape.js` asserts a citation into a `*.test.ts` file spans exactly one test (range start on the test's own `describe(`/`it(`/`test(` head, range end on its own closing `});`). See `docs/okf/log.md` for the migration history and measurements.
+
 ## Where this fits
 
 `agent-grounding` is the **Validate** stage of the [Project OS](https://github.com/LanNguyenSi/project-pilot) Human-Agent Dev Lifecycle:

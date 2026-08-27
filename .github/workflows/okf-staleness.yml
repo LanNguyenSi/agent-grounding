@@ -50,8 +50,11 @@ jobs:
         # replaces this repo's former scripts/okf-citations-resolve.mjs
         # spike (see docs/okf/log.md, 2026-08-24): `check` below now
         # covers both timestamp staleness (sources-fresh) and citation
-        # drift (citations-resolve) in one pass.
-        run: npm install -g okf-kit@0.6.0
+        # drift (citations-resolve) in one pass. Kept identical to
+        # ci.yml's own pin (asserted by `npm run check:okf-kit-pin`);
+        # 0.8.0 adds `--require-anchors`, which ci.yml's blocking
+        # okf-anchor-guard job opts into, this warn-only job does not.
+        run: npm install -g okf-kit@0.8.0
 
       - name: Assert CLI is alive (output, not exit code)
         shell: bash

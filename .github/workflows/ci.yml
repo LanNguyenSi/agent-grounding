@@ -30,8 +30,10 @@ jobs:
   # a bundle-level error is a stronger signal than a single citation
   # warning and must not slip through a job that only ever looked at
   # citations-resolve findings. `docs/okf/log.md` is the one exception: it
-  # is reserved/append-only history (see scripts/check-okf-anchors.js's own
-  # RESERVED_DOCS), so every citations-resolve finding against it is
+  # is reserved/append-only history (see scripts/check-okf-test-citation-shape.js's
+  # own RESERVED_DOCS, and okf-kit's own reserved-doc carve-out for
+  # index.md/log.md under --require-anchors), so every citations-resolve
+  # finding against it is
   # excluded from the two blocking selectors below and surfaced instead,
   # non-blocking, in its own step-summary section (see the "Citation guard"
   # step). Every OTHER notice is surfaced in the step summary for
@@ -86,7 +88,7 @@ jobs:
         # conscious, narrow exception to the repo's lockfile-integrity
         # posture (see check-lockfile-integrity.js) for this one CLI, not
         # an oversight.
-        run: npm install -g okf-kit@0.6.0
+        run: npm install -g okf-kit@0.8.0
 
       - name: Assert CLI is alive (output, not exit code)
         shell: bash
@@ -99,7 +101,18 @@ jobs:
         shell: bash
         run: |
           set +e
-          okf-kit check --json "${BUNDLE_PATH}" > okf-anchor-report.json
+          # --require-anchors opts into okf-kit's own anchor-required /
+          # anchor-not-on-last-line / anchor-not-unique-in-range /
+          # test-range-straddles-block checks (all reported under
+          # ruleId citations-resolve, severity warning, message tagged
+          # e.g. "[anchor-required]"), which as of okf-kit@0.8.0 replace
+          # what this repo used to enforce itself in
+          # scripts/check-okf-anchors.js (removed; see docs/okf/log.md and
+          # the "OKF anchor-discipline check" step below for the one rule
+          # that still has no okf-kit equivalent). --require-anchors-allow
+          # is omitted: check-okf-anchors.js's own ALLOWLIST was empty --
+          # every full citation in this bundle already carries an anchor.
+          okf-kit check --require-anchors --json "${BUNDLE_PATH}" > okf-anchor-report.json
           code=$?
           set -e
 
@@ -113,9 +126,10 @@ jobs:
 
           errors=$(jq -e '.summary.errors | numbers' okf-anchor-report.json)
 
-          # log.md is RESERVED in scripts/check-okf-anchors.js (append-only
-          # history, exempt from the anchor discipline entirely -- see that
-          # script's own header), but okf-kit's citations-resolve still
+          # log.md is reserved (append-only history, exempt from anchor
+          # discipline entirely, both by scripts/check-okf-test-citation-shape.js's
+          # own RESERVED_DOCS and by okf-kit's --require-anchors reserved-doc
+          # carve-out), but okf-kit's citations-resolve still
           # checks log.md's full citations for drift/ambiguity like any
           # other doc (only its short-form matcher skips reserved files).
           # That is an intentional asymmetry, not an oversight: log.md
@@ -211,24 +225,29 @@ jobs:
           echo "Clean: 0 errors, 0 citations-resolve warnings, 0 unresolved-ambiguous citations (log.md excluded, see above)."
           exit 0
 
-      - name: OKF anchor-discipline check (repo-local, on top of okf-kit)
-        # okf-kit itself only validates an anchor IF one is present, and
-        # only checks that the anchor text occurs SOMEWHERE in the cited
-        # range -- not where. scripts/check-okf-anchors.js is this repo's
-        # stricter, additive discipline: every full citation in the bundle
-        # must carry a string anchor (unless allowlisted) whose text sits
-        # on the cited range's own last line and occurs there exactly once,
-        # so a line-shift can never leave a stale-but-still-matching
-        # earlier occurrence behind. Pure Node core, no okf-kit dependency.
-        run: npm run check:okf-anchors
+      - name: OKF test-citation-shape check (repo-local, on top of okf-kit)
+        # As of okf-kit@0.8.0, --require-anchors above covers what
+        # scripts/check-okf-anchors.js used to enforce by hand, except one
+        # rule okf-kit has no equivalent for: a full citation into a
+        # *.test.ts file must span exactly one test -- range start on the
+        # describe(/it(/test( head of the test the citing sentence names,
+        # range end on that test's own closing });. okf-kit's own
+        # test-range-straddles-block only rejects a range that straddles
+        # into a SIBLING or OUTER block; it does not require the range to
+        # touch a block boundary at all, so a range entirely inside one
+        # test's body (never starting on its head or ending on its close)
+        # straddles nothing and would pass okf-kit clean while still
+        # failing this shape rule. Kept as its own small, additive check.
+        # Pure Node core, no okf-kit dependency.
+        run: npm run check:okf-test-citation-shape
 
-      - name: OKF anchor-discipline checker unit tests
-        # Fixture-based unit tests for the checker (including the three
-        # required negative controls: missing anchor, anchor off its last
-        # line, duplicate anchor token inside the range), plus a sanity
+      - name: OKF test-citation-shape checker unit tests
+        # Fixture-based unit tests for the checker (including the two
+        # required negative controls: range not starting on a test head,
+        # range not ending on the test's own closing });), plus a sanity
         # check that runs the real checker against this repo's actual
         # docs/okf/ bundle.
-        run: npm run test:check-okf-anchors
+        run: npm run test:check-okf-test-citation-shape
 
       - name: okf-kit pin-coupling check
         # Asserts this workflow's own "npm install -g okf-kit@..." pin
