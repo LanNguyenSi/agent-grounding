@@ -19,9 +19,11 @@ jobs:
   # section or content it names would go unnoticed there. This job runs
   # the identical bundle check (same okf-kit pin, same command) and turns
   # this job red on any citations-resolve WARNING (both the base subtypes
-  # such as missing-file/inverted-range/blank-start-line and the four
-  # anchor subtypes anchor-not-found-in-range/anchor-heading-mismatch/
-  # anchor-heading-does-not-enclose/anchor-heading-not-found), on any
+  # such as missing-file/inverted-range/blank-start-line, the four
+  # anchor-heading subtypes anchor-not-found-in-range/anchor-heading-mismatch/
+  # anchor-heading-does-not-enclose/anchor-heading-not-found, and the four
+  # --require-anchors subtypes anchor-required/anchor-not-on-last-line/
+  # anchor-not-unique-in-range/test-range-straddles-block), on any
   # citations-resolve `unresolved-ambiguous` NOTICE (an ambiguous target
   # means the citation was never evaluated at all -- that is a coverage
   # gap, not a clean bill of health, so it does not get the same pass the
@@ -33,11 +35,11 @@ jobs:
   # is reserved/append-only history (see scripts/check-okf-test-citation-shape.js's
   # own RESERVED_DOCS, and okf-kit's own reserved-doc carve-out for
   # index.md/log.md under --require-anchors), so every citations-resolve
-  # finding against it is
-  # excluded from the two blocking selectors below and surfaced instead,
-  # non-blocking, in its own step-summary section (see the "Citation guard"
-  # step). Every OTHER notice is surfaced in the step summary for
-  # visibility but does not fail the job, matching --strict's own severity
+  # finding against it is excluded from the two blocking selectors below
+  # and surfaced instead, non-blocking, in its own step-summary section
+  # (see the "Citation guard" step). Every OTHER notice is surfaced in
+  # the step summary for visibility but does not fail the job, matching
+  # --strict's own severity
   # split for everything except the ambiguous-citation carve-out above.
   # sources-fresh staleness stays entirely out of this job; okf-staleness.yml
   # already surfaces it, warn-only, by design.

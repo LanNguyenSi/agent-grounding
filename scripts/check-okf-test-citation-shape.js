@@ -137,8 +137,27 @@ function run(rootDir = path.join(__dirname, '..')) {
       }\``;
 
       const resolution = resolveTestCitedPath(rootDir, docAbsPath, docSources, citation.citedPath);
+      if (resolution.skipped === 'path-traversal-rejected') {
+        violations.push({
+          rule: 'path-traversal-rejected',
+          citation: citationLabel,
+          message: `${citationLabel} cites a *.test.ts target with a ".." path segment, which is rejected.`,
+        });
+        continue;
+      }
       if (resolution.skipped) {
+        // An unresolved *.test.ts citation is a shape violation, not a
+        // silent skip: a citation this check cannot resolve is a citation
+        // it also cannot verify is head-to-close shaped, and letting that
+        // pass unnoticed is exactly the gap that motivated the checked===0
+        // guard below (a single unresolvable citation would otherwise
+        // print "check passed" while checking nothing at all).
         skipped++;
+        violations.push({
+          rule: 'test-citation-unresolved',
+          citation: citationLabel,
+          message: `${citationLabel} cites a *.test.ts target that could not be resolved on disk.`,
+        });
         continue;
       }
 
@@ -165,6 +184,21 @@ function run(rootDir = path.join(__dirname, '..')) {
   if (violations.length > 0) {
     console.error(`OKF test-citation-shape check failed (${violations.length} violation(s)):\n`);
     for (const v of violations) console.error(`  - [${v.rule}] ${v.message}`);
+    return { exitCode: 1, summary, violations };
+  }
+
+  // Every unresolved or rejected citation above is already reported as a
+  // violation, so in practice this only trips if collectTestCitations()
+  // finds zero *.test.ts citations at all -- but a check that reports
+  // "passed" while having checked nothing is exactly the failure mode this
+  // whole check exists to catch (mirrors the 0-docs guard above), so this
+  // stays as its own explicit, defense-in-depth guard rather than relying
+  // solely on the violations path.
+  if (checked === 0) {
+    console.error(
+      `OKF test-citation-shape check failed: 0 *.test.ts citation(s) were actually checked ` +
+        `(${skipped} unresolved/rejected). A check that verifies nothing must not report "passed".`,
+    );
     return { exitCode: 1, summary, violations };
   }
 

@@ -13,6 +13,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {
+  CITATION_RE,
   collectTestCitations,
   parseSourcesFrontmatter,
   hasParentSegment,
@@ -47,7 +48,7 @@ test('hasParentSegment: a ".." path segment is detected', () => {
 
 // ── resolveTestCitedPath ─────────────────────────────────────────────────
 
-test('resolveTestCitedPath: a citedPath with a ".." segment is rejected', () => {
+test('resolveTestCitedPath: a citedPath with a ".." segment is rejected (resolver-level; see the run()-level test below for the resulting violation)', () => {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-okf-tcs-resolve-traversal-'));
   try {
     const docAbsPath = path.join(tmpRoot, 'docs', 'okf', 'doc.md');
@@ -159,7 +160,12 @@ test('run(): log.md is excluded entirely, even with a badly-shaped test citation
   }
 });
 
-test('run(): a *.test.ts citation whose target cannot be resolved is skipped, not a violation', () => {
+test('run(): a *.test.ts citation whose target cannot be resolved is a violation, not a silent skip', () => {
+  // An unresolvable *.test.ts citation cannot be shape-checked at all, so
+  // treating it as a silent skip would let a broken citation pass this
+  // check clean (that was the actual bug: this check's own guard would
+  // fall from "checked 1" to "checked 0" on a resolution failure and still
+  // print "check passed"). It is now reported as a violation instead.
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-okf-tcs-run-unresolved-'));
   try {
     fs.mkdirSync(path.join(tmpRoot, 'docs', 'okf'), { recursive: true });
@@ -169,12 +175,54 @@ test('run(): a *.test.ts citation whose target cannot be resolved is skipped, no
         'See `tests/foo.test.ts:1-3#"x"` for detail.\n',
     );
     const result = run(tmpRoot);
-    assert.equal(result.exitCode, 0);
+    assert.equal(result.exitCode, 1);
     assert.equal(result.summary.testCitationsChecked, 0);
     assert.equal(result.summary.skipped, 1);
+    assert.equal(result.violations.length, 1);
+    assert.equal(result.violations[0].rule, 'test-citation-unresolved');
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
+});
+
+test('run(): a *.test.ts citation with a ".." path segment is a violation, not a silent skip', () => {
+  const tmpRoot = buildFixtureRepo();
+  try {
+    writeFixtureDoc(tmpRoot, '`../x.test.ts:2-4#"x"`');
+    const result = run(tmpRoot);
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.violations.length, 1);
+    assert.equal(result.violations[0].rule, 'path-traversal-rejected');
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('run(): negative control -- zero *.test.ts citations checked fails loud instead of reporting "passed"', () => {
+  // Guards against a check that verifies nothing while still exiting 0:
+  // a doc with no *.test.ts citations at all (not even an unresolved one)
+  // must not silently report success.
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-okf-tcs-run-zero-checked-'));
+  try {
+    fs.mkdirSync(path.join(tmpRoot, 'docs', 'okf'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpRoot, 'docs', 'okf', 'fixture.md'),
+      '---\ntype: invariant\nsources: []\n---\n\nSee `lib.ts:1-3` for detail (no *.test.ts citation here).\n',
+    );
+    const result = run(tmpRoot);
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.summary.testCitationsChecked, 0);
+    assert.equal(result.violations.length, 0);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('sanity: docs/okf/index.md carries no full citations (okf-kit reserves it from --require-anchors but this script does not, so an index.md full citation would slip anchor discipline silently)', () => {
+  const indexPath = path.join(__dirname, '..', 'docs', 'okf', 'index.md');
+  const content = fs.readFileSync(indexPath, 'utf8');
+  const matches = content.match(new RegExp(CITATION_RE.source, 'g')) || [];
+  assert.equal(matches.length, 0);
 });
 
 test('run(): sanity check against this repo\'s real docs/okf/ bundle', () => {
@@ -182,4 +230,6 @@ test('run(): sanity check against this repo\'s real docs/okf/ bundle', () => {
   const result = run(rootDir);
   assert.equal(result.exitCode, 0);
   assert.equal(result.violations.length, 0);
+  assert.ok(result.summary.testCitationsChecked >= 1);
+  assert.equal(result.summary.skipped, 0);
 });
