@@ -19,8 +19,8 @@
     "test:check-lockfile-integrity": "node --test scripts/check-lockfile-integrity.test.js",
     "check:okf-kit-pin": "node scripts/check-okf-kit-pin.js",
     "test:check-okf-kit-pin": "node --test scripts/check-okf-kit-pin.test.js",
-    "check:okf-anchors": "node scripts/check-okf-anchors.js",
-    "test:check-okf-anchors": "node --test scripts/check-okf-anchors.test.js"
+    "check:okf-test-citation-shape": "node scripts/check-okf-test-citation-shape.js",
+    "test:check-okf-test-citation-shape": "node --test scripts/check-okf-test-citation-shape.test.js"
   },
   "overrides": {
     "js-yaml": "^4.3.1",

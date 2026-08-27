@@ -19,13 +19,14 @@
  * This script globs every `.github/workflows/*.yml` file (not a hardcoded
  * two-file list -- a future third workflow that starts pinning okf-kit is
  * automatically in scope), reads out EVERY `npm install -g okf-kit@X.Y.Z`
- * line in each (plain regex, not a YAML parser -- see check-okf-anchors.js
- * for why this repo avoids the js-yaml dependency in a check that should
- * run without `npm ci`; a workflow could in principle carry more than one
- * such line, e.g. a matrix job or a duplicated step, so this checks EVERY
- * occurrence, not just the first), and asserts every occurrence found,
- * across every file, pins the identical version -- including two
- * differing occurrences inside the SAME file, not just across files.
+ * line in each (plain regex, not a YAML parser -- see
+ * check-okf-test-citation-shape.js's docblock for why this repo avoids the
+ * js-yaml dependency in a check that should run without `npm ci`; a
+ * workflow could in principle carry more than one such line, e.g. a matrix
+ * job or a duplicated step, so this checks EVERY occurrence, not just the
+ * first), and asserts every occurrence found, across every file, pins the
+ * identical version -- including two differing occurrences inside the SAME
+ * file, not just across files.
  */
 const fs = require('fs');
 const path = require('path');

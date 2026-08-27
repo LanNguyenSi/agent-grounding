@@ -2,6 +2,86 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-08-27, `scripts/check-okf-anchors.js` replaced by okf-kit@0.8.0's
+  `--require-anchors` (task 4a4af64b): okf-kit's own `citations-resolve`
+  gained four opt-in checks (`anchor-required`, `anchor-not-on-last-line`,
+  `anchor-not-unique-in-range`, `test-range-straddles-block`) that cover
+  rules (a)/(b)/(c) this repo used to enforce by hand; all four are
+  reported under the existing `ruleId: "citations-resolve"`,
+  `severity: "warning"` shape (message tagged e.g. `[anchor-required]`),
+  so ci.yml's `okf-anchor-guard` job's existing blocking selector already
+  catches them once `--require-anchors` is passed, no new jq logic
+  needed. Verified against the committed bundle:
+  `node scripts/check-okf-anchors.js` (pre-change): 171 full citations
+  across 8 docs, 0 violations. `okf-kit check --require-anchors --json
+  docs/okf` (post-change, dist build of the unreleased 0.8.0 CLI from
+  agent-dx master): `{"errors":0,"warnings":0,"notices":0}` measured
+  locally pre-commit (corrected below: this number was already wrong for
+  the committed state, see the review-round-2 correction paragraph).
+  Four negative controls, one per opt-in rule, run against a
+  disposable fixture bundle (not this repo's real docs/okf/) with the
+  same CLI: missing anchor -> `anchor-required` warning; anchor off the
+  range's last content line -> `anchor-not-on-last-line`; anchor
+  duplicated in-range -> `anchor-not-unique-in-range`; a `*.test.ts`
+  citation's range straddling into a sibling block-head ->
+  `test-range-straddles-block`; all four `citations-resolve`/`warning`,
+  all reverted after.
+
+  One rule has no okf-kit equivalent: `test-citation-shape` (a `*.test.ts`
+  citation's range must start on the test's own `describe(`/`it(`/`test(`
+  head and end on that test's own closing `});`, not just avoid
+  straddling into a sibling/outer block, which is all
+  `test-range-straddles-block` checks). Kept as a new, much smaller
+  script, `scripts/check-okf-test-citation-shape.js` (229 lines as of the
+  review-round-2 fixes below, `wc -l` measured; vs. the removed script's
+  468, trimmed to only the path resolution one rule needs), with its own
+  fixture tests including both required negative controls (range not
+  starting on a head, range not ending on the test's own close), plus
+  (added in review round 2) unresolved/path-traversal citations and a
+  zero-citations-checked case now failing loud instead of silently
+  passing. Currently exercises the bundle's one `*.test.ts` full citation
+  (`evidence-ledger-session-key-shapes.md`, citing
+  `grounding-mcp/tests/grounding-gate-mcp-roundtrip.test.ts`); passes.
+
+  Correction (review round 2, same day, applied in place since this
+  entry is still unmerged): this entry originally said `~185 lines`
+  (now 229, corrected above) and `{"errors":0,"warnings":0,"notices":0}`
+  (corrected above) for the `okf-kit check --require-anchors` run; both
+  were wrong for the state the entry describes. The line count was a
+  rough pre-commit estimate that undercounted. The `{0,0,0}` claim missed
+  that this very commit's own `README.md`/`package.json` edits made
+  `grounding-stack-overview.md`'s frontmatter `timestamp:` (which lists
+  both as `sources:`) stale the moment the commit landed:
+  `okf-kit check --require-anchors --json docs/okf` against the
+  committed de995f0 tree actually reported `{"errors":0,"warnings":2,"notices":0}`
+  (both `sources-fresh` STALE warnings on `grounding-stack-overview.md`).
+  Re-verified in review round 2: the doc's cited content
+  (`README.md:13-49`'s diagram, the `package.json` workspaces/build:deps
+  facts it describes narratively) is unchanged by de995f0's edits (those
+  landed at README.md:200-202 and in package.json's `scripts` block,
+  neither touching what the doc cites), so this was a stale-timestamp
+  false positive, not stale content; the doc's frontmatter `timestamp:`
+  was re-stamped to postdate this fix commit and re-verified clean:
+  `okf-kit check --require-anchors --json docs/okf` on the fix commit's
+  own committed tree reports `{"errors":0,"warnings":0,"notices":0}`.
+
+  Both `.github/workflows/ci.yml` and `.github/workflows/okf-staleness.yml`
+  bumped their `npm install -g okf-kit@...` pin from 0.6.0 to 0.8.0
+  together (`npm run check:okf-kit-pin` requires every pin identical
+  across every workflow file); confirmed locally: 2 pin occurrences
+  across 8 workflow files, all `okf-kit@0.8.0`. okf-kit@0.8.0 is not yet
+  published to npm as of this entry (release in progress in parallel);
+  `okf-anchor-guard` and `okf-staleness` are both expected red on this
+  branch's own CI until that publish lands, `npm install -g
+  okf-kit@0.8.0` failing to resolve is the only expected failure mode.
+  `npm run build`, `typecheck --workspaces`, `test --workspaces`, and
+  `test:ci --workspaces` (coverage gate) all ran locally and passed:
+  build clean; typecheck clean across all 10 packages with a `typecheck`
+  script; `test --workspaces` (41+35+39+125+267+13+58+38+23+58+125+602 =
+  1424 tests across the 12 packages with a `test` script, 0 failures);
+  `test:ci --workspaces` (jest/vitest `--coverage`) passed with every
+  declared `coverageThreshold` met.
+
 - 2026-08-26, citation anchors normalized bundle-wide, plus a red-on-drift
   CI guard, advisory for PR merges and blocking for releases (task
   79f9e0fd, refiled from the halt in task 9b6c4beb: citations drifted in
