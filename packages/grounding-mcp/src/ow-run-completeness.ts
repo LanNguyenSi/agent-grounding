@@ -95,18 +95,42 @@
 //     worktree's `gitdir:` pointer and `commondir`). The `run-base` marker in
 //     `00-goal.md` may therefore be keyed per repo (`run-base[<key>] = <sha>`,
 //     one line per repo bound to the run) alongside the legacy unkeyed
-//     `run-base = <sha>`. All keyed markers are collected in a single scan
-//     (first occurrence per key wins on a duplicate). Selection tries each
-//     applicable key in order (the worktree's own basename first, then the
-//     main repo's, when they differ), matching keys CASE-INSENSITIVELY, and
-//     the FIRST key with a matching keyed marker decides — its value, or null
-//     for `TODO` — without falling through to a later key or to the unkeyed
-//     marker. When NO keyed marker matches any candidate key, an unkeyed
-//     marker (if present) is still used, exactly as before this feature
-//     existed. But when keyed markers ARE present, NONE matches, AND no
+//     `run-base = <sha>`. Keyed markers are a GRAMMAR, not a single regex: a
+//     candidate line is checked as a WHOLE-LINE HTML comment (leading/trailing
+//     whitespace only) against a strict shape
+//     `<!-- solution-acceptance: run-base[<key>] = <value> -->`; a line that
+//     starts like a keyed marker (`<!-- solution-acceptance: run-base[`, with
+//     optional whitespace before the bracket) but does NOT match the strict
+//     shape is a MALFORMED marker line — collected and surfaced as its own
+//     fail-closed blocker (`runBaseKind: 'malformed'`) rather than silently
+//     falling through to the legacy date heuristic. Any other line — prose
+//     that merely quotes the marker syntax, a comment that does not start the
+//     line, a fenced code block — is ignored entirely for keyed detection; a
+//     strict match whose key is placeholder-shaped (`<repo-basename>`-style,
+//     `/^<[^>]*>$/`) is a documentation example, not a marker, and is ignored
+//     the same way (not counted as present). All well-formed keyed markers are
+//     collected in a single scan (first occurrence per key wins on a
+//     duplicate, case-insensitive). Selection tries each applicable key in
+//     order (the worktree's own basename first, then the main repo's, when
+//     they differ), matching keys CASE-INSENSITIVELY, and the FIRST key with a
+//     matching well-formed keyed marker decides — its value, or null for
+//     `TODO` — without falling through to a later key or to the unkeyed
+//     marker. When NO well-formed keyed marker matches any candidate key, an
+//     unkeyed marker (if present) is still used, exactly as before this
+//     feature existed. When malformed marker lines were found alongside a
+//     value that WAS selected (keyed match or unkeyed fallback), that value is
+//     still returned, but the malformed blocker is ALSO reported (the run is
+//     not complete). When keyed markers ARE present, NONE matches, AND no
 //     unkeyed marker exists either, that is an explicit fail-closed blocker
 //     (not a silent null run-base): the reason names both the keys actually
-//     present in the file and the keys that were tried.
+//     present in the file and the keys that were tried — UNLESS malformed
+//     lines were also found in that same situation, in which case the
+//     malformed blocker takes priority (`runBaseKind: 'malformed'`) over the
+//     `'unmatched-keyed'` one, since a malformed line is evidence of an
+//     attempted-but-broken marker rather than merely a missing one. Documented
+//     asymmetry: the legacy UNKEYED `run-base` matcher (`matchMarker`) is not
+//     line-anchored (a substring match anywhere in the file) and is
+//     unaffected by any of the above — only the keyed grammar was hardened.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -153,12 +177,22 @@ export interface OwRunCompleteness {
    *   - `'absent'`: no applicable marker at all (no goal file, OW not
    *     enforced, or a goal file with neither a matching keyed marker nor an
    *     unkeyed one to begin with) — `runBase` is null.
-   *   - `'unmatched-keyed'`: keyed markers ARE present in `00-goal.md`, none
-   *     matches this worktree's candidate keys, and no unkeyed marker exists
-   *     either — the reader has already pushed its own explicit blocker
-   *     reason into `reasons` for this case — `runBase` is null.
+   *   - `'unmatched-keyed'`: well-formed keyed markers ARE present in
+   *     `00-goal.md`, none matches this worktree's candidate keys, no unkeyed
+   *     marker exists either, and no malformed keyed marker line was found —
+   *     the reader has already pushed its own explicit blocker reason into
+   *     `reasons` for this case — `runBase` is null.
+   *   - `'malformed'`: at least one line looks like an attempted keyed
+   *     `run-base[<key>] = <value>` marker but does not match the strict
+   *     grammar (see the module docstring), AND no well-formed keyed marker
+   *     matched a candidate key, AND no unkeyed marker exists — the reader
+   *     has already pushed its own explicit blocker reason into `reasons` —
+   *     `runBase` is null. When a malformed line coexists with a value that
+   *     WAS selected (keyed match or unkeyed fallback), `runBaseKind` stays
+   *     `'sha'`/`'todo'` for that value, but the malformed blocker is still
+   *     pushed into `reasons` (the run is not complete either way).
    */
-  runBaseKind: 'sha' | 'todo' | 'absent' | 'unmatched-keyed';
+  runBaseKind: 'sha' | 'todo' | 'absent' | 'unmatched-keyed' | 'malformed';
 }
 
 interface UnresolvedFinding {
@@ -314,8 +348,8 @@ export function readOwRunCompleteness(repoPath: string): OwRunCompleteness {
   }
 
   const runBaseSelection = selectRunBase(goal, repoKeys(worktreeRoot));
-  if (runBaseSelection.reason !== null) {
-    reasons.push(runBaseSelection.reason);
+  for (const r of runBaseSelection.reasons) {
+    reasons.push(r);
   }
 
   return {
@@ -331,19 +365,21 @@ export function readOwRunCompleteness(repoPath: string): OwRunCompleteness {
 
 /** Result of resolving the `run-base` binding marker for one worktree. */
 interface RunBaseSelection {
-  /** The bound sha (raw, unvalidated), or null when absent/`TODO`. */
+  /** The bound sha (raw, unvalidated), or null when absent/`TODO`/blocked. */
   runBase: string | null;
   /** See `OwRunCompleteness.runBaseKind` for the meaning of each value. */
-  runBaseKind: 'sha' | 'todo' | 'absent' | 'unmatched-keyed';
+  runBaseKind: 'sha' | 'todo' | 'absent' | 'unmatched-keyed' | 'malformed';
   /**
-   * An explicit fail-closed blocker reason, or null when selection resolved
-   * normally (including the ordinary "no marker at all" case, which stays a
-   * silent null — only the keyed-but-unmatched case below produces a reason).
+   * Explicit fail-closed blocker reasons, empty when selection resolved
+   * normally with nothing to report (including the ordinary "no marker at
+   * all" case, which stays silent). A malformed-marker reason can coexist
+   * with a selected `runBase` (keyed match or unkeyed fallback) — see
+   * `OwRunCompleteness.runBaseKind`.
    */
-  reason: string | null;
+  reasons: string[];
 }
 
-/** One `run-base[<key>] = <value>` marker found in a run's `00-goal.md`. */
+/** One well-formed `run-base[<key>] = <value>` marker found in a run's `00-goal.md`. */
 interface KeyedRunBaseMarker {
   /** The key exactly as authored (trimmed, original case). */
   key: string;
@@ -351,24 +387,87 @@ interface KeyedRunBaseMarker {
   value: string;
 }
 
+/** Result of one pass over `goal`'s lines collecting keyed run-base markers. */
+interface KeyedMarkerScan {
+  /** Well-formed markers, placeholder-keyed ones excluded. First occurrence per key wins. */
+  markers: KeyedRunBaseMarker[];
+  /** Whole, trimmed text of every line that started like a keyed marker but did not match the strict grammar. */
+  malformedLines: string[];
+}
+
+// Strict shape: the ENTIRE line (leading/trailing whitespace only) is the
+// HTML comment `<!-- solution-acceptance: run-base[<key>] = <value> -->`. The
+// `(?!-->)` guard stops a value-less marker (`run-base[k] = -->`) from having
+// its `\S+` capture swallow the comment terminator as the value; in practice
+// such a line already fails to match at all (there is no room left for the
+// literal trailing `-->`), so it naturally falls to the loose net below and
+// is reported as malformed rather than resolving to a bogus `'-->' ` value.
+const KEYED_RUN_BASE_STRICT =
+  /^\s*<!--\s*solution-acceptance:\s*run-base\[([^\]\n]+)\]\s*=\s*(?!-->)(\S+)\s*-->\s*$/;
+// Loose net: a whole line that starts like an attempted keyed marker (allows
+// stray whitespace before the bracket, e.g. `run-base [k]`) but is not
+// required to satisfy the rest of the strict shape. Any strict match is also
+// a loose match, so this is checked only after a strict-match attempt fails.
+const KEYED_RUN_BASE_LOOSE_START = /^\s*<!--\s*solution-acceptance:\s*run-base\s*\[/;
+// A key that is itself an angle-bracket placeholder (`<repo-basename>`,
+// `<key>`, ...) — the template's own documentation example, not an authored
+// marker. `[^>]*` deliberately excludes `>` so the placeholder must be a
+// single bracketed token spanning the whole (already-trimmed) key.
+const PLACEHOLDER_KEY = /^<[^>]*>$/;
+
 /**
- * Collect every keyed `run-base[<key>] = <value>` marker in `goal` with a
- * single regex scan. First occurrence per key wins (case-insensitive
- * dedup) — a later duplicate for the same key is ignored.
+ * Collect every well-formed keyed `run-base[<key>] = <value>` marker in
+ * `goal` with a single line-by-line pass (whole-line HTML comments only —
+ * see the module docstring for the grammar), plus every line that looked
+ * like an attempted keyed marker but did not match the strict shape
+ * (malformed). First well-formed occurrence per key wins (case-insensitive
+ * dedup) — a later duplicate for the same key is ignored. A well-formed
+ * match whose key is placeholder-shaped is skipped entirely (not counted as
+ * present, not malformed).
  */
-function collectKeyedRunBaseMarkers(goal: string): KeyedRunBaseMarker[] {
-  const re = /solution-acceptance:\s*run-base\[([^\]\n]+)\]\s*=\s*(\S+)/g;
+function collectKeyedRunBaseMarkers(goal: string): KeyedMarkerScan {
   const seen = new Set<string>();
   const markers: KeyedRunBaseMarker[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(goal)) !== null) {
-    const key = m[1].trim();
-    const lowerKey = key.toLowerCase();
-    if (seen.has(lowerKey)) continue; // first occurrence per key wins
-    seen.add(lowerKey);
-    markers.push({ key, value: m[2] });
+  const malformedLines: string[] = [];
+  for (const line of goal.split(/\r?\n/)) {
+    const strict = line.match(KEYED_RUN_BASE_STRICT);
+    if (strict !== null) {
+      const key = strict[1].trim();
+      if (PLACEHOLDER_KEY.test(key)) continue; // documentation example, not a marker
+      const lowerKey = key.toLowerCase();
+      if (seen.has(lowerKey)) continue; // first occurrence per key wins
+      seen.add(lowerKey);
+      markers.push({ key, value: strict[2] });
+      continue;
+    }
+    if (KEYED_RUN_BASE_LOOSE_START.test(line)) {
+      malformedLines.push(line.trim());
+    }
   }
-  return markers;
+  return { markers, malformedLines };
+}
+
+/**
+ * Join `items` (already trimmed strings) into a single bounded string: each
+ * item truncated to `truncateChars`, at most `maxItems` shown, with
+ * `(+N more)` appended when more were dropped. Keeps blocker messages from
+ * growing unbounded when a goal file carries many/long keys or malformed
+ * lines.
+ */
+function boundedList(items: string[], truncateChars: number, maxItems: number, sep: string): string {
+  const shown = items
+    .slice(0, maxItems)
+    .map((s) => (s.length > truncateChars ? s.slice(0, truncateChars) : s));
+  const dropped = items.length - shown.length;
+  const joined = shown.join(sep);
+  return dropped > 0 ? `${joined} (+${dropped} more)` : joined;
+}
+
+function malformedKeyedReason(malformedLines: string[]): string {
+  return (
+    `malformed keyed run-base marker(s) in 00-goal.md: ${boundedList(malformedLines, 80, 5, ' | ')} ` +
+    "(expected '<!-- solution-acceptance: run-base[<key>] = <sha> -->' on its own line)"
+  );
 }
 
 /**
@@ -376,61 +475,78 @@ function collectKeyedRunBaseMarkers(goal: string): KeyedRunBaseMarker[] {
  * validation happens here — the raw value is handed to the verdict layer,
  * which validates it (strict hex) BEFORE any git invocation.
  *
- * Keyed selection: all keyed markers (`run-base[<key>] = <value>`) are
- * collected in one scan (`collectKeyedRunBaseMarkers`). `keys` (see
- * `repoKeys`) is then tried in order, matching each candidate key against the
- * collected keys CASE-INSENSITIVELY. The FIRST candidate key with a matching
- * keyed marker decides — its value, or null for `TODO` — without falling
- * through to a later key or to the unkeyed marker, even when the value is
- * `TODO`. When keyed markers exist but none matches any candidate key, the
- * legacy unkeyed `run-base` marker is still used if present; when it is ALSO
- * absent, that is an explicit fail-closed blocker (`reason` set) rather than
- * a silent null — a keyed-only goal file with no marker for this repo is
- * itself a sign the binding is incomplete. When NO keyed marker is present at
- * all, the unkeyed marker applies directly, exactly as before this feature
- * existed (silent null when absent/`TODO`, no reason).
+ * Keyed selection: all well-formed keyed markers (`run-base[<key>] =
+ * <value>`, whole-line HTML comments — see the module docstring's grammar)
+ * are collected in one line-by-line scan (`collectKeyedRunBaseMarkers`),
+ * along with any MALFORMED near-miss lines. `keys` (see `repoKeys`) is then
+ * tried in order, matching each candidate key against the collected
+ * well-formed keys CASE-INSENSITIVELY. The FIRST candidate key with a
+ * matching keyed marker decides — its value, or null for `TODO` — without
+ * falling through to a later key or to the unkeyed marker, even when the
+ * value is `TODO`. When well-formed keyed markers exist but none matches any
+ * candidate key, the legacy unkeyed `run-base` marker is still used if
+ * present. Whenever malformed lines were found, their blocker reason is
+ * ALWAYS reported (`reasons`) regardless of which of the above resolved a
+ * value — a malformed line is evidence the binding is incomplete even when
+ * another marker also happens to resolve. When nothing resolved a value (no
+ * well-formed match, no unkeyed marker) AND malformed lines were found, that
+ * is reported as `runBaseKind: 'malformed'` (takes priority over
+ * `'unmatched-keyed'`). When nothing resolved a value, no malformed lines
+ * were found, but well-formed keyed markers exist for OTHER keys, that is the
+ * `'unmatched-keyed'` blocker, unchanged from before this task. When NO
+ * keyed marker (well-formed or malformed) is present at all, the unkeyed
+ * marker applies directly, exactly as before this feature existed (silent
+ * null when absent/`TODO`, no reason).
  */
 function selectRunBase(goal: string | null, keys: string[]): RunBaseSelection {
-  if (goal === null) return { runBase: null, runBaseKind: 'absent', reason: null };
+  if (goal === null) return { runBase: null, runBaseKind: 'absent', reasons: [] };
 
   // Raw \S+ capture on purpose: sha values may start with a digit (the enum
   // charset would reject them), and a malformed value must reach the verdict
   // layer's hex guard so it blocks explicitly instead of downgrading silently
   // to the date heuristic.
   const unkeyed = matchMarker(goal, 'run-base', '\\S+');
-  const keyedMarkers = collectKeyedRunBaseMarkers(goal);
-
-  if (keyedMarkers.length === 0) {
-    return resolvedMarker(unkeyed);
-  }
+  const { markers: keyedMarkers, malformedLines } = collectKeyedRunBaseMarkers(goal);
+  const malformedReasons = malformedLines.length > 0 ? [malformedKeyedReason(malformedLines)] : [];
 
   for (const key of keys) {
     const lowerKey = key.toLowerCase();
     const found = keyedMarkers.find((km) => km.key.toLowerCase() === lowerKey);
     if (found !== undefined) {
-      return resolvedMarker(found.value);
+      const resolved = resolvedMarker(found.value);
+      return { ...resolved, reasons: malformedReasons };
     }
   }
 
   if (unkeyed !== null) {
-    return resolvedMarker(unkeyed);
+    const resolved = resolvedMarker(unkeyed);
+    return { ...resolved, reasons: malformedReasons };
+  }
+
+  if (malformedReasons.length > 0) {
+    return { runBase: null, runBaseKind: 'malformed', reasons: malformedReasons };
+  }
+
+  if (keyedMarkers.length === 0) {
+    return { runBase: null, runBaseKind: 'absent', reasons: [] };
   }
 
   return {
     runBase: null,
     runBaseKind: 'unmatched-keyed',
-    reason:
-      `run-base markers in 00-goal.md are keyed (keys: ${keyedMarkers.map((km) => km.key).join(', ')}) ` +
-      `but none matches this worktree (tried: ${keys.join(', ')}) and no unkeyed run-base marker ` +
-      'exists; add a run-base[<key>] marker for this repo or an unkeyed run-base marker',
+    reasons: [
+      `run-base markers in 00-goal.md are keyed (keys: ${boundedList(keyedMarkers.map((km) => km.key), 64, 10, ', ')}) ` +
+        `but none matches this worktree (tried: ${keys.join(', ')}) and no unkeyed run-base marker ` +
+        'exists; add a run-base[<key>] marker for this repo or an unkeyed run-base marker',
+    ],
   };
 }
 
-/** A marker value (possibly `TODO`) that was found, resolved to a selection. */
+/** A marker value (possibly `TODO`) that was found, resolved to a selection (empty `reasons`). */
 function resolvedMarker(value: string | null): RunBaseSelection {
-  if (value === null) return { runBase: null, runBaseKind: 'absent', reason: null };
-  if (value === 'TODO') return { runBase: null, runBaseKind: 'todo', reason: null };
-  return { runBase: value, runBaseKind: 'sha', reason: null };
+  if (value === null) return { runBase: null, runBaseKind: 'absent', reasons: [] };
+  if (value === 'TODO') return { runBase: null, runBaseKind: 'todo', reasons: [] };
+  return { runBase: value, runBaseKind: 'sha', reasons: [] };
 }
 
 /**

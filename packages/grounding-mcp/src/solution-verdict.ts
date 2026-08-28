@@ -395,7 +395,10 @@ const RUN_BASE_SHA = /^[0-9a-f]{7,40}$/i;
  * author dates than the run dir → they read as run-newer-than-commits and
  * pass (no false block). NOT this path: `ow.runBaseKind === 'unmatched-keyed'`
  * (keyed markers present, none matches this worktree, no unkeyed marker
- * either) skips straight past this heuristic — see the early return below.
+ * either) or `ow.runBaseKind === 'malformed'` (a keyed marker line that looks
+ * attempted but does not match the strict grammar, and nothing else
+ * resolved a value) skips straight past this heuristic — see the early
+ * return below.
  *
  * Pre-merge by design (BOTH paths): evaluating at an already-pushed
  * default-branch tip (fork == HEAD) false-blocks — the marker path because a
@@ -409,12 +412,16 @@ async function owBindingBlockers(repoPath: string, ow: OwRunCompleteness): Promi
   if (ow.runName === null) return [];
 
   // The reader already pushed its own explicit blocker reason onto `reasons`
-  // for this case (keyed run-base markers present, none matches this
-  // worktree, no unkeyed marker either — see ow-run-completeness.ts). Running
-  // the legacy heuristic here on top of that would append a second,
-  // misleading "has no run-base marker" blocker for what is really the same
-  // underlying failure.
-  if (ow.runBaseKind === 'unmatched-keyed') return [];
+  // for both of these cases (see ow-run-completeness.ts):
+  //   - 'unmatched-keyed': keyed run-base markers present, none matches this
+  //     worktree, no unkeyed marker either.
+  //   - 'malformed': a keyed marker line looks attempted but does not match
+  //     the strict grammar, and nothing else (keyed match or unkeyed
+  //     fallback) resolved a value.
+  // Running the legacy heuristic here on top of either would append a
+  // second, misleading "has no run-base marker" blocker for what is really
+  // the same underlying failure.
+  if (ow.runBaseKind === 'unmatched-keyed' || ow.runBaseKind === 'malformed') return [];
 
   if (ow.runBase !== null) {
     if (!RUN_BASE_SHA.test(ow.runBase)) {

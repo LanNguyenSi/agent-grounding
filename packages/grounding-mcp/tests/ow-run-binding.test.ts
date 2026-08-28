@@ -465,6 +465,23 @@ describe('owBlockersFor — linked git worktrees via the .ai/run pointer', () =>
     );
     expect(blockers.some((b) => b.includes('has no run-base marker'))).toBe(false);
   });
+
+  it('malformed keyed marker yields a single reader blocker at the verdict level', async () => {
+    // A near-miss keyed marker (space before the bracket) in a run dir with an
+    // OLD date prefix — if the malformed line silently degraded to
+    // runBaseKind 'absent', the legacy date heuristic would fire and this
+    // 2020-dated run would block for staleness instead of for the malformed
+    // marker. It must instead resolve to the reader's own 'malformed'
+    // blocker, and nothing else.
+    const { wt, m } = makeLinkedWorktreeRepo('attached');
+    const runDir = path.join(tmp, 'workspace-malformed-keyed', '.ai', 'runs', '2020-01-01-r');
+    makeRunAt(runDir, { goalLines: [`<!-- solution-acceptance: run-base [main] = ${m} -->`] });
+    writePointer(wt, runDir);
+
+    const blockers = await owBlockersFor(wt);
+    expect(blockers).toHaveLength(1);
+    expect(blockers[0]).toMatch(/^orchestrator-workflow: malformed keyed run-base marker\(s\)/);
+  });
 });
 
 describe('owBlockersFor — interaction with completeness and the knob', () => {

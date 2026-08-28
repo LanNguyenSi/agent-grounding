@@ -1358,6 +1358,167 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     expect(r.runBase).toBe('aaaaaaa');
   });
 
+  it('a prose line quoting the keyed marker form is ignored', () => {
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base = bbbbbbb -->',
+      'Use `<!-- solution-acceptance: run-base[<repo>] = <sha> -->` per repo.',
+      '',
+    ].join('\n');
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runBase).toBe('bbbbbbb');
+    expect(r.complete).toBe(true);
+    expect(r.runBaseKind).toBe('sha');
+  });
+
+  it('placeholder-shaped keyed marker on its own line is ignored', () => {
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[<repo-basename>] = <sha> -->',
+      '<!-- solution-acceptance: run-base = bbbbbbb -->',
+      '',
+    ].join('\n');
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runBase).toBe('bbbbbbb');
+    expect(r.complete).toBe(true);
+  });
+
+  it('near-miss keyed syntax with a space before the bracket is a malformed blocker', () => {
+    const goal = ['# Goal', '<!-- solution-acceptance: run-base [alpha] = aaaaaaa -->', ''].join(
+      '\n',
+    );
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(
+      r.reasons.some((x) => x.startsWith('malformed keyed run-base marker(s) in 00-goal.md:')),
+    ).toBe(true);
+  });
+
+  it('near-miss keyed syntax with a missing closing bracket is a malformed blocker', () => {
+    const goal = ['# Goal', '<!-- solution-acceptance: run-base[alpha = aaaaaaa -->', ''].join(
+      '\n',
+    );
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(
+      r.reasons.some((x) => x.startsWith('malformed keyed run-base marker(s) in 00-goal.md:')),
+    ).toBe(true);
+  });
+
+  it('keyed marker with an empty value is a malformed blocker', () => {
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[alpha] = -->',
+      '<!-- solution-acceptance: run-base[other] = ccccccc -->',
+      '',
+    ].join('\n');
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(r.runBase).toBeNull();
+    expect(r.runBase).not.toBe('<!--');
+  });
+
+  it('a malformed line beside a well-formed matching keyed marker keeps the value but still blocks', () => {
+    const root = namedRoot('alpha');
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[alpha] = aaaaaaa -->',
+      '<!-- solution-acceptance: run-base [other] = zzzzzzz -->',
+      '',
+    ].join('\n');
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBase).toBe('aaaaaaa');
+    expect(r.runBaseKind).toBe('sha');
+    expect(r.complete).toBe(false);
+    expect(
+      r.reasons.some((x) => x.startsWith('malformed keyed run-base marker(s) in 00-goal.md:')),
+    ).toBe(true);
+  });
+
+  it('keyed marker not starting its line is ignored', () => {
+    // Root basename 'alpha' matches the embedded marker's key, so an
+    // un-anchored implementation that let the match start mid-line would
+    // wrongly select 'aaaaaaa' instead of falling through to the unkeyed
+    // marker.
+    const root = namedRoot('alpha');
+    const goal = [
+      '# Goal',
+      'note <!-- solution-acceptance: run-base[alpha] = aaaaaaa -->',
+      '<!-- solution-acceptance: run-base = bbbbbbb -->',
+      '',
+    ].join('\n');
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBase).toBe('bbbbbbb');
+  });
+
+  it('blocker messages are bounded for long and many keys', () => {
+    const lines = ['# Goal'];
+    for (let i = 0; i < 25; i++) {
+      const key = `other-repo-${i}-` + 'x'.repeat(190);
+      lines.push(`<!-- solution-acceptance: run-base[${key}] = aaaaaaa -->`);
+    }
+    lines.push('');
+    const goal = lines.join('\n');
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.runBaseKind).toBe('unmatched-keyed');
+    const reason = r.reasons.find((x) => x.startsWith('run-base markers in 00-goal.md are keyed'));
+    expect(reason).toBeDefined();
+    expect(reason!.length).toBeLessThan(1500);
+    expect(reason).toContain('(+15 more)');
+  });
+
   /** Build a fake linked-worktree layout: <ext>/main and <ext>/wt1. */
   function makeLinkedWorktree(withCommondir: boolean): { mainRoot: string; wt1Root: string } {
     const ext = externalTmpDir();

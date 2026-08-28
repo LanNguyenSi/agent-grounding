@@ -50,6 +50,29 @@
     of it and could append a second, misleading "has no run-base marker"
     blocker for the same underlying failure. Now exactly one blocker is
     reported.
+  - Review-round-2 fix (task 43a7ef58, T-005): keyed `run-base` markers are
+    now a grammar instead of one regex per accepted shape. A well-formed
+    keyed marker must be a WHOLE LINE (leading/trailing whitespace only)
+    matching `<!-- solution-acceptance: run-base[<key>] = <value> -->`; a
+    line that starts like one (`run-base[`, optionally with stray whitespace
+    before the bracket) but does not match the strict shape is now collected
+    as an explicit MALFORMED blocker instead of degrading silently to the
+    legacy date heuristic — previously a near-miss such as `run-base
+    [alpha] = <sha>` or `run-base[alpha = <sha>` (missing bracket) or an
+    empty value fell straight through, unnoticed. `OwRunCompleteness`'s
+    `runBaseKind` gains `'malformed'`; `owBindingBlockers` skips the
+    heuristic for both `'malformed'` and `'unmatched-keyed'`, so exactly one
+    blocker is still reported, never two. A strict match whose key is itself
+    a documentation placeholder (`<repo-basename>`-style) is ignored, not
+    counted as present; a prose line that merely quotes the marker syntax,
+    or a marker that does not start its own line, is also ignored — the
+    collection regex is now whole-line-anchored, so it can no longer be
+    blocked by a complete line quoting the marker form, nor swallow the next
+    line's first token on an empty value. Both new blocker messages are
+    bounded (keys truncated to 64 chars / 10 shown, malformed lines
+    truncated to 80 chars / 5 shown, `(+N more)` beyond that). The legacy
+    unkeyed `run-base` matcher is unchanged (documented asymmetry: it stays
+    a non-line-anchored substring match).
 
 ## 0.8.0, 2026-08-19
 
