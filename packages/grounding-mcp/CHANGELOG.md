@@ -73,6 +73,24 @@
     truncated to 80 chars / 5 shown, `(+N more)` beyond that). The legacy
     unkeyed `run-base` matcher is unchanged (documented asymmetry: it stays
     a non-line-anchored substring match).
+  - Review-round-3 fix (task 43a7ef58, T-006): the strict keyed-marker shape
+    stays exact, but the LOOSE net that decides whether a line was an
+    *attempt* at a keyed marker is now tolerant of the deviations that sit
+    BEFORE the `run-base` token and previously slipped past both nets: it is
+    case-insensitive (`RUN-BASE[`), allows whitespace around the colon
+    (`solution-acceptance : run-base[`), and accepts one or more dashes in
+    the comment opener (`<!--- `). Such a line now BLOCKS as malformed
+    instead of falling through to the legacy date heuristic. The line-start
+    anchoring of both nets is unchanged and is now documented as a
+    deliberate residual rather than as "ignored": a keyed marker that does
+    not start its own line (a list bullet, a marker embedded in prose, a
+    bare `run-base[k] = <sha>` with no comment wrapper) is not a marker at
+    all, so with no other applicable marker the run behaves as markerless
+    and falls through to the legacy date heuristic (fail-open by design; a
+    fully fail-closed variant is tracked as its own task, 6da2c230). Both residual
+    shapes, the placeholder-key filter standing alone (no unkeyed marker to
+    mask it) and the `(?!-->)` value guard are now pinned by their own
+    tests.
 
 ## 0.8.0, 2026-08-19
 

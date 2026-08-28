@@ -1358,20 +1358,26 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     expect(r.runBase).toBe('aaaaaaa');
   });
 
-  it('a prose line quoting the keyed marker form is ignored', () => {
+  it('a prose line quoting a concrete keyed marker does not count as a marker', () => {
+    // The quoted key is deliberately the ROOT BASENAME itself and the quoted
+    // value a concrete sha: an un-anchored strict grammar would match
+    // mid-line and wrongly select 'aaaaaaa' instead of falling through to the
+    // unkeyed marker. A placeholder-shaped key would not discriminate here —
+    // the placeholder filter would drop it either way.
+    const root = namedRoot('alpha');
     const goal = [
       '# Goal',
       '<!-- solution-acceptance: run-base = bbbbbbb -->',
-      'Use `<!-- solution-acceptance: run-base[<repo>] = <sha> -->` per repo.',
+      'Use `<!-- solution-acceptance: run-base[alpha] = aaaaaaa -->` per repo.',
       '',
     ].join('\n');
-    makeRun('2026-01-01-a', {
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
       goal,
     });
 
-    const r = readOwRunCompleteness(repo);
+    const r = readOwRunCompleteness(root);
     expect(r.runBase).toBe('bbbbbbb');
     expect(r.complete).toBe(true);
     expect(r.runBaseKind).toBe('sha');
@@ -1392,6 +1398,28 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
 
     const r = readOwRunCompleteness(repo);
     expect(r.runBase).toBe('bbbbbbb');
+    expect(r.complete).toBe(true);
+  });
+
+  it('placeholder-only keyed marker with no unkeyed marker reads as markerless', () => {
+    // No unkeyed marker to fall back on, so the placeholder filter is the
+    // ONLY thing standing between this goal file and an 'unmatched-keyed'
+    // blocker: the documentation example must not count as a present key.
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[<repo-basename>] = <sha> -->',
+      '',
+    ].join('\n');
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runBaseKind).toBe('absent');
+    expect(r.runBase).toBeNull();
+    expect(r.reasons).toEqual([]);
     expect(r.complete).toBe(true);
   });
 
@@ -1451,6 +1479,81 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     expect(r.runBase).not.toBe('<!--');
   });
 
+  it('keyed marker whose value is the comment terminator is malformed', () => {
+    // The key matches the root basename, so without the strict grammar's
+    // `(?!-->)` value guard the `\S+` capture would swallow the FIRST `-->`
+    // as a bogus value and this would resolve to runBase '-->'.
+    const root = namedRoot('alpha');
+    const goal = ['# Goal', '<!-- solution-acceptance: run-base[alpha] = --> -->', ''].join('\n');
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(r.runBase).toBeNull();
+    expect(r.complete).toBe(false);
+  });
+
+  it('uppercase field name in a keyed marker line is malformed', () => {
+    // The strict grammar stays exact (lowercase), but the LOOSE net is
+    // case-insensitive, so a recognisable attempt blocks instead of falling
+    // through to the legacy date heuristic.
+    const root = namedRoot('alpha');
+    const goal = ['# Goal', '<!-- solution-acceptance: RUN-BASE[alpha] = aaaaaaa -->', ''].join(
+      '\n',
+    );
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(r.runBase).toBeNull();
+    expect(r.complete).toBe(false);
+    expect(
+      r.reasons.some((x) => x.startsWith('malformed keyed run-base marker(s) in 00-goal.md:')),
+    ).toBe(true);
+  });
+
+  it('whitespace before the colon in a keyed marker line is malformed', () => {
+    const root = namedRoot('alpha');
+    const goal = ['# Goal', '<!-- solution-acceptance : run-base[alpha] = aaaaaaa -->', ''].join(
+      '\n',
+    );
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(r.runBase).toBeNull();
+    expect(r.complete).toBe(false);
+  });
+
+  it('extra dashes in the comment opener of a keyed marker line are malformed', () => {
+    const root = namedRoot('alpha');
+    const goal = ['# Goal', '<!--- solution-acceptance: run-base[alpha] = aaaaaaa -->', ''].join(
+      '\n',
+    );
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(r.runBase).toBeNull();
+    expect(r.complete).toBe(false);
+  });
+
   it('a malformed line beside a well-formed matching keyed marker keeps the value but still blocks', () => {
     const root = namedRoot('alpha');
     const goal = [
@@ -1494,6 +1597,50 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
 
     const r = readOwRunCompleteness(root);
     expect(r.runBase).toBe('bbbbbbb');
+  });
+
+  it('keyed marker in a list bullet is not a marker and the run reads as markerless', () => {
+    // DELIBERATE fail-open residual, pinned on purpose: both nets are
+    // anchored at the line start, so a keyed marker behind a list bullet is
+    // neither well-formed nor malformed. With no other applicable marker the
+    // run behaves as MARKERLESS and falls through to the legacy date
+    // heuristic (fail-open by design; a fully fail-closed variant is tracked
+    // as its own task). Change this expectation only together with that
+    // decision.
+    const root = namedRoot('alpha');
+    const goal = ['# Goal', '- <!-- solution-acceptance: run-base[alpha] = aaaaaaa -->', ''].join(
+      '\n',
+    );
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBaseKind).toBe('absent');
+    expect(r.runBase).toBeNull();
+    expect(r.reasons).toEqual([]);
+    expect(r.complete).toBe(true);
+  });
+
+  it('keyed marker without the comment wrapper is not a marker and the run reads as markerless', () => {
+    // Same deliberate fail-open residual as the list-bullet case above: a
+    // bare `run-base[<key>] = <sha>` with no HTML-comment wrapper is not an
+    // attempted marker at all, so the run reads as markerless.
+    const root = namedRoot('alpha');
+    const goal = ['# Goal', 'run-base[alpha] = aaaaaaa', ''].join('\n');
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBaseKind).toBe('absent');
+    expect(r.runBase).toBeNull();
+    expect(r.reasons).toEqual([]);
+    expect(r.complete).toBe(true);
   });
 
   it('blocker messages are bounded for long and many keys', () => {

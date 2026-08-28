@@ -98,17 +98,28 @@
 //     `run-base = <sha>`. Keyed markers are a GRAMMAR, not a single regex: a
 //     candidate line is checked as a WHOLE-LINE HTML comment (leading/trailing
 //     whitespace only) against a strict shape
-//     `<!-- solution-acceptance: run-base[<key>] = <value> -->`; a line that
-//     starts like a keyed marker (`<!-- solution-acceptance: run-base[`, with
-//     optional whitespace before the bracket) but does NOT match the strict
-//     shape is a MALFORMED marker line — collected and surfaced as its own
+//     `<!-- solution-acceptance: run-base[<key>] = <value> -->`. That strict
+//     shape stays EXACT — the same exactness the legacy unkeyed matcher
+//     already demands: lowercase `solution-acceptance:` and `run-base`, no
+//     whitespace before the colon, exactly two dashes in the comment opener.
+//     The LOOSE net that decides whether a line was an ATTEMPT at a keyed
+//     marker is deliberately more tolerant than that: case-insensitive,
+//     whitespace allowed around the colon and before the bracket, one or more
+//     dashes after `<!`. A line the loose net catches but the strict shape
+//     rejects is a MALFORMED marker line — collected and surfaced as its own
 //     fail-closed blocker (`runBaseKind: 'malformed'`) rather than silently
-//     falling through to the legacy date heuristic. Any other line — prose
-//     that merely quotes the marker syntax, a comment that does not start the
-//     line, a fenced code block — is ignored entirely for keyed detection; a
-//     strict match whose key is placeholder-shaped (`<repo-basename>`-style,
-//     `/^<[^>]*>$/`) is a documentation example, not a marker, and is ignored
-//     the same way (not counted as present). All well-formed keyed markers are
+//     falling through to the legacy date heuristic. Both nets are anchored at
+//     the LINE START, and that anchoring is the residual: a keyed marker that
+//     does not start its own line (a list bullet `- <!-- ... -->`, a marker
+//     embedded in prose, a bare `run-base[k] = <sha>` with no comment wrapper)
+//     is NOT a marker — neither well-formed nor malformed. With no other
+//     applicable marker in the file the run then behaves as MARKERLESS and
+//     falls through to the legacy date heuristic (fail-open by design, the
+//     kit's documented markerless path; a fully fail-closed variant is
+//     tracked as its own task). A strict match whose key is
+//     placeholder-shaped (`<repo-basename>`-style, `/^<[^>]*>$/`) is a
+//     documentation example, not a marker, and is skipped the same way (not
+//     counted as present). All well-formed keyed markers are
 //     collected in a single scan (first occurrence per key wins on a
 //     duplicate, case-insensitive). Selection tries each applicable key in
 //     order (the worktree's own basename first, then the main repo's, when
@@ -404,11 +415,18 @@ interface KeyedMarkerScan {
 // is reported as malformed rather than resolving to a bogus `'-->' ` value.
 const KEYED_RUN_BASE_STRICT =
   /^\s*<!--\s*solution-acceptance:\s*run-base\[([^\]\n]+)\]\s*=\s*(?!-->)(\S+)\s*-->\s*$/;
-// Loose net: a whole line that starts like an attempted keyed marker (allows
-// stray whitespace before the bracket, e.g. `run-base [k]`) but is not
-// required to satisfy the rest of the strict shape. Any strict match is also
-// a loose match, so this is checked only after a strict-match attempt fails.
-const KEYED_RUN_BASE_LOOSE_START = /^\s*<!--\s*solution-acceptance:\s*run-base\s*\[/;
+// Loose net: a whole line that STARTS like an ATTEMPTED keyed marker but is
+// not required to satisfy the rest of the strict shape. Deliberately more
+// tolerant than the strict shape above, so that a still-recognisable attempt
+// BLOCKS as malformed instead of falling through to the legacy date
+// heuristic: case-insensitive (`RUN-BASE[`), whitespace around the colon
+// (`solution-acceptance : run-base[`), one or more dashes in the comment
+// opener (`<!--- `), and stray whitespace before the bracket (`run-base [k]`).
+// Still anchored at the line start: a keyed marker that does not START its own
+// line is not an attempt at all, it is simply not a marker (see the module
+// docstring's fail-open residual). Any strict match is also a loose match, so
+// this is checked only after a strict-match attempt fails.
+const KEYED_RUN_BASE_LOOSE_START = /^\s*<!--+\s*solution-acceptance\s*:\s*run-base\s*\[/i;
 // A key that is itself an angle-bracket placeholder (`<repo-basename>`,
 // `<key>`, ...) — the template's own documentation example, not an authored
 // marker. `[^>]*` deliberately excludes `>` so the placeholder must be a
