@@ -1073,6 +1073,41 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     expect(r.runSource).toBe('pointer');
   });
 
+  it('second pointer line base=<sha> is ignored', () => {
+    const runA = makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+    });
+    writePointer(repo, `${runA}\nbase=deadbeef\n`);
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runName).toBe('2026-01-01-a');
+    expect(r.runSource).toBe('pointer');
+  });
+
+  it('pointer that is a directory is rejected', () => {
+    const dir = path.join(repo, '.ai');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(path.join(dir, 'run'), { recursive: true });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons[0]).toContain('could not be read as a file');
+    expect(r.runSource).toBe('pointer');
+  });
+
+  it('pointer content with CRLF and BOM resolves', () => {
+    const runA = makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+    });
+    writePointer(repo, `﻿${runA}\r\n`);
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runName).toBe('2026-01-01-a');
+    expect(r.runSource).toBe('pointer');
+  });
+
   it('missing pointer falls back to the newest-run scan', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
@@ -1131,6 +1166,47 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     const r = readOwRunCompleteness(repo);
     expect(r.complete).toBe(false);
     expect(r.reasons[0]).toContain('is not a directory');
+  });
+
+  it('symlinked pointer target resolves to the real run directory', () => {
+    const runA = makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+    });
+    const link = path.join(repo, '2026-05-05-link');
+    fs.symlinkSync(runA, link, 'dir');
+    writePointer(repo, link);
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runName).toBe('2026-01-01-a');
+    expect(r.runSource).toBe('pointer');
+  });
+
+  it('symlinked pointer target whose real basename is not dated is rejected', () => {
+    const realDir = path.join(repo, 'not-dated-dir');
+    fs.mkdirSync(realDir, { recursive: true });
+    const link = path.join(repo, '2026-05-05-link');
+    fs.symlinkSync(realDir, link, 'dir');
+    writePointer(repo, link);
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons[0]).toContain('is not a dated run directory');
+  });
+
+  it('dangling .git symlink still marks the worktree root', () => {
+    fs.symlinkSync('/nonexistent-target', path.join(repo, '.git'));
+    const runA = makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+    });
+    writePointer(repo, runA);
+    const subdir = path.join(repo, 'packages', 'x');
+    fs.mkdirSync(subdir, { recursive: true });
+
+    const r = readOwRunCompleteness(subdir);
+    expect(r.runName).toBe('2026-01-01-a');
+    expect(r.runSource).toBe('pointer');
   });
 
   it('pointer is found from a subdirectory of the worktree', () => {
@@ -1214,6 +1290,62 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     expect(r.runBase).toBeNull();
   });
 
+  it('keyed markers for other repos only block with an explicit reason', () => {
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[other] = ccccccc -->',
+      '',
+    ].join('\n');
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.runBase).toBeNull();
+    expect(r.reasons).toHaveLength(1);
+    expect(r.reasons[0]).toMatch(/^run-base markers in 00-goal\.md are keyed \(keys: other\)/);
+    expect(r.reasons[0]).toContain('no unkeyed run-base marker');
+  });
+
+  it('key match is case-insensitive', () => {
+    const root = namedRoot('Alpha');
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[alpha] = aaaaaaa -->',
+      '<!-- solution-acceptance: run-base = bbbbbbb -->',
+      '',
+    ].join('\n');
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBase).toBe('aaaaaaa');
+  });
+
+  it('duplicate keyed marker: first occurrence wins', () => {
+    const root = namedRoot('alpha');
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[alpha] = aaaaaaa -->',
+      '<!-- solution-acceptance: run-base[alpha] = zzzzzzz -->',
+      '',
+    ].join('\n');
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBase).toBe('aaaaaaa');
+  });
+
   /** Build a fake linked-worktree layout: <ext>/main and <ext>/wt1. */
   function makeLinkedWorktree(withCommondir: boolean): { mainRoot: string; wt1Root: string } {
     const ext = externalTmpDir();
@@ -1271,6 +1403,36 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
 
   it('linked worktree without commondir derives the main repository from the gitdir path', () => {
     const { wt1Root } = makeLinkedWorktree(false);
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[main] = ddddddd -->',
+      '<!-- solution-acceptance: run-base = bbbbbbb -->',
+      '',
+    ].join('\n');
+    const runDir = path.join(wt1Root, '.ai', 'runs', '2026-01-01-a');
+    makeRunAt(runDir, {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+    writePointer(wt1Root, runDir);
+
+    const r = readOwRunCompleteness(wt1Root);
+    expect(r.runBase).toBe('ddddddd');
+  });
+
+  it('commondir not ending in .git falls through to the gitdir-path fallback', () => {
+    const ext = externalTmpDir();
+    const mainRoot = path.join(ext, 'main');
+    const wt1Root = path.join(ext, 'wt1');
+    const wt1Gitdir = path.join(mainRoot, '.git', 'worktrees', 'wt1');
+    fs.mkdirSync(wt1Gitdir, { recursive: true });
+    // Present, but resolves to a basename that is NOT `.git` — must fall
+    // through to the gitdir-path fallback instead of giving up (F6).
+    fs.writeFileSync(path.join(wt1Gitdir, 'commondir'), 'not-a-git-dir', 'utf8');
+    fs.mkdirSync(wt1Root, { recursive: true });
+    fs.writeFileSync(path.join(wt1Root, '.git'), `gitdir: ${wt1Gitdir}\n`, 'utf8');
+
     const goal = [
       '# Goal',
       '<!-- solution-acceptance: run-base[main] = ddddddd -->',
