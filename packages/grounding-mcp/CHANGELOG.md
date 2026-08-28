@@ -39,6 +39,17 @@
     `findWorktreeRoot` now uses `fs.lstatSync` instead of `fs.existsSync`,
     so a dangling `.git` symlink still marks the worktree root instead of
     being treated as absent.
+  - Review-round-1 fixes (task 43a7ef58, T-004): `OwRunCompleteness` gains
+    `runBaseKind: 'sha' | 'todo' | 'absent' | 'unmatched-keyed'`, naming WHY
+    `runBase` has the value it has. `owBindingBlockers` (`src/solution-verdict.ts`)
+    now skips the legacy date-heuristic path outright when
+    `runBaseKind === 'unmatched-keyed'`: previously, a goal file with keyed
+    `run-base` markers that matched none of this worktree's candidate keys
+    (and no unkeyed marker) correctly got the reader's own explicit
+    fail-closed reason, but the binding check still ran the heuristic on top
+    of it and could append a second, misleading "has no run-base marker"
+    blocker for the same underlying failure. Now exactly one blocker is
+    reported.
 
 ## 0.8.0, 2026-08-19
 

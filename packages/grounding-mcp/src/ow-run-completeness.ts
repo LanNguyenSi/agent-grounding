@@ -143,6 +143,22 @@ export interface OwRunCompleteness {
    * (not enforced).
    */
   runSource: 'pointer' | 'scan' | null;
+  /**
+   * WHY `runBase` has the value it has, so the verdict layer (`solution-verdict.ts`)
+   * can branch without re-deriving `selectRunBase`'s key logic:
+   *   - `'sha'`: a marker value was selected (keyed or unkeyed; raw, unvalidated)
+   *     — `runBase` is non-null.
+   *   - `'todo'`: the selected marker (keyed or unkeyed) still carries the
+   *     template's `TODO` placeholder — `runBase` is null.
+   *   - `'absent'`: no applicable marker at all (no goal file, OW not
+   *     enforced, or a goal file with neither a matching keyed marker nor an
+   *     unkeyed one to begin with) — `runBase` is null.
+   *   - `'unmatched-keyed'`: keyed markers ARE present in `00-goal.md`, none
+   *     matches this worktree's candidate keys, and no unkeyed marker exists
+   *     either — the reader has already pushed its own explicit blocker
+   *     reason into `reasons` for this case — `runBase` is null.
+   */
+  runBaseKind: 'sha' | 'todo' | 'absent' | 'unmatched-keyed';
 }
 
 interface UnresolvedFinding {
@@ -210,6 +226,7 @@ export function readOwRunCompleteness(repoPath: string): OwRunCompleteness {
       runName: null,
       runBase: null,
       runSource: 'pointer',
+      runBaseKind: 'absent',
     };
   } else if (pointer.kind === 'run') {
     activeRun = pointer.dir;
@@ -227,6 +244,7 @@ export function readOwRunCompleteness(repoPath: string): OwRunCompleteness {
       runName: null,
       runBase: null,
       runSource: null,
+      runBaseKind: 'absent',
     };
   }
 
@@ -307,6 +325,7 @@ export function readOwRunCompleteness(repoPath: string): OwRunCompleteness {
     runName: path.basename(activeRun),
     runBase: runBaseSelection.runBase,
     runSource,
+    runBaseKind: runBaseSelection.runBaseKind,
   };
 }
 
@@ -314,6 +333,8 @@ export function readOwRunCompleteness(repoPath: string): OwRunCompleteness {
 interface RunBaseSelection {
   /** The bound sha (raw, unvalidated), or null when absent/`TODO`. */
   runBase: string | null;
+  /** See `OwRunCompleteness.runBaseKind` for the meaning of each value. */
+  runBaseKind: 'sha' | 'todo' | 'absent' | 'unmatched-keyed';
   /**
    * An explicit fail-closed blocker reason, or null when selection resolved
    * normally (including the ordinary "no marker at all" case, which stays a
@@ -370,7 +391,7 @@ function collectKeyedRunBaseMarkers(goal: string): KeyedRunBaseMarker[] {
  * existed (silent null when absent/`TODO`, no reason).
  */
 function selectRunBase(goal: string | null, keys: string[]): RunBaseSelection {
-  if (goal === null) return { runBase: null, reason: null };
+  if (goal === null) return { runBase: null, runBaseKind: 'absent', reason: null };
 
   // Raw \S+ capture on purpose: sha values may start with a digit (the enum
   // charset would reject them), and a malformed value must reach the verdict
@@ -380,28 +401,36 @@ function selectRunBase(goal: string | null, keys: string[]): RunBaseSelection {
   const keyedMarkers = collectKeyedRunBaseMarkers(goal);
 
   if (keyedMarkers.length === 0) {
-    return { runBase: unkeyed === null || unkeyed === 'TODO' ? null : unkeyed, reason: null };
+    return resolvedMarker(unkeyed);
   }
 
   for (const key of keys) {
     const lowerKey = key.toLowerCase();
     const found = keyedMarkers.find((km) => km.key.toLowerCase() === lowerKey);
     if (found !== undefined) {
-      return { runBase: found.value === 'TODO' ? null : found.value, reason: null };
+      return resolvedMarker(found.value);
     }
   }
 
   if (unkeyed !== null) {
-    return { runBase: unkeyed === 'TODO' ? null : unkeyed, reason: null };
+    return resolvedMarker(unkeyed);
   }
 
   return {
     runBase: null,
+    runBaseKind: 'unmatched-keyed',
     reason:
       `run-base markers in 00-goal.md are keyed (keys: ${keyedMarkers.map((km) => km.key).join(', ')}) ` +
       `but none matches this worktree (tried: ${keys.join(', ')}) and no unkeyed run-base marker ` +
       'exists; add a run-base[<key>] marker for this repo or an unkeyed run-base marker',
   };
+}
+
+/** A marker value (possibly `TODO`) that was found, resolved to a selection. */
+function resolvedMarker(value: string | null): RunBaseSelection {
+  if (value === null) return { runBase: null, runBaseKind: 'absent', reason: null };
+  if (value === 'TODO') return { runBase: null, runBaseKind: 'todo', reason: null };
+  return { runBase: value, runBaseKind: 'sha', reason: null };
 }
 
 /**

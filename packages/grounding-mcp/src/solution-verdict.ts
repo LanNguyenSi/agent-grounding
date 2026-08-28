@@ -383,15 +383,19 @@ const RUN_BASE_SHA = /^[0-9a-f]{7,40}$/i;
  * from a legitimate run-start base, and blocking would false-positive every
  * direct-to-default workflow. Documented residual.
  *
- * Heuristic path (legacy runs without the marker, tolerant downgrade): block
- * only when the run dir's `YYYY-MM-DD` prefix is strictly older than the
- * author date of the oldest commit since the fork point (fallback: HEAD's
- * author date). Day granularity: a same-day stale run passes (documented
- * residual; the reported scenario is "days later"), and a multi-day run
- * never false-blocks because its FIRST change commit is not older than the
- * run's creation date. False-positive story: cherry-picked commits keep
- * older author dates than the run dir → they read as run-newer-than-commits
- * and pass (no false block).
+ * Heuristic path (legacy runs WITHOUT any applicable `run-base` marker, or
+ * with one that still carries the `TODO` placeholder — `ow.runBaseKind` is
+ * `'absent'` or `'todo'` — tolerant downgrade): block only when the run
+ * dir's `YYYY-MM-DD` prefix is strictly older than the author date of the
+ * oldest commit since the fork point (fallback: HEAD's author date). Day
+ * granularity: a same-day stale run passes (documented residual; the
+ * reported scenario is "days later"), and a multi-day run never
+ * false-blocks because its FIRST change commit is not older than the run's
+ * creation date. False-positive story: cherry-picked commits keep older
+ * author dates than the run dir → they read as run-newer-than-commits and
+ * pass (no false block). NOT this path: `ow.runBaseKind === 'unmatched-keyed'`
+ * (keyed markers present, none matches this worktree, no unkeyed marker
+ * either) skips straight past this heuristic — see the early return below.
  *
  * Pre-merge by design (BOTH paths): evaluating at an already-pushed
  * default-branch tip (fork == HEAD) false-blocks — the marker path because a
@@ -403,6 +407,14 @@ const RUN_BASE_SHA = /^[0-9a-f]{7,40}$/i;
  */
 async function owBindingBlockers(repoPath: string, ow: OwRunCompleteness): Promise<string[]> {
   if (ow.runName === null) return [];
+
+  // The reader already pushed its own explicit blocker reason onto `reasons`
+  // for this case (keyed run-base markers present, none matches this
+  // worktree, no unkeyed marker either — see ow-run-completeness.ts). Running
+  // the legacy heuristic here on top of that would append a second,
+  // misleading "has no run-base marker" blocker for what is really the same
+  // underlying failure.
+  if (ow.runBaseKind === 'unmatched-keyed') return [];
 
   if (ow.runBase !== null) {
     if (!RUN_BASE_SHA.test(ow.runBase)) {

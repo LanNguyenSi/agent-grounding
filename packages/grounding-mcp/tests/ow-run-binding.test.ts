@@ -445,6 +445,26 @@ describe('owBlockersFor — linked git worktrees via the .ai/run pointer', () =>
     expect(blockers).toHaveLength(1);
     expect(blockers[0]).toContain('predates the current change');
   });
+
+  it('keyed markers for other repos only yield a single reader blocker at the verdict level', async () => {
+    // A goal file keyed ONLY for a repo this worktree can never match (candidate
+    // keys are the worktree's own basename and the main repository's basename,
+    // never 'other'): the reader's own selectRunBase() reason must be the ONLY
+    // blocker — owBindingBlockers must skip the legacy date heuristic for this
+    // case instead of appending a second, misleading "has no run-base marker"
+    // blocker on top of it.
+    const { wt, m } = makeLinkedWorktreeRepo('attached');
+    const runDir = path.join(tmp, 'workspace-unmatched-keyed', '.ai', 'runs', '2026-01-01-r');
+    makeRunAt(runDir, { goalLines: [`<!-- solution-acceptance: run-base[other] = ${m} -->`] });
+    writePointer(wt, runDir);
+
+    const blockers = await owBlockersFor(wt);
+    expect(blockers).toHaveLength(1);
+    expect(blockers[0]).toMatch(
+      /^orchestrator-workflow: run-base markers in 00-goal\.md are keyed \(keys: other\)/,
+    );
+    expect(blockers.some((b) => b.includes('has no run-base marker'))).toBe(false);
+  });
 });
 
 describe('owBlockersFor — interaction with completeness and the knob', () => {

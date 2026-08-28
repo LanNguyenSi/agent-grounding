@@ -154,6 +154,7 @@ describe('readOwRunCompleteness — enforcement', () => {
       runName: null,
       runBase: null,
       runSource: null,
+      runBaseKind: 'absent',
     });
   });
 
@@ -214,6 +215,7 @@ describe('readOwRunCompleteness — completeness verdict', () => {
       runName: '2026-06-22-run',
       runBase: null,
       runSource: 'scan',
+      runBaseKind: 'absent',
     });
   });
 
@@ -335,6 +337,7 @@ describe('readOwRunCompleteness — fail-closed fallback', () => {
       runName: '2026-06-22-run',
       runBase: null,
       runSource: 'scan',
+      runBaseKind: 'absent',
     });
   });
 
@@ -738,6 +741,7 @@ describe('readOwRunCompleteness — run-base binding marker extraction', () => {
     const r = readOwRunCompleteness(repo);
     expect(r.runName).toBe('2026-06-22-run');
     expect(r.runBase).toBe(SHA);
+    expect(r.runBaseKind).toBe('sha');
   });
 
   it('returns runBase null when 00-goal.md is missing (legacy run)', () => {
@@ -748,6 +752,7 @@ describe('readOwRunCompleteness — run-base binding marker extraction', () => {
     const r = readOwRunCompleteness(repo);
     expect(r.runName).toBe('2026-06-22-run');
     expect(r.runBase).toBeNull();
+    expect(r.runBaseKind).toBe('absent');
   });
 
   it('returns runBase null when 00-goal.md has no run-base marker', () => {
@@ -756,7 +761,9 @@ describe('readOwRunCompleteness — run-base binding marker extraction', () => {
       review: reviewDoc({ recommendationMarker: 'accept' }),
       goal: '# Goal\n\n## Goal\n\nsome goal text\n',
     });
-    expect(readOwRunCompleteness(repo).runBase).toBeNull();
+    const r = readOwRunCompleteness(repo);
+    expect(r.runBase).toBeNull();
+    expect(r.runBaseKind).toBe('absent');
   });
 
   it('treats a TODO run-base placeholder as absent', () => {
@@ -765,7 +772,9 @@ describe('readOwRunCompleteness — run-base binding marker extraction', () => {
       review: reviewDoc({ recommendationMarker: 'accept' }),
       goal: goalWithMarker('TODO'),
     });
-    expect(readOwRunCompleteness(repo).runBase).toBeNull();
+    const r = readOwRunCompleteness(repo);
+    expect(r.runBase).toBeNull();
+    expect(r.runBaseKind).toBe('todo');
   });
 
   it('hands a malformed marker value through raw (validation is the verdict layer)', () => {
@@ -1252,6 +1261,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
 
     const r = readOwRunCompleteness(root);
     expect(r.runBase).toBe('aaaaaaa');
+    expect(r.runBaseKind).toBe('sha');
   });
 
   it('unkeyed run-base used when no keyed marker matches', () => {
@@ -1288,6 +1298,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
 
     const r = readOwRunCompleteness(root);
     expect(r.runBase).toBeNull();
+    expect(r.runBaseKind).toBe('todo');
   });
 
   it('keyed markers for other repos only block with an explicit reason', () => {
@@ -1308,6 +1319,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     expect(r.reasons).toHaveLength(1);
     expect(r.reasons[0]).toMatch(/^run-base markers in 00-goal\.md are keyed \(keys: other\)/);
     expect(r.reasons[0]).toContain('no unkeyed run-base marker');
+    expect(r.runBaseKind).toBe('unmatched-keyed');
   });
 
   it('key match is case-insensitive', () => {
