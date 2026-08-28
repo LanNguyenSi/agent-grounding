@@ -3,7 +3,7 @@ type: overview
 title: The grounding stack — where to read, and how releases are split
 description: Pointer doc — the root README already diagrams the whole stack; this entry adds the release topology (four version-locked packages under one root tag, eight independently-versioned ones) that the diagram does not show.
 tags: [overview, monorepo, releases, versioning, pointer]
-timestamp: 2026-08-27T06:04:23Z
+timestamp: 2026-08-28T12:35:50Z
 sources:
   - README.md
   - CHANGELOG.md
@@ -52,7 +52,7 @@ Consequences an agent gets wrong without this:
 - Bumping one of the four locked packages means bumping all four; a PR that
   bumps only `claim-gate` breaks the lock invariant.
 - A grounding-mcp change does NOT require a root-tag release, and vice versa.
-- Version numbers across packages carry no relationship: `grounding-mcp@0.8.0`
+- Version numbers across packages carry no relationship: `grounding-mcp@0.9.0`
   is not "newer than" `evidence-ledger@0.6.0` in any meaningful sense.
 
 The root `package.json` is private (`agent-grounding`, workspaces `packages/*`);
