@@ -28,6 +28,17 @@
   including real and fabricated linked-worktree fixtures) and
   `tests/ow-run-binding.test.ts` (`owBlockersFor` end-to-end through real
   `git worktree add` fixtures, attached and detached).
+  - Review-round-1 fixes (task 43a7ef58, T-001): a goal file with keyed
+    `run-base` markers but none matching this worktree's candidate keys,
+    and no unkeyed marker either, is now an explicit fail-closed blocker
+    naming the keys found and the keys tried — previously this fell
+    through silently. Candidate-key matching against the recorded keyed
+    markers is now case-insensitive. `resolveRunPointer` resolves the
+    pointer target through `fs.realpathSync` before the directory/dated
+    checks, so a symlinked run directory is followed to its real path.
+    `findWorktreeRoot` now uses `fs.lstatSync` instead of `fs.existsSync`,
+    so a dangling `.git` symlink still marks the worktree root instead of
+    being treated as absent.
 
 ## 0.8.0, 2026-08-19
 
