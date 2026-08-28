@@ -70,12 +70,90 @@
 //     Verifying that binding against the current git change (ancestry, fork
 //     point, date heuristic) is the verdict layer's job — this module stays
 //     free of subprocess calls.
+//   - Active-run resolution, pointer-first: the caller's worktree root (found
+//     by walking up from `repoPath` for the nearest `.git` entry, file,
+//     directory, OR dangling symlink — an `fs.lstatSync` presence check, so a
+//     broken `.git` symlink still marks the root) may carry a `.ai/run`
+//     pointer file naming the absolute path of the run directory OW is
+//     actively working. When present, that pointer wins outright over the
+//     newest-run scan — a run is session-shaped (the worktree the agent is
+//     sitting in) while the newest-by-date scan is only a best-effort proxy.
+//     The scan of `<repoPath>/.ai/runs/` is used ONLY when no pointer file
+//     exists at all. A pointer file that exists but does not resolve
+//     (unreadable, empty, a relative path, a target that is missing / not a
+//     directory / not date-prefixed) is a DISTINCT fail-closed blocker — it
+//     never silently falls back to the scan, since a broken pointer left
+//     behind is itself a signal something is wrong. The pointer's target is
+//     resolved with `fs.realpathSync` before any of those checks — symlinks
+//     are resolved, so the run's identity is its real directory (a symlinked
+//     target whose real basename is not date-prefixed is rejected the same as
+//     any other non-dated target). The resolution channel actually used is
+//     reported via `runSource`.
+//   - Keyed run-base selection: a repo may appear under more than one basename
+//     across a monorepo/fleet (the worktree's own basename, and — for a
+//     linked git worktree — the main repository's basename, resolved via the
+//     worktree's `gitdir:` pointer and `commondir`). The `run-base` marker in
+//     `00-goal.md` may therefore be keyed per repo (`run-base[<key>] = <sha>`,
+//     one line per repo bound to the run) alongside the legacy unkeyed
+//     `run-base = <sha>`. Keyed markers are a GRAMMAR, not a single regex: a
+//     candidate line is checked as a WHOLE-LINE HTML comment (leading/trailing
+//     whitespace only) against a strict shape
+//     `<!-- solution-acceptance: run-base[<key>] = <value> -->`. That strict
+//     shape stays EXACT — the same exactness the legacy unkeyed matcher
+//     already demands: lowercase `solution-acceptance:` and `run-base`, no
+//     whitespace before the colon, exactly two dashes in the comment opener.
+//     The LOOSE net that decides whether a line was an ATTEMPT at a keyed
+//     marker is deliberately more tolerant than that: case-insensitive,
+//     whitespace allowed around the colon and before the bracket, one or more
+//     dashes after `<!`. A line the loose net catches but the strict shape
+//     rejects is a MALFORMED marker line — collected and surfaced as its own
+//     fail-closed blocker (`runBaseKind: 'malformed'`) rather than silently
+//     falling through to the legacy date heuristic. Both nets are anchored at
+//     the LINE START and require the literal tokens `solution-acceptance`, a colon and `run-base[`; that anchoring and exactness are the residual:
+//     a keyed marker that does not start its own line (a list bullet `- <!-- ... -->`, a marker embedded in prose, a bare `run-base[k] = <sha>`
+//     with no comment wrapper) or a whole-line comment deviating in those tokens (e.g. the colon omitted, `run_base`, `runbase`)
+//     is NOT a marker — neither well-formed nor malformed. With no other
+//     applicable marker in the file the run then behaves as MARKERLESS and
+//     falls through to the legacy date heuristic (fail-open by design, the
+//     kit's documented markerless path; a fully fail-closed variant is
+//     tracked as its own task). A strict match whose key is
+//     placeholder-shaped (`<repo-basename>`-style, `/^<[^>]*>$/`) is a
+//     documentation example, not a marker, and is skipped the same way (not counted as present); an example that itself deviates
+//     from the strict shape is an attempt like any other and blocks as malformed. All well-formed keyed markers are
+//     collected in a single scan (first occurrence per key wins on a
+//     duplicate, case-insensitive). Selection tries each applicable key in
+//     order (the worktree's own basename first, then the main repo's, when
+//     they differ), matching keys CASE-INSENSITIVELY, and the FIRST key with a
+//     matching well-formed keyed marker decides — its value, or null for
+//     `TODO` — without falling through to a later key or to the unkeyed
+//     marker. When NO well-formed keyed marker matches any candidate key, an
+//     unkeyed marker (if present) is still used, exactly as before this
+//     feature existed. When malformed marker lines were found alongside a
+//     value that WAS selected (keyed match or unkeyed fallback), that value is
+//     still returned, but the malformed blocker is ALSO reported (the run is
+//     not complete). When keyed markers ARE present, NONE matches, AND no
+//     unkeyed marker exists either, that is an explicit fail-closed blocker
+//     (not a silent null run-base): the reason names both the keys actually
+//     present in the file and the keys that were tried — UNLESS malformed
+//     lines were also found in that same situation, in which case the
+//     malformed blocker takes priority (`runBaseKind: 'malformed'`) over the
+//     `'unmatched-keyed'` one, since a malformed line is evidence of an
+//     attempted-but-broken marker rather than merely a missing one. Documented
+//     asymmetry: the legacy UNKEYED `run-base` matcher (`matchMarker`) is not
+//     line-anchored (a substring match anywhere in the file) and is
+//     unaffected by any of the above — only the keyed grammar was hardened.
 
 import fs from 'node:fs';
 import path from 'node:path';
 
 export interface OwRunCompleteness {
-  /** true iff an OW run dir was found at `<repoPath>/.ai/runs/`. */
+  /**
+   * true iff an OW run dir was found via the pointer or at
+   * `<repoPath>/.ai/runs/` — ALSO true for the fail-closed invalid-pointer
+   * state (a pointer file exists but does not resolve): OW is known to apply
+   * to this repo, it is just blocked, which is a distinct case from "no
+   * pointer and no `.ai/runs/` dir" (`enforced: false`, OW does not apply).
+   */
   enforced: boolean;
   /** true iff the active run is process-complete (only meaningful when enforced). */
   complete: boolean;
@@ -90,6 +168,42 @@ export interface OwRunCompleteness {
    * against the current change happens in solution-verdict.ts.
    */
   runBase: string | null;
+  /**
+   * Which channel resolved (or attempted to resolve) the active run:
+   * `'pointer'` whenever the worktree's `.ai/run` pointer file was the
+   * deciding channel — including the invalid-pointer blocker, where the
+   * pointer channel decided NOT to resolve (and thus never fell back to the
+   * scan) — `'scan'` when no pointer file existed and the newest-run scan of
+   * `<repoPath>/.ai/runs/` found one, or `null` when neither found a run
+   * (not enforced).
+   */
+  runSource: 'pointer' | 'scan' | null;
+  /**
+   * WHY `runBase` has the value it has, so the verdict layer (`solution-verdict.ts`)
+   * can branch without re-deriving `selectRunBase`'s key logic:
+   *   - `'sha'`: a marker value was selected (keyed or unkeyed; raw, unvalidated)
+   *     — `runBase` is non-null.
+   *   - `'todo'`: the selected marker (keyed or unkeyed) still carries the
+   *     template's `TODO` placeholder — `runBase` is null.
+   *   - `'absent'`: no applicable marker at all (no goal file, OW not
+   *     enforced, or a goal file with neither a matching keyed marker nor an
+   *     unkeyed one to begin with) — `runBase` is null.
+   *   - `'unmatched-keyed'`: well-formed keyed markers ARE present in
+   *     `00-goal.md`, none matches this worktree's candidate keys, no unkeyed
+   *     marker exists either, and no malformed keyed marker line was found —
+   *     the reader has already pushed its own explicit blocker reason into
+   *     `reasons` for this case — `runBase` is null.
+   *   - `'malformed'`: at least one line looks like an attempted keyed
+   *     `run-base[<key>] = <value>` marker but does not match the strict
+   *     grammar (see the module docstring), AND no well-formed keyed marker
+   *     matched a candidate key, AND no unkeyed marker exists — the reader
+   *     has already pushed its own explicit blocker reason into `reasons` —
+   *     `runBase` is null. When a malformed line coexists with a value that
+   *     WAS selected (keyed match or unkeyed fallback), `runBaseKind` stays
+   *     `'sha'`/`'todo'` for that value, but the malformed blocker is still
+   *     pushed into `reasons` (the run is not complete either way).
+   */
+  runBaseKind: 'sha' | 'todo' | 'absent' | 'unmatched-keyed' | 'malformed';
 }
 
 interface UnresolvedFinding {
@@ -136,7 +250,37 @@ const PLACEHOLDER_ROW_CELLS = splitTableRow(OW_FINDINGS_PLACEHOLDER_ROW);
  * The caller treats `enforced: false` as an auto-skip.
  */
 export function readOwRunCompleteness(repoPath: string): OwRunCompleteness {
-  const activeRun = findActiveRun(repoPath);
+  const worktreeRoot = findWorktreeRoot(repoPath) ?? path.resolve(repoPath);
+  const pointer = resolveRunPointer(worktreeRoot);
+
+  let activeRun: string | null;
+  let runSource: 'pointer' | 'scan' | null;
+
+  if (pointer.kind === 'invalid') {
+    // Distinct fail-closed blocker: a broken pointer file left behind is
+    // itself a signal something is wrong, so it NEVER falls back to the
+    // newest-run scan (see the module docstring).
+    return {
+      enforced: true,
+      complete: false,
+      reasons: [
+        `run pointer '${pointer.pointerPath}' does not resolve: ` +
+          `${pointer.reason}; fix the pointer to name the absolute path of the run ` +
+          `directory, or delete it to fall back to ${repoPath}/.ai/runs/`,
+      ],
+      runName: null,
+      runBase: null,
+      runSource: 'pointer',
+      runBaseKind: 'absent',
+    };
+  } else if (pointer.kind === 'run') {
+    activeRun = pointer.dir;
+    runSource = 'pointer';
+  } else {
+    activeRun = findActiveRun(repoPath);
+    runSource = activeRun === null ? null : 'scan';
+  }
+
   if (activeRun === null) {
     return {
       enforced: false,
@@ -144,6 +288,8 @@ export function readOwRunCompleteness(repoPath: string): OwRunCompleteness {
       reasons: ['no .ai/runs/ run directory found'],
       runName: null,
       runBase: null,
+      runSource: null,
+      runBaseKind: 'absent',
     };
   }
 
@@ -212,29 +358,371 @@ export function readOwRunCompleteness(repoPath: string): OwRunCompleteness {
     reasons.push(formatBlocker);
   }
 
+  const runBaseSelection = selectRunBase(goal, repoKeys(worktreeRoot));
+  for (const r of runBaseSelection.reasons) {
+    reasons.push(r);
+  }
+
   return {
     enforced: true,
     complete: reasons.length === 0,
     reasons,
     runName: path.basename(activeRun),
-    runBase: resolveRunBase(goal),
+    runBase: runBaseSelection.runBase,
+    runSource,
+    runBaseKind: runBaseSelection.runBaseKind,
   };
 }
 
+/** Result of resolving the `run-base` binding marker for one worktree. */
+interface RunBaseSelection {
+  /** The bound sha (raw, unvalidated), or null when absent/`TODO`/blocked. */
+  runBase: string | null;
+  /** See `OwRunCompleteness.runBaseKind` for the meaning of each value. */
+  runBaseKind: 'sha' | 'todo' | 'absent' | 'unmatched-keyed' | 'malformed';
+  /**
+   * Explicit fail-closed blocker reasons, empty when selection resolved
+   * normally with nothing to report (including the ordinary "no marker at
+   * all" case, which stays silent). A malformed-marker reason can coexist
+   * with a selected `runBase` (keyed match or unkeyed fallback) — see
+   * `OwRunCompleteness.runBaseKind`.
+   */
+  reasons: string[];
+}
+
+/** One well-formed `run-base[<key>] = <value>` marker found in a run's `00-goal.md`. */
+interface KeyedRunBaseMarker {
+  /** The key exactly as authored (trimmed, original case). */
+  key: string;
+  /** The raw value (unvalidated; may be `TODO`). */
+  value: string;
+}
+
+/** Result of one pass over `goal`'s lines collecting keyed run-base markers. */
+interface KeyedMarkerScan {
+  /** Well-formed markers, placeholder-keyed ones excluded. First occurrence per key wins. */
+  markers: KeyedRunBaseMarker[];
+  /** Whole, trimmed text of every line that started like a keyed marker but did not match the strict grammar. */
+  malformedLines: string[];
+}
+
+// Strict shape: the ENTIRE line (leading/trailing whitespace only) is the
+// HTML comment `<!-- solution-acceptance: run-base[<key>] = <value> -->`. The
+// `(?!-->)` guard stops a value-less marker (`run-base[k] = -->`) from having
+// its `\S+` capture swallow the comment terminator as the value; in practice
+// such a line already fails to match at all (there is no room left for the
+// literal trailing `-->`), so it naturally falls to the loose net below and
+// is reported as malformed rather than resolving to a bogus `'-->' ` value.
+const KEYED_RUN_BASE_STRICT =
+  /^\s*<!--\s*solution-acceptance:\s*run-base\[([^\]\n]+)\]\s*=\s*(?!-->)(\S+)\s*-->\s*$/;
+// Loose net: a whole line that STARTS like an ATTEMPTED keyed marker but is
+// not required to satisfy the rest of the strict shape. Deliberately more
+// tolerant than the strict shape above, so that a still-recognisable attempt
+// BLOCKS as malformed instead of falling through to the legacy date
+// heuristic: case-insensitive (`RUN-BASE[`), whitespace around the colon
+// (`solution-acceptance : run-base[`), one or more dashes in the comment
+// opener (`<!--- `), and stray whitespace before the bracket (`run-base [k]`).
+// Still anchored at the line start: a keyed marker that does not START its own
+// line is not an attempt at all, it is simply not a marker (see the module
+// docstring's fail-open residual). Any strict match is also a loose match, so
+// this is checked only after a strict-match attempt fails.
+const KEYED_RUN_BASE_LOOSE_START = /^\s*<!--+\s*solution-acceptance\s*:\s*run-base\s*\[/i;
+// A key that is itself an angle-bracket placeholder (`<repo-basename>`,
+// `<key>`, ...) — the template's own documentation example, not an authored
+// marker. `[^>]*` deliberately excludes `>` so the placeholder must be a
+// single bracketed token spanning the whole (already-trimmed) key.
+const PLACEHOLDER_KEY = /^<[^>]*>$/;
+
 /**
- * The `run-base` binding marker value from a run's `00-goal.md` content, or
- * null when the file/marker is missing or the marker is the `TODO`
- * placeholder. No validation happens here — the raw value is handed to the
- * verdict layer, which validates it (strict hex) BEFORE any git invocation.
+ * Collect every well-formed keyed `run-base[<key>] = <value>` marker in
+ * `goal` with a single line-by-line pass (whole-line HTML comments only —
+ * see the module docstring for the grammar), plus every line that looked
+ * like an attempted keyed marker but did not match the strict shape
+ * (malformed). First well-formed occurrence per key wins (case-insensitive
+ * dedup) — a later duplicate for the same key is ignored. A well-formed
+ * match whose key is placeholder-shaped is skipped entirely (not counted as
+ * present, not malformed).
  */
-function resolveRunBase(goal: string | null): string | null {
-  if (goal === null) return null;
+function collectKeyedRunBaseMarkers(goal: string): KeyedMarkerScan {
+  const seen = new Set<string>();
+  const markers: KeyedRunBaseMarker[] = [];
+  const malformedLines: string[] = [];
+  for (const line of goal.split(/\r?\n/)) {
+    const strict = line.match(KEYED_RUN_BASE_STRICT);
+    if (strict !== null) {
+      const key = strict[1].trim();
+      if (PLACEHOLDER_KEY.test(key)) continue; // documentation example, not a marker
+      const lowerKey = key.toLowerCase();
+      if (seen.has(lowerKey)) continue; // first occurrence per key wins
+      seen.add(lowerKey);
+      markers.push({ key, value: strict[2] });
+      continue;
+    }
+    if (KEYED_RUN_BASE_LOOSE_START.test(line)) {
+      malformedLines.push(line.trim());
+    }
+  }
+  return { markers, malformedLines };
+}
+
+/**
+ * Join `items` (already trimmed strings) into a single bounded string: each
+ * item truncated to `truncateChars`, at most `maxItems` shown, with
+ * `(+N more)` appended when more were dropped. Keeps blocker messages from
+ * growing unbounded when a goal file carries many/long keys or malformed
+ * lines.
+ */
+function boundedList(items: string[], truncateChars: number, maxItems: number, sep: string): string {
+  const shown = items
+    .slice(0, maxItems)
+    .map((s) => (s.length > truncateChars ? s.slice(0, truncateChars) : s));
+  const dropped = items.length - shown.length;
+  const joined = shown.join(sep);
+  return dropped > 0 ? `${joined} (+${dropped} more)` : joined;
+}
+
+function malformedKeyedReason(malformedLines: string[]): string {
+  return (
+    `malformed keyed run-base marker(s) in 00-goal.md: ${boundedList(malformedLines, 80, 5, ' | ')} ` +
+    "(expected '<!-- solution-acceptance: run-base[<key>] = <sha> -->' on its own line)"
+  );
+}
+
+/**
+ * The `run-base` binding marker value from a run's `00-goal.md` content. No
+ * validation happens here — the raw value is handed to the verdict layer,
+ * which validates it (strict hex) BEFORE any git invocation.
+ *
+ * Keyed selection: all well-formed keyed markers (`run-base[<key>] =
+ * <value>`, whole-line HTML comments — see the module docstring's grammar)
+ * are collected in one line-by-line scan (`collectKeyedRunBaseMarkers`),
+ * along with any MALFORMED near-miss lines. `keys` (see `repoKeys`) is then
+ * tried in order, matching each candidate key against the collected
+ * well-formed keys CASE-INSENSITIVELY. The FIRST candidate key with a
+ * matching keyed marker decides — its value, or null for `TODO` — without
+ * falling through to a later key or to the unkeyed marker, even when the
+ * value is `TODO`. When well-formed keyed markers exist but none matches any
+ * candidate key, the legacy unkeyed `run-base` marker is still used if
+ * present. Whenever malformed lines were found, their blocker reason is
+ * ALWAYS reported (`reasons`) regardless of which of the above resolved a
+ * value — a malformed line is evidence the binding is incomplete even when
+ * another marker also happens to resolve. When nothing resolved a value (no
+ * well-formed match, no unkeyed marker) AND malformed lines were found, that
+ * is reported as `runBaseKind: 'malformed'` (takes priority over
+ * `'unmatched-keyed'`). When nothing resolved a value, no malformed lines
+ * were found, but well-formed keyed markers exist for OTHER keys, that is the
+ * `'unmatched-keyed'` blocker, unchanged from before this task. When NO
+ * keyed marker (well-formed or malformed) is present at all, the unkeyed
+ * marker applies directly, exactly as before this feature existed (silent
+ * null when absent/`TODO`, no reason).
+ */
+function selectRunBase(goal: string | null, keys: string[]): RunBaseSelection {
+  if (goal === null) return { runBase: null, runBaseKind: 'absent', reasons: [] };
+
   // Raw \S+ capture on purpose: sha values may start with a digit (the enum
   // charset would reject them), and a malformed value must reach the verdict
   // layer's hex guard so it blocks explicitly instead of downgrading silently
   // to the date heuristic.
-  const marker = matchMarker(goal, 'run-base', '\\S+');
-  return marker === null || marker === 'TODO' ? null : marker;
+  const unkeyed = matchMarker(goal, 'run-base', '\\S+');
+  const { markers: keyedMarkers, malformedLines } = collectKeyedRunBaseMarkers(goal);
+  const malformedReasons = malformedLines.length > 0 ? [malformedKeyedReason(malformedLines)] : [];
+
+  for (const key of keys) {
+    const lowerKey = key.toLowerCase();
+    const found = keyedMarkers.find((km) => km.key.toLowerCase() === lowerKey);
+    if (found !== undefined) {
+      const resolved = resolvedMarker(found.value);
+      return { ...resolved, reasons: malformedReasons };
+    }
+  }
+
+  if (unkeyed !== null) {
+    const resolved = resolvedMarker(unkeyed);
+    return { ...resolved, reasons: malformedReasons };
+  }
+
+  if (malformedReasons.length > 0) {
+    return { runBase: null, runBaseKind: 'malformed', reasons: malformedReasons };
+  }
+
+  if (keyedMarkers.length === 0) {
+    return { runBase: null, runBaseKind: 'absent', reasons: [] };
+  }
+
+  return {
+    runBase: null,
+    runBaseKind: 'unmatched-keyed',
+    reasons: [
+      `run-base markers in 00-goal.md are keyed (keys: ${boundedList(keyedMarkers.map((km) => km.key), 64, 10, ', ')}) ` +
+        `but none matches this worktree (tried: ${keys.join(', ')}) and no unkeyed run-base marker ` +
+        'exists; add a run-base[<key>] marker for this repo or an unkeyed run-base marker',
+    ],
+  };
+}
+
+/** A marker value (possibly `TODO`) that was found, resolved to a selection (empty `reasons`). */
+function resolvedMarker(value: string | null): RunBaseSelection {
+  if (value === null) return { runBase: null, runBaseKind: 'absent', reasons: [] };
+  if (value === 'TODO') return { runBase: null, runBaseKind: 'todo', reasons: [] };
+  return { runBase: value, runBaseKind: 'sha', reasons: [] };
+}
+
+/**
+ * Walk up from `path.resolve(start)` (inclusive) to the filesystem root; the
+ * first directory containing a `.git` entry (directory, file — a linked git
+ * worktree's root has a `.git` FILE — or even a DANGLING symlink) is the
+ * worktree root. Presence is checked with `fs.lstatSync` (not
+ * `fs.existsSync`, which follows symlinks and would miss a broken one) inside
+ * a try/catch, so a `.git` entry of any kind, including a symlink whose
+ * target no longer exists, still marks the root. Null when no such directory
+ * exists anywhere up the chain (never throws).
+ */
+function findWorktreeRoot(start: string): string | null {
+  let dir = path.resolve(start);
+  for (;;) {
+    try {
+      fs.lstatSync(path.join(dir, '.git'));
+      return dir;
+    } catch {
+      // no `.git` entry at this level → keep walking up.
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+type RunPointer =
+  | { kind: 'none' }
+  | { kind: 'invalid'; reason: string; pointerPath: string }
+  | { kind: 'run'; dir: string };
+
+/**
+ * Resolve the worktree-local `.ai/run` pointer file. Only the first
+ * non-empty line matters (later lines, e.g. a `base=<sha>` line, are
+ * ignored). No `~` or environment expansion. See the module docstring for
+ * why an invalid pointer is a distinct fail-closed blocker rather than a
+ * silent fallback to the newest-run scan.
+ *
+ * Symlink resolution: once the target is confirmed absolute, it is resolved
+ * with `fs.realpathSync` (in the same try/catch as the existence check — a
+ * failure there reads the same as "target does not exist") BEFORE the
+ * directory and dated-prefix checks, and the RESOLVED (real) path is what is
+ * checked and returned as `dir`. Symlinks are therefore transparent: the
+ * run's identity is its real directory, not whatever path happened to be
+ * named in the pointer file.
+ */
+function resolveRunPointer(worktreeRoot: string): RunPointer {
+  const pointerPath = path.join(worktreeRoot, '.ai', 'run');
+  let raw: string;
+  try {
+    raw = fs.readFileSync(pointerPath, 'utf8');
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return { kind: 'none' };
+    return { kind: 'invalid', reason: 'could not be read as a file', pointerPath };
+  }
+
+  const firstLine = raw.split(/\r?\n/).find((l) => l.trim() !== '');
+  if (firstLine === undefined) return { kind: 'invalid', reason: 'is empty', pointerPath };
+  const target = firstLine.trim();
+
+  if (!path.isAbsolute(target)) {
+    return { kind: 'invalid', reason: `names a relative path '${target}'`, pointerPath };
+  }
+
+  let realTarget: string;
+  let stat: fs.Stats;
+  try {
+    realTarget = fs.realpathSync(target);
+    stat = fs.statSync(realTarget);
+  } catch {
+    return { kind: 'invalid', reason: `target '${target}' does not exist`, pointerPath };
+  }
+  if (!stat.isDirectory()) {
+    return { kind: 'invalid', reason: `target '${target}' is not a directory`, pointerPath };
+  }
+  const base = path.basename(realTarget);
+  if (!DATED_RUN_PREFIX.test(base)) {
+    return {
+      kind: 'invalid',
+      reason: `target basename '${base}' is not a dated run directory (YYYY-MM-DD-<slug>)`,
+      pointerPath,
+    };
+  }
+  return { kind: 'run', dir: realTarget };
+}
+
+/**
+ * The keys under which `worktreeRoot`'s `run-base` marker may be recorded:
+ * the worktree's own basename, plus — for a LINKED git worktree — the main
+ * repository's basename (appended only when it differs from the first key).
+ * Any read error along the way (missing/unreadable `.git` file, malformed
+ * `gitdir:` line) yields no second key; this function never throws.
+ */
+function repoKeys(worktreeRoot: string): string[] {
+  const keys = [path.basename(worktreeRoot)];
+  const mainRoot = resolveMainWorktreeRoot(worktreeRoot);
+  if (mainRoot !== null) {
+    const mainKey = path.basename(mainRoot);
+    if (mainKey !== keys[0]) keys.push(mainKey);
+  }
+  return keys;
+}
+
+/**
+ * For a LINKED git worktree (`<worktreeRoot>/.git` is a FILE containing
+ * `gitdir: <path>`), resolve the main repository's root directory. Returns
+ * null for a normal (non-linked) worktree, or when anything along the way is
+ * missing/malformed (never throws).
+ *
+ * Primary path: read `<gitdir>/commondir` (relative paths resolve against
+ * `gitdir`); when its resolved basename is `.git`, the main root is its
+ * dirname. Fallback, used both when `commondir` is absent/unreadable AND when
+ * it is present but its resolved basename is NOT `.git` (an odd or
+ * unexpected value should not give up outright): match `gitdir` against
+ * `/[\\/]\.git[\\/]worktrees[\\/][^\\/]+$/` and strip the
+ * `/.git/worktrees/<name>` suffix to get the main root directly.
+ */
+function resolveMainWorktreeRoot(worktreeRoot: string): string | null {
+  const dotGitPath = path.join(worktreeRoot, '.git');
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(dotGitPath);
+  } catch {
+    return null;
+  }
+  if (!stat.isFile()) return null;
+
+  let content: string;
+  try {
+    content = fs.readFileSync(dotGitPath, 'utf8');
+  } catch {
+    return null;
+  }
+  const m = content.match(/^gitdir:\s*(.+)$/m);
+  if (!m) return null;
+  const gitdirRaw = m[1].trim();
+  const gitdir = path.isAbsolute(gitdirRaw) ? gitdirRaw : path.resolve(worktreeRoot, gitdirRaw);
+
+  const commondirPath = path.join(gitdir, 'commondir');
+  try {
+    const commondirRaw = fs.readFileSync(commondirPath, 'utf8').trim();
+    if (commondirRaw !== '') {
+      const commondir = path.isAbsolute(commondirRaw)
+        ? commondirRaw
+        : path.resolve(gitdir, commondirRaw);
+      if (path.basename(commondir) === '.git') return path.dirname(commondir);
+      // commondir present but its resolved basename isn't `.git` → fall
+      // through to the gitdir-path fallback below instead of giving up.
+    }
+  } catch {
+    // commondir absent/unreadable → fall through to the gitdir-path fallback.
+  }
+
+  const worktreesMatch = gitdir.match(/^(.*)[\\/]\.git[\\/]worktrees[\\/][^\\/]+$/);
+  if (worktreesMatch) return worktreesMatch[1];
+  return null;
 }
 
 /**

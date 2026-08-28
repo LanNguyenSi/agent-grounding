@@ -153,6 +153,8 @@ describe('readOwRunCompleteness — enforcement', () => {
       reasons: ['no .ai/runs/ run directory found'],
       runName: null,
       runBase: null,
+      runSource: null,
+      runBaseKind: 'absent',
     });
   });
 
@@ -212,6 +214,8 @@ describe('readOwRunCompleteness — completeness verdict', () => {
       reasons: [],
       runName: '2026-06-22-run',
       runBase: null,
+      runSource: 'scan',
+      runBaseKind: 'absent',
     });
   });
 
@@ -332,6 +336,8 @@ describe('readOwRunCompleteness — fail-closed fallback', () => {
       reasons: [],
       runName: '2026-06-22-run',
       runBase: null,
+      runSource: 'scan',
+      runBaseKind: 'absent',
     });
   });
 
@@ -735,6 +741,7 @@ describe('readOwRunCompleteness — run-base binding marker extraction', () => {
     const r = readOwRunCompleteness(repo);
     expect(r.runName).toBe('2026-06-22-run');
     expect(r.runBase).toBe(SHA);
+    expect(r.runBaseKind).toBe('sha');
   });
 
   it('returns runBase null when 00-goal.md is missing (legacy run)', () => {
@@ -745,6 +752,7 @@ describe('readOwRunCompleteness — run-base binding marker extraction', () => {
     const r = readOwRunCompleteness(repo);
     expect(r.runName).toBe('2026-06-22-run');
     expect(r.runBase).toBeNull();
+    expect(r.runBaseKind).toBe('absent');
   });
 
   it('returns runBase null when 00-goal.md has no run-base marker', () => {
@@ -753,7 +761,9 @@ describe('readOwRunCompleteness — run-base binding marker extraction', () => {
       review: reviewDoc({ recommendationMarker: 'accept' }),
       goal: '# Goal\n\n## Goal\n\nsome goal text\n',
     });
-    expect(readOwRunCompleteness(repo).runBase).toBeNull();
+    const r = readOwRunCompleteness(repo);
+    expect(r.runBase).toBeNull();
+    expect(r.runBaseKind).toBe('absent');
   });
 
   it('treats a TODO run-base placeholder as absent', () => {
@@ -762,7 +772,9 @@ describe('readOwRunCompleteness — run-base binding marker extraction', () => {
       review: reviewDoc({ recommendationMarker: 'accept' }),
       goal: goalWithMarker('TODO'),
     });
-    expect(readOwRunCompleteness(repo).runBase).toBeNull();
+    const r = readOwRunCompleteness(repo);
+    expect(r.runBase).toBeNull();
+    expect(r.runBaseKind).toBe('todo');
   });
 
   it('hands a malformed marker value through raw (validation is the verdict layer)', () => {
@@ -999,6 +1011,806 @@ describe('readOwRunCompleteness — mixed-state findings-table bypass guard', ()
     const r = readOwRunCompleteness(repo);
     expect(r.complete).toBe(true);
     expect(r.reasons).toEqual([]);
+  });
+});
+
+describe('readOwRunCompleteness — worktree-local run pointer', () => {
+  // Extra tmp dirs outside `repo` (a run outside the repo, or a differently
+  // named root for the run-base keyed-selection tests below) are tracked here
+  // and cleaned up alongside `repo`.
+  let extraDirs: string[];
+
+  beforeEach(() => {
+    extraDirs = [];
+  });
+
+  afterEach(() => {
+    for (const d of extraDirs) fs.rmSync(d, { recursive: true, force: true });
+  });
+
+  function externalTmpDir(): string {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'ow-run-completeness-ext-'));
+    extraDirs.push(d);
+    return d;
+  }
+
+  /** A directory with an exact chosen basename, outside `repo`. */
+  function namedRoot(basename: string): string {
+    const root = path.join(externalTmpDir(), basename);
+    fs.mkdirSync(root, { recursive: true });
+    return root;
+  }
+
+  /** Write a run's fixture files at an arbitrary absolute directory. */
+  function makeRunAt(dir: string, files: RunFiles): string {
+    fs.mkdirSync(dir, { recursive: true });
+    if (files.handoff !== undefined) {
+      fs.writeFileSync(path.join(dir, '06-handoff.md'), files.handoff, 'utf8');
+    }
+    if (files.review !== undefined) {
+      fs.writeFileSync(path.join(dir, '05-review-findings.md'), files.review, 'utf8');
+    }
+    if (files.goal !== undefined) {
+      fs.writeFileSync(path.join(dir, '00-goal.md'), files.goal, 'utf8');
+    }
+    return dir;
+  }
+
+  function writePointer(worktreeRoot: string, content: string): void {
+    const dir = path.join(worktreeRoot, '.ai');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'run'), content, 'utf8');
+  }
+
+  it('pointer wins over a newer run directory', () => {
+    const external = externalTmpDir();
+    const runA = path.join(external, '.ai', 'runs', '2026-01-01-a');
+    makeRunAt(runA, {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+    });
+    writePointer(repo, runA);
+    // A newer run under the repo's own .ai/runs/, NOT complete — must be ignored.
+    makeRun('2026-02-02-b', {
+      handoff: handoffMarker('blocked'),
+      review: reviewDoc({ recommendationMarker: 'fix_required' }),
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runName).toBe('2026-01-01-a');
+    expect(r.complete).toBe(true);
+    expect(r.runSource).toBe('pointer');
+  });
+
+  it('second pointer line base=<sha> is ignored', () => {
+    const runA = makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+    });
+    writePointer(repo, `${runA}\nbase=deadbeef\n`);
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runName).toBe('2026-01-01-a');
+    expect(r.runSource).toBe('pointer');
+  });
+
+  it('pointer that is a directory is rejected', () => {
+    const dir = path.join(repo, '.ai');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(path.join(dir, 'run'), { recursive: true });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons[0]).toContain('could not be read as a file');
+    expect(r.runSource).toBe('pointer');
+  });
+
+  it('pointer content with CRLF and BOM resolves', () => {
+    const runA = makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+    });
+    writePointer(repo, `﻿${runA}\r\n`);
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runName).toBe('2026-01-01-a');
+    expect(r.runSource).toBe('pointer');
+  });
+
+  it('missing pointer falls back to the newest-run scan', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runName).toBe('2026-06-22-run');
+    expect(r.complete).toBe(true);
+    expect(r.runSource).toBe('scan');
+  });
+
+  it('dangling pointer blocks with a distinct reason', () => {
+    writePointer(repo, path.join(repo, '.ai', 'runs', '2026-09-09-missing'));
+    // A valid, complete newest run under .ai/runs/ — must NOT be used as a fallback.
+    makeRun('2026-08-08-real', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.enforced).toBe(true);
+    expect(r.complete).toBe(false);
+    expect(r.runName).toBeNull();
+    expect(r.reasons).toHaveLength(1);
+    expect(r.reasons[0]).toMatch(/^run pointer '.*\/\.ai\/run' does not resolve: target '.*' does not exist/);
+  });
+
+  it('pointer with a relative path is rejected', () => {
+    writePointer(repo, '.ai/runs/2026-01-01-a');
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons[0]).toContain('relative');
+  });
+
+  it('empty pointer file is rejected', () => {
+    writePointer(repo, '');
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons[0]).toContain('is empty');
+  });
+
+  it('pointer to a non-dated directory is rejected', () => {
+    const target = path.join(repo, 'not-a-run-dir');
+    fs.mkdirSync(target, { recursive: true });
+    writePointer(repo, target);
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons[0]).toContain('is not a dated run directory');
+  });
+
+  it('pointer target that is a file is rejected', () => {
+    const target = path.join(repo, 'a-file.txt');
+    fs.writeFileSync(target, 'not a directory', 'utf8');
+    writePointer(repo, target);
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons[0]).toContain('is not a directory');
+  });
+
+  it('symlinked pointer target resolves to the real run directory', () => {
+    const runA = makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+    });
+    const link = path.join(repo, '2026-05-05-link');
+    fs.symlinkSync(runA, link, 'dir');
+    writePointer(repo, link);
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runName).toBe('2026-01-01-a');
+    expect(r.runSource).toBe('pointer');
+  });
+
+  it('symlinked pointer target whose real basename is not dated is rejected', () => {
+    const realDir = path.join(repo, 'not-dated-dir');
+    fs.mkdirSync(realDir, { recursive: true });
+    const link = path.join(repo, '2026-05-05-link');
+    fs.symlinkSync(realDir, link, 'dir');
+    writePointer(repo, link);
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons[0]).toContain('is not a dated run directory');
+  });
+
+  it('dangling .git symlink still marks the worktree root', () => {
+    fs.symlinkSync('/nonexistent-target', path.join(repo, '.git'));
+    const runA = makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+    });
+    writePointer(repo, runA);
+    const subdir = path.join(repo, 'packages', 'x');
+    fs.mkdirSync(subdir, { recursive: true });
+
+    const r = readOwRunCompleteness(subdir);
+    expect(r.runName).toBe('2026-01-01-a');
+    expect(r.runSource).toBe('pointer');
+  });
+
+  it('pointer is found from a subdirectory of the worktree', () => {
+    fs.mkdirSync(path.join(repo, '.git'), { recursive: true });
+    const runA = makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+    });
+    writePointer(repo, runA);
+    const subdir = path.join(repo, 'packages', 'x');
+    fs.mkdirSync(subdir, { recursive: true });
+
+    const r = readOwRunCompleteness(subdir);
+    expect(r.runName).toBe('2026-01-01-a');
+    expect(r.runSource).toBe('pointer');
+  });
+
+  it('without any .git entry the repoPath itself is the worktree root', () => {
+    const runA = makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+    });
+    writePointer(repo, runA);
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runName).toBe('2026-01-01-a');
+    expect(r.runSource).toBe('pointer');
+  });
+
+  it('keyed run-base selected by repo basename', () => {
+    const root = namedRoot('alpha');
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[alpha] = aaaaaaa -->',
+      '<!-- solution-acceptance: run-base = bbbbbbb -->',
+      '',
+    ].join('\n');
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBase).toBe('aaaaaaa');
+    expect(r.runBaseKind).toBe('sha');
+  });
+
+  it('unkeyed run-base used when no keyed marker matches', () => {
+    const root = namedRoot('alpha');
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[other] = ccccccc -->',
+      '<!-- solution-acceptance: run-base = bbbbbbb -->',
+      '',
+    ].join('\n');
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBase).toBe('bbbbbbb');
+  });
+
+  it('keyed TODO marker resolves to null without falling back to the unkeyed marker', () => {
+    const root = namedRoot('alpha');
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[alpha] = TODO -->',
+      '<!-- solution-acceptance: run-base = bbbbbbb -->',
+      '',
+    ].join('\n');
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBase).toBeNull();
+    expect(r.runBaseKind).toBe('todo');
+  });
+
+  it('keyed markers for other repos only block with an explicit reason', () => {
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[other] = ccccccc -->',
+      '',
+    ].join('\n');
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.runBase).toBeNull();
+    expect(r.reasons).toHaveLength(1);
+    expect(r.reasons[0]).toMatch(/^run-base markers in 00-goal\.md are keyed \(keys: other\)/);
+    expect(r.reasons[0]).toContain('no unkeyed run-base marker');
+    expect(r.runBaseKind).toBe('unmatched-keyed');
+  });
+
+  it('key match is case-insensitive', () => {
+    const root = namedRoot('Alpha');
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[alpha] = aaaaaaa -->',
+      '<!-- solution-acceptance: run-base = bbbbbbb -->',
+      '',
+    ].join('\n');
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBase).toBe('aaaaaaa');
+  });
+
+  it('duplicate keyed marker: first occurrence wins', () => {
+    const root = namedRoot('alpha');
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[alpha] = aaaaaaa -->',
+      '<!-- solution-acceptance: run-base[alpha] = zzzzzzz -->',
+      '',
+    ].join('\n');
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBase).toBe('aaaaaaa');
+  });
+
+  it('a prose line quoting a concrete keyed marker does not count as a marker', () => {
+    // The quoted key is deliberately the ROOT BASENAME itself and the quoted
+    // value a concrete sha: an un-anchored strict grammar would match
+    // mid-line and wrongly select 'aaaaaaa' instead of falling through to the
+    // unkeyed marker. A placeholder-shaped key would not discriminate here —
+    // the placeholder filter would drop it either way.
+    const root = namedRoot('alpha');
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base = bbbbbbb -->',
+      'Use `<!-- solution-acceptance: run-base[alpha] = aaaaaaa -->` per repo.',
+      '',
+    ].join('\n');
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBase).toBe('bbbbbbb');
+    expect(r.complete).toBe(true);
+    expect(r.runBaseKind).toBe('sha');
+  });
+
+  it('placeholder-shaped keyed marker on its own line is ignored', () => {
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[<repo-basename>] = <sha> -->',
+      '<!-- solution-acceptance: run-base = bbbbbbb -->',
+      '',
+    ].join('\n');
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runBase).toBe('bbbbbbb');
+    expect(r.complete).toBe(true);
+  });
+
+  it('placeholder-only keyed marker with no unkeyed marker reads as markerless', () => {
+    // No unkeyed marker to fall back on, so the placeholder filter is the
+    // ONLY thing standing between this goal file and an 'unmatched-keyed'
+    // blocker: the documentation example must not count as a present key.
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[<repo-basename>] = <sha> -->',
+      '',
+    ].join('\n');
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runBaseKind).toBe('absent');
+    expect(r.runBase).toBeNull();
+    expect(r.reasons).toEqual([]);
+    expect(r.complete).toBe(true);
+  });
+
+  it('near-miss keyed syntax with a space before the bracket is a malformed blocker', () => {
+    const goal = ['# Goal', '<!-- solution-acceptance: run-base [alpha] = aaaaaaa -->', ''].join(
+      '\n',
+    );
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(
+      r.reasons.some((x) => x.startsWith('malformed keyed run-base marker(s) in 00-goal.md:')),
+    ).toBe(true);
+  });
+
+  it('near-miss keyed syntax with a missing closing bracket is a malformed blocker', () => {
+    const goal = ['# Goal', '<!-- solution-acceptance: run-base[alpha = aaaaaaa -->', ''].join(
+      '\n',
+    );
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(
+      r.reasons.some((x) => x.startsWith('malformed keyed run-base marker(s) in 00-goal.md:')),
+    ).toBe(true);
+  });
+
+  it('keyed marker with an empty value is a malformed blocker', () => {
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[alpha] = -->',
+      '<!-- solution-acceptance: run-base[other] = ccccccc -->',
+      '',
+    ].join('\n');
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(r.runBase).toBeNull();
+    expect(r.runBase).not.toBe('<!--');
+  });
+
+  it('keyed marker whose value is the comment terminator is malformed', () => {
+    // The key matches the root basename, so without the strict grammar's
+    // `(?!-->)` value guard the `\S+` capture would swallow the FIRST `-->`
+    // as a bogus value and this would resolve to runBase '-->'.
+    const root = namedRoot('alpha');
+    const goal = ['# Goal', '<!-- solution-acceptance: run-base[alpha] = --> -->', ''].join('\n');
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(r.runBase).toBeNull();
+    expect(r.complete).toBe(false);
+  });
+
+  it('uppercase field name in a keyed marker line is malformed', () => {
+    // The strict grammar stays exact (lowercase), but the LOOSE net is
+    // case-insensitive, so a recognisable attempt blocks instead of falling
+    // through to the legacy date heuristic.
+    const root = namedRoot('alpha');
+    const goal = ['# Goal', '<!-- solution-acceptance: RUN-BASE[alpha] = aaaaaaa -->', ''].join(
+      '\n',
+    );
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(r.runBase).toBeNull();
+    expect(r.complete).toBe(false);
+    expect(
+      r.reasons.some((x) => x.startsWith('malformed keyed run-base marker(s) in 00-goal.md:')),
+    ).toBe(true);
+  });
+
+  it('whitespace before the colon in a keyed marker line is malformed', () => {
+    const root = namedRoot('alpha');
+    const goal = ['# Goal', '<!-- solution-acceptance : run-base[alpha] = aaaaaaa -->', ''].join(
+      '\n',
+    );
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(r.runBase).toBeNull();
+    expect(r.complete).toBe(false);
+  });
+
+  it('extra dashes in the comment opener of a keyed marker line are malformed', () => {
+    const root = namedRoot('alpha');
+    const goal = ['# Goal', '<!--- solution-acceptance: run-base[alpha] = aaaaaaa -->', ''].join(
+      '\n',
+    );
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(r.runBase).toBeNull();
+    expect(r.complete).toBe(false);
+  });
+
+  it('keyed marker line without the colon is not a marker and the run reads as markerless', () => {
+    // Pins the residual on purpose (review round 4): the loose net requires
+    // the literal tokens, so a colon-less attempt is markerless (fail-open,
+    // legacy heuristic). If the fail-closed follow-up lands, flip this test.
+    const root = namedRoot('alpha');
+    const goal = ['# Goal', '<!-- solution-acceptance run-base[alpha] = aaaaaaa -->', ''].join(
+      '\n',
+    );
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBaseKind).toBe('absent');
+    expect(r.runBase).toBeNull();
+    expect(r.reasons).toEqual([]);
+    expect(r.complete).toBe(true);
+  });
+
+  it('placeholder example with a tolerated deviation blocks as malformed', () => {
+    // The placeholder skip applies to STRICT matches only: an example line
+    // that deviates from the strict shape is an attempt like any other.
+    const root = namedRoot('alpha');
+    const goal = [
+      '# Goal',
+      '<!-- Solution-Acceptance: run-base[<repo-basename>] = <sha> -->',
+      '',
+    ].join('\n');
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(r.runBase).toBeNull();
+    expect(r.complete).toBe(false);
+  });
+
+  it('a malformed line beside a well-formed matching keyed marker keeps the value but still blocks', () => {
+    const root = namedRoot('alpha');
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[alpha] = aaaaaaa -->',
+      '<!-- solution-acceptance: run-base [other] = zzzzzzz -->',
+      '',
+    ].join('\n');
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBase).toBe('aaaaaaa');
+    expect(r.runBaseKind).toBe('sha');
+    expect(r.complete).toBe(false);
+    expect(
+      r.reasons.some((x) => x.startsWith('malformed keyed run-base marker(s) in 00-goal.md:')),
+    ).toBe(true);
+  });
+
+  it('keyed marker not starting its line is ignored', () => {
+    // Root basename 'alpha' matches the embedded marker's key, so an
+    // un-anchored implementation that let the match start mid-line would
+    // wrongly select 'aaaaaaa' instead of falling through to the unkeyed
+    // marker.
+    const root = namedRoot('alpha');
+    const goal = [
+      '# Goal',
+      'note <!-- solution-acceptance: run-base[alpha] = aaaaaaa -->',
+      '<!-- solution-acceptance: run-base = bbbbbbb -->',
+      '',
+    ].join('\n');
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBase).toBe('bbbbbbb');
+  });
+
+  it('keyed marker in a list bullet is not a marker and the run reads as markerless', () => {
+    // DELIBERATE fail-open residual, pinned on purpose: both nets are
+    // anchored at the line start, so a keyed marker behind a list bullet is
+    // neither well-formed nor malformed. With no other applicable marker the
+    // run behaves as MARKERLESS and falls through to the legacy date
+    // heuristic (fail-open by design; a fully fail-closed variant is tracked
+    // as its own task). Change this expectation only together with that
+    // decision.
+    const root = namedRoot('alpha');
+    const goal = ['# Goal', '- <!-- solution-acceptance: run-base[alpha] = aaaaaaa -->', ''].join(
+      '\n',
+    );
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBaseKind).toBe('absent');
+    expect(r.runBase).toBeNull();
+    expect(r.reasons).toEqual([]);
+    expect(r.complete).toBe(true);
+  });
+
+  it('keyed marker without the comment wrapper is not a marker and the run reads as markerless', () => {
+    // Same deliberate fail-open residual as the list-bullet case above: a
+    // bare `run-base[<key>] = <sha>` with no HTML-comment wrapper is not an
+    // attempted marker at all, so the run reads as markerless.
+    const root = namedRoot('alpha');
+    const goal = ['# Goal', 'run-base[alpha] = aaaaaaa', ''].join('\n');
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBaseKind).toBe('absent');
+    expect(r.runBase).toBeNull();
+    expect(r.reasons).toEqual([]);
+    expect(r.complete).toBe(true);
+  });
+
+  it('blocker messages are bounded for long and many keys', () => {
+    const lines = ['# Goal'];
+    for (let i = 0; i < 25; i++) {
+      const key = `other-repo-${i}-` + 'x'.repeat(190);
+      lines.push(`<!-- solution-acceptance: run-base[${key}] = aaaaaaa -->`);
+    }
+    lines.push('');
+    const goal = lines.join('\n');
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.runBaseKind).toBe('unmatched-keyed');
+    const reason = r.reasons.find((x) => x.startsWith('run-base markers in 00-goal.md are keyed'));
+    expect(reason).toBeDefined();
+    expect(reason!.length).toBeLessThan(1500);
+    expect(reason).toContain('(+15 more)');
+  });
+
+  /** Build a fake linked-worktree layout: <ext>/main and <ext>/wt1. */
+  function makeLinkedWorktree(withCommondir: boolean): { mainRoot: string; wt1Root: string } {
+    const ext = externalTmpDir();
+    const mainRoot = path.join(ext, 'main');
+    const wt1Root = path.join(ext, 'wt1');
+    const wt1Gitdir = path.join(mainRoot, '.git', 'worktrees', 'wt1');
+    fs.mkdirSync(wt1Gitdir, { recursive: true });
+    if (withCommondir) {
+      fs.writeFileSync(path.join(wt1Gitdir, 'commondir'), '../..', 'utf8');
+    }
+    fs.mkdirSync(wt1Root, { recursive: true });
+    fs.writeFileSync(path.join(wt1Root, '.git'), `gitdir: ${wt1Gitdir}\n`, 'utf8');
+    return { mainRoot, wt1Root };
+  }
+
+  it('linked worktree selects the main repository basename key', () => {
+    const { wt1Root } = makeLinkedWorktree(true);
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[main] = ddddddd -->',
+      '<!-- solution-acceptance: run-base = bbbbbbb -->',
+      '',
+    ].join('\n');
+    const runDir = path.join(wt1Root, '.ai', 'runs', '2026-01-01-a');
+    makeRunAt(runDir, {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+    writePointer(wt1Root, runDir);
+
+    const r = readOwRunCompleteness(wt1Root);
+    expect(r.runBase).toBe('ddddddd');
+  });
+
+  it('linked worktree prefers the worktree basename key over the main repository key', () => {
+    const { wt1Root } = makeLinkedWorktree(true);
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[wt1] = eeeeeee -->',
+      '<!-- solution-acceptance: run-base[main] = ddddddd -->',
+      '',
+    ].join('\n');
+    const runDir = path.join(wt1Root, '.ai', 'runs', '2026-01-01-a');
+    makeRunAt(runDir, {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+    writePointer(wt1Root, runDir);
+
+    const r = readOwRunCompleteness(wt1Root);
+    expect(r.runBase).toBe('eeeeeee');
+  });
+
+  it('linked worktree without commondir derives the main repository from the gitdir path', () => {
+    const { wt1Root } = makeLinkedWorktree(false);
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[main] = ddddddd -->',
+      '<!-- solution-acceptance: run-base = bbbbbbb -->',
+      '',
+    ].join('\n');
+    const runDir = path.join(wt1Root, '.ai', 'runs', '2026-01-01-a');
+    makeRunAt(runDir, {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+    writePointer(wt1Root, runDir);
+
+    const r = readOwRunCompleteness(wt1Root);
+    expect(r.runBase).toBe('ddddddd');
+  });
+
+  it('commondir not ending in .git falls through to the gitdir-path fallback', () => {
+    const ext = externalTmpDir();
+    const mainRoot = path.join(ext, 'main');
+    const wt1Root = path.join(ext, 'wt1');
+    const wt1Gitdir = path.join(mainRoot, '.git', 'worktrees', 'wt1');
+    fs.mkdirSync(wt1Gitdir, { recursive: true });
+    // Present, but resolves to a basename that is NOT `.git` — must fall
+    // through to the gitdir-path fallback instead of giving up (F6).
+    fs.writeFileSync(path.join(wt1Gitdir, 'commondir'), 'not-a-git-dir', 'utf8');
+    fs.mkdirSync(wt1Root, { recursive: true });
+    fs.writeFileSync(path.join(wt1Root, '.git'), `gitdir: ${wt1Gitdir}\n`, 'utf8');
+
+    const goal = [
+      '# Goal',
+      '<!-- solution-acceptance: run-base[main] = ddddddd -->',
+      '<!-- solution-acceptance: run-base = bbbbbbb -->',
+      '',
+    ].join('\n');
+    const runDir = path.join(wt1Root, '.ai', 'runs', '2026-01-01-a');
+    makeRunAt(runDir, {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+    writePointer(wt1Root, runDir);
+
+    const r = readOwRunCompleteness(wt1Root);
+    expect(r.runBase).toBe('ddddddd');
   });
 });
 

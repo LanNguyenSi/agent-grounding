@@ -322,6 +322,12 @@ export function resolveOwKnob(repoPath: string): OwKnob {
  *   - `on`   : enforced → gate on `!complete` + change binding; not enforced
  *              → one explicit "enforcement is on but no run was found" blocker.
  *
+ * "Enforced" itself now has two channels (see `ow-run-completeness.ts`'s
+ * `runSource`): the worktree-local `.ai/run` pointer file, tried first, and
+ * the `<repoPath>/.ai/runs/` newest-run scan used only when no pointer file
+ * exists. The `on`-knob "no run" message below names both, since either can
+ * be the reason nothing was found.
+ *
  * Change binding (staleness fail-open fix): completeness alone lets one old
  * accepted run keep the gate green for every later change. When enforced, the
  * active run must also CLAIM the current change — see `owBindingBlockers`.
@@ -340,7 +346,7 @@ export async function owBlockersFor(repoPath: string): Promise<string[]> {
     raw = ow.complete ? [] : [...ow.reasons];
     raw.push(...(await owBindingBlockers(repoPath, ow)));
   } else if (knob === 'on') {
-    raw = ['enforcement is on but no .ai/runs/ run was found'];
+    raw = ['enforcement is on but no OW run was found (no .ai/run pointer and no .ai/runs/ run directory)'];
   } else {
     raw = [];
   }
@@ -358,7 +364,14 @@ const RUN_BASE_SHA = /^[0-9a-f]{7,40}$/i;
  *
  * Marker path (new kit): `00-goal.md` carries
  * `<!-- solution-acceptance: run-base = <sha> -->`, the repo HEAD recorded at
- * run creation. The run claims the current change iff the recorded base
+ * run creation — or, since the pointer/keyed-marker feature, a per-repo keyed
+ * variant `<!-- solution-acceptance: run-base[<repo-basename>] = <sha> -->`
+ * (`ow.runBase` already reflects whichever marker `readOwRunCompleteness`
+ * selected for this repo's key(s); this function only validates the value it
+ * receives, it does not re-derive keys). Likewise, the run this marker comes
+ * from may have been resolved either via the `<worktree-root>/.ai/run`
+ * pointer or via the `.ai/runs/` scan — both are "the active run" here. The
+ * run claims the current change iff the recorded base
  *   1. resolves to a commit in this repository,
  *   2. is an ancestor of (or equal to) the current HEAD, and
  *   3. is NOT strictly behind the fork point of the current change (the
@@ -370,15 +383,22 @@ const RUN_BASE_SHA = /^[0-9a-f]{7,40}$/i;
  * from a legitimate run-start base, and blocking would false-positive every
  * direct-to-default workflow. Documented residual.
  *
- * Heuristic path (legacy runs without the marker, tolerant downgrade): block
- * only when the run dir's `YYYY-MM-DD` prefix is strictly older than the
- * author date of the oldest commit since the fork point (fallback: HEAD's
- * author date). Day granularity: a same-day stale run passes (documented
- * residual; the reported scenario is "days later"), and a multi-day run
- * never false-blocks because its FIRST change commit is not older than the
- * run's creation date. False-positive story: cherry-picked commits keep
- * older author dates than the run dir → they read as run-newer-than-commits
- * and pass (no false block).
+ * Heuristic path (legacy runs WITHOUT any applicable `run-base` marker, or
+ * with one that still carries the `TODO` placeholder — `ow.runBaseKind` is
+ * `'absent'` or `'todo'` — tolerant downgrade): block only when the run
+ * dir's `YYYY-MM-DD` prefix is strictly older than the author date of the
+ * oldest commit since the fork point (fallback: HEAD's author date). Day
+ * granularity: a same-day stale run passes (documented residual; the
+ * reported scenario is "days later"), and a multi-day run never
+ * false-blocks because its FIRST change commit is not older than the run's
+ * creation date. False-positive story: cherry-picked commits keep older
+ * author dates than the run dir → they read as run-newer-than-commits and
+ * pass (no false block). NOT this path: `ow.runBaseKind === 'unmatched-keyed'`
+ * (keyed markers present, none matches this worktree, no unkeyed marker
+ * either) or `ow.runBaseKind === 'malformed'` (a keyed marker line that looks
+ * attempted but does not match the strict grammar, and nothing else
+ * resolved a value) skips straight past this heuristic — see the early
+ * return below.
  *
  * Pre-merge by design (BOTH paths): evaluating at an already-pushed
  * default-branch tip (fork == HEAD) false-blocks — the marker path because a
@@ -391,6 +411,18 @@ const RUN_BASE_SHA = /^[0-9a-f]{7,40}$/i;
 async function owBindingBlockers(repoPath: string, ow: OwRunCompleteness): Promise<string[]> {
   if (ow.runName === null) return [];
 
+  // The reader already pushed its own explicit blocker reason onto `reasons`
+  // for both of these cases (see ow-run-completeness.ts):
+  //   - 'unmatched-keyed': keyed run-base markers present, none matches this
+  //     worktree, no unkeyed marker either.
+  //   - 'malformed': a keyed marker line looks attempted but does not match
+  //     the strict grammar, and nothing else (keyed match or unkeyed
+  //     fallback) resolved a value.
+  // Running the legacy heuristic here on top of either would append a
+  // second, misleading "has no run-base marker" blocker for what is really
+  // the same underlying failure.
+  if (ow.runBaseKind === 'unmatched-keyed' || ow.runBaseKind === 'malformed') return [];
+
   if (ow.runBase !== null) {
     if (!RUN_BASE_SHA.test(ow.runBase)) {
       return [
@@ -402,7 +434,7 @@ async function owBindingBlockers(repoPath: string, ow: OwRunCompleteness): Promi
     const base = await revParseCommit(repoPath, ow.runBase.toLowerCase());
     if (base === null) {
       return [
-        `run '${ow.runName}' run-base ${ow.runBase} does not resolve to a commit in this repository (run created in a different repo/worktree?); start a new OW run for this change`,
+        `run '${ow.runName}' run-base ${ow.runBase} does not resolve to a commit in this repository (run created in a different repo/worktree? consider a keyed marker run-base[<repo-basename>] if this run is shared across repos); start a new OW run for this change`,
       ];
     }
     const head = await getHeadSha(repoPath);

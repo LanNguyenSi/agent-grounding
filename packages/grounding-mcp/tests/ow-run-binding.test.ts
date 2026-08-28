@@ -280,6 +280,210 @@ describe('owBlockersFor — run-base marker binding', () => {
   });
 });
 
+describe('owBlockersFor — linked git worktrees via the .ai/run pointer', () => {
+  function writePointer(worktreeRoot: string, target: string): void {
+    fs.mkdirSync(path.join(worktreeRoot, '.ai'), { recursive: true });
+    fs.writeFileSync(path.join(worktreeRoot, '.ai', 'run'), target, 'utf8');
+  }
+
+  interface RunAtOpts {
+    /** handoff final-status (default accepted → complete run). */
+    finalStatus?: string;
+    /** raw `<!-- solution-acceptance: ... -->` marker lines for 00-goal.md. */
+    goalLines?: string[];
+  }
+
+  /** Write a run's fixture files at an arbitrary absolute directory. */
+  function makeRunAt(dir: string, opts: RunAtOpts = {}): void {
+    fs.mkdirSync(dir, { recursive: true });
+    const finalStatus = opts.finalStatus ?? 'accepted';
+    fs.writeFileSync(
+      path.join(dir, '06-handoff.md'),
+      [
+        '# Operator Handoff',
+        '',
+        '## Final Status',
+        '',
+        `<!-- solution-acceptance: final-status = ${finalStatus} -->`,
+        finalStatus,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    fs.writeFileSync(
+      path.join(dir, '05-review-findings.md'),
+      [
+        '# Review Findings',
+        '',
+        '## Findings',
+        '',
+        '| Severity | Category | Description | Suggested Fix | Decision |',
+        '|---|---|---|---|---|',
+        '| low/medium/high/critical | correctness | <!-- finding --> | <!-- fix --> | accepted/fix/defer/reject |',
+        '',
+        '## Acceptance Recommendation',
+        '',
+        '<!-- solution-acceptance: acceptance-recommendation = accept -->',
+        'accept',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    if (opts.goalLines !== undefined) {
+      fs.writeFileSync(
+        path.join(dir, '00-goal.md'),
+        ['# Goal', '', ...opts.goalLines, ''].join('\n'),
+        'utf8',
+      );
+    }
+  }
+
+  /**
+   * Real linked-worktree fixture (actual `git worktree add`, not a fabricated
+   * `.git` file): upstream master O → M, cloned to `<tmp>/main` (basename
+   * `main`), plus a linked worktree at `<tmp>/wt-attached` or
+   * `<tmp>/wt-detached` carrying one change commit on top of M. Fork point of
+   * the change is M (the clone's master tip) in both cases.
+   */
+  function makeLinkedWorktreeRepo(kind: 'attached' | 'detached'): {
+    mainRepo: string;
+    wt: string;
+    o: string;
+    m: string;
+  } {
+    const upstream = path.join(tmp, 'lw-upstream');
+    fs.mkdirSync(upstream);
+    git(upstream, ['init', '-q', '-b', 'master']);
+    const o = commit(upstream, 'base.txt', 'base', '2026-06-01T10:00:00 +0000');
+    const m = commit(upstream, 'main.txt', 'main', '2026-06-10T10:00:00 +0000');
+
+    const mainRepo = path.join(tmp, 'main');
+    git(tmp, ['clone', '-q', upstream, mainRepo]);
+
+    const wt = path.join(tmp, kind === 'attached' ? 'wt-attached' : 'wt-detached');
+    if (kind === 'attached') {
+      git(mainRepo, ['worktree', 'add', '-q', '-b', 'feature', wt]);
+    } else {
+      git(mainRepo, ['worktree', 'add', '-q', '--detach', wt]);
+    }
+    commit(wt, 'work.txt', 'work');
+
+    return { mainRepo, wt, o, m };
+  }
+
+  it('linked worktree with an attached branch binds the run through the pointer', async () => {
+    const { wt, m } = makeLinkedWorktreeRepo('attached');
+    const runDir = path.join(tmp, 'workspace-attached', '.ai', 'runs', '2026-01-01-r');
+    makeRunAt(runDir, { goalLines: [`<!-- solution-acceptance: run-base[main] = ${m} -->`] });
+    writePointer(wt, runDir);
+    // Newer, incomplete scanned run under the worktree's own .ai/runs/ — the
+    // pointer must win outright, so this must never be consulted (it would
+    // block via its blocked final-status if it were).
+    makeRunAt(path.join(wt, '.ai', 'runs', '2026-02-02-stale'), { finalStatus: 'blocked' });
+
+    await expect(owBlockersFor(wt)).resolves.toEqual([]);
+  });
+
+  it('linked worktree with a detached HEAD binds the run through the pointer', async () => {
+    const { wt, m } = makeLinkedWorktreeRepo('detached');
+    const runDir = path.join(tmp, 'workspace-detached', '.ai', 'runs', '2026-01-01-r');
+    makeRunAt(runDir, { goalLines: [`<!-- solution-acceptance: run-base[main] = ${m} -->`] });
+    writePointer(wt, runDir);
+    makeRunAt(path.join(wt, '.ai', 'runs', '2026-02-02-stale'), { finalStatus: 'blocked' });
+
+    await expect(owBlockersFor(wt)).resolves.toEqual([]);
+  });
+
+  it('keyed run-base at the fork point is selected over a stale unkeyed base', async () => {
+    const { wt, o, m } = makeLinkedWorktreeRepo('attached');
+    const runDir = path.join(tmp, 'workspace-keyed', '.ai', 'runs', '2026-01-01-r');
+    makeRunAt(runDir, {
+      goalLines: [
+        `<!-- solution-acceptance: run-base[main] = ${m} -->`,
+        `<!-- solution-acceptance: run-base = ${o} -->`,
+      ],
+    });
+    writePointer(wt, runDir);
+
+    await expect(owBlockersFor(wt)).resolves.toEqual([]);
+  });
+
+  it('dangling pointer blocks end-to-end with the prefixed reason', async () => {
+    const { wt } = makeLinkedWorktreeRepo('attached');
+    writePointer(wt, path.join(tmp, 'nonexistent-run-dir'));
+    // A complete run under the worktree's own .ai/runs/ — must not be used as
+    // a fallback: a dangling pointer is a distinct fail-closed blocker.
+    makeRunAt(path.join(wt, '.ai', 'runs', '2026-01-01-real'));
+
+    const blockers = await owBlockersFor(wt);
+    expect(blockers).toHaveLength(1);
+    expect(blockers[0]).toMatch(
+      /^orchestrator-workflow: run pointer '.*\/\.ai\/run' does not resolve: target '.*' does not exist/,
+    );
+  });
+
+  it('on knob names the pointer in its no-run message', async () => {
+    const { repo } = makeLocalRepo();
+    fs.mkdirSync(path.join(repo, '.ai'), { recursive: true });
+    fs.writeFileSync(
+      path.join(repo, '.ai', 'solution-acceptance.json'),
+      '{"orchestratorWorkflow":"on"}\n',
+      'utf8',
+    );
+    await expect(owBlockersFor(repo)).resolves.toEqual([
+      'orchestrator-workflow: enforcement is on but no OW run was found (no .ai/run pointer and no .ai/runs/ run directory)',
+    ]);
+  });
+
+  it('stale keyed base is still caught at the verdict level', async () => {
+    const { wt, o } = makeLinkedWorktreeRepo('attached');
+    const runDir = path.join(tmp, 'workspace-stale-keyed', '.ai', 'runs', '2026-01-01-r');
+    makeRunAt(runDir, { goalLines: [`<!-- solution-acceptance: run-base[main] = ${o} -->`] });
+    writePointer(wt, runDir);
+
+    const blockers = await owBlockersFor(wt);
+    expect(blockers).toHaveLength(1);
+    expect(blockers[0]).toContain('predates the current change');
+  });
+
+  it('keyed markers for other repos only yield a single reader blocker at the verdict level', async () => {
+    // A goal file keyed ONLY for a repo this worktree can never match (candidate
+    // keys are the worktree's own basename and the main repository's basename,
+    // never 'other'): the reader's own selectRunBase() reason must be the ONLY
+    // blocker — owBindingBlockers must skip the legacy date heuristic for this
+    // case instead of appending a second, misleading "has no run-base marker"
+    // blocker on top of it.
+    const { wt, m } = makeLinkedWorktreeRepo('attached');
+    const runDir = path.join(tmp, 'workspace-unmatched-keyed', '.ai', 'runs', '2026-01-01-r');
+    makeRunAt(runDir, { goalLines: [`<!-- solution-acceptance: run-base[other] = ${m} -->`] });
+    writePointer(wt, runDir);
+
+    const blockers = await owBlockersFor(wt);
+    expect(blockers).toHaveLength(1);
+    expect(blockers[0]).toMatch(
+      /^orchestrator-workflow: run-base markers in 00-goal\.md are keyed \(keys: other\)/,
+    );
+    expect(blockers.some((b) => b.includes('has no run-base marker'))).toBe(false);
+  });
+
+  it('malformed keyed marker yields a single reader blocker at the verdict level', async () => {
+    // A near-miss keyed marker (space before the bracket) in a run dir with an
+    // OLD date prefix — if the malformed line silently degraded to
+    // runBaseKind 'absent', the legacy date heuristic would fire and this
+    // 2020-dated run would block for staleness instead of for the malformed
+    // marker. It must instead resolve to the reader's own 'malformed'
+    // blocker, and nothing else.
+    const { wt, m } = makeLinkedWorktreeRepo('attached');
+    const runDir = path.join(tmp, 'workspace-malformed-keyed', '.ai', 'runs', '2020-01-01-r');
+    makeRunAt(runDir, { goalLines: [`<!-- solution-acceptance: run-base [main] = ${m} -->`] });
+    writePointer(wt, runDir);
+
+    const blockers = await owBlockersFor(wt);
+    expect(blockers).toHaveLength(1);
+    expect(blockers[0]).toMatch(/^orchestrator-workflow: malformed keyed run-base marker\(s\)/);
+  });
+});
+
 describe('owBlockersFor — interaction with completeness and the knob', () => {
   it('an incomplete AND stale run reports both the completeness and binding blockers', async () => {
     const { repo } = makeLocalRepo();

@@ -2,6 +2,96 @@
 
 ## Unreleased
 
+### Added
+
+- **OW run resolution is now pointer-first, with keyed `run-base` markers**
+  (task 43a7ef58). `readOwRunCompleteness` (`src/ow-run-completeness.ts`)
+  resolves the worktree-local `.ai/run` pointer file before falling back to
+  the newest-run scan of `.ai/runs/`; the scan is consulted only when no
+  pointer file exists. A pointer file that exists but does not resolve
+  (unreadable, empty, a relative path, or a target missing / not a
+  directory / not a dated run directory) is a distinct fail-closed blocker
+  and never silently falls back to the scan. Which channel resolved the run
+  is reported on the new `runSource: 'pointer' | 'scan' | null` field. The
+  `run-base` change-binding marker in `00-goal.md` may now also be keyed per
+  repo (`run-base[<repo-basename>] = <sha>`), so one run can bind more than
+  one repo in a monorepo/fleet: selection tries the worktree's own basename
+  first, then — for a linked git worktree — the main repository's basename
+  (resolved via the worktree's `.git` `gitdir:` file and `commondir`), and
+  the first key whose keyed marker is present decides, without falling
+  through to a later key or the legacy unkeyed marker. `owBlockersFor`'s
+  `on`-knob "no run" message (`src/solution-verdict.ts`) now names both
+  resolution channels. The `.ai/run` pointer file and the keyed markers are
+  written by the orchestrator-workflow kit's writer side (agent-dx task
+  2c3d141c, not yet released); this repo only reads and verifies them.
+  Covered by `tests/ow-run-completeness.test.ts` (reader unit tests,
+  including real and fabricated linked-worktree fixtures) and
+  `tests/ow-run-binding.test.ts` (`owBlockersFor` end-to-end through real
+  `git worktree add` fixtures, attached and detached).
+  - Review-round-1 fixes (task 43a7ef58, T-001): a goal file with keyed
+    `run-base` markers but none matching this worktree's candidate keys,
+    and no unkeyed marker either, is now an explicit fail-closed blocker
+    naming the keys found and the keys tried — previously this fell
+    through silently. Candidate-key matching against the recorded keyed
+    markers is now case-insensitive. `resolveRunPointer` resolves the
+    pointer target through `fs.realpathSync` before the directory/dated
+    checks, so a symlinked run directory is followed to its real path.
+    `findWorktreeRoot` now uses `fs.lstatSync` instead of `fs.existsSync`,
+    so a dangling `.git` symlink still marks the worktree root instead of
+    being treated as absent.
+  - Review-round-1 fixes (task 43a7ef58, T-004): `OwRunCompleteness` gains
+    `runBaseKind: 'sha' | 'todo' | 'absent' | 'unmatched-keyed'`, naming WHY
+    `runBase` has the value it has. `owBindingBlockers` (`src/solution-verdict.ts`)
+    now skips the legacy date-heuristic path outright when
+    `runBaseKind === 'unmatched-keyed'`: previously, a goal file with keyed
+    `run-base` markers that matched none of this worktree's candidate keys
+    (and no unkeyed marker) correctly got the reader's own explicit
+    fail-closed reason, but the binding check still ran the heuristic on top
+    of it and could append a second, misleading "has no run-base marker"
+    blocker for the same underlying failure. Now exactly one blocker is
+    reported.
+  - Review-round-2 fix (task 43a7ef58, T-005): keyed `run-base` markers are
+    now a grammar instead of one regex per accepted shape. A well-formed
+    keyed marker must be a WHOLE LINE (leading/trailing whitespace only)
+    matching `<!-- solution-acceptance: run-base[<key>] = <value> -->`; a
+    line that starts like one (`run-base[`, optionally with stray whitespace
+    before the bracket) but does not match the strict shape is now collected
+    as an explicit MALFORMED blocker instead of degrading silently to the
+    legacy date heuristic — previously a near-miss such as `run-base
+    [alpha] = <sha>` or `run-base[alpha = <sha>` (missing bracket) or an
+    empty value fell straight through, unnoticed. `OwRunCompleteness`'s
+    `runBaseKind` gains `'malformed'`; `owBindingBlockers` skips the
+    heuristic for both `'malformed'` and `'unmatched-keyed'`, so exactly one
+    blocker is still reported, never two. A strict match whose key is itself
+    a documentation placeholder (`<repo-basename>`-style) is ignored, not
+    counted as present; a prose line that merely quotes the marker syntax,
+    or a marker that does not start its own line, is also ignored — the
+    collection regex is now whole-line-anchored, so it can no longer be
+    blocked by a complete line quoting the marker form, nor swallow the next
+    line's first token on an empty value. Both new blocker messages are
+    bounded (keys truncated to 64 chars / 10 shown, malformed lines
+    truncated to 80 chars / 5 shown, `(+N more)` beyond that). The legacy
+    unkeyed `run-base` matcher is unchanged (documented asymmetry: it stays
+    a non-line-anchored substring match).
+  - Review-round-3 fix (task 43a7ef58, T-006): the strict keyed-marker shape
+    stays exact, but the LOOSE net that decides whether a line was an
+    *attempt* at a keyed marker is now tolerant of the deviations that sit
+    BEFORE the `run-base` token and previously slipped past both nets: it is
+    case-insensitive (`RUN-BASE[`), allows whitespace around the colon
+    (`solution-acceptance : run-base[`), and accepts one or more dashes in
+    the comment opener (`<!--- `). Such a line now BLOCKS as malformed
+    instead of falling through to the legacy date heuristic. The line-start
+    anchoring of both nets is unchanged and is now documented as a
+    deliberate residual rather than as "ignored": a keyed marker that does
+    not start its own line (a list bullet, a marker embedded in prose, a
+    bare `run-base[k] = <sha>` with no comment wrapper) is not a marker at
+    all, so with no other applicable marker the run behaves as markerless
+    and falls through to the legacy date heuristic (fail-open by design; a
+    fully fail-closed variant is tracked as its own task, 6da2c230). Both residual
+    shapes, the placeholder-key filter standing alone (no unkeyed marker to
+    mask it) and the `(?!-->)` value guard are now pinned by their own
+    tests.
+
 ## 0.8.0, 2026-08-19
 
 ### Added

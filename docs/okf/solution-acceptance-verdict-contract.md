@@ -3,7 +3,7 @@ type: invariant
 title: Solution-acceptance verdict contract — why the marker lives outside the ledger
 description: A "done" verdict is derived from a real preflight+OW run, HEAD-pinned, and written to an XDG state marker outside the agent-writable evidence-ledger because ledger rows are forgeable via ledger_add.
 tags: [solution-acceptance, verdicts, anti-hacking, trust-boundary]
-timestamp: 2026-08-26T11:27:38Z
+timestamp: 2026-08-28T11:30:59Z
 sources:
   - packages/grounding-mcp/src/solution-verdict.ts
   - packages/grounding-mcp/src/verdict-signing.ts
@@ -29,7 +29,7 @@ Four properties hold, stated verbatim as the anti-hacking contract in the header
 
 1. **Derived, not claimed** — `ready` comes from preflight's real run; the caller
    supplies no result.
-2. **Producer != solver**: `evaluateSolution` (`solution-verdict.ts:577#"export async function evaluateSolution("`) *runs* preflight; the check
+2. **Producer != solver**: `evaluateSolution` (`solution-verdict.ts:609#"export async function evaluateSolution("`) *runs* preflight; the check
    set is taken from the repo's committed `.preflight.json`, not from arguments, so an
    agent cannot weaken the gate at call time.
 3. **HEAD-pinned** — a verdict counts only at the HEAD it was produced at; any rework
@@ -89,7 +89,7 @@ timestamp, source }` (`solution-verdict.ts:53-67#"source: string;"`), plus, sinc
 `alg?` (`solution-verdict.ts:77#"alg?: string;"`) and `signature?` (`solution-verdict.ts:79#"signature?: string;"`). `head` is a 40-hex sha; `ready` is derived;
 `source` is `'preflight'`. The 7-key shape is pinned by the harness consumer; see the
 `writeVerdict` docblock at `solution-verdict.ts:159-183#"trade than the residual it would close."` ("`alg` + `signature` in addition to the 7
-pinned fields", mirroring the consumer). The comments at `solution-verdict.ts:564-566#"OW state flows entirely through the"` and `solution-verdict.ts:634-636#"(Signing, which DOES add"`
+pinned fields", mirroring the consumer). The comments at `solution-verdict.ts:596-598#"OW state flows entirely through the"` and `solution-verdict.ts:666-668#"(Signing, which DOES add"`
 scope the OW arms: they fold into `ready`/`blockers` only and do NOT add fields. `alg`/`signature` are the one addition
 to that pinning rule, and deliberately additive-only (see "Verdict marker signing"
 below): they are optional on the TypeScript type only because a hand-constructed
@@ -209,70 +209,164 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
 
 `evaluateSolution` fails **closed**: an invalid `id`, an unresolvable git HEAD, a missing
 `preflight` binary (ENOENT), or unparseable preflight output all return an `error` and
-write NO marker (`solution-verdict.ts:577-629#"preflight invocation failed:"`), so the gate stays denied via "no verdict recorded". The
-binary is `SOLUTION_PREFLIGHT_BIN ?? 'preflight'` (`solution-verdict.ts:598#"SOLUTION_PREFLIGHT_BIN ?? 'preflight'"`); preflight exits non-zero
+write NO marker (`solution-verdict.ts:609-661#"preflight invocation failed:"`), so the gate stays denied via "no verdict recorded". The
+binary is `SOLUTION_PREFLIGHT_BIN ?? 'preflight'` (`solution-verdict.ts:630#"SOLUTION_PREFLIGHT_BIN ?? 'preflight'"`); preflight exits non-zero
 when not-ready but still prints JSON, so a non-zero exit with parseable stdout is a normal
 not-ready verdict, not a failure. `writeVerdict`, and therefore signing, is only ever
-reached (`solution-verdict.ts:654#"writeVerdict(verdict)"`) on a successfully parsed, non-error result.
+reached (`solution-verdict.ts:686#"writeVerdict(verdict)"`) on a successfully parsed, non-error result.
 
 ### The OW process-completeness arm (cross-repo coupling)
 
 Beyond preflight's technical floor, `solution_evaluate` folds in **orchestrator-workflow
-(OW) process-completeness** via `owBlockersFor` (`solution-verdict.ts:333#"export async function owBlockersFor"`), whose blockers are folded into
-`ready` and `blockers` only (`solution-verdict.ts:634-643#"...pf.blockers, ...owBlockers"`): `ready = pf.ready && owBlockers.length === 0`
-(`solution-verdict.ts:642#"owBlockers.length === 0"`). Each OW blocker is prefixed `orchestrator-workflow: ` (`solution-verdict.ts:347#"orchestrator-workflow: "`).
+(OW) process-completeness** via `owBlockersFor` (`solution-verdict.ts:339#"export async function owBlockersFor"`), whose blockers are folded into
+`ready` and `blockers` only (`solution-verdict.ts:666-675#"...pf.blockers, ...owBlockers"`): `ready = pf.ready && owBlockers.length === 0`
+(`solution-verdict.ts:674#"owBlockers.length === 0"`). Each OW blocker is prefixed `orchestrator-workflow: ` (`solution-verdict.ts:353#"orchestrator-workflow: "`).
 
 `ow-run-completeness.ts` is a **pure, side-effect-free reader** (no subprocess, no
 mutation — comment `ow-run-completeness.ts:3#"Pure, side-effect-free read"`, spelled out again at `ow-run-completeness.ts:9-11#"here writes, spawns, or mutates."`: "This module only READS...
 nothing here writes, spawns, or mutates"). Given a `repoPath`, it reads a *third* repo's
 OW run files under `<repoPath>/.ai/runs/`:
 
-- **Active run selection** (`findActiveRun`, `ow-run-completeness.ts:250-267#"return path.join(runsDir, dirs[0]);"`): newest dated dir, only dirs
-  matching `/^\d{4}-\d{2}-\d{2}-/` are eligible; name-descending sort, mtime tiebreak.
-- **`06-handoff.md`** → `final-status` marker (`resolveAcceptanceValue`, `ow-run-completeness.ts:155#"'final-status', 'Final Status'"`); must
-  be in `{accepted, accepted_with_notes}` (`ow-run-completeness.ts:101#"ACCEPTED_FINAL_STATUS"`).
-- **`05-review-findings.md`** → `acceptance-recommendation` marker (`ow-run-completeness.ts:172#"const recommendation = resolveAcceptanceValue"`); must be in
-  `{accept, accept_with_notes}` (`ow-run-completeness.ts:102#"ACCEPT_RECOMMENDATION"`). Plus the **findings table**: rows are located
+- **Active run selection, pointer-first**: the worktree root is found by walking
+  up from `repoPath` for the nearest `.git` entry — a directory, a linked
+  worktree's `.git` FILE, or even a DANGLING symlink, checked with `fs.lstatSync`
+  so a broken symlink still marks the root
+  (`findWorktreeRoot`, `ow-run-completeness.ts:580-584#"fs.lstatSync(path.join(dir, '.git'));"`).
+  A `.ai/run` pointer file at that root, when present, has its target resolved
+  with `fs.realpathSync` before the directory/dated-prefix checks — a
+  symlinked pointer target is therefore transparent, its REAL directory is
+  what is checked and returned. Only the first non-empty line of the pointer
+  file matters; an optional second line (for example `base=<sha>`) is
+  ignored outright — the named run directory's own files are the source of
+  truth, never the pointer file
+  (`resolveRunPointer`, `ow-run-completeness.ts:601-604#"why an invalid pointer is a distinct fail-closed blocker rather than a"`,
+  `ow-run-completeness.ts:615-653#"return { kind: 'run', dir: realTarget };"`)
+  and WINS OUTRIGHT over the newest-run scan
+  (`ow-run-completeness.ts:259-273#"runSource: 'pointer',"`); the scan
+  (`findActiveRun`, `ow-run-completeness.ts:738-755#"return path.join(runsDir, dirs[0]);"`:
+  newest dated dir, only dirs matching `/^\d{4}-\d{2}-\d{2}-/` are eligible;
+  name-descending sort, mtime tiebreak) runs ONLY when no pointer file exists at
+  all (`ow-run-completeness.ts:256-281#"runSource = activeRun === null ? null : 'scan';"`).
+  A pointer file that exists but does not resolve (unreadable, empty, a relative
+  path, or a target missing / not a directory / not date-prefixed) is a DISTINCT
+  fail-closed blocker and never falls back to the scan. Which channel actually
+  resolved the run is reported on `runSource: 'pointer' | 'scan' | null`
+  (`ow-run-completeness.ts:170-180#"runSource: 'pointer' | 'scan' | null;"`).
+- **`06-handoff.md`** → `final-status` marker (`resolveAcceptanceValue`, `ow-run-completeness.ts:301#"'final-status', 'Final Status'"`); must
+  be in `{accepted, accepted_with_notes}` (`ow-run-completeness.ts:215#"ACCEPTED_FINAL_STATUS"`).
+- **`05-review-findings.md`** → `acceptance-recommendation` marker (`ow-run-completeness.ts:318#"const recommendation = resolveAcceptanceValue"`); must be in
+  `{accept, accept_with_notes}` (`ow-run-completeness.ts:216#"ACCEPT_RECOMMENDATION"`). Plus the **findings table**: rows are located
   by anchoring on a header row whose cells include both `Severity` and `Decision`
-  (`parseFindingsHeaderRow`, `ow-run-completeness.ts:476#"function parseFindingsHeaderRow"`), not by the `## Findings` heading text. A concrete
+  (`parseFindingsHeaderRow`, `ow-run-completeness.ts:964#"function parseFindingsHeaderRow"`), not by the `## Findings` heading text. A concrete
   `high`/`critical` severity row ARMS the gate UNLESS its Decision is explicitly in
-  `{accepted, defer}` (`RESOLVED_DECISIONS`, `ow-run-completeness.ts:107#"RESOLVED_DECISIONS = new Set(['accepted', 'defer'])"`) — fix, reject, blank, `open`,
+  `{accepted, defer}` (`RESOLVED_DECISIONS`, `ow-run-completeness.ts:221#"RESOLVED_DECISIONS = new Set(['accepted', 'defer'])"`) — fix, reject, blank, `open`,
   `TODO`, unknown all block (fail-closed). All tables are parsed (appended second-round
   tables count); a findings section with content but no table yields an explicit format
-  blocker (`findingsFormatBlocker`, `ow-run-completeness.ts:499#"function findingsFormatBlocker"`).
+  blocker (`findingsFormatBlocker`, `ow-run-completeness.ts:987#"function findingsFormatBlocker"`).
 - **Mixed-state bypass guard** (task `8f173547`): completeness above is not enough —
   an operator could flip the acceptance markers to an accepted value without ever
-  transferring the reviewer's findings into the table. `scanFindings` (`ow-run-completeness.ts:397-454#"  return scan;"`)
+  transferring the reviewer's findings into the table. `scanFindings` (`ow-run-completeness.ts:885-942#"  return scan;"`)
   additionally tracks whether the shipped review template's placeholder/legend row
   survived untouched (`placeholderRowSeen`, matched byte-exactly cell-by-cell by
-  `isPlaceholderRow`, `ow-run-completeness.ts:462-465#"PLACEHOLDER_ROW_CELLS[idx]"`, against `OW_FINDINGS_PLACEHOLDER_ROW`,
-  `ow-run-completeness.ts:121-122#"correctness/architecture/security/tests/maintainability/performance/docs"`) and whether any row anywhere carries a real concrete severity
+  `isPlaceholderRow`, `ow-run-completeness.ts:950-953#"PLACEHOLDER_ROW_CELLS[idx]"`, against `OW_FINDINGS_PLACEHOLDER_ROW`,
+  `ow-run-completeness.ts:235-236#"correctness/architecture/security/tests/maintainability/performance/docs"`) and whether any row anywhere carries a real concrete severity
   (`concreteRowSeen`). When the placeholder row survived AND no concrete row was ever
-  seen, `readOwRunCompleteness` blocks with `complete: false` (`ow-run-completeness.ts:198-206#"genuinely a zero-findings review"`), naming
+  seen, `readOwRunCompleteness` blocks with `complete: false` (`ow-run-completeness.ts:347-352#"genuinely a zero-findings review"`), naming
   both escape hatches: transfer the reviewer's findings into the table, or delete the
   placeholder row for a genuine zero-findings review. A header row with no data rows at
   all (the placeholder already deleted) still reads `complete: true`, and a concrete
   finding row sitting next to a left-behind placeholder row is unaffected.
-- **`00-goal.md`** → the `run-base` marker (`resolveRunBase`, `ow-run-completeness.ts:230#"function resolveRunBase"`), raw `\S+`
-  capture, `TODO` → absent. This module only *extracts* it; git verification happens in
-  the verdict layer.
+- **`00-goal.md`** → the `run-base` marker, keyed per repo, is a GRAMMAR rather than
+  one regex per accepted shape. `collectKeyedRunBaseMarkers` walks
+  `goal.split(/\r?\n/)` and treats a keyed marker as a WHOLE-LINE HTML comment
+  (leading/trailing whitespace only): a strict-shape line
+  `<!-- solution-acceptance: run-base[<key>] = <value> -->` is well-formed.
+  The strict shape is EXACT — lowercase `solution-acceptance:` and
+  `run-base`, no whitespace before the colon, exactly two dashes in the
+  comment opener — the same exactness the legacy unkeyed matcher already
+  demands. The separate LOOSE net that decides whether a line was an ATTEMPT
+  at a keyed marker is deliberately more tolerant: case-insensitive
+  (`RUN-BASE[`), whitespace allowed around the colon
+  (`solution-acceptance : run-base[`) and before the bracket
+  (`run-base [alpha]`), one or more dashes in the comment opener (`<!--- `).
+  A line the loose net catches but the strict shape rejects is collected as
+  MALFORMED instead of silently degrading
+  (`ow-run-completeness.ts:446-466#"return { markers, malformedLines };"`;
+  grammar constants at
+  `ow-run-completeness.ts:416-434#"const PLACEHOLDER_KEY = /^<[^>]*>$/;"`). A
+  strict match whose key is placeholder-shaped (`<repo-basename>`-style,
+  `/^<[^>]*>$/`) is a documentation example, not a marker, and is skipped
+  entirely — not counted as present, not malformed; an example that itself
+  deviates from the strict shape (case, colon spacing, comment opener) is an
+  attempt like any other and blocks as malformed. Both nets are anchored at
+  the LINE START and require the literal tokens `solution-acceptance`, a
+  colon and `run-base[`; that anchoring and exactness are the documented
+  residual: a keyed marker that does not start its own line (a list bullet
+  `- <!-- ... -->`, a marker embedded in prose, a bare `run-base[alpha] = <sha>`
+  with no comment wrapper), or a whole-line comment that deviates in those
+  tokens (the colon omitted, `run_base`, `runbase`, a full-width colon), is
+  NOT a marker — neither well-formed nor malformed. With no other
+  applicable marker in the file the run then behaves as MARKERLESS and falls
+  through to the legacy date heuristic (fail-open by design, the kit's
+  documented markerless path; a fully fail-closed variant is tracked as its
+  own task). All well-formed keyed markers are collected in
+  one scan and matched CASE-INSENSITIVELY against each candidate key from
+  `repoKeys`, tried in order — the worktree's own basename, then (for a LINKED
+  git worktree) the main repository's basename, resolved via the worktree's
+  `.git` `gitdir:` file and `commondir`
+  (`repoKeys`/`resolveMainWorktreeRoot`,
+  `ow-run-completeness.ts:663-670#"return keys;"`,
+  `ow-run-completeness.ts:687-724#"if (worktreesMatch) return worktreesMatch[1];"`)
+  — and the FIRST key whose WELL-FORMED keyed marker is present decides (its
+  value, or `null` for `TODO`) without falling through to a later key or to
+  the legacy unkeyed `run-base` marker
+  (`ow-run-completeness.ts:519-561#"exists; add a run-base[<key>] marker for this repo or an unkeyed run-base marker"`).
+  Only when no well-formed keyed marker matches any key does the unkeyed
+  marker apply. Whenever malformed near-miss lines were found, their blocker
+  reason is reported REGARDLESS of whether a keyed match or the unkeyed
+  marker also resolved a value (the value is still returned, but the run is
+  not complete either way); when NOTHING resolved a value AND malformed
+  lines exist, that takes priority over "no key matches"
+  (`runBaseKind: 'malformed'` beats `'unmatched-keyed'`) — never a silent
+  fallback to the date heuristic. Both blocker messages are bounded (keys
+  truncated to 64 chars / 10 shown, malformed lines truncated to 80 chars / 5
+  shown, `(+N more)` beyond that) so a goal file with many or very long keys
+  cannot blow up the reason string
+  (`ow-run-completeness.ts:484-489#"(expected '<!-- solution-acceptance: run-base[<key>] = <sha> -->' on its own line)"`).
+  `owBindingBlockers` in the verdict layer skips the legacy date heuristic
+  outright for BOTH `'unmatched-keyed'` and `'malformed'`, so exactly one
+  blocker is reported, never two
+  (`solution-verdict.ts:411-424#"if (ow.runBaseKind === 'unmatched-keyed' || ow.runBaseKind === 'malformed') return [];"`).
+  Raw `\S+` capture for the value. `runBaseKind` (`'sha' | 'todo' | 'absent' |
+  'unmatched-keyed' | 'malformed'`) names WHY `runBase` has the value it has,
+  so the verdict layer can branch without re-deriving this key logic
+  (`ow-run-completeness.ts:181-206#"runBaseKind: 'sha' | 'todo' | 'absent' | 'unmatched-keyed' | 'malformed';"`).
+  This module only *extracts* the value; git verification happens in the
+  verdict layer. Documented asymmetry: the legacy UNKEYED `run-base` matcher
+  (`matchMarker`) stays NOT line-anchored (a substring match anywhere in the
+  file) — only the keyed grammar was hardened.
 
-**Marker-first, prose fallback** throughout (`resolveAcceptanceValue`, `ow-run-completeness.ts:290-308#"kind: 'value', value: prose"`): the
+**Marker-first, prose fallback** throughout (`resolveAcceptanceValue`, `ow-run-completeness.ts:778-796#"kind: 'value', value: prose"`): the
 machine-readable `<!-- solution-acceptance: <field> = <value> -->` marker wins; only when
 the field is entirely absent does it fall back to the `## <heading>` prose value. A `TODO`
 or malformed marker surfaces its own blocker and never silently falls back (fail-closed).
 
-**Change binding** (`owBindingBlockers`, `solution-verdict.ts:391-436#"no OW run claims this change"`): completeness alone
+**Change binding** (`owBindingBlockers`, `solution-verdict.ts:411-468#"no OW run claims this change"`): completeness alone
 would let one old accepted run keep the gate green for every later change, so the active
 run must also *claim the current change*. New-kit runs carry a `run-base` sha in
-`00-goal.md`; it must (1) resolve to a commit here, (2) be an ancestor of HEAD, and (3)
+`00-goal.md` — possibly a keyed one, and the run itself may have been resolved via the
+pointer or the scan; either way `ow.runBase`/`ow.runName` are already resolved by the time
+this check sees them (`solution-verdict.ts:365-374#"run claims the current change iff the recorded base"`).
+It must (1) resolve to a commit here, (2) be an ancestor of HEAD, and (3)
 not lie strictly behind the fork point (merge-base of HEAD with the remote default branch).
-`RUN_BASE_SHA = /^[0-9a-f]{7,40}$/i` (`solution-verdict.ts:354#"RUN_BASE_SHA = /^[0-9a-f]{7,40}$/i"`) validates the agent-writable value BEFORE
+`RUN_BASE_SHA = /^[0-9a-f]{7,40}$/i` (`solution-verdict.ts:360#"RUN_BASE_SHA = /^[0-9a-f]{7,40}$/i"`) validates the agent-writable value BEFORE
 any git call (argv-injection guard). Legacy markerless runs downgrade to a day-granular
-date heuristic (`solution-verdict.ts:431-436#"no OW run claims this change"`). The knob `<repoPath>/.ai/solution-acceptance.json`
+date heuristic (`solution-verdict.ts:463-468#"no OW run claims this change"`). The knob `<repoPath>/.ai/solution-acceptance.json`
 `{ "orchestratorWorkflow": "auto"|"on"|"off" }` resolves **fail-SAFE** to `auto` on any
 missing/unparseable/invalid config (`resolveOwKnob`, `solution-verdict.ts:301-306#"v === 'auto' || v === 'on' || v === 'off'"`); a malformed file can
-never silently disable the gate.
+never silently disable the gate. When enforced but no run was found at all (pointer absent
+AND no `.ai/runs/` dir), the `on` knob names both channels in its blocker
+(`solution-verdict.ts:349#"no OW run was found (no .ai/run pointer and no .ai/runs/ run directory)"`).
 
 ## What breaks it
 
@@ -300,7 +394,7 @@ never silently disable the gate.
   change. preflight's own clean-worktree check also fails a dirty tree, so a fresh
   evaluate on uncommitted work is not-ready.
 - **Evaluating at an already-pushed default-branch tip.** Pre-merge by design: the binding
-  arm false-blocks (fork == HEAD), which is deliberate and pinned by a test (`solution-verdict.ts:383-389#"matches the ship-flow, which evaluates before pushing."`).
+  arm false-blocks (fork == HEAD), which is deliberate and pinned by a test (`solution-verdict.ts:403-409#"matches the ship-flow, which evaluates before pushing."`).
   The remedy in the blocker text — start a new run — matches the ship-flow, which evaluates
   before pushing.
 - **Marker-shadowing in run files.** First marker match wins; a quoted mention of marker
