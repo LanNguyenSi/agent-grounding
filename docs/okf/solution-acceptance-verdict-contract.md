@@ -3,7 +3,7 @@ type: invariant
 title: Solution-acceptance verdict contract — why the marker lives outside the ledger
 description: A "done" verdict is derived from a real preflight+OW run, HEAD-pinned, and written to an XDG state marker outside the agent-writable evidence-ledger because ledger rows are forgeable via ledger_add.
 tags: [solution-acceptance, verdicts, anti-hacking, trust-boundary]
-timestamp: 2026-08-26T11:27:38Z
+timestamp: 2026-08-28T11:30:59Z
 sources:
   - packages/grounding-mcp/src/solution-verdict.ts
   - packages/grounding-mcp/src/verdict-signing.ts
