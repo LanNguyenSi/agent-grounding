@@ -1554,6 +1554,48 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     expect(r.complete).toBe(false);
   });
 
+  it('keyed marker line without the colon is not a marker and the run reads as markerless', () => {
+    // Pins the residual on purpose (review round 4): the loose net requires
+    // the literal tokens, so a colon-less attempt is markerless (fail-open,
+    // legacy heuristic). If the fail-closed follow-up lands, flip this test.
+    const root = namedRoot('alpha');
+    const goal = ['# Goal', '<!-- solution-acceptance run-base[alpha] = aaaaaaa -->', ''].join(
+      '\n',
+    );
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBaseKind).toBe('absent');
+    expect(r.runBase).toBeNull();
+    expect(r.reasons).toEqual([]);
+    expect(r.complete).toBe(true);
+  });
+
+  it('placeholder example with a tolerated deviation blocks as malformed', () => {
+    // The placeholder skip applies to STRICT matches only: an example line
+    // that deviates from the strict shape is an attempt like any other.
+    const root = namedRoot('alpha');
+    const goal = [
+      '# Goal',
+      '<!-- Solution-Acceptance: run-base[<repo-basename>] = <sha> -->',
+      '',
+    ].join('\n');
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(r.runBase).toBeNull();
+    expect(r.complete).toBe(false);
+  });
+
   it('a malformed line beside a well-formed matching keyed marker keeps the value but still blocks', () => {
     const root = namedRoot('alpha');
     const goal = [

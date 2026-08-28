@@ -296,11 +296,16 @@ OW run files under `<repoPath>/.ai/runs/`:
   `ow-run-completeness.ts:416-434#"const PLACEHOLDER_KEY = /^<[^>]*>$/;"`). A
   strict match whose key is placeholder-shaped (`<repo-basename>`-style,
   `/^<[^>]*>$/`) is a documentation example, not a marker, and is skipped
-  entirely — not counted as present, not malformed. Both nets are anchored at
-  the LINE START, and that anchoring is the documented residual: a keyed
-  marker that does not start its own line (a list bullet `- <!-- ... -->`, a
-  marker embedded in prose, a bare `run-base[alpha] = <sha>` with no comment
-  wrapper) is NOT a marker — neither well-formed nor malformed. With no other
+  entirely — not counted as present, not malformed; an example that itself
+  deviates from the strict shape (case, colon spacing, comment opener) is an
+  attempt like any other and blocks as malformed. Both nets are anchored at
+  the LINE START and require the literal tokens `solution-acceptance`, a
+  colon and `run-base[`; that anchoring and exactness are the documented
+  residual: a keyed marker that does not start its own line (a list bullet
+  `- <!-- ... -->`, a marker embedded in prose, a bare `run-base[alpha] = <sha>`
+  with no comment wrapper), or a whole-line comment that deviates in those
+  tokens (the colon omitted, `run_base`, `runbase`, a full-width colon), is
+  NOT a marker — neither well-formed nor malformed. With no other
   applicable marker in the file the run then behaves as MARKERLESS and falls
   through to the legacy date heuristic (fail-open by design, the kit's
   documented markerless path; a fully fail-closed variant is tracked as its

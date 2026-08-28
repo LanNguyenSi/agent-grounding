@@ -247,7 +247,7 @@
   named by the review and both confirmed reproducing:
   `solution-acceptance-verdict-contract.md`:128 (`verdict-signing.ts:100-109`,
   anchor `return newPath;` also matches line 107, not just the last line
-  109) and same doc:245 (`ow-run-completeness.ts:885-942`, anchor
+  109) and same doc:245 (`ow-run-completeness.ts:397-454`, anchor
   `return scan;` also matches line 399, not just the last line 454). Both
   fixed by widening the anchor text to include its own 2-space indent
   (`  return newPath;` / `  return scan;`), which the shallower-indented

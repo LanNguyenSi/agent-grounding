@@ -109,17 +109,17 @@
 //     rejects is a MALFORMED marker line — collected and surfaced as its own
 //     fail-closed blocker (`runBaseKind: 'malformed'`) rather than silently
 //     falling through to the legacy date heuristic. Both nets are anchored at
-//     the LINE START, and that anchoring is the residual: a keyed marker that
-//     does not start its own line (a list bullet `- <!-- ... -->`, a marker
-//     embedded in prose, a bare `run-base[k] = <sha>` with no comment wrapper)
+//     the LINE START and require the literal tokens `solution-acceptance`, a colon and `run-base[`; that anchoring and exactness are the residual:
+//     a keyed marker that does not start its own line (a list bullet `- <!-- ... -->`, a marker embedded in prose, a bare `run-base[k] = <sha>`
+//     with no comment wrapper) or a whole-line comment deviating in those tokens (e.g. the colon omitted, `run_base`, `runbase`)
 //     is NOT a marker — neither well-formed nor malformed. With no other
 //     applicable marker in the file the run then behaves as MARKERLESS and
 //     falls through to the legacy date heuristic (fail-open by design, the
 //     kit's documented markerless path; a fully fail-closed variant is
 //     tracked as its own task). A strict match whose key is
 //     placeholder-shaped (`<repo-basename>`-style, `/^<[^>]*>$/`) is a
-//     documentation example, not a marker, and is skipped the same way (not
-//     counted as present). All well-formed keyed markers are
+//     documentation example, not a marker, and is skipped the same way (not counted as present); an example that itself deviates
+//     from the strict shape is an attempt like any other and blocks as malformed. All well-formed keyed markers are
 //     collected in a single scan (first occurrence per key wins on a
 //     duplicate, case-insensitive). Selection tries each applicable key in
 //     order (the worktree's own basename first, then the main repo's, when
