@@ -446,7 +446,9 @@ describe('evaluateSolution (producer) — orchestrator-workflow arm', () => {
     expect(res.verdict?.ready).toBe(false);
     const blocker = res.verdict?.blockers.find((b) => /orchestrator-workflow/.test(b));
     expect(blocker).toBeDefined();
-    expect(blocker).toContain('enforcement is on but no .ai/runs/ run was found');
+    expect(blocker).toContain(
+      'enforcement is on but no OW run was found (no .ai/run pointer and no .ai/runs/ run directory)',
+    );
   });
 
   it("knob 'on' + complete OW run + green preflight → ready (enforced run passes)", async () => {

@@ -84,7 +84,7 @@ writers save via `saveStore` (atomic tmp+rename, `hypothesis-store.ts:165-171#"r
 server.ts's `hypothesis_*` verbs call after every successful mutation (`server.ts:391#"saveStore(sessionId, store);"`, :437,
 :469, :491, :518). **A grounding-mcp process restart no longer loses hypothesis state** — it
 now has disk backing at parity with the session store and the evidence ledger
-(`packages/grounding-mcp/README.md:156-157#"the root cause is the backend container's missing OPENAI_API_KEY env var"`).
+(`packages/grounding-mcp/README.md:158-159#"the root cause is the backend container's missing OPENAI_API_KEY env var"`).
 
 The in-process Map is LRU-bounded. `getMaxSessions()` (`hypothesis-store.ts:190-195#"return parsed;"`)
 reads `GROUNDING_HYPOTHESIS_MAX_SESSIONS` lazily per call. **Default is `200`**; unset, empty,

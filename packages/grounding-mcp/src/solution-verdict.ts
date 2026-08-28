@@ -322,6 +322,12 @@ export function resolveOwKnob(repoPath: string): OwKnob {
  *   - `on`   : enforced → gate on `!complete` + change binding; not enforced
  *              → one explicit "enforcement is on but no run was found" blocker.
  *
+ * "Enforced" itself now has two channels (see `ow-run-completeness.ts`'s
+ * `runSource`): the worktree-local `.ai/run` pointer file, tried first, and
+ * the `<repoPath>/.ai/runs/` newest-run scan used only when no pointer file
+ * exists. The `on`-knob "no run" message below names both, since either can
+ * be the reason nothing was found.
+ *
  * Change binding (staleness fail-open fix): completeness alone lets one old
  * accepted run keep the gate green for every later change. When enforced, the
  * active run must also CLAIM the current change — see `owBindingBlockers`.
@@ -340,7 +346,7 @@ export async function owBlockersFor(repoPath: string): Promise<string[]> {
     raw = ow.complete ? [] : [...ow.reasons];
     raw.push(...(await owBindingBlockers(repoPath, ow)));
   } else if (knob === 'on') {
-    raw = ['enforcement is on but no .ai/runs/ run was found'];
+    raw = ['enforcement is on but no OW run was found (no .ai/run pointer and no .ai/runs/ run directory)'];
   } else {
     raw = [];
   }
@@ -358,7 +364,14 @@ const RUN_BASE_SHA = /^[0-9a-f]{7,40}$/i;
  *
  * Marker path (new kit): `00-goal.md` carries
  * `<!-- solution-acceptance: run-base = <sha> -->`, the repo HEAD recorded at
- * run creation. The run claims the current change iff the recorded base
+ * run creation — or, since the pointer/keyed-marker feature, a per-repo keyed
+ * variant `<!-- solution-acceptance: run-base[<repo-basename>] = <sha> -->`
+ * (`ow.runBase` already reflects whichever marker `readOwRunCompleteness`
+ * selected for this repo's key(s); this function only validates the value it
+ * receives, it does not re-derive keys). Likewise, the run this marker comes
+ * from may have been resolved either via the `<worktree-root>/.ai/run`
+ * pointer or via the `.ai/runs/` scan — both are "the active run" here. The
+ * run claims the current change iff the recorded base
  *   1. resolves to a commit in this repository,
  *   2. is an ancestor of (or equal to) the current HEAD, and
  *   3. is NOT strictly behind the fork point of the current change (the
@@ -402,7 +415,7 @@ async function owBindingBlockers(repoPath: string, ow: OwRunCompleteness): Promi
     const base = await revParseCommit(repoPath, ow.runBase.toLowerCase());
     if (base === null) {
       return [
-        `run '${ow.runName}' run-base ${ow.runBase} does not resolve to a commit in this repository (run created in a different repo/worktree?); start a new OW run for this change`,
+        `run '${ow.runName}' run-base ${ow.runBase} does not resolve to a commit in this repository (run created in a different repo/worktree? consider a keyed marker run-base[<repo-basename>] if this run is shared across repos); start a new OW run for this change`,
       ];
     }
     const head = await getHeadSha(repoPath);

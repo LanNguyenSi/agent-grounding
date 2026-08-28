@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### Added
+
+- **OW run resolution is now pointer-first, with keyed `run-base` markers**
+  (task 43a7ef58). `readOwRunCompleteness` (`src/ow-run-completeness.ts`)
+  resolves the worktree-local `.ai/run` pointer file before falling back to
+  the newest-run scan of `.ai/runs/`; the scan is consulted only when no
+  pointer file exists. A pointer file that exists but does not resolve
+  (unreadable, empty, a relative path, or a target missing / not a
+  directory / not a dated run directory) is a distinct fail-closed blocker
+  and never silently falls back to the scan. Which channel resolved the run
+  is reported on the new `runSource: 'pointer' | 'scan' | null` field. The
+  `run-base` change-binding marker in `00-goal.md` may now also be keyed per
+  repo (`run-base[<repo-basename>] = <sha>`), so one run can bind more than
+  one repo in a monorepo/fleet: selection tries the worktree's own basename
+  first, then — for a linked git worktree — the main repository's basename
+  (resolved via the worktree's `.git` `gitdir:` file and `commondir`), and
+  the first key whose keyed marker is present decides, without falling
+  through to a later key or the legacy unkeyed marker. `owBlockersFor`'s
+  `on`-knob "no run" message (`src/solution-verdict.ts`) now names both
+  resolution channels. The `.ai/run` pointer file and the keyed markers are
+  written by the orchestrator-workflow kit's writer side (agent-dx task
+  2c3d141c, not yet released); this repo only reads and verifies them.
+  Covered by `tests/ow-run-completeness.test.ts` (reader unit tests,
+  including real and fabricated linked-worktree fixtures) and
+  `tests/ow-run-binding.test.ts` (`owBlockersFor` end-to-end through real
+  `git worktree add` fixtures, attached and detached).
+
 ## 0.8.0, 2026-08-19
 
 ### Added
