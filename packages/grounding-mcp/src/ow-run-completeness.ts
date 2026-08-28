@@ -70,12 +70,37 @@
 //     Verifying that binding against the current git change (ancestry, fork
 //     point, date heuristic) is the verdict layer's job — this module stays
 //     free of subprocess calls.
+//   - Active-run resolution, pointer-first: the caller's worktree root (found
+//     by walking up from `repoPath` for the nearest `.git` entry, file or
+//     directory) may carry a `.ai/run` pointer file naming the absolute path
+//     of the run directory OW is actively working. When present, that pointer
+//     wins outright over the newest-run scan — a run is session-shaped
+//     (the worktree the agent is sitting in) while the newest-by-date scan is
+//     only a best-effort proxy. The scan of `<repoPath>/.ai/runs/` is used
+//     ONLY when no pointer file exists at all. A pointer file that exists but
+//     does not resolve (unreadable, empty, a relative path, a target that is
+//     missing / not a directory / not date-prefixed) is a DISTINCT fail-closed
+//     blocker — it never silently falls back to the scan, since a broken
+//     pointer left behind is itself a signal something is wrong. The
+//     resolution channel actually used is reported via `runSource`.
+//   - Keyed run-base selection: a repo may appear under more than one basename
+//     across a monorepo/fleet (the worktree's own basename, and — for a
+//     linked git worktree — the main repository's basename, resolved via the
+//     worktree's `gitdir:` pointer and `commondir`). The `run-base` marker in
+//     `00-goal.md` may therefore be keyed per repo (`run-base[<key>] = <sha>`,
+//     one line per repo bound to the run) alongside the legacy unkeyed
+//     `run-base = <sha>`. Selection tries each applicable key in order (the
+//     worktree's own basename first, then the main repo's, when they differ)
+//     and the FIRST key whose keyed marker is PRESENT decides — its value, or
+//     null for `TODO` — without falling through to a later key or to the
+//     unkeyed marker. Only when NO keyed marker is present at all does the
+//     unkeyed marker apply, exactly as before this feature existed.
 
 import fs from 'node:fs';
 import path from 'node:path';
 
 export interface OwRunCompleteness {
-  /** true iff an OW run dir was found at `<repoPath>/.ai/runs/`. */
+  /** true iff an OW run dir was found via the pointer or at `<repoPath>/.ai/runs/`. */
   enforced: boolean;
   /** true iff the active run is process-complete (only meaningful when enforced). */
   complete: boolean;
@@ -90,6 +115,13 @@ export interface OwRunCompleteness {
    * against the current change happens in solution-verdict.ts.
    */
   runBase: string | null;
+  /**
+   * Which channel resolved the active run: `'pointer'` when the worktree's
+   * `.ai/run` pointer file named it, `'scan'` when no pointer file existed
+   * and the newest-run scan of `<repoPath>/.ai/runs/` found one, or `null`
+   * when neither found a run (not enforced).
+   */
+  runSource: 'pointer' | 'scan' | null;
 }
 
 interface UnresolvedFinding {
@@ -136,7 +168,36 @@ const PLACEHOLDER_ROW_CELLS = splitTableRow(OW_FINDINGS_PLACEHOLDER_ROW);
  * The caller treats `enforced: false` as an auto-skip.
  */
 export function readOwRunCompleteness(repoPath: string): OwRunCompleteness {
-  const activeRun = findActiveRun(repoPath);
+  const worktreeRoot = findWorktreeRoot(repoPath) ?? path.resolve(repoPath);
+  const pointer = resolveRunPointer(worktreeRoot);
+
+  let activeRun: string | null;
+  let runSource: 'pointer' | 'scan' | null;
+
+  if (pointer.kind === 'invalid') {
+    // Distinct fail-closed blocker: a broken pointer file left behind is
+    // itself a signal something is wrong, so it NEVER falls back to the
+    // newest-run scan (see the module docstring).
+    return {
+      enforced: true,
+      complete: false,
+      reasons: [
+        `run pointer '${path.join(worktreeRoot, '.ai', 'run')}' does not resolve: ` +
+          `${pointer.reason}; fix the pointer to name the absolute path of the run ` +
+          `directory, or delete it to fall back to ${repoPath}/.ai/runs/`,
+      ],
+      runName: null,
+      runBase: null,
+      runSource: 'pointer',
+    };
+  } else if (pointer.kind === 'run') {
+    activeRun = pointer.dir;
+    runSource = 'pointer';
+  } else {
+    activeRun = findActiveRun(repoPath);
+    runSource = activeRun === null ? null : 'scan';
+  }
+
   if (activeRun === null) {
     return {
       enforced: false,
@@ -144,6 +205,7 @@ export function readOwRunCompleteness(repoPath: string): OwRunCompleteness {
       reasons: ['no .ai/runs/ run directory found'],
       runName: null,
       runBase: null,
+      runSource: null,
     };
   }
 
@@ -217,24 +279,170 @@ export function readOwRunCompleteness(repoPath: string): OwRunCompleteness {
     complete: reasons.length === 0,
     reasons,
     runName: path.basename(activeRun),
-    runBase: resolveRunBase(goal),
+    runBase: selectRunBase(goal, repoKeys(worktreeRoot)),
+    runSource,
   };
 }
 
 /**
  * The `run-base` binding marker value from a run's `00-goal.md` content, or
- * null when the file/marker is missing or the marker is the `TODO`
+ * null when no applicable marker is present or resolves to the `TODO`
  * placeholder. No validation happens here — the raw value is handed to the
  * verdict layer, which validates it (strict hex) BEFORE any git invocation.
+ *
+ * Keyed selection: `keys` is tried in order (see `repoKeys`). The FIRST key
+ * whose keyed marker (`run-base[<key>] = <value>`) is PRESENT decides — its
+ * value, or null for `TODO` — without falling through to a later key or to
+ * the unkeyed marker, even when the value is `TODO`. Only when NO keyed
+ * marker matches any key does the legacy unkeyed `run-base` marker apply.
  */
-function resolveRunBase(goal: string | null): string | null {
+function selectRunBase(goal: string | null, keys: string[]): string | null {
   if (goal === null) return null;
   // Raw \S+ capture on purpose: sha values may start with a digit (the enum
   // charset would reject them), and a malformed value must reach the verdict
   // layer's hex guard so it blocks explicitly instead of downgrading silently
   // to the date heuristic.
+  for (const key of keys) {
+    const marker = matchMarker(goal, `run-base[${key}]`, '\\S+');
+    if (marker !== null) return marker === 'TODO' ? null : marker;
+  }
   const marker = matchMarker(goal, 'run-base', '\\S+');
   return marker === null || marker === 'TODO' ? null : marker;
+}
+
+/**
+ * Walk up from `path.resolve(start)` (inclusive) to the filesystem root; the
+ * first directory containing a `.git` entry (directory OR file — a linked
+ * git worktree's root has a `.git` FILE) is the worktree root. Null when no
+ * such directory exists anywhere up the chain (never throws).
+ */
+function findWorktreeRoot(start: string): string | null {
+  let dir = path.resolve(start);
+  for (;;) {
+    if (fs.existsSync(path.join(dir, '.git'))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+type RunPointer =
+  | { kind: 'none' }
+  | { kind: 'invalid'; reason: string }
+  | { kind: 'run'; dir: string };
+
+/**
+ * Resolve the worktree-local `.ai/run` pointer file. Only the first
+ * non-empty line matters (later lines, e.g. a `base=<sha>` line, are
+ * ignored). No `~` or environment expansion. See the module docstring for
+ * why an invalid pointer is a distinct fail-closed blocker rather than a
+ * silent fallback to the newest-run scan.
+ */
+function resolveRunPointer(worktreeRoot: string): RunPointer {
+  const pointerPath = path.join(worktreeRoot, '.ai', 'run');
+  let raw: string;
+  try {
+    raw = fs.readFileSync(pointerPath, 'utf8');
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return { kind: 'none' };
+    return { kind: 'invalid', reason: 'could not be read as a file' };
+  }
+
+  const firstLine = raw.split(/\r?\n/).find((l) => l.trim() !== '');
+  if (firstLine === undefined) return { kind: 'invalid', reason: 'is empty' };
+  const target = firstLine.trim();
+
+  if (!path.isAbsolute(target)) {
+    return { kind: 'invalid', reason: `names a relative path '${target}'` };
+  }
+
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(target);
+  } catch {
+    return { kind: 'invalid', reason: `target '${target}' does not exist` };
+  }
+  if (!stat.isDirectory()) {
+    return { kind: 'invalid', reason: `target '${target}' is not a directory` };
+  }
+  const base = path.basename(target);
+  if (!DATED_RUN_PREFIX.test(base)) {
+    return {
+      kind: 'invalid',
+      reason: `target basename '${base}' is not a dated run directory (YYYY-MM-DD-<slug>)`,
+    };
+  }
+  return { kind: 'run', dir: target };
+}
+
+/**
+ * The keys under which `worktreeRoot`'s `run-base` marker may be recorded:
+ * the worktree's own basename, plus — for a LINKED git worktree — the main
+ * repository's basename (appended only when it differs from the first key).
+ * Any read error along the way (missing/unreadable `.git` file, malformed
+ * `gitdir:` line) yields no second key; this function never throws.
+ */
+function repoKeys(worktreeRoot: string): string[] {
+  const keys = [path.basename(worktreeRoot)];
+  const mainRoot = resolveMainWorktreeRoot(worktreeRoot);
+  if (mainRoot !== null) {
+    const mainKey = path.basename(mainRoot);
+    if (mainKey !== keys[0]) keys.push(mainKey);
+  }
+  return keys;
+}
+
+/**
+ * For a LINKED git worktree (`<worktreeRoot>/.git` is a FILE containing
+ * `gitdir: <path>`), resolve the main repository's root directory. Returns
+ * null for a normal (non-linked) worktree, or when anything along the way is
+ * missing/malformed (never throws).
+ *
+ * Primary path: read `<gitdir>/commondir` (relative paths resolve against
+ * `gitdir`); when its resolved basename is `.git`, the main root is its
+ * dirname. Fallback (no `commondir`): match `gitdir` against
+ * `/[\\/]\.git[\\/]worktrees[\\/][^\\/]+$/` and strip the
+ * `/.git/worktrees/<name>` suffix to get the main root directly.
+ */
+function resolveMainWorktreeRoot(worktreeRoot: string): string | null {
+  const dotGitPath = path.join(worktreeRoot, '.git');
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(dotGitPath);
+  } catch {
+    return null;
+  }
+  if (!stat.isFile()) return null;
+
+  let content: string;
+  try {
+    content = fs.readFileSync(dotGitPath, 'utf8');
+  } catch {
+    return null;
+  }
+  const m = content.match(/^gitdir:\s*(.+)$/m);
+  if (!m) return null;
+  const gitdirRaw = m[1].trim();
+  const gitdir = path.isAbsolute(gitdirRaw) ? gitdirRaw : path.resolve(worktreeRoot, gitdirRaw);
+
+  const commondirPath = path.join(gitdir, 'commondir');
+  try {
+    const commondirRaw = fs.readFileSync(commondirPath, 'utf8').trim();
+    if (commondirRaw !== '') {
+      const commondir = path.isAbsolute(commondirRaw)
+        ? commondirRaw
+        : path.resolve(gitdir, commondirRaw);
+      if (path.basename(commondir) === '.git') return path.dirname(commondir);
+      return null;
+    }
+  } catch {
+    // commondir absent/unreadable → fall through to the gitdir-path fallback.
+  }
+
+  const worktreesMatch = gitdir.match(/^(.*)[\\/]\.git[\\/]worktrees[\\/][^\\/]+$/);
+  if (worktreesMatch) return worktreesMatch[1];
+  return null;
 }
 
 /**
