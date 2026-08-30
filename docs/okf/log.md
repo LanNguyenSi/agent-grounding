@@ -2,6 +2,29 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-08-30, `scripts/check-okf-selectors.js` added (task 922857bf,
+  follow-up to the 4a4af64b entry below): couples ci.yml's Citation guard
+  step's five jq selectors (`logFindings`, `citationFindings`,
+  `ambiguousFindings`, `otherNotices`, `errors`) to okf-kit's actual JSON
+  finding shape, so a future okf-kit rename of `ruleId`/`severity`/`file`/
+  the `[rule]` message suffix gets caught instead of the guard silently
+  selecting 0 findings from a broken bundle. Fixtures under
+  `scripts/fixtures/okf-selectors/` are real `okf-kit@0.8.0
+  check --require-anchors --json` output (not hand-written): a clean
+  bundle and a bundle with one finding per citations-resolve rule
+  subtype, one unresolved-ambiguous notice, one citations-resolve warning
+  filed against a reserved log.md, and one sources-fresh notice.
+  `node --test scripts/check-okf-selectors.test.js`: 10 pass, 0 fail.
+  `node scripts/check-okf-selectors.js` against the real, unmodified
+  ci.yml and the committed fixtures: exit 0. Negative control run
+  manually against a temp copy of ci.yml with `.severity == "warning"`
+  narrowed to `.severity == "warnin"` on the `citationFindings` selector:
+  exit 1, reporting `citationFindings` selected 0 of the 5 expected
+  findings; the committed ci.yml was left untouched. A second manual
+  probe renamed the `[anchor-required]` finding's `ruleId` in a temp copy
+  of the drifted fixture: exit 1, naming `citationFindings` as short one
+  expected match. Restored, re-run: exit 0 again.
+
 - 2026-08-27, `scripts/check-okf-anchors.js` replaced by okf-kit@0.8.0's
   `--require-anchors` (task 4a4af64b): okf-kit's own `citations-resolve`
   gained four opt-in checks (`anchor-required`, `anchor-not-on-last-line`,

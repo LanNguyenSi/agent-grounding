@@ -263,6 +263,22 @@ jobs:
         # against this repo's real workflow files.
         run: npm run test:check-okf-kit-pin
 
+      - name: okf-kit selector-coupling check
+        # Couples this job's own jq selectors (above) to okf-kit's JSON
+        # finding shape: replays the extracted selectors against two
+        # canonical okf-kit@0.8.0 reports (scripts/fixtures/okf-selectors/)
+        # and asserts each blocking selector still selects exactly what it
+        # is supposed to. See scripts/check-okf-selectors.js for why (this
+        # repeats the pin-coupling check's rationale for a different kind
+        # of silent drift).
+        run: npm run check:okf-selectors
+
+      - name: okf-kit selector-coupling checker unit tests
+        # Fixture-based unit tests, including the required negative
+        # control: a one-character typo in a blocking selector run against
+        # a temp copy of ci.yml must fail red.
+        run: npm run test:check-okf-selectors
+
   ci:
     runs-on: ubuntu-latest
     timeout-minutes: 10

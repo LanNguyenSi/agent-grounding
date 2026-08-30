@@ -1,0 +1,9 @@
+{
+  "bundleDir": "scripts/fixtures/okf-selectors/bundle-clean",
+  "findings": [],
+  "summary": {
+    "errors": 0,
+    "warnings": 0,
+    "notices": 0
+  }
+}

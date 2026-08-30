@@ -1,0 +1,64 @@
+{
+  "bundleDir": "scripts/fixtures/okf-selectors/bundle-drifted",
+  "findings": [
+    {
+      "ruleId": "sources-fresh",
+      "severity": "notice",
+      "file": "doc.md",
+      "message": "untracked by git, staleness unknown: `scripts/fixtures/okf-selectors/src/untracked.ts`"
+    },
+    {
+      "ruleId": "citations-resolve",
+      "severity": "warning",
+      "file": "doc.md",
+      "message": "`scripts/fixtures/okf-selectors/src/nope.ts:1-2#\"nope\"`: could not resolve scripts/fixtures/okf-selectors/src/nope.ts: tried doc sources, ancestor climb (bare filenames only), repo-root, doc-relative, nearest prior qualified mention, repo-wide search; no candidate file exists [missing-file]"
+    },
+    {
+      "ruleId": "citations-resolve",
+      "severity": "warning",
+      "file": "doc.md",
+      "message": "`scripts/fixtures/okf-selectors/src/example.ts:5-7`: full citation into an in-repo file carries no #anchor (--require-anchors is on) [anchor-required]",
+      "detail": "resolvedTo: scripts/fixtures/okf-selectors/src/example.ts"
+    },
+    {
+      "ruleId": "citations-resolve",
+      "severity": "warning",
+      "file": "doc.md",
+      "message": "`scripts/fixtures/okf-selectors/src/example.ts:1-3#\"export function alpha\"`: anchor \"export function alpha\" occurs on line 1, not the cited range's last content line (2) [anchor-not-on-last-line]",
+      "detail": "resolvedTo: scripts/fixtures/okf-selectors/src/example.ts"
+    },
+    {
+      "ruleId": "citations-resolve",
+      "severity": "warning",
+      "file": "doc.md",
+      "message": "`scripts/fixtures/okf-selectors/src/example.ts:5-11#\"return\"`: anchor \"return\" occurs on 2 lines of the cited range (5-11); expected exactly one [anchor-not-unique-in-range]",
+      "detail": "resolvedTo: scripts/fixtures/okf-selectors/src/example.ts"
+    },
+    {
+      "ruleId": "citations-resolve",
+      "severity": "warning",
+      "file": "doc.md",
+      "message": "`scripts/fixtures/okf-selectors/src/example.test.ts:4-8#\"y = 2;\"`: range straddles into another block's head at line 7 (\"it('does another thing', () => {\") [test-range-straddles-block]",
+      "detail": "resolvedTo: scripts/fixtures/okf-selectors/src/example.test.ts"
+    },
+    {
+      "ruleId": "citations-resolve",
+      "severity": "notice",
+      "file": "doc.md",
+      "message": "`shared.ts:1#\"export const A = 1;\"`: ambiguous target, not evaluated [unresolved-ambiguous]",
+      "detail": "candidates: scripts/fixtures/okf-selectors/src/dirA/shared.ts, scripts/fixtures/okf-selectors/src/dirB/shared.ts"
+    },
+    {
+      "ruleId": "citations-resolve",
+      "severity": "warning",
+      "file": "log.md",
+      "message": "`scripts/fixtures/okf-selectors/src/example.ts:1-3#\"not present in range\"`: anchor \"not present in range\" does not occur in the cited range (1-3) [anchor-not-found-in-range]",
+      "detail": "resolvedTo: scripts/fixtures/okf-selectors/src/example.ts"
+    }
+  ],
+  "summary": {
+    "errors": 0,
+    "warnings": 6,
+    "notices": 2
+  }
+}
