@@ -17,16 +17,46 @@
  * `check-okf-kit-pin.js` closes for the version pin itself, just for the
  * jq selectors' assumed JSON shape instead of a version string.
  *
- * This script closes that gap the same way `check-okf-kit-pin.js` does:
- * it EXTRACTS the five jq filter expressions straight out of ci.yml's
- * Citation guard step (regex over the `name=$(jq '...' ...)` /
- * `name=$(jq -e '...' ...)` assignments -- not a YAML parser; see
- * `check-okf-test-citation-shape.js`'s docblock for why this repo avoids
- * the `js-yaml` dependency in a check that has to run before `npm ci`),
- * then runs the REAL `jq` binary (`child_process.spawnSync`, never a
- * reimplementation) with each extracted filter against two canonical
- * `okf-kit@0.8.0` JSON reports checked in under `scripts/fixtures/
- * okf-selectors/`:
+ * A SIXTH pattern, `blockingCondition`, extracts the step's own red/green
+ * verdict line (`if [ "${errors}" -gt 0 ] || [ "${count}" -gt 0 ] ||
+ * [ "${ambiguousCount}" -gt 0 ]; then`) and asserts it still references
+ * all three counters. This check no longer re-implements that boolean
+ * expression from memory (a previous revision hardcoded `errors>0 ||
+ * citationFindings.length>0 || ambiguousFindings.length>0` in JS, which
+ * could silently drift from ci.yml's own line, e.g. a dropped
+ * `ambiguousCount` leg): if the extracted line no longer matches this
+ * pattern at all -- a leg dropped, an operator changed -- extraction
+ * fails loud the same way a dropped jq selector does, instead of this
+ * check quietly grading against a verdict ci.yml no longer computes.
+ * `evaluateBlockingCondition()` below is the one small, explicit
+ * evaluator over the three `-gt 0` legs this check uses, shared by both
+ * the "would this fixture block" computation and the "should this
+ * fixture block" expectation.
+ *
+ * This script also couples the two committed fixture reports (see below)
+ * to the exact `okf-kit` version they were generated with:
+ * `scripts/fixtures/okf-selectors/fixture-version.json`'s
+ * `"okfKitVersion"` field is compared against the `okf-kit@X.Y.Z` pin
+ * extracted from ci.yml's own "Install okf-kit (exact pin)" step (reusing
+ * `check-okf-kit-pin.js`'s exported `extractPins()`, not a second regex).
+ * A mismatch means the pin was bumped without regenerating these fixtures
+ * -- exactly the drift `check-okf-kit-pin.js` cannot itself catch, since
+ * it only checks that every workflow's pin agrees with every OTHER
+ * workflow's pin, not that a fixture generated from an OLDER pin still
+ * matches. This check fails loud naming both versions and pointing at
+ * `scripts/fixtures/okf-selectors/README.md`'s "Regenerating" section.
+ *
+ * This script closes the selector-shape gap the same way
+ * `check-okf-kit-pin.js` closes the pin-divergence gap: it EXTRACTS the
+ * six patterns above straight out of ci.yml's Citation guard step (regex
+ * over the `name=$(jq '...' ...)` / `name=$(jq -e '...' ...)` assignments
+ * and the `if [ ... ] || [ ... ] || [ ... ]; then` verdict line -- not a
+ * YAML parser; see `check-okf-test-citation-shape.js`'s docblock for why
+ * this repo avoids the `js-yaml` dependency in a check that has to run
+ * before `npm ci`), then runs the REAL `jq` binary (`child_process.
+ * spawnSync`, never a reimplementation) with each extracted jq filter
+ * against three canonical `okf-kit` JSON reports checked in under
+ * `scripts/fixtures/okf-selectors/`:
  *
  *   - `clean-report.json`: a bundle with zero findings of any kind.
  *     Every selector must select nothing.
@@ -37,38 +67,66 @@
  *     inside `log.md` (which the guard's own header comment says must
  *     stay non-blocking), and one non-citation notice (`sources-fresh`).
  *     Each blocking selector must select exactly the finding(s) it is
- *     supposed to and NONE of the log.md/other-notice findings; the
- *     job's own red/green verdict (`errors>0 || citationFindings.length>0
- *     || ambiguousFindings.length>0`) must come out true here.
+ *     supposed to and NONE of the log.md/other-notice findings.
+ *   - `error-report.json`: a bundle with one real `severity: "error"`
+ *     finding (`frontmatter-required`, a doc missing its frontmatter
+ *     block entirely) and nothing else, counted in `.summary.errors`.
+ *     Exercises the `errors`-leg of the blocking verdict on its own --
+ *     `clean-report.json` and `drifted-report.json` both leave `errors`
+ *     at 0, so without this fixture the `errors` selector's own
+ *     blocking behavior was only ever asserted at zero, never at a real
+ *     positive value.
  *
- * See `scripts/fixtures/okf-selectors/README.md` for exactly how both
- * reports were generated and how to regenerate them against a newer
- * `okf-kit` release.
+ * For every fixture, the job's own red/green verdict, replayed via
+ * `evaluateBlockingCondition()` with the values this check itself
+ * observed, must match what the fixture is supposed to represent.
  *
- * If any of the five selectors can no longer be extracted from ci.yml at
- * all (the step was rewritten, a variable renamed), this check fails
- * loud naming the missing selector rather than silently skipping it.
+ * See `scripts/fixtures/okf-selectors/README.md` for exactly how all
+ * three reports were generated and how to regenerate them (and bump
+ * `fixture-version.json`) against a newer `okf-kit` release.
+ *
+ * If any of the six patterns can no longer be extracted from ci.yml at
+ * all (the step was rewritten, a variable renamed, a blocking leg
+ * dropped), this check fails loud naming the missing pattern rather than
+ * silently skipping it.
  */
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { extractPins } = require('./check-okf-kit-pin');
 
 const CI_WORKFLOW_PATH = '.github/workflows/ci.yml';
 const FIXTURES_DIR = path.join('scripts', 'fixtures', 'okf-selectors');
 const CLEAN_REPORT = 'clean-report.json';
 const DRIFTED_REPORT = 'drifted-report.json';
+const ERROR_REPORT = 'error-report.json';
+const FIXTURE_VERSION_FILE = 'fixture-version.json';
 
-// One regex per named `jq` assignment in ci.yml's "Citation guard" step.
-// Captures the filter expression between the outer single quotes.
-// `errors` alone uses `jq -e` (the other four never do), so it gets its
-// own pattern with `-e` required in between.
+// One regex per named `jq` assignment in ci.yml's "Citation guard" step,
+// plus one for the step's own blocking verdict line. Captures the filter
+// expression (or, for `blockingCondition`, the whole verdict line)
+// between the outer single quotes / bracket. `errors` alone uses
+// `jq -e` (the other four never do), so it gets its own pattern with
+// `-e` required in between. `blockingCondition` is matched against the
+// EXACT literal shape of ci.yml's verdict line today (mirrors the other
+// five patterns' own exact-structure style): if any of the three `-gt 0`
+// legs is dropped, reordered past a rewrite, or the variable names
+// change, this pattern stops matching and the missing-selector path
+// below fires -- the same fail-loud behavior a dropped jq selector gets.
 const SELECTOR_PATTERNS = {
   logFindings: /logFindings=\$\(jq\s+'([\s\S]*?)'\s*okf-anchor-report\.json\)/,
   citationFindings: /citationFindings=\$\(jq\s+'([\s\S]*?)'\s*okf-anchor-report\.json\)/,
   ambiguousFindings: /ambiguousFindings=\$\(jq\s+'([\s\S]*?)'\s*okf-anchor-report\.json\)/,
   otherNotices: /otherNotices=\$\(jq\s+'([\s\S]*?)'\s*okf-anchor-report\.json\)/,
   errors: /errors=\$\(jq\s+-e\s+'([\s\S]*?)'\s*okf-anchor-report\.json\)/,
+  blockingCondition:
+    /(if \[ "\$\{errors\}" -gt 0 \] \|\| \[ "\$\{count\}" -gt 0 \] \|\| \[ "\$\{ambiguousCount\}" -gt 0 \])/,
 };
+
+// The four jq selectors actually run against a report (blockingCondition
+// is not a jq filter -- it is only extracted to be verified as present
+// and to name the three counters `evaluateBlockingCondition` combines).
+const ARRAY_SELECTOR_NAMES = ['logFindings', 'citationFindings', 'ambiguousFindings', 'otherNotices'];
 
 // Expected shape of each fixture, keyed by selector name. Array selectors
 // list the `[rule-tag]` (or, for sources-fresh which carries no bracket
@@ -94,15 +152,30 @@ const EXPECTED = {
       '[test-range-straddles-block]',
     ],
     ambiguousFindings: ['[unresolved-ambiguous]'],
+    // 'untracked by git' comes from okf-kit's sources-fresh rule against
+    // scripts/fixtures/okf-selectors/src/untracked.ts, which is
+    // deliberately left untracked at fixture-generation time then
+    // committed afterwards -- see
+    // scripts/fixtures/okf-selectors/README.md's "Regenerating" section
+    // before touching this fixture; a naive `git add -A` + regenerate
+    // will not reproduce this notice.
     otherNotices: ['untracked by git'],
     errors: 0,
   },
+  [ERROR_REPORT]: {
+    logFindings: [],
+    citationFindings: [],
+    ambiguousFindings: [],
+    otherNotices: [],
+    errors: 1,
+  },
 };
 
-/** Reads `ciYamlPath` and returns `{ name: filterExpr }` for every
- * selector found, plus `missing`: an array of selector names whose
- * pattern did not match at all. Never throws on a missing file -- the
- * caller turns that into a named violation. */
+/** Reads `content` (ci.yml's text) and returns `{ name: filterExpr }` for
+ * every pattern found (the five jq selectors plus `blockingCondition`),
+ * plus `missing`: an array of pattern names whose pattern did not match
+ * at all. Never throws on a missing file -- the caller turns that into a
+ * named violation. */
 function extractSelectors(content) {
   const found = {};
   const missing = [];
@@ -115,6 +188,48 @@ function extractSelectors(content) {
     }
   }
   return { found, missing };
+}
+
+/** Reads `scripts/fixtures/okf-selectors/fixture-version.json` under
+ * `rootDir` and returns `{ ok: true, version }` or `{ ok: false, reason
+ * }` -- missing file, invalid JSON, and a missing/empty `okfKitVersion`
+ * field are each a named, non-throwing failure so `run()` can report
+ * them the same way it reports every other violation. */
+function readFixtureVersion(rootDir) {
+  const versionPath = path.join(rootDir, FIXTURES_DIR, FIXTURE_VERSION_FILE);
+  let raw;
+  try {
+    raw = fs.readFileSync(versionPath, 'utf8');
+  } catch (err) {
+    return { ok: false, reason: `could not read ${versionPath} (${err.code ?? err})` };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    return { ok: false, reason: `${versionPath} is not valid JSON: ${err.message}` };
+  }
+  if (typeof parsed.okfKitVersion !== 'string' || parsed.okfKitVersion.trim() === '') {
+    return { ok: false, reason: `${versionPath} is missing a non-empty string "okfKitVersion" field` };
+  }
+  return { ok: true, version: parsed.okfKitVersion };
+}
+
+/** The one `okf-kit@X.Y.Z` pin ci.yml's Citation guard step installs,
+ * extracted from `content` via `check-okf-kit-pin.js`'s own exported
+ * `extractPins()` (the same regex the pin-coupling check runs, not a
+ * second, possibly-diverging one). Returns `{ ok: true, version }` when
+ * exactly one pin is found, or `{ ok: false, reason }` when zero or more
+ * than one is found -- either would make "the" pin ambiguous. */
+function extractCiPin(content) {
+  const pins = extractPins(content);
+  if (pins.length === 0) {
+    return { ok: false, reason: 'found 0 "npm install -g okf-kit@X.Y.Z" pins' };
+  }
+  if (pins.length > 1) {
+    return { ok: false, reason: `found ${pins.length} "npm install -g okf-kit@X.Y.Z" pins, expected exactly 1` };
+  }
+  return { ok: true, version: pins[0] };
 }
 
 /** Runs the real `jq` binary with `filterExpr` against `reportPath`.
@@ -149,6 +264,17 @@ function runJqFilter(filterExpr, reportPath) {
   }
 }
 
+/** The one small, explicit evaluator over the three `-gt 0` legs ci.yml's
+ * own blocking verdict line combines (`errors`, `citationFindings.length`
+ * as `count`, `ambiguousFindings.length` as `ambiguousCount`). Used both
+ * for "would this fixture's OBSERVED values block" and "SHOULD this
+ * fixture's EXPECTED values block" -- one evaluator, two call sites,
+ * instead of the boolean expression being written out twice and able to
+ * drift apart. */
+function evaluateBlockingCondition({ errors, count, ambiguousCount }) {
+  return errors > 0 || count > 0 || ambiguousCount > 0;
+}
+
 /** Pure core: given the extracted `selectors` map and a `reportPath` /
  * `expected` pair, returns a violations array. Empty means every
  * selector selected exactly the expected findings (by rule-tag /
@@ -158,7 +284,7 @@ function checkFixture(selectors, reportPath, expected, reportLabel) {
   const violations = [];
 
   const results = {};
-  for (const name of ['logFindings', 'citationFindings', 'ambiguousFindings', 'otherNotices']) {
+  for (const name of ARRAY_SELECTOR_NAMES) {
     const run = runJqFilter(selectors[name], reportPath);
     if (!run.ok) {
       violations.push({
@@ -241,13 +367,19 @@ function checkFixture(selectors, reportPath, expected, reportLabel) {
 
   // The job's own red/green verdict (ci.yml: `if [ "${errors}" -gt 0 ] ||
   // [ "${count}" -gt 0 ] || [ "${ambiguousCount}" -gt 0 ]`), replayed here
-  // with the values this check itself observed, must match what the
-  // fixture is supposed to represent.
+  // via evaluateBlockingCondition() with the values this check itself
+  // observed, must match what the fixture is supposed to represent.
   if (results.citationFindings && results.ambiguousFindings && errRun.ok) {
-    const wouldBlock =
-      errRun.value > 0 || results.citationFindings.length > 0 || results.ambiguousFindings.length > 0;
-    const expectedBlock =
-      expected.errors > 0 || expected.citationFindings.length > 0 || expected.ambiguousFindings.length > 0;
+    const wouldBlock = evaluateBlockingCondition({
+      errors: errRun.value,
+      count: results.citationFindings.length,
+      ambiguousCount: results.ambiguousFindings.length,
+    });
+    const expectedBlock = evaluateBlockingCondition({
+      errors: expected.errors,
+      count: expected.citationFindings.length,
+      ambiguousCount: expected.ambiguousFindings.length,
+    });
     if (wouldBlock !== expectedBlock) {
       violations.push({
         reason: 'verdict-mismatch',
@@ -274,11 +406,15 @@ function formatViolation(v) {
         `  - [${v.report}] selector "${v.selector}" selected ${v.actualCount} finding(s), ` +
         `expected ${v.expectedCount}.`
       );
-    case 'tag-not-selected':
-      return (
-        `  - [${v.report}] selector "${v.selector}" selected nothing matching "${v.tag}" ` +
-        '(okf-kit may have renamed ruleId/severity/file, or ci.yml\'s selector drifted).'
-      );
+    case 'tag-not-selected': {
+      const hint =
+        v.selector === 'otherNotices'
+          ? ' See scripts/fixtures/okf-selectors/README.md before regenerating -- the ' +
+            '"untracked by git" notice depends on a deliberate not-yet-`git add`ed step at ' +
+            'generation time, and a naive regeneration will not reproduce it.'
+          : ' (okf-kit may have renamed ruleId/severity/file, or ci.yml\'s selector drifted.)';
+      return `  - [${v.report}] selector "${v.selector}" selected nothing matching "${v.tag}".${hint}`;
+    }
     case 'log-md-leaked-into-blocking-selector':
       return (
         `  - [${v.report}] selector "${v.selector}" selected ${v.count} log.md finding(s); ` +
@@ -308,16 +444,39 @@ function run(rootDir = path.join(__dirname, '..'), ciYamlOverridePath = null) {
   const { found, missing } = extractSelectors(content);
   if (missing.length > 0) {
     console.error(
-      `okf-selectors check failed: could not extract ${missing.length} jq selector(s) from ` +
+      `okf-selectors check failed: could not extract ${missing.length} pattern(s) from ` +
         `${ciYamlPath} -- ci.yml's Citation guard step was edited in a way this check no longer ` +
         `recognizes:\n`,
     );
-    for (const name of missing) console.error(`  - missing selector: "${name}"`);
+    for (const name of missing) console.error(`  - missing pattern: "${name}"`);
+    return 1;
+  }
+
+  const pin = extractCiPin(content);
+  if (!pin.ok) {
+    console.error(`okf-selectors check failed: could not determine ci.yml's okf-kit pin: ${pin.reason}.`);
+    return 1;
+  }
+
+  const fixtureVersion = readFixtureVersion(rootDir);
+  if (!fixtureVersion.ok) {
+    console.error(`okf-selectors check failed: ${fixtureVersion.reason}.`);
+    return 1;
+  }
+
+  if (fixtureVersion.version !== pin.version) {
+    console.error(
+      `okf-selectors check failed: ${FIXTURES_DIR}/${FIXTURE_VERSION_FILE} says the committed ` +
+        `fixtures were generated with okf-kit@${fixtureVersion.version}, but ${ciYamlPath} pins ` +
+        `okf-kit@${pin.version}. Regenerate ${FIXTURES_DIR}/*-report.json against ` +
+        `okf-kit@${pin.version} (see ${FIXTURES_DIR}/README.md "Regenerating") and bump ` +
+        `${FIXTURE_VERSION_FILE}'s "okfKitVersion" to match before this check can pass again.`,
+    );
     return 1;
   }
 
   const allViolations = [];
-  for (const reportName of [CLEAN_REPORT, DRIFTED_REPORT]) {
+  for (const reportName of [CLEAN_REPORT, DRIFTED_REPORT, ERROR_REPORT]) {
     const reportPath = path.join(rootDir, FIXTURES_DIR, reportName);
     if (!fs.existsSync(reportPath)) {
       allViolations.push({ reason: 'jq-failed', selector: '(fixture)', report: reportName, detail: `fixture not found at ${reportPath}` });
@@ -334,15 +493,15 @@ function run(rootDir = path.join(__dirname, '..'), ciYamlOverridePath = null) {
   }
 
   console.log(
-    'okf-selectors check passed: all 5 jq selectors extracted from ci.yml select exactly the ' +
-      'expected findings against both scripts/fixtures/okf-selectors/*-report.json fixtures.',
+    'okf-selectors check passed: all 5 jq selectors and the blocking-verdict line extracted ' +
+      `from ci.yml select/evaluate exactly as expected against all 3 ${FIXTURES_DIR}/*-report.json ` +
+      `fixtures (generated with okf-kit@${fixtureVersion.version}, matching ci.yml's pin).`,
   );
   return 0;
 }
 
 function main() {
-  const overridePath = process.argv[2] || process.env.OKF_SELECTORS_CI_YAML || null;
-  process.exitCode = run(path.join(__dirname, '..'), overridePath);
+  process.exitCode = run();
 }
 
 module.exports = {
@@ -350,10 +509,15 @@ module.exports = {
   FIXTURES_DIR,
   CLEAN_REPORT,
   DRIFTED_REPORT,
+  ERROR_REPORT,
+  FIXTURE_VERSION_FILE,
   SELECTOR_PATTERNS,
   EXPECTED,
   extractSelectors,
+  readFixtureVersion,
+  extractCiPin,
   runJqFilter,
+  evaluateBlockingCondition,
   checkFixture,
   run,
 };

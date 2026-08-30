@@ -89,7 +89,11 @@ jobs:
         # installs via `npm ci` from package-lock.json. That is a
         # conscious, narrow exception to the repo's lockfile-integrity
         # posture (see check-lockfile-integrity.js) for this one CLI, not
-        # an oversight.
+        # an oversight. Bumping this pin also couples to
+        # scripts/check-okf-selectors.js: regenerate
+        # scripts/fixtures/okf-selectors/ against the new version (see
+        # that directory's README.md) or the "okf-kit selector-coupling
+        # check" step below fails loud on a version mismatch.
         run: npm install -g okf-kit@0.8.0
 
       - name: Assert CLI is alive (output, not exit code)
@@ -143,6 +147,15 @@ jobs:
           # exempt, so every citations-resolve finding against log.md is
           # excluded from the two blocking selectors below and surfaced
           # instead, non-blocking, in its own step-summary section.
+          #
+          # These five jq selectors (this one plus citationFindings,
+          # ambiguousFindings, otherNotices, errors above) and the
+          # blocking verdict `if` below are coupled to okf-kit's JSON
+          # finding shape by scripts/check-okf-selectors.js (the "okf-kit
+          # selector-coupling check" step below): regenerate
+          # scripts/fixtures/okf-selectors/ (see that directory's
+          # README.md) before changing any of them, or after bumping the
+          # okf-kit pin above.
           logFindings=$(jq '[
             .findings[]
             | select(.file == "log.md" and .ruleId == "citations-resolve")

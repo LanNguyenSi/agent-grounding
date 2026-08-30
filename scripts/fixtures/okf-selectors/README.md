@@ -1,27 +1,40 @@
 # `scripts/check-okf-selectors.js` fixtures
 
-Both `clean-report.json` and `drifted-report.json` are real
-`okf-kit@0.8.0` `check --require-anchors --json` output, not hand-written
-JSON -- produced from the small synthetic OKF bundles checked in here
-(`bundle-clean/`, `bundle-drifted/`, `src/`), so the fixture's field names
-and message shapes are exactly what a real run produces, not what this
-task assumed from memory. Each report's `bundleDir` field was normalized
-by hand after generation (`scripts/fixtures/okf-selectors/bundle-*`,
-repo-relative) so it doesn't embed a throwaway checkout's absolute path;
-`findings` and `summary` are untouched tool output.
+`clean-report.json`, `drifted-report.json`, and `error-report.json` are
+all real `okf-kit@0.8.0` `check --require-anchors --json` output, not
+hand-written JSON -- produced from the small synthetic OKF bundles
+checked in here (`bundle-clean/`, `bundle-drifted/`, `bundle-error/`,
+`src/`), so the fixture's field names and message shapes are exactly
+what a real run produces, not what this task assumed from memory. Each
+report's `bundleDir` field was normalized by hand after generation
+(`scripts/fixtures/okf-selectors/bundle-*`, repo-relative) so it doesn't
+embed a throwaway checkout's absolute path; `findings` and `summary` are
+untouched tool output.
+
+`fixture-version.json`'s `"okfKitVersion"` field records which `okf-kit`
+version generated all three reports above. `scripts/check-okf-selectors.js`
+compares it against `.github/workflows/ci.yml`'s own `okf-kit@...` pin on
+every run and fails loud on a mismatch -- bumping the pin in ci.yml
+without regenerating these fixtures (below) and updating this field
+together is a check failure, not a silent no-op.
 
 ## Regenerating
 
-From the repo root, with `okf-kit@0.8.0` reachable via `npx`:
+From the repo root, with the pinned `okf-kit` version reachable via
+`npx` (`<VERSION>` below must match `.github/workflows/ci.yml`'s
+`okf-kit@...` pin and this directory's `fixture-version.json` once
+you're done):
 
 ```sh
-npx -y okf-kit@0.8.0 check --require-anchors --json scripts/fixtures/okf-selectors/bundle-clean > scripts/fixtures/okf-selectors/clean-report.json
-npx -y okf-kit@0.8.0 check --require-anchors --json scripts/fixtures/okf-selectors/bundle-drifted > scripts/fixtures/okf-selectors/drifted-report.json
+npx -y okf-kit@<VERSION> check --require-anchors --json scripts/fixtures/okf-selectors/bundle-clean > scripts/fixtures/okf-selectors/clean-report.json
+npx -y okf-kit@<VERSION> check --require-anchors --json scripts/fixtures/okf-selectors/bundle-drifted > scripts/fixtures/okf-selectors/drifted-report.json
+npx -y okf-kit@<VERSION> check --require-anchors --json scripts/fixtures/okf-selectors/bundle-error > scripts/fixtures/okf-selectors/error-report.json
 ```
 
-Then patch `bundleDir` in both files back to the repo-relative form shown
-above (`jq '.bundleDir = "scripts/fixtures/okf-selectors/bundle-clean"'`
-etc.) and re-run `npm run test:check-okf-selectors`.
+Then patch `bundleDir` in all three files back to the repo-relative form
+shown above (`jq '.bundleDir = "scripts/fixtures/okf-selectors/bundle-clean"'`
+etc.), update `fixture-version.json`'s `"okfKitVersion"` to `<VERSION>`,
+and re-run `npm run test:check-okf-selectors`.
 
 `src/untracked.ts` was deliberately left untracked (never `git add`ed) at
 the moment `drifted-report.json` was generated -- it's the one source
@@ -69,7 +82,18 @@ in order:
   doc -- this must be selected by `logFindings` and must NOT leak into
   either blocking selector (`citationFindings`, `ambiguousFindings`).
 
-Which `okf-kit` version produced these: `okf-kit@0.8.0` (matches the pin
-in `.github/workflows/ci.yml` and `okf-staleness.yml` as of this fixture's
-creation; see `scripts/check-okf-kit-pin.js` for the check that keeps
-those two in sync going forward).
+`bundle-error/`: one doc (`doc.md`) with no opening `---` frontmatter
+delimiter at all, no citations. Real `okf-kit` output: exactly one
+`frontmatter-required` / `error` / `doc.md` finding ("Missing frontmatter
+block..."), `.summary.errors: 1`, nothing else. `clean-report.json` and
+`drifted-report.json` both leave `.summary.errors` at 0, so without this
+fixture the `errors` selector's contribution to the blocking verdict
+(the first `-gt 0` leg in ci.yml's `if [ "${errors}" -gt 0 ] || ...`
+line) was never asserted at a real positive value.
+
+Which `okf-kit` version produced these: recorded in `fixture-version.json`
+(`0.8.0` as of this fixture's creation; matches the pin in
+`.github/workflows/ci.yml` and `okf-staleness.yml` at the same time --
+see `scripts/check-okf-kit-pin.js` for the check that keeps those two in
+sync going forward, and `scripts/check-okf-selectors.js` for the check
+that keeps `fixture-version.json` itself coupled to ci.yml's pin).
