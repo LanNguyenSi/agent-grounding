@@ -8,7 +8,7 @@
   Sources-fresh (HIGH): the round-1 diff edited `README.md` and
   `package.json`, both `sources:` of `docs/okf/grounding-stack-overview.md`,
   without re-stamping it; re-verified every claim that doc makes against
-  both files (the `README.md:13-49#"helpers --> el"` citation and the
+  both files (the README diagram citation, lines 13 through 49 with its "helpers --> el" anchor, and the
   `package.json` private/workspaces/`build:deps` claims all still hold --
   this round's README/package.json edits land well past the cited ranges),
   bumped its frontmatter `timestamp:` to `2026-08-30T09:15:00Z` (past this
@@ -137,7 +137,7 @@
   committed de995f0 tree actually reported `{"errors":0,"warnings":2,"notices":0}`
   (both `sources-fresh` STALE warnings on `grounding-stack-overview.md`).
   Re-verified in review round 2: the doc's cited content
-  (`README.md:13-49`'s diagram, the `package.json` workspaces/build:deps
+  (the README diagram in lines 13 through 49, the `package.json` workspaces/build:deps
   facts it describes narratively) is unchanged by de995f0's edits (those
   landed at README.md:200-202 and in package.json's `scripts` block,
   neither touching what the doc cites), so this was a stale-timestamp
