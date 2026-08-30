@@ -2,6 +2,87 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-08-30, `scripts/check-okf-selectors.js` review round 2 (task
+  922857bf, fixes on top of the entry directly below): a reviewer pass on
+  the round-1 change found seven findings, all applied here.
+  Sources-fresh (HIGH): the round-1 diff edited `README.md` and
+  `package.json`, both `sources:` of `docs/okf/grounding-stack-overview.md`,
+  without re-stamping it; re-verified every claim that doc makes against
+  both files (the README diagram citation, lines 13 through 49 with its "helpers --> el" anchor, and the
+  `package.json` private/workspaces/`build:deps` claims all still hold --
+  this round's README/package.json edits land well past the cited ranges),
+  bumped its frontmatter `timestamp:` to `2026-08-30T09:15:00Z` (past this
+  round's own commit), grepped every other `docs/okf/*.md` `sources:` list
+  for ci.yml/README.md/package.json/scripts paths (none besides this one
+  doc cite any file this branch touches). `npx -y okf-kit@0.8.0 check
+  --require-anchors --json docs/okf` on the tree with the re-stamp: 0
+  errors, 0 warnings, 0 notices (was 2 sources-fresh STALE warnings before
+  the re-stamp). Fixture-version coupling (MEDIUM): added
+  `scripts/fixtures/okf-selectors/fixture-version.json` (`"okfKitVersion":
+  "0.8.0"`); `run()` now extracts ci.yml's own pin via
+  `check-okf-kit-pin.js`'s exported `extractPins()` and fails loud on a
+  mismatch, naming both versions and the fixtures README's "Regenerating"
+  section. Blocking-verdict extraction (MEDIUM): `blockingCondition` is
+  now a sixth extracted pattern (ci.yml's `if [ "${errors}" -gt 0 ] ||
+  [ "${count}" -gt 0 ] || [ "${ambiguousCount}" -gt 0 ]; then` line) with
+  one small `evaluateBlockingCondition()` evaluator shared by both the
+  observed and expected verdict computation, replacing the previous
+  hardcoded JS boolean. Errors-leg fixture (MEDIUM): added
+  `bundle-error/`/`error-report.json` (a doc with no opening frontmatter
+  delimiter -- real `okf-kit@0.8.0` output: one `frontmatter-required` /
+  `error` finding, `.summary.errors: 1`, nothing else), the first fixture
+  to exercise the `errors`-leg of the blocking verdict at a real positive
+  value. Two LOW findings: a comment above ci.yml's `logFindings=$(jq
+  ...)` block and above the "Install okf-kit (exact pin)" step now both
+  point at `scripts/check-okf-selectors.js`/its fixtures on a pin bump;
+  the `otherNotices` "untracked by git" `EXPECTED` entry now carries a
+  comment plus a check-time hint pointing at the fixtures README's
+  regeneration caveat. One more LOW finding: dropped the undocumented
+  `process.argv[2]`/`OKF_SELECTORS_CI_YAML` CLI overrides entirely (`run()`
+  keeps its own tested `rootDir`/`ciYamlOverridePath` parameters; `main()`
+  now just calls `run()`). Added the missing tests the reviewer named:
+  field-rename probes (`severity`->`level`, `file`->`path`), a
+  message-suffix probe (`[anchor-required]`->`(anchor-required)`), and
+  fail-closed probes for malformed fixture JSON, a non-numeric
+  `.summary.errors`, and `jq` missing from `PATH`.
+  `node --test scripts/check-okf-selectors.test.js`: 25 pass, 0 fail.
+  `node scripts/check-okf-selectors.js` against the real ci.yml and all
+  three committed fixtures: exit 0. Manual mutation probes: a temp ci.yml
+  copy pinning `okf-kit@0.9.0` (fixtures left at `0.8.0`) -> exit 1 on the
+  version mismatch; a temp ci.yml copy with the `ambiguousCount` leg
+  dropped from the blocking line -> exit 1, `blockingCondition` reported
+  missing; a working-tree edit narrowing `evaluateBlockingCondition` to
+  drop the `errors` leg -> the `error-report.json` test went red
+  (`error-report.json must make the guard block on the errors leg alone`),
+  restored, re-run: 25 pass again. `npm run check:okf-kit-pin`,
+  `test:check-okf-kit-pin`, `check:okf-test-citation-shape`,
+  `test:check-okf-test-citation-shape`, `check:lockfile-integrity`,
+  `test:check-lockfile-integrity`: all exit 0, unaffected by this round's
+  changes.
+
+- 2026-08-30, `scripts/check-okf-selectors.js` added (task 922857bf,
+  follow-up to the 4a4af64b entry below): couples ci.yml's Citation guard
+  step's five jq selectors (`logFindings`, `citationFindings`,
+  `ambiguousFindings`, `otherNotices`, `errors`) to okf-kit's actual JSON
+  finding shape, so a future okf-kit rename of `ruleId`/`severity`/`file`/
+  the `[rule]` message suffix gets caught instead of the guard silently
+  selecting 0 findings from a broken bundle. Fixtures under
+  `scripts/fixtures/okf-selectors/` are real `okf-kit@0.8.0
+  check --require-anchors --json` output (not hand-written): a clean
+  bundle and a bundle with one finding per citations-resolve rule
+  subtype, one unresolved-ambiguous notice, one citations-resolve warning
+  filed against a reserved log.md, and one sources-fresh notice.
+  `node --test scripts/check-okf-selectors.test.js`: 10 pass, 0 fail.
+  `node scripts/check-okf-selectors.js` against the real, unmodified
+  ci.yml and the committed fixtures: exit 0. Negative control run
+  manually against a temp copy of ci.yml with `.severity == "warning"`
+  narrowed to `.severity == "warnin"` on the `citationFindings` selector:
+  exit 1, reporting `citationFindings` selected 0 of the 5 expected
+  findings; the committed ci.yml was left untouched. A second manual
+  probe renamed the `[anchor-required]` finding's `ruleId` in a temp copy
+  of the drifted fixture: exit 1, naming `citationFindings` as short one
+  expected match. Restored, re-run: exit 0 again.
+
 - 2026-08-27, `scripts/check-okf-anchors.js` replaced by okf-kit@0.8.0's
   `--require-anchors` (task 4a4af64b): okf-kit's own `citations-resolve`
   gained four opt-in checks (`anchor-required`, `anchor-not-on-last-line`,
@@ -56,7 +137,7 @@
   committed de995f0 tree actually reported `{"errors":0,"warnings":2,"notices":0}`
   (both `sources-fresh` STALE warnings on `grounding-stack-overview.md`).
   Re-verified in review round 2: the doc's cited content
-  (`README.md:13-49`'s diagram, the `package.json` workspaces/build:deps
+  (the README diagram in lines 13 through 49, the `package.json` workspaces/build:deps
   facts it describes narratively) is unchanged by de995f0's edits (those
   landed at README.md:200-202 and in package.json's `scripts` block,
   neither touching what the doc cites), so this was a stale-timestamp

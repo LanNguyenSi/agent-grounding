@@ -1,0 +1,16 @@
+{
+  "bundleDir": "scripts/fixtures/okf-selectors/bundle-error",
+  "findings": [
+    {
+      "ruleId": "frontmatter-required",
+      "severity": "error",
+      "file": "doc.md",
+      "message": "Missing frontmatter block: the file must open with a `---` line and close with a matching `---` line."
+    }
+  ],
+  "summary": {
+    "errors": 1,
+    "warnings": 0,
+    "notices": 0
+  }
+}
