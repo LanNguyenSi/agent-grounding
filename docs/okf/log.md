@@ -2,6 +2,28 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-02T06:42:12Z, task `6da2c230` (run-base fail-closed phrase check):
+  `solution-acceptance-verdict-contract.md` re-verified and re-pointed
+  against `ow-run-completeness.ts` after the reader gained a third,
+  position-independent malformed check (`lineCarriesRunBasePhrase`): any
+  line in `00-goal.md` naming both marker tokens (`solution-acceptance` and
+  `run-base`) but not accepted as a well-formed keyed/unkeyed marker now
+  blocks as `runBaseKind: 'malformed'`, closing the line-position residual
+  (list bullet, prose, no comment wrapper, leading text) documented as
+  fail-open by task 43a7ef58's review round 4. All 26 `ow-run-completeness.ts`
+  citation spans in the doc shifted (the reader's header docstring and the
+  `run-base` grammar section both grew) and were re-pointed one by one against
+  the current source, each re-verified against its cited excerpt; the
+  `run-base` grammar paragraph was rewritten with an explicit decision
+  paragraph naming the new check and its rationale, plus two new citations
+  (`UNKEYED_RUN_BASE_STRICT`, `lineCarriesRunBasePhrase`). `solution-verdict.ts`
+  citations were untouched (that file did not change; the verdict layer needs
+  no change since it already composes `readOwRunCompleteness`'s `reasons`/
+  `complete` generically). Re-verified: `okf-kit check --json docs/okf` and
+  `okf-kit check --json --require-anchors docs/okf` on the committed tree
+  both 0 errors / 0 warnings; `npm run check:okf-test-citation-shape` and
+  `npm run test:check-okf-test-citation-shape` both pass.
+
 - 2026-09-02T05:43:25Z, task `44ee799a` (pin sweep, post-rebase): `merge-approval-gate-mechanics.md`
   went STALE against `.github/workflows/merge-approval.yml` after the
   Node-24 action bump landed on master (`actions/checkout` v4 to v5,

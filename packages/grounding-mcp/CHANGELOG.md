@@ -1,5 +1,34 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`run-base` marker: fail closed on an unreadable attempted marker, not just
+  an unmatched or near-miss one** (task 6da2c230). `readOwRunCompleteness`
+  (`src/ow-run-completeness.ts`) previously fell through to the legacy
+  date-heuristic path whenever a keyed marker attempt did not start its own
+  line: a list bullet (`- <!-- ... -->`), a marker embedded in prose, a bare
+  `run-base[k] = <sha>` with no comment wrapper, or an attempt preceded by
+  leading text all read as markerless, fail-open. Measured in task 43a7ef58
+  review round 3/4: five such variants each resolved `runBaseKind 'absent'`,
+  `complete true`. A third, position-independent check now closes this: any
+  line in `00-goal.md` naming BOTH exact, case-sensitive marker tokens
+  (`solution-acceptance` and `run-base`) but not accepted as a well-formed
+  keyed or unkeyed marker collects into the same `malformed` blocker as the
+  existing near-miss grammar, including inside a fenced code block. A
+  well-formed legacy unkeyed marker line is explicitly exempted, so it is
+  never misread as an attempted-but-broken keyed one; a well-formed marker
+  (keyed or unkeyed) still carrying the template's `TODO` placeholder is
+  unaffected and stays fail-open (`runBaseKind: 'todo'`), per the
+  orchestrator-workflow kit's documented markerless/TODO contract. No change
+  to `src/solution-verdict.ts`: it already composes the reader's `reasons`/
+  `complete` generically, so the new blocker surfaces through the existing
+  `owBindingBlockers` path with no code change there. Covered by
+  `tests/ow-run-completeness.test.ts` (new tests for each residual shape, a
+  fenced-code-block variant, and a pin that a well-formed unkeyed marker is
+  exempt from the new check).
+
 ## 0.9.0, 2026-08-28
 
 ### Added
