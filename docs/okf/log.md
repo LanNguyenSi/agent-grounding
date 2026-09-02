@@ -2,6 +2,14 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-02T05:43:25Z, task `44ee799a` (pin sweep, post-rebase): `merge-approval-gate-mechanics.md`
+  went STALE against `.github/workflows/merge-approval.yml` after the
+  Node-24 action bump landed on master (`actions/checkout` v4 to v5,
+  `actions/github-script` v7 to v8, no line moved). Re-verified every
+  cited span in the workflow (lines 4-11, 19-21, 31-44, 40-44, 47, 49,
+  51-55: unchanged), corrected the one claim that named the old major
+  (`actions/github-script@v7` is now `@v8`), and re-stamped.
+
 - 2026-09-02, round-2 review fix-up for the 0.9.0 pin bump below (task
   44ee799a): reworded a fleet-count claim in
   `.github/workflows/okf-staleness.yml`'s branch-name comment and its
