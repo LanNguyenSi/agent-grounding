@@ -108,16 +108,25 @@
 //     dashes after `<!`. A line the loose net catches but the strict shape
 //     rejects is a MALFORMED marker line — collected and surfaced as its own
 //     fail-closed blocker (`runBaseKind: 'malformed'`) rather than silently
-//     falling through to the legacy date heuristic. Both nets are anchored at
-//     the LINE START and require the literal tokens `solution-acceptance`, a colon and `run-base[`; that anchoring and exactness are the residual:
-//     a keyed marker that does not start its own line (a list bullet `- <!-- ... -->`, a marker embedded in prose, a bare `run-base[k] = <sha>`
-//     with no comment wrapper) or a whole-line comment deviating in those tokens (e.g. the colon omitted, `run_base`, `runbase`)
-//     is NOT a marker — neither well-formed nor malformed. With no other
-//     applicable marker in the file the run then behaves as MARKERLESS and
-//     falls through to the legacy date heuristic (fail-open by design, the
-//     kit's documented markerless path; a fully fail-closed variant is
-//     tracked as its own task). A strict match whose key is
-//     placeholder-shaped (`<repo-basename>`-style, `/^<[^>]*>$/`) is a
+//     falling through to the legacy date heuristic. The loose net stays
+//     anchored at the LINE START (it widens the strict shape's own tokens,
+//     case, spacing, dash count, not the line position); a THIRD, position-
+//     independent check widens coverage further: any line anywhere in the
+//     file that names both exact, case-sensitive tokens `solution-acceptance`
+//     and `run-base` (a list bullet (`- <!-- ... -->`), a marker embedded in
+//     prose, a bare `run-base[k] = <sha>` with no comment wrapper, an attempt
+//     preceded by leading text, or a whole-line comment deviating in those
+//     tokens, e.g. the colon omitted) is ALSO collected as malformed unless
+//     it is already accepted as a well-formed keyed or unkeyed marker. An
+//     attempted-but-unreadable marker is worse than no marker at all: it
+//     signals the run intended to bind a `run-base` and failed, which must
+//     block rather than silently fall through to the legacy date heuristic.
+//     This applies the same way inside a fenced code block: a fence is not
+//     an excuse for an unreadable marker. The residual left standing is
+//     narrower than before: only a `00-goal.md` with NO line naming both
+//     tokens anywhere reads as truly MARKERLESS and falls through to the
+//     legacy date heuristic (fail-open by design, the kit's documented
+//     markerless path). A strict match whose key is
 //     documentation example, not a marker, and is skipped the same way (not counted as present); an example that itself deviates
 //     from the strict shape is an attempt like any other and blocks as malformed. All well-formed keyed markers are
 //     collected in a single scan (first occurrence per key wins on a
@@ -140,8 +149,11 @@
 //     `'unmatched-keyed'` one, since a malformed line is evidence of an
 //     attempted-but-broken marker rather than merely a missing one. Documented
 //     asymmetry: the legacy UNKEYED `run-base` matcher (`matchMarker`) is not
-//     line-anchored (a substring match anywhere in the file) and is
-//     unaffected by any of the above — only the keyed grammar was hardened.
+//     line-anchored (a substring match anywhere in the file), resolves values
+//     exactly as before this change, and is unaffected by the keyed grammar
+//     hardening; a whole-line well-formed UNKEYED marker is explicitly
+//     exempted from the phrase check above, so it is never misread as an
+//     attempted-but-broken keyed one merely for naming both tokens.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -193,10 +205,11 @@ export interface OwRunCompleteness {
    *     marker exists either, and no malformed keyed marker line was found —
    *     the reader has already pushed its own explicit blocker reason into
    *     `reasons` for this case — `runBase` is null.
-   *   - `'malformed'`: at least one line looks like an attempted keyed
-   *     `run-base[<key>] = <value>` marker but does not match the strict
-   *     grammar (see the module docstring), AND no well-formed keyed marker
-   *     matched a candidate key, AND no unkeyed marker exists — the reader
+   *   - `'malformed'`: at least one line names both marker tokens
+   *     (`solution-acceptance` and `run-base`) but is not accepted as a
+   *     well-formed keyed or unkeyed marker (see the module docstring), AND
+   *     no well-formed keyed marker matched a candidate key, AND no unkeyed
+   *     marker exists, the reader
    *     has already pushed its own explicit blocker reason into `reasons` —
    *     `runBase` is null. When a malformed line coexists with a value that
    *     WAS selected (keyed match or unkeyed fallback), `runBaseKind` stays
@@ -422,16 +435,35 @@ const KEYED_RUN_BASE_STRICT =
 // heuristic: case-insensitive (`RUN-BASE[`), whitespace around the colon
 // (`solution-acceptance : run-base[`), one or more dashes in the comment
 // opener (`<!--- `), and stray whitespace before the bracket (`run-base [k]`).
-// Still anchored at the line start: a keyed marker that does not START its own
-// line is not an attempt at all, it is simply not a marker (see the module
-// docstring's fail-open residual). Any strict match is also a loose match, so
-// this is checked only after a strict-match attempt fails.
+// Anchored at the line start: it exists to widen the STRICT shape's own
+// tokens (case, spacing, dash count), not the line position. Line position is
+// covered separately by the phrase check below. Any strict match is also a
+// loose match, so this is checked only after a strict-match attempt fails.
 const KEYED_RUN_BASE_LOOSE_START = /^\s*<!--+\s*solution-acceptance\s*:\s*run-base\s*\[/i;
 // A key that is itself an angle-bracket placeholder (`<repo-basename>`,
 // `<key>`, ...) — the template's own documentation example, not an authored
 // marker. `[^>]*` deliberately excludes `>` so the placeholder must be a
 // single bracketed token spanning the whole (already-trimmed) key.
 const PLACEHOLDER_KEY = /^<[^>]*>$/;
+// The well-formed LEGACY UNKEYED marker shape, whole-line (mirrors
+// KEYED_RUN_BASE_STRICT without the `[<key>]`). A line matching this is a
+// legitimate marker in its own right, and it must be exempt from the phrase
+// check below, or every ordinary unkeyed `run-base` marker in the corpus
+// would misreport as an attempted-but-broken KEYED marker merely for
+// mentioning both tokens.
+const UNKEYED_RUN_BASE_STRICT =
+  /^\s*<!--\s*solution-acceptance:\s*run-base\s*=\s*(?!-->)(\S+)\s*-->\s*$/;
+// Fail-closed phrase check (the residual this widens, see the module
+// docstring): ANY line, regardless of position (list bullet, prose, no
+// comment wrapper, leading text before the comment) or of whether it is
+// inside a fenced code block, that mentions BOTH exact, case-sensitive
+// tokens the template uses is an attempted `run-base` marker unless it is
+// already accepted as well-formed (keyed or unkeyed, checked before this is
+// reached). Deliberately simple and total: no attempt to enumerate shapes,
+// since enumerating shapes is exactly what left the residual open before.
+function lineCarriesRunBasePhrase(line: string): boolean {
+  return line.includes('solution-acceptance') && line.includes('run-base');
+}
 
 /**
  * Collect every well-formed keyed `run-base[<key>] = <value>` marker in
@@ -441,13 +473,20 @@ const PLACEHOLDER_KEY = /^<[^>]*>$/;
  * (malformed). First well-formed occurrence per key wins (case-insensitive
  * dedup) — a later duplicate for the same key is ignored. A well-formed
  * match whose key is placeholder-shaped is skipped entirely (not counted as
- * present, not malformed).
+ * present, not malformed). A well-formed LEGACY UNKEYED marker line is also
+ * skipped entirely (it is handled by the separate unkeyed matcher, not
+ * malformed). Every other line naming both marker tokens (attempted keyed
+ * syntax the loose net already caught, or a bullet/prose/wrapper-less/
+ * leading-text attempt the loose net's line-start anchor cannot see) is
+ * collected as malformed, prefixed with its 1-based line number.
  */
 function collectKeyedRunBaseMarkers(goal: string): KeyedMarkerScan {
   const seen = new Set<string>();
   const markers: KeyedRunBaseMarker[] = [];
   const malformedLines: string[] = [];
-  for (const line of goal.split(/\r?\n/)) {
+  const lines = goal.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const strict = line.match(KEYED_RUN_BASE_STRICT);
     if (strict !== null) {
       const key = strict[1].trim();
@@ -458,8 +497,9 @@ function collectKeyedRunBaseMarkers(goal: string): KeyedMarkerScan {
       markers.push({ key, value: strict[2] });
       continue;
     }
-    if (KEYED_RUN_BASE_LOOSE_START.test(line)) {
-      malformedLines.push(line.trim());
+    if (UNKEYED_RUN_BASE_STRICT.test(line)) continue; // legitimate legacy marker, not an attempt
+    if (KEYED_RUN_BASE_LOOSE_START.test(line) || lineCarriesRunBasePhrase(line)) {
+      malformedLines.push(`line ${i + 1}: ${line.trim()}`);
     }
   }
   return { markers, malformedLines };

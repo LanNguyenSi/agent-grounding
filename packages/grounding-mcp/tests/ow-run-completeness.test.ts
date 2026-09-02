@@ -1358,12 +1358,18 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     expect(r.runBase).toBe('aaaaaaa');
   });
 
-  it('a prose line quoting a concrete keyed marker does not count as a marker', () => {
+  it('a prose line quoting a concrete keyed marker does not count as a marker for selection, but blocks as malformed (phrase in prose)', () => {
     // The quoted key is deliberately the ROOT BASENAME itself and the quoted
     // value a concrete sha: an un-anchored strict grammar would match
     // mid-line and wrongly select 'aaaaaaa' instead of falling through to the
     // unkeyed marker. A placeholder-shaped key would not discriminate here —
-    // the placeholder filter would drop it either way.
+    // the placeholder filter would drop it either way. That SELECTION
+    // behavior is unchanged by the fail-closed phrase check: the quoting
+    // line still isn't a marker, so 'bbbbbbb' still wins. But the quoting
+    // line names both marker tokens ('solution-acceptance' and 'run-base')
+    // and is not itself a well-formed marker, so it now ALSO blocks as an
+    // attempted marker embedded in prose: a run cannot use "it was just
+    // quoted in prose" as an excuse for an unreadable-looking marker line.
     const root = namedRoot('alpha');
     const goal = [
       '# Goal',
@@ -1379,8 +1385,37 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
 
     const r = readOwRunCompleteness(root);
     expect(r.runBase).toBe('bbbbbbb');
-    expect(r.complete).toBe(true);
     expect(r.runBaseKind).toBe('sha');
+    expect(r.complete).toBe(false);
+    expect(
+      r.reasons.some((x) => x.startsWith('malformed keyed run-base marker(s) in 00-goal.md:')),
+    ).toBe(true);
+  });
+
+  it('a pure prose sentence naming both marker tokens blocks as malformed (phrase in prose, no other marker)', () => {
+    // Cleanest form of the "phrase in prose" variant: no comment syntax at
+    // all, no other marker present, just a sentence that happens to name
+    // both tokens. Before the fail-closed phrase check this read as
+    // markerless (runBaseKind 'absent', complete true) and fell through to
+    // the legacy date heuristic.
+    const goal = [
+      '# Goal',
+      'The solution-acceptance run-base binding for this run is still TBD.',
+      '',
+    ].join('\n');
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(r.runBase).toBeNull();
+    expect(r.complete).toBe(false);
+    expect(
+      r.reasons.some((x) => x.startsWith('malformed keyed run-base marker(s) in 00-goal.md:')),
+    ).toBe(true);
   });
 
   it('placeholder-shaped keyed marker on its own line is ignored', () => {
@@ -1554,10 +1589,12 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     expect(r.complete).toBe(false);
   });
 
-  it('keyed marker line without the colon is not a marker and the run reads as markerless', () => {
-    // Pins the residual on purpose (review round 4): the loose net requires
-    // the literal tokens, so a colon-less attempt is markerless (fail-open,
-    // legacy heuristic). If the fail-closed follow-up lands, flip this test.
+  it('keyed marker line without the colon blocks as malformed (fail-closed follow-up)', () => {
+    // This is the exact residual the loose net left standing (review round
+    // 4): the loose net requires the literal colon, so a colon-less attempt
+    // was markerless (fail-open, legacy heuristic). The follow-up phrase
+    // check closes it: the line still names both marker tokens, so it now
+    // blocks instead of falling through.
     const root = namedRoot('alpha');
     const goal = ['# Goal', '<!-- solution-acceptance run-base[alpha] = aaaaaaa -->', ''].join(
       '\n',
@@ -1569,10 +1606,12 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     });
 
     const r = readOwRunCompleteness(root);
-    expect(r.runBaseKind).toBe('absent');
+    expect(r.runBaseKind).toBe('malformed');
     expect(r.runBase).toBeNull();
-    expect(r.reasons).toEqual([]);
-    expect(r.complete).toBe(true);
+    expect(r.complete).toBe(false);
+    expect(
+      r.reasons.some((x) => x.startsWith('malformed keyed run-base marker(s) in 00-goal.md:')),
+    ).toBe(true);
   });
 
   it('placeholder example with a tolerated deviation blocks as malformed', () => {
@@ -1619,11 +1658,13 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     ).toBe(true);
   });
 
-  it('keyed marker not starting its line is ignored', () => {
+  it('keyed marker not starting its line is ignored for selection, but blocks as malformed (leading text)', () => {
     // Root basename 'alpha' matches the embedded marker's key, so an
     // un-anchored implementation that let the match start mid-line would
     // wrongly select 'aaaaaaa' instead of falling through to the unkeyed
-    // marker.
+    // marker. That SELECTION behavior is unchanged. But the "note " prefix
+    // means this line names both marker tokens without being a well-formed
+    // marker, so it now ALSO blocks as an attempted marker with leading text.
     const root = namedRoot('alpha');
     const goal = [
       '# Goal',
@@ -1639,16 +1680,37 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
 
     const r = readOwRunCompleteness(root);
     expect(r.runBase).toBe('bbbbbbb');
+    expect(r.runBaseKind).toBe('sha');
+    expect(r.complete).toBe(false);
+    expect(
+      r.reasons.some((x) => x.startsWith('malformed keyed run-base marker(s) in 00-goal.md:')),
+    ).toBe(true);
   });
 
-  it('keyed marker in a list bullet is not a marker and the run reads as markerless', () => {
-    // DELIBERATE fail-open residual, pinned on purpose: both nets are
-    // anchored at the line start, so a keyed marker behind a list bullet is
-    // neither well-formed nor malformed. With no other applicable marker the
-    // run behaves as MARKERLESS and falls through to the legacy date
-    // heuristic (fail-open by design; a fully fail-closed variant is tracked
-    // as its own task). Change this expectation only together with that
-    // decision.
+  it('a keyed attempt with leading text and no other marker blocks as malformed', () => {
+    // Same variant as above, but with no unkeyed marker to fall back on: the
+    // run must resolve to no run-base at all, blocked as malformed.
+    const root = namedRoot('alpha');
+    const goal = ['# Goal', 'note <!-- solution-acceptance: run-base[alpha] = aaaaaaa -->', ''].join(
+      '\n',
+    );
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(r.runBase).toBeNull();
+    expect(r.complete).toBe(false);
+  });
+
+  it('keyed marker in a list bullet blocks as malformed (bullet-wrapped keyed marker)', () => {
+    // Both nets used to be anchored at the line start, so a keyed marker
+    // behind a list bullet was neither well-formed nor malformed and the run
+    // read as markerless (fail-open). The fail-closed phrase check closes
+    // this: the line still names both marker tokens, so it blocks instead.
     const root = namedRoot('alpha');
     const goal = ['# Goal', '- <!-- solution-acceptance: run-base[alpha] = aaaaaaa -->', ''].join(
       '\n',
@@ -1660,16 +1722,37 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     });
 
     const r = readOwRunCompleteness(root);
-    expect(r.runBaseKind).toBe('absent');
+    expect(r.runBaseKind).toBe('malformed');
     expect(r.runBase).toBeNull();
-    expect(r.reasons).toEqual([]);
-    expect(r.complete).toBe(true);
+    expect(r.complete).toBe(false);
+    expect(
+      r.reasons.some((x) => x.startsWith('malformed keyed run-base marker(s) in 00-goal.md:')),
+    ).toBe(true);
   });
 
-  it('keyed marker without the comment wrapper is not a marker and the run reads as markerless', () => {
-    // Same deliberate fail-open residual as the list-bullet case above: a
-    // bare `run-base[<key>] = <sha>` with no HTML-comment wrapper is not an
-    // attempted marker at all, so the run reads as markerless.
+  it('a bare marker attempt naming solution-acceptance without the comment wrapper blocks as malformed', () => {
+    // "A marker without the comment wrapper" variant: a real attempt still
+    // names the 'solution-acceptance' field, it just dropped the `<!-- -->`
+    // HTML-comment delimiters. That names both marker tokens, so it blocks.
+    const root = namedRoot('alpha');
+    const goal = ['# Goal', 'solution-acceptance: run-base[alpha] = aaaaaaa', ''].join('\n');
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(r.runBase).toBeNull();
+    expect(r.complete).toBe(false);
+  });
+
+  it('a bare mention of run-base alone (no solution-acceptance token) stays markerless', () => {
+    // Boundary of the phrase check: detection requires BOTH exact tokens.
+    // A line mentioning only 'run-base' (no 'solution-acceptance' anywhere)
+    // does not carry the marker phrase, so it is not an attempted marker at
+    // all and the run stays markerless (legacy date-heuristic fallthrough).
     const root = namedRoot('alpha');
     const goal = ['# Goal', 'run-base[alpha] = aaaaaaa', ''].join('\n');
     makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
@@ -1683,6 +1766,48 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     expect(r.runBase).toBeNull();
     expect(r.reasons).toEqual([]);
     expect(r.complete).toBe(true);
+  });
+
+  it('a well-formed unkeyed run-base marker is exempt from the phrase check', () => {
+    // The canonical unkeyed marker line itself names both marker tokens
+    // ('solution-acceptance' and 'run-base'). It must stay a legitimate,
+    // well-formed marker, not be misread as an attempted-but-broken keyed
+    // one merely for naming both tokens.
+    const goal = ['# Goal', '<!-- solution-acceptance: run-base = bbbbbbb -->', ''].join('\n');
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runBase).toBe('bbbbbbb');
+    expect(r.runBaseKind).toBe('sha');
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('a phrase-carrying attempt inside a fenced code block still blocks as malformed', () => {
+    // Deliberate choice, documented in the module docstring and the consumer
+    // doc: a fence is not an excuse for an unreadable marker. Fenced code
+    // blocks get no special treatment from the phrase check.
+    const goal = [
+      '# Goal',
+      '```',
+      '- <!-- solution-acceptance: run-base[alpha] = aaaaaaa -->',
+      '```',
+      '',
+    ].join('\n');
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(r.runBase).toBeNull();
+    expect(r.complete).toBe(false);
   });
 
   it('blocker messages are bounded for long and many keys', () => {
