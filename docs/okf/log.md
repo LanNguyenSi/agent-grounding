@@ -2,6 +2,103 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-02T05:43:25Z, task `44ee799a` (pin sweep, post-rebase): `merge-approval-gate-mechanics.md`
+  went STALE against `.github/workflows/merge-approval.yml` after the
+  Node-24 action bump landed on master (`actions/checkout` v4 to v5,
+  `actions/github-script` v7 to v8, no line moved). Re-verified every
+  cited span in the workflow (lines 4-11, 19-21, 31-44, 40-44, 47, 49,
+  51-55: unchanged), corrected the one claim that named the old major
+  (`actions/github-script@v7` is now `@v8`), and re-stamped.
+
+- 2026-09-02, round-2 review fix-up for the 0.9.0 pin bump below (task
+  44ee799a): reworded a fleet-count claim in
+  `.github/workflows/okf-staleness.yml`'s branch-name comment and its
+  continuation-shorthand summary line; fixed a mis-escaped
+  continuation-shorthand notation (`:N`, `-M`, `(N)`) in this file and in
+  `.github/workflows/ci.yml`; corrected a stale "two canonical" ->
+  "three canonical" fixture-count comment in `ci.yml`; cleaned up two
+  weak anchors in `evidence-ledger-session-key-shapes.md` (the
+  trailing-space `policyDecisions: all.filter((e) => e.type === "` form
+  replaced with the clean `policyDecisions: all.filter` spelling already
+  used elsewhere in the same doc) and one weak anchor in
+  `claim-gate-vs-review-claim-gate.md` (`} else {` replaced with
+  `opts.evidenceLogged === true`, on the forced branch's actual
+  condition rather than the following else-head). Re-verified: `okf-kit
+  check --require-anchors --json docs/okf` on the committed tree still
+  0 errors / 0 warnings / 0 notices; only the cited spans in the two
+  touched docs were re-opened and confirmed for this sweep, not every
+  prose paragraph. Also fixed the drifted-fixture regeneration procedure
+  (`scripts/fixtures/okf-selectors/`): the fixture source file
+  (previously `src/never-committed.ts`) had itself been committed by the
+  0.9.0 bump below, which silently falsified its own name and would have
+  broken the "untracked by git" notice on the next literal regeneration;
+  renamed it to `src/fixture-source-2.ts` (a plain sequence number
+  instead of a claim a future commit falsifies), regenerated
+  `drifted-report.json` with the new file still uncommitted, and moved
+  the rename requirement to the first line of the README's Regenerating
+  section. Added a unit test asserting `drifted-report.json` carries
+  exactly one `sources-fresh` notice, so a future in-place regeneration
+  that silently loses it fails loud instead of shipping a stale fixture.
+
+- 2026-09-02, okf-kit pin bump 0.8.0 -> 0.9.0 for fleet parity (task
+  44ee799a): bumped both `.github/workflows/ci.yml`'s blocking
+  `okf-anchor-guard` job and `.github/workflows/okf-staleness.yml`'s
+  warn-only job to `okf-kit@0.9.0`. 0.9.0 adds the
+  `anchor-required-continuation` rule (opt-in, `--require-anchors`): a
+  continuation citation (`:N`, `-M`, `(N)`) chained to a full,
+  in-repo-resolving citation cannot carry its own `#anchor`, and is now
+  flagged rather than silently exempt. `npx -y okf-kit@0.9.0 check --json
+  --require-anchors docs/okf` on the pre-bump tree: 0 errors, 24
+  warnings, all `anchor-required-continuation`, 12 each in
+  `claim-gate-vs-review-claim-gate.md` and
+  `evidence-ledger-session-key-shapes.md` (plain `okf-kit check --json`,
+  without `--require-anchors`: 0 findings both before and after -- this
+  is purely the new opt-in rule). Every one of the 24 was lifted into its
+  own full `path:N-M#anchor` citation after opening the cited span and
+  confirming it still describes the code named (see the implementer
+  report on task 44ee799a for the old -> new list); two were re-pointed
+  rather than merely re-anchored where the original span's true last
+  content line carried a `"` that the anchor grammar cannot embed
+  (`review-claim-gate/src/cli.ts` runCheck precedence citation narrowed
+  248-294 -> 248-290; `evidence-ledger/src/db.ts` `getSummary` citation's
+  anchor landed on the same `policyDecisions: all.filter((e) => e.type
+  === ` prefix rather than the full quoted arm), and one was corrected
+  for drift (`review-claim-gate/README.md`'s "reviewer-template usage"
+  parenthetical pointed at line 161, which is mid-sentence about
+  `ledger hypothesis` logging, not the export bridge it was glossing --
+  re-pointed to line 165, the actual `review-claim-gate export --task-id
+  <TASK-ID> --from-session <GROUNDING-SESSION-ID>` line). Post-fix `npx
+  -y okf-kit@0.9.0 check --json --require-anchors docs/okf`: 0 errors, 0
+  warnings, 0 notices. The ci.yml "Citation guard" step's own commands
+  (the `okf-kit check --require-anchors --json` invocation plus its five
+  jq selectors and blocking `if`) were replayed by hand against the
+  committed tree: prints "Clean: 0 errors, 0 citations-resolve warnings,
+  0 unresolved-ambiguous citations (log.md excluded, see above)." and
+  exits 0. `scripts/fixtures/okf-selectors/{clean,drifted,error}-report.json`
+  regenerated against real `okf-kit@0.9.0` output per that directory's
+  README.md; `clean-report.json` and `error-report.json` are
+  byte-identical to their 0.8.0 versions (neither bundle exercises the
+  new rule). `bundle-drifted/`'s one `sources:` entry
+  (`src/untracked.ts`) was renamed to `src/never-committed.ts`: okf-kit's
+  `sources-fresh` "untracked by git" notice is driven by `git log -1
+  --format=%ct -- <path>` against commit history, not index state, so
+  once `src/untracked.ts` had ever been committed (by an earlier
+  regeneration), `git rm --cached` alone could no longer reproduce the
+  notice under either 0.8.0 or 0.9.0 -- confirmed both ways before the
+  rename. `fixture-version.json` bumped to `"0.9.0"`.
+  `scripts/check-okf-selectors.test.js`'s M1 negative-control test
+  (which mutates a ci.yml copy's pin to a version newer than the
+  committed fixtures, expecting exit 1) had its hardcoded literals
+  bumped from `0.8.0`/`0.9.0` to `0.9.0`/`0.9.1` in lockstep, since the
+  real pin is now `0.9.0` and the test's own `assert.notEqual(...,
+  'the okf-kit pin must actually be present to mutate')` guard fails
+  otherwise; only the version-number literals changed, not the test's
+  assertions or check-okf-selectors.js's validation logic.
+  `npm run check:okf-kit-pin` / `test:check-okf-kit-pin` /
+  `check:okf-selectors` / `test:check-okf-selectors` (25 pass) /
+  `check:okf-test-citation-shape` / `test:check-okf-test-citation-shape`
+  (16 pass): all exit 0 on the committed tree.
+
 - 2026-08-30, `scripts/check-okf-selectors.js` review round 2 (task
   922857bf, fixes on top of the entry directly below): a reviewer pass on
   the round-1 change found seven findings, all applied here.

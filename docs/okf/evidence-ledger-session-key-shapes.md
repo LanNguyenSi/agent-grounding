@@ -3,7 +3,7 @@ type: invariant
 title: Evidence-ledger session keys — one opaque column, two conventions
 description: The ledger `session` is a single opaque TEXT column; grounding-mcp keys it by a generated `gs-*` id while the merge-approval CI Action keys it by the PR head branch name, so evidence written under one key is invisible to a reader expecting the other.
 tags: [evidence-ledger, sessions, keys, ci, mcp]
-timestamp: 2026-08-28T12:43:59Z
+timestamp: 2026-09-02T05:26:42Z
 sources:
   - packages/evidence-ledger/src/types.ts
   - packages/evidence-ledger/src/db.ts
@@ -15,7 +15,7 @@ sources:
 
 ## The invariant
 
-The evidence ledger stores who-owns-this-row in a single opaque column, `session TEXT NOT NULL DEFAULT 'default'`, defined once in the `entries` table (`packages/evidence-ledger/src/db.ts:160#"DEFAULT 'default'"`, mirrored in the `entries_new` rebuild at `:190`). The schema draws no distinction between the two kinds of value that get written into it: a grounding/Claude session id and a PR-scoped task/branch id are the same type, indexed the same way (`idx_session`, `db.ts:165#"idx_session"`). The read API is a plain equality match — `listEntries` filters `session = @session` (`db.ts:314-316#"params.session = opts.session;"`) and `getSummary(db, session = "default", …)` (`db.ts:358-369#"listEntries(db, { session, ...filters })"`) delegates straight to it. There is no fallback, no aliasing, no normalization: **a reader keyed by string X sees only rows whose `session` column equals X exactly.** Both writers and readers are therefore bound by an out-of-band naming convention, not by anything the schema enforces.
+The evidence ledger stores who-owns-this-row in a single opaque column, `session TEXT NOT NULL DEFAULT 'default'`, defined once in the `entries` table (`packages/evidence-ledger/src/db.ts:160#"DEFAULT 'default'"`, mirrored in the `entries_new` rebuild at `packages/evidence-ledger/src/db.ts:190#"NOT NULL DEFAULT 'default'"`). The schema draws no distinction between the two kinds of value that get written into it: a grounding/Claude session id and a PR-scoped task/branch id are the same type, indexed the same way (`idx_session`, `db.ts:165#"idx_session"`). The read API is a plain equality match — `listEntries` filters `session = @session` (`db.ts:314-316#"params.session = opts.session;"`) and `getSummary(db, session = "default", …)` (`db.ts:358-369#"listEntries(db, { session, ...filters })"`) delegates straight to it. There is no fallback, no aliasing, no normalization: **a reader keyed by string X sees only rows whose `session` column equals X exactly.** Both writers and readers are therefore bound by an out-of-band naming convention, not by anything the schema enforces.
 
 Two conventions exist, and they do not agree:
 
@@ -27,17 +27,17 @@ Two conventions exist, and they do not agree:
 
 **Consequence:** evidence a reviewer logged under a `gs-*` grounding session is invisible to a merge-approval reader looking under the branch name, and vice-versa. Nothing in the schema signals the mismatch — the query simply returns zero rows, which the gate reads as "no evidence logged."
 
-The bridge is real. `review-claim-gate export --task-id <branch-name> --from-session <gs-id>` re-emits a grounding session's rows into an evidence file under the branch/task naming convention, so the reviewer avoids re-logging (`README.md:59-62#"auto-mkdirs parent"`, `:75-78`; reviewer-template usage `:161`). Because export writes to the same auto-detect path the `check` step reads (`README.md:80#"silent fallback would be misleading"`), the intended round-trip is **export → commit → check** (evidence-source `"file"`, not `"ledger"`).
+The bridge is real. `review-claim-gate export --task-id <branch-name> --from-session <gs-id>` re-emits a grounding session's rows into an evidence file under the branch/task naming convention, so the reviewer avoids re-logging (`packages/review-claim-gate/README.md:59-62#"auto-mkdirs parent"`, `packages/review-claim-gate/README.md:75-78#"having to re-log the findings."`; reviewer-template usage `packages/review-claim-gate/README.md:165#"review-claim-gate export --task-id <TASK-ID> --from-session <GROUNDING-SESSION-ID>"`). Because export writes to the same auto-detect path the `check` step reads (`README.md:80#"silent fallback would be misleading"`), the intended round-trip is **export → commit → check** (evidence-source `"file"`, not `"ledger"`).
 
 A separate structural guard keeps decision rows from polluting evidence reads: `EntryType` makes `policy_decision` a first-class type alongside `fact`/`hypothesis`/`rejected`/`unknown` (`packages/evidence-ledger/src/types.ts:9-14#"policy_decision"`), and `getSummary` buckets it into its own `policyDecisions` array (`db.ts:375#"policyDecisions: all.filter"`), disjoint from the four evidence buckets. This is deliberate: the header comment (`types.ts:1-7#"payloads as matches for their own ledger_tag"`) records that harness's `filterEntriesByTag` was matching past `policy_decision:` payloads as substring hits for their own ledger tag; the dedicated bucket means a `policy_decision` row cannot contaminate a tag-substring evidence filter.
 
 ## Where it's enforced
 
-- **Column + read API (the opaque key):** `packages/evidence-ledger/src/db.ts:160#"DEFAULT 'default'"` (`session TEXT` def), `:190` (rebuild copy), `:314-317` (`listEntries` equality filter), `:358-377` (`getSummary`, including the `policy_decision` bucket split at `:375`).
-- **Type bucket:** `packages/evidence-ledger/src/types.ts:9-14#"policy_decision"` (`EntryType`), `:41` (`policyDecisions` on `LedgerSummary`).
-- **Writer convention (`gs-*`):** `packages/grounding-mcp/src/server.ts:189#"Session id — used as the ledger session namespace."` (param doc), `:196-202` (write-through); id shape `packages/grounding-wrapper/src/lib.ts:58-61#"gs-${slug}-${ts}"`.
-- **CI reader convention (branch name):** `.github/workflows/merge-approval.yml:49#"task-id: ${{ github.event.pull_request.head.ref }}"` (`task-id: …head.ref`), consumed by the action pinned at `:47`.
-- **Precedence + bridge:** `packages/review-claim-gate/README.md:69-73#"Local evidence-ledger DB"` (source precedence), `:75-80` (export bridge + round-trip), `:59-63` (export CLI signature).
+- **Column + read API (the opaque key):** `packages/evidence-ledger/src/db.ts:160#"DEFAULT 'default'"` (`session TEXT` def), `packages/evidence-ledger/src/db.ts:190#"NOT NULL DEFAULT 'default'"` (rebuild copy), `packages/evidence-ledger/src/db.ts:314-317#"params.session = opts.session;"` (`listEntries` equality filter), `packages/evidence-ledger/src/db.ts:358-377#"policyDecisions: all.filter"` (`getSummary`, including the `policy_decision` bucket split at `packages/evidence-ledger/src/db.ts:375#"policyDecisions: all.filter"`).
+- **Type bucket:** `packages/evidence-ledger/src/types.ts:9-14#"policy_decision"` (`EntryType`), `packages/evidence-ledger/src/types.ts:41#"policyDecisions: LedgerEntry[];"` (`policyDecisions` on `LedgerSummary`).
+- **Writer convention (`gs-*`):** `packages/grounding-mcp/src/server.ts:189#"Session id — used as the ledger session namespace."` (param doc), `packages/grounding-mcp/src/server.ts:196-202#"session: sessionId,"` (write-through); id shape `packages/grounding-wrapper/src/lib.ts:58-61#"gs-${slug}-${ts}"`.
+- **CI reader convention (branch name):** `.github/workflows/merge-approval.yml:49#"task-id: ${{ github.event.pull_request.head.ref }}"` (`task-id: …head.ref`), consumed by the action pinned at `.github/workflows/merge-approval.yml:47#"review-claim-gate-v0.1.5"`.
+- **Precedence + bridge:** `packages/review-claim-gate/README.md:69-73#"Local evidence-ledger DB"` (source precedence), `packages/review-claim-gate/README.md:75-80#"silent fallback would be misleading"` (export bridge + round-trip), `packages/review-claim-gate/README.md:59-63#"auto-mkdirs parent"` (export CLI signature).
 
 ## What breaks it
 

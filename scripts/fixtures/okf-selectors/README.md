@@ -1,7 +1,7 @@
 # `scripts/check-okf-selectors.js` fixtures
 
 `clean-report.json`, `drifted-report.json`, and `error-report.json` are
-all real `okf-kit@0.8.0` `check --require-anchors --json` output, not
+all real `okf-kit@0.9.0` `check --require-anchors --json` output, not
 hand-written JSON -- produced from the small synthetic OKF bundles
 checked in here (`bundle-clean/`, `bundle-drifted/`, `bundle-error/`,
 `src/`), so the fixture's field names and message shapes are exactly
@@ -20,6 +20,17 @@ together is a check failure, not a silent no-op.
 
 ## Regenerating
 
+Before anything else: `bundle-drifted/doc.md`'s one `sources:` entry
+must point at a `src/*` file that has never been committed to this
+repo, or the `sources-fresh` "untracked by git, staleness unknown"
+notice this fixture depends on cannot be reproduced (see below). Pick
+the next unused number under `src/fixture-source-<N>.ts` (the file
+currently in use, checked in below, is `fixture-source-2.ts`; the next
+bump uses `fixture-source-3.ts`), rename it, and update
+`bundle-drifted/doc.md`'s `sources:` entry and its own citation into
+that file, all BEFORE you run `okf-kit` and BEFORE `git add`ing the
+renamed file.
+
 From the repo root, with the pinned `okf-kit` version reachable via
 `npx` (`<VERSION>` below must match `.github/workflows/ci.yml`'s
 `okf-kit@...` pin and this directory's `fixture-version.json` once
@@ -34,21 +45,43 @@ npx -y okf-kit@<VERSION> check --require-anchors --json scripts/fixtures/okf-sel
 Then patch `bundleDir` in all three files back to the repo-relative form
 shown above (`jq '.bundleDir = "scripts/fixtures/okf-selectors/bundle-clean"'`
 etc.), update `fixture-version.json`'s `"okfKitVersion"` to `<VERSION>`,
-and re-run `npm run test:check-okf-selectors`.
+`git add` the renamed `src/fixture-source-<N>.ts` (only now, after the
+report above was captured), and re-run `npm run test:check-okf-selectors`
+(it asserts `drifted-report.json` still carries exactly one
+`sources-fresh` notice, so a regeneration that silently loses it fails
+loud).
 
-`src/untracked.ts` was deliberately left untracked (never `git add`ed) at
-the moment `drifted-report.json` was generated -- it's the one source
-`bundle-drifted/doc.md` declares under `sources:`, so `okf-kit`'s
-`sources-fresh` rule reported exactly the one "untracked by git,
-staleness unknown" notice this fixture wants and nothing else. It is
-committed here as part of this fixture set (so the fixture directory is
-complete and self-contained), which means it is now git-tracked and a
-literal re-run of the two commands above will NOT reproduce that one
-notice verbatim. To regenerate faithfully, remove `src/untracked.ts` from
-the index first (`git rm --cached scripts/fixtures/okf-selectors/src/
-untracked.ts`, keep the working-tree file) before running `okf-kit`, then
-re-add it afterwards. None of the other `src/*` files are declared under
-any doc's `sources:` key, so their git-tracked state doesn't matter.
+`src/fixture-source-2.ts` was deliberately left untracked (never `git
+add`ed) at the moment `drifted-report.json` was generated -- it's the
+one source `bundle-drifted/doc.md` declares under `sources:`, so
+`okf-kit`'s `sources-fresh` rule reported exactly the one "untracked by
+git, staleness unknown" notice this fixture wants and nothing else.
+`sources-fresh` determines "untracked" via `git log -1 --format=%ct --
+<path>` against the CURRENT COMMIT HISTORY, not the index: once a path
+has ever been committed, that history is permanent and `git rm --cached`
+alone can no longer reproduce the notice for it (confirmed against both
+okf-kit@0.8.0 and okf-kit@0.9.0 while this fixture still pointed at the
+original `src/untracked.ts`, which had been committed by an earlier
+regeneration -- neither version's `sources-fresh` treated it as
+untracked once it had git history, `git rm --cached` or not). Because of
+that, this fixture's source file was renamed from `src/untracked.ts` to
+`src/never-committed.ts` for the okf-kit@0.9.0 pin bump, and that name
+turned out to have the same problem one round later: once
+`never-committed.ts` was itself committed as part of that bump, a
+literal re-run of the commands above stopped reproducing the notice
+verbatim, because the "never committed" name was no longer true. It was
+renamed again, to `src/fixture-source-2.ts`, specifically so the notice
+could keep being reproduced honestly rather than left stale in the
+checked-in JSON -- and to make that failure mode impossible to repeat,
+the filename is now a plain sequence number instead of a claim
+("never-committed") that a future commit falsifies. `fixture-source-2.ts`
+is committed here as part of this fixture set (so the fixture directory
+is complete and self-contained), which means it is now git-tracked and,
+by the same mechanism, a literal re-run of the commands above will NOT
+reproduce that one notice verbatim starting with the next regeneration
+-- follow the renaming step at the top of this section instead. None of
+the other `src/*` files are declared under any doc's `sources:` key, so
+their git-tracked state doesn't matter.
 
 ## What each fixture is engineered to contain
 
@@ -92,7 +125,7 @@ fixture the `errors` selector's contribution to the blocking verdict
 line) was never asserted at a real positive value.
 
 Which `okf-kit` version produced these: recorded in `fixture-version.json`
-(`0.8.0` as of this fixture's creation; matches the pin in
+(`0.9.0` as of this pin bump; matches the pin in
 `.github/workflows/ci.yml` and `okf-staleness.yml` at the same time --
 see `scripts/check-okf-kit-pin.js` for the check that keeps those two in
 sync going forward, and `scripts/check-okf-selectors.js` for the check

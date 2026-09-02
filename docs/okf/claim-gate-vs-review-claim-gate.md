@@ -3,7 +3,7 @@ type: invariant
 title: claim-gate vs review-claim-gate — same word, opposite trust models
 description: Two sibling packages both gate on "evidence" but claim-gate trusts a caller-supplied boolean (self-discipline) while review-claim-gate reads a store (CI gate) — never treat them as interchangeable.
 tags: [claim-gate, review-claim-gate, evidence, trust-boundary]
-timestamp: 2026-08-26T11:26:42Z
+timestamp: 2026-09-02T05:26:42Z
 sources:
   - packages/claim-gate/src/lib.ts
   - packages/claim-gate/src/cli.ts
@@ -39,12 +39,12 @@ review-claim-gate's non-`evidence_logged` flags are verified — defeats the gat
 - A *claim* is free text. `detectClaimType(claim)` regex-maps it to one of nine
   `ClaimType`s (`root_cause`, `architecture`, `security`, `network`,
   `configuration`, `process`, `availability`, `token`, `generic`);
-  `--type` overrides (`packages/claim-gate/src/lib.ts:108#"detectClaimType(claim: string): ClaimType"`, `:122`).
+  `--type` overrides (`packages/claim-gate/src/lib.ts:108#"detectClaimType(claim: string): ClaimType"`, `packages/claim-gate/src/lib.ts:122#"type?: ClaimType"`).
 - Each `ClaimType` has a `POLICIES` entry listing which `ClaimContext` boolean
   flags must be `true` (`packages/claim-gate/src/lib.ts:50#"export const POLICIES: ClaimPolicy[]"`). `evaluateClaim`
   computes `missing = requires.filter(req => !context[req])`, `allowed = missing
   .length === 0`, and `score = round(satisfied/requires * 100)`
-  (`:126`–`:138`).
+  (`packages/claim-gate/src/lib.ts:126-138#"return { claim, type: claimType, allowed, reasons, next_steps, score };"`).
 - **`has_evidence` is a caller-supplied boolean.** It is a field of the
   `ClaimContext` interface at `packages/claim-gate/src/lib.ts:29#"has_evidence?: boolean;"`
   (`has_evidence?: boolean;`), set on the CLI purely from the `--evidence` flag
@@ -69,22 +69,22 @@ review-claim-gate's non-`evidence_logged` flags are verified — defeats the gat
   five keys: `tests_pass`, `review_checklist_complete`,
   `no_unresolved_review_comments`, `scope_matches_task`, `evidence_logged`
   (`packages/review-claim-gate/src/lib.ts:43#"MERGE_APPROVAL_PREREQS: readonly ReviewContextKey[]"`). All five must be true for
-  `allowed` (`:82`).
+  `allowed` (`packages/review-claim-gate/src/lib.ts:82#"const allowed = missing.length === 0;"`).
 - **`evidence_logged` is the one prerequisite backed by a store, not a bare
   flag.** `runCheck` resolves an evidence *source* with this precedence
-  (`packages/review-claim-gate/src/cli.ts:248#"export function runCheck(opts: CheckOptions): CheckReport"`–`:294`; README "Evidence source
+  (`packages/review-claim-gate/src/cli.ts:248-290#"deriveEvidenceLogged(opts.taskId, opts.ledgerDb)"`; README "Evidence source
   precedence"):
   1. **forced** — `--evidence-logged` sets `evidence_logged=true` unconditionally,
-     bypassing any lookup (`runCheck`, `src/cli.ts:260#"opts.evidenceLogged === true"`-`264`; `buildContext` then
-   applies it at `src/cli.ts:209#"function buildContext(opts: CheckOptions, evidenceEntries: number): ReviewContext"`-`219`).
+     bypassing any lookup (`runCheck`, `packages/review-claim-gate/src/cli.ts:260#"opts.evidenceLogged === true"`; `buildContext` then
+   applies it at `packages/review-claim-gate/src/cli.ts:209-219#"opts.evidenceLogged === true ? true : evidenceEntries > 0"`).
   2. **committed file** — an explicit `--evidence-file <path>` (must exist, else
      throws) or the auto-detected convention path
      `./.agent-grounding/evidence/<task-id>.jsonl` under `process.cwd()`; counts
-     non-blank, JSON-parseable lines (`countEvidenceFileLines`, `:178`-`195`). This is
+     non-blank, JSON-parseable lines (`countEvidenceFileLines`, `packages/review-claim-gate/src/cli.ts:178-195#"return valid;"`). This is
      the higher-integrity signal — the reviewer committed it to the PR branch.
   3. **ledger** — fallback: `deriveEvidenceLogged` calls
      `listEntries(getDb(dbPath), { session: taskId })` and uses `.length`
-     (`:197`–`:207`), reading the real evidence-ledger SQLite DB keyed by
+     (`packages/review-claim-gate/src/cli.ts:197-207#"return listEntries(db, { session: taskId }).length;"`), reading the real evidence-ledger SQLite DB keyed by
      `session = <task-id>`.
   `evidence_logged` becomes `true` iff forced, or the resolved source yielded
   `> 0` entries.
@@ -94,7 +94,7 @@ review-claim-gate's non-`evidence_logged` flags are verified — defeats the gat
   both a lexical resolved-path containment check and a symlink-aware
   (`realpathSync`) containment check, so a committed symlink inside the evidence
   dir cannot smuggle a read outside it
-  (`packages/review-claim-gate/src/cli.ts:76#"function defaultEvidenceFilePath(taskId: string, cwd = process.cwd())"`-`159`).
+  (`packages/review-claim-gate/src/cli.ts:76-159#"return full;"`).
 - CLI: `check` exits `0`/`1` on the verdict (`src/cli.ts:396#"report.result.allowed ? 0 : 1"`); `export` dumps
   ledger entries for a session to JSONL for committing; `describe` lists prereqs.
 - **Still partly forgeable — know the residual trust.** The other four prereqs

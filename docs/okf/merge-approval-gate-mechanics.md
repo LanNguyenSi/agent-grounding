@@ -3,7 +3,7 @@ type: runbook
 title: Merge-approval gate — labels, keys, and when it actually blocks
 description: How the merge-approval Check-Run maps five review:* PR labels to merge_approval booleans, keys evidence by the PR HEAD BRANCH NAME, and blocks only when required in branch protection — which on agent-grounding master it is not, so it is advisory in fact today.
 tags: [merge-approval, review-claim-gate, ci, runbook, labels]
-timestamp: 2026-08-26T11:27:38Z
+timestamp: 2026-09-02T05:43:25Z
 sources:
   - .github/workflows/merge-approval.yml
   - packages/review-claim-gate/README.md
@@ -33,7 +33,7 @@ directory exists and contains `action.yml`.)
 
 ## What it reads: the five labels → booleans
 
-The `Extract prereq flags from PR labels` step (`actions/github-script@v7`,
+The `Extract prereq flags from PR labels` step (`actions/github-script@v8`,
 `merge-approval.yml:31-44#"core.setOutput('evidence_logged',"`) maps each label name to a `"true"|"false"` output,
 which is passed into the action inputs (`merge-approval.yml:51-55#"evidence-logged: ${{ steps.labels.outputs.evidence_logged }}"`). Exact
 mapping:
