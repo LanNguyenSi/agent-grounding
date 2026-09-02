@@ -28,9 +28,9 @@
   positives found by measuring the round-1 check against the real corpus of
   94 run directories under pandora/harness/agent-grounding: (1) the
   well-formed-unkeyed-marker exemption now tracks what the resolver
-  (`matchMarker`) actually reads a value from — a line starting with the
+  (`matchMarker`) actually reads a value from (a line starting with the
   comment opener, `solution-acceptance:`, `run-base`, `=`, and a
-  non-whitespace value, WHATEVER follows on the line — instead of a
+  non-whitespace value, WHATEVER follows on the line), instead of a
   whole-line-only shape; 9 real runs whose unkeyed marker carried a trailing
   annotation or the pandora multi-repo convention's `= multi-repo; see keyed
   markers below` had resolved a value AND been reported malformed under the
@@ -39,9 +39,9 @@
   occurrence entirely inside a single-backtick inline code span or a fenced
   code block now reads as a quotation of the marker syntax, not an attempted
   marker, and is exempt (a second, unquoted mention of the phrase on the same
-  line still blocks) — 2 real runs that only ever quoted the marker syntax in
+  line still blocks). 2 real runs that only ever quoted the marker syntax in
   backticks (prose documentation, template examples) had self-blocked under
-  round 1's "a fence is not an excuse" stance. (3) a malformed line caught
+  round 1's "a fence is not an excuse" stance; this fixes them. (3) a malformed line caught
   only by the third (phrase) net now gets a distinct reason ("names the
   run-base marker tokens but is not a well-formed marker") instead of the
   keyed-shape hint, which misled an operator whose line never attempted

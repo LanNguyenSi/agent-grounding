@@ -11,12 +11,12 @@
   The unkeyed-marker exemption from the phrase check now tracks what
   `matchMarker` actually reads a value from (line start + the comment opener
   through a non-whitespace value, whatever follows), not a whole-line-only
-  shape — fixes an annotated-sha unkeyed marker and the pandora multi-repo
+  shape, fixing an annotated-sha unkeyed marker and the pandora multi-repo
   convention line both resolving a value AND being reported malformed. (2)
   Orchestrator decision D-027 amends round 1's fence stance: a phrase
   occurrence entirely inside a single-backtick inline span or a fenced code
   block is now a quotation, exempt from the check (a second unquoted mention
-  on the same line still blocks) — fixes two real runs that only ever quoted
+  on the same line still blocks), fixing two real runs that only ever quoted
   the marker syntax in backticks. (3) a malformed line caught only by the
   phrase net (no keyed bracket syntax attempted) now gets a distinct reason
   instead of the misleading keyed-shape hint. All `ow-run-completeness.ts`

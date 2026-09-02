@@ -320,19 +320,19 @@ OW run files under `<repoPath>/.ai/runs/`:
   date heuristic.
 
   **Quotation exemption (D-027, amends the round-1 fence choice above).** A
-  phrase occurrence that is entirely inside backtick-delimited inline code —
-  one backtick pair, matched non-greedily across the WHOLE file so a span may
-  cross a line break the same way rendered Markdown treats one — or entirely
+  phrase occurrence that is entirely inside backtick-delimited inline code
+  (one backtick pair, matched non-greedily across the WHOLE file so a span may
+  cross a line break the same way rendered Markdown treats one), or entirely
   inside a FENCED code block reads as a QUOTATION of the marker syntax, not an
   attempted marker, and does not trip this check. This is a heuristic, not a
   CommonMark parser: only single-backtick inline spans are recognised, and a
   fence is any line starting with three or more backticks/tildes, nesting and
   mismatched fence lengths not validated. Only this third (phrase) net is
-  quoting-aware; the keyed loose net above is NOT — a genuine keyed-attempt at
+  quoting-aware; the keyed loose net above is NOT (a genuine keyed-attempt at
   the line start still blocks the same way whether or not it sits inside a
-  fence. A phrase occurrence that survives quoting removal — including one on
-  a line that ALSO carries a code span elsewhere, when the phrase itself sits
-  outside it — still blocks, unchanged. Measured against the real corpus (94
+  fence). A phrase occurrence that survives quoting removal, including one on
+  a line that ALSO carries a code span elsewhere when the phrase itself sits
+  outside it, still blocks, unchanged. Measured against the real corpus (94
   run directories under pandora/harness/agent-grounding): two real runs
   self-blocked purely because their `00-goal.md` quoted the marker syntax in
   backticks (documentation, not an attempt) before this exemption existed.
@@ -341,9 +341,9 @@ OW run files under `<repoPath>/.ai/runs/`:
   from this check, or every ordinary unkeyed marker in the corpus, which
   itself names both tokens, would misreport as an attempted-but-broken keyed
   one. The exemption tracks what the resolver (`matchMarker`) actually reads a
-  value from — a line starting (after optional whitespace) with the HTML
+  value from: a line starting, after optional whitespace, with the HTML
   comment opener, `solution-acceptance:`, `run-base`, `=`, and a
-  non-whitespace value, WHATEVER follows on the line — rather than requiring
+  non-whitespace value, WHATEVER follows on the line, rather than requiring
   the whole line to be nothing but that marker
   (`isUnkeyedRunBaseMarkerLine`/`UNKEYED_RUN_BASE_LINE_START`,
   `ow-run-completeness.ts:514#"const UNKEYED_RUN_BASE_LINE_START = /^\s*<!--\s*solution-acceptance:\s*run-base\s*=\s*\S+/;"`).
@@ -382,7 +382,7 @@ OW run files under `<repoPath>/.ai/runs/`:
   DIFFERENT reasons depending on how it was caught: a `keyed-attempt` line
   (the loose net matched `run-base[` at the line start) keeps the keyed-shape
   hint naming the expected grammar; a `phrase-only` line (caught only by the
-  third, position-independent net — prose, a quoted marker, a bullet-wrapped
+  third, position-independent net: prose, a quoted marker, a bullet-wrapped
   attempt) gets a DIFFERENT message naming the tokens found instead, so an
   operator whose line never attempted bracket syntax at all is not pointed at
   the keyed shape as the fix

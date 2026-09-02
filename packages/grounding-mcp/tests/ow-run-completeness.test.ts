@@ -1394,7 +1394,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
 
   it('the same quoted marker also naming both tokens again OUTSIDE the backticks still blocks (negative control)', () => {
     // Negative control for D-027 (review finding 2): a code span on the line
-    // does not blanket-exempt the whole line — only the phrase occurrence
+    // does not blanket-exempt the whole line; only the phrase occurrence
     // that is actually inside it. A second, unquoted mention of both tokens
     // on the same line still trips the phrase check.
     const root = namedRoot('alpha');
@@ -1440,7 +1440,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     expect(r.runBase).toBeNull();
     expect(r.complete).toBe(false);
     // Phrase-only hit (review finding 5): no `run-base[` bracket syntax was
-    // ever attempted, so this must NOT get the keyed-marker-shape hint —
+    // ever attempted, so this must NOT get the keyed-marker-shape hint:
     // that hint names a fix ('run-base[<key>] = <sha>') this line never
     // tried and would mislead an operator.
     expect(
@@ -1836,7 +1836,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
   it('the pandora multi-repo unkeyed convention line, byte-exact, is exempt and the keyed marker for this repo wins (review finding 1)', () => {
     // Byte-exact line from the real pandora run corpus (batch 33/34/35/etc):
     // this ends its value at the first whitespace ('multi-repo;'), so the
-    // legacy unkeyed matcher DOES read a value from it — the earlier
+    // legacy unkeyed matcher DOES read a value from it; the earlier
     // whole-line-only exemption shape did not recognise this as an unkeyed
     // marker line and reported it malformed even though a value resolved.
     const root = namedRoot('agent-dx');
@@ -1939,7 +1939,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
 
   it('the malformed reason pins the exact "line N: <excerpt>" text, with the marker off line 1 (review finding 3)', () => {
     // Before this test, dropping the 'line N: ' prefix (or an off-by-one in
-    // the line number) left 94/94 green — nothing pinned the prefix or the
+    // the line number) left 94/94 green; nothing pinned the prefix or the
     // exact line number. The marker is deliberately on line 5 (not line 1),
     // so a 0-based/1-based mixup fails this assertion.
     const goal = [

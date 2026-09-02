@@ -123,11 +123,11 @@
 //     block rather than silently fall through to the legacy date heuristic.
 //     QUOTATION EXEMPTION (orchestrator decision D-027, round 2 of task
 //     6da2c230, amending round 1's fence choice above): a phrase occurrence
-//     that is entirely inside backtick-delimited inline code — a single
+//     that is entirely inside backtick-delimited inline code (a single
 //     backtick pair, matched non-greedily across the WHOLE file so a span may
-//     cross a line break the same way rendered Markdown treats one (double/
-//     triple-backtick inline delimiters are not recognised; the run files
-//     this reads do not use them) — or entirely inside a FENCED code block
+//     cross a line break the same way rendered Markdown treats one; double/
+//     triple-backtick inline delimiters are not recognised, the run files
+//     this reads do not use them), or entirely inside a FENCED code block
 //     (any line starting, after optional leading whitespace, with three or
 //     more backticks or tildes toggles fence state; the fence delimiter line
 //     and every line between it and the matching close count as fenced; this
@@ -138,8 +138,8 @@
 //     quoting-aware; the loose-net keyed-attempt check above is NOT (a
 //     genuine keyed-marker attempt at the line start still blocks the same
 //     way whether or not it sits inside a fence). A phrase occurrence that
-//     survives quoting removal — including one on a line that ALSO carries a
-//     code span elsewhere, when the phrase itself sits outside it — still
+//     survives quoting removal, including one on a line that ALSO carries a
+//     code span elsewhere when the phrase itself sits outside it, still
 //     blocks, unchanged. This narrows round 1's stance (a fence was
 //     previously never an excuse); the residual left standing is narrower
 //     still: only a `00-goal.md` with NO UNQUOTED line naming both tokens
@@ -180,8 +180,8 @@
 //     resolver grammar (round 2 of task 6da2c230, review finding 1): a line
 //     is exempt when it starts (after optional leading whitespace) with
 //     `<!--` followed by `solution-acceptance:` (whitespace, no space before
-//     the colon — the exact literal `matchMarker` requires), whitespace,
-//     `run-base`, whitespace, `=`, whitespace, and a non-whitespace value —
+//     the colon, the exact literal `matchMarker` requires), whitespace,
+//     `run-base`, whitespace, `=`, whitespace, and a non-whitespace value,
 //     REGARDLESS of what follows that value on the line (an annotation
 //     `(agent-tasks); harness ...`, the pandora multi-repo convention's `;
 //     see keyed markers below`, or an unclosed comment). The earlier
@@ -450,7 +450,7 @@ interface KeyedRunBaseMarker {
  * One line naming the run-base marker tokens without matching a well-formed
  * marker grammar. `kind` distinguishes an attempted KEYED marker (loose net:
  * `run-base[` at the line start) from a bare PHRASE occurrence (third,
- * position-independent net: names both tokens, nothing more specific) — see
+ * position-independent net: names both tokens, nothing more specific); see
  * the module docstring for why they get different reasons.
  */
 interface MalformedRunBaseLine {
@@ -496,8 +496,8 @@ const KEYED_RUN_BASE_LOOSE_START = /^\s*<!--+\s*solution-acceptance\s*:\s*run-ba
 // single bracketed token spanning the whole (already-trimmed) key.
 const PLACEHOLDER_KEY = /^<[^>]*>$/;
 // The LEGACY UNKEYED marker LINE shape (round 2, review finding 1): a line
-// is an unkeyed marker line — exempt from the phrase check below, whatever
-// its value resolves to and whatever follows on the line — iff it is a line
+// is an unkeyed marker line, exempt from the phrase check below, whatever
+// its value resolves to and whatever follows on the line, iff it is a line
 // the resolver (`matchMarker`, via `isUnkeyedRunBaseMarkerLine` below) would
 // actually read an unkeyed value from, ANCHORED at the line start (after
 // optional leading whitespace) with the HTML comment opener. Anchoring to
@@ -506,7 +506,7 @@ const PLACEHOLDER_KEY = /^<[^>]*>$/;
 // solution-acceptance: run-base = ...` comment specifically, not any bare
 // mid-line mention of the resolver's grammar. Deliberately NOT required to
 // close its own comment (`-->`) or stop at the value (unlike the old
-// whole-line-only shape this replaces) — an annotation
+// whole-line-only shape this replaces): an annotation
 // (`= 863800c (agent-tasks); harness ...`) or the pandora multi-repo
 // convention (`= multi-repo; see keyed markers below`) both resolve a value
 // via the same substring search `matchMarker` performs and must not ALSO be
@@ -526,7 +526,7 @@ function isUnkeyedRunBaseMarkerLine(line: string): boolean {
 // Fenced code block detector (round 2, D-027; see the module docstring's
 // QUOTATION EXEMPTION paragraph): any line starting, after optional leading
 // whitespace, with three or more backticks or tildes toggles fence state.
-// Heuristic, not a CommonMark parser — nesting, differing fence lengths/
+// Heuristic, not a CommonMark parser: nesting, differing fence lengths/
 // characters on open vs close, and info strings are not validated.
 const FENCE_MARKER = /^\s*(`{3,}|~{3,})/;
 function computeFencedLineFlags(lines: string[]): boolean[] {
@@ -550,7 +550,7 @@ function blank(s: string): string {
 
 /**
  * `goal` with every QUOTED range blanked out (fenced code block lines, then
- * single-backtick inline code spans — see the module docstring's QUOTATION
+ * single-backtick inline code spans; see the module docstring's QUOTATION
  * EXEMPTION paragraph and `computeFencedLineFlags`). Fences are blanked
  * FIRST so a backtick that is itself fenced content can never pair with a
  * backtick outside the fence. Line count and line boundaries are preserved
@@ -572,7 +572,7 @@ function stripQuotedRunBaseText(goal: string): string {
 // exact, case-sensitive tokens the template uses is an attempted `run-base`
 // marker unless it is already accepted as well-formed (keyed or unkeyed,
 // checked before this is reached) OR the occurrence is entirely inside a
-// quoted range (round 2, D-027 — see `stripQuotedRunBaseText`). Deliberately
+// quoted range (round 2, D-027; see `stripQuotedRunBaseText`). Deliberately
 // simple and total otherwise: no attempt to enumerate shapes, since
 // enumerating shapes is exactly what left the residual open before.
 function lineCarriesRunBasePhrase(line: string): boolean {
@@ -589,10 +589,10 @@ function lineCarriesRunBasePhrase(line: string): boolean {
  * match whose key is placeholder-shaped is skipped entirely (not counted as
  * present, not malformed). A well-formed LEGACY UNKEYED marker line is also
  * skipped entirely (it is handled by the separate unkeyed matcher, not
- * malformed — see `isUnkeyedRunBaseMarkerLine`). Every other line naming
- * both marker tokens (attempted keyed syntax the loose net already caught —
- * `kind: 'keyed-attempt'` — or a bullet/prose/wrapper-less/leading-text
- * mention the loose net's line-start anchor cannot see — `kind:
+ * malformed; see `isUnkeyedRunBaseMarkerLine`). Every other line naming
+ * both marker tokens (attempted keyed syntax the loose net already caught,
+ * `kind: 'keyed-attempt'`, or a bullet/prose/wrapper-less/leading-text
+ * mention the loose net's line-start anchor cannot see, `kind:
  * 'phrase-only'`, and only when it survives the quoting exemption, see
  * `stripQuotedRunBaseText`) is collected as malformed with its 1-based line
  * number and its category.
@@ -629,7 +629,7 @@ function collectKeyedRunBaseMarkers(goal: string): KeyedMarkerScan {
 
 /**
  * Truncate `s` to `n` characters. Applied to an EXCERPT before it is
- * prefixed with `line N: ` (round 2, review finding 6) — truncating the
+ * prefixed with `line N: ` (round 2, review finding 6): truncating the
  * already-prefixed string, as the previous version did, let the prefix eat
  * into the excerpt's own character budget instead of the excerpt getting
  * the full `n` characters it was promised.
@@ -642,7 +642,7 @@ function truncate(s: string, n: number): string {
  * Join `items` into a single bounded string: at most `maxItems` shown, with
  * `(+N more)` appended when more were dropped. Per-item character bounding
  * (when wanted) is the caller's job, via `truncate`, applied BEFORE any
- * `line N: ` style prefix is added — see `truncate`'s own note. Keeps
+ * `line N: ` style prefix is added; see `truncate`'s own note. Keeps
  * blocker messages from growing unbounded when a goal file carries many/long
  * keys or malformed lines.
  */
@@ -658,7 +658,7 @@ function joinBounded(items: string[], maxItems: number, sep: string): string {
  * found, ONE entry per category present (round 2, review finding 5): a
  * `keyed-attempt` line gets the original keyed-shape hint (it named
  * `run-base[`, so the keyed grammar is the actionable fix); a `phrase-only`
- * line gets a DIFFERENT message that does not point at the keyed shape —
+ * line gets a DIFFERENT message that does not point at the keyed shape;
  * that hint misleads an operator whose line never attempted bracket syntax
  * at all (prose, a quoted marker, a quoted regex). Returns 0-2 strings, in
  * this fixed order when both are present.
