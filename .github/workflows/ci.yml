@@ -94,7 +94,7 @@ jobs:
         # scripts/fixtures/okf-selectors/ against the new version (see
         # that directory's README.md) or the "okf-kit selector-coupling
         # check" step below fails loud on a version mismatch.
-        run: npm install -g okf-kit@0.8.0
+        run: npm install -g okf-kit@0.9.0
 
       - name: Assert CLI is alive (output, not exit code)
         shell: bash
@@ -109,15 +109,20 @@ jobs:
           set +e
           # --require-anchors opts into okf-kit's own anchor-required /
           # anchor-not-on-last-line / anchor-not-unique-in-range /
-          # test-range-straddles-block checks (all reported under
-          # ruleId citations-resolve, severity warning, message tagged
-          # e.g. "[anchor-required]"), which as of okf-kit@0.8.0 replace
+          # test-range-straddles-block / anchor-required-continuation
+          # checks (all reported under ruleId citations-resolve, severity
+          # warning, message tagged e.g. "[anchor-required]"). The first
+          # four shipped in okf-kit@0.8.0, replacing
           # what this repo used to enforce itself in
           # scripts/check-okf-anchors.js (removed; see docs/okf/log.md and
           # the "OKF anchor-discipline check" step below for the one rule
           # that still has no okf-kit equivalent). --require-anchors-allow
           # is omitted: check-okf-anchors.js's own ALLOWLIST was empty --
           # every full citation in this bundle already carries an anchor.
+          # anchor-required-continuation shipped in okf-kit@0.9.0: every
+          # continuation citation in this bundle (`:N`, `-`M``, `(`N`)`)
+          # has been lifted into its own anchored full citation (see
+          # docs/okf/log.md's entry for the 0.9.0 bump).
           okf-kit check --require-anchors --json "${BUNDLE_PATH}" > okf-anchor-report.json
           code=$?
           set -e
@@ -279,7 +284,7 @@ jobs:
       - name: okf-kit selector-coupling check
         # Couples this job's own jq selectors (above) to okf-kit's JSON
         # finding shape: replays the extracted selectors against two
-        # canonical okf-kit@0.8.0 reports (scripts/fixtures/okf-selectors/)
+        # canonical okf-kit@0.9.0 reports (scripts/fixtures/okf-selectors/)
         # and asserts each blocking selector still selects exactly what it
         # is supposed to. See scripts/check-okf-selectors.js for why (this
         # repeats the pin-coupling check's rationale for a different kind

@@ -233,9 +233,9 @@ test('run(): F3 negative control -- the ambiguousCount leg dropped from the bloc
   }
 });
 
-test('run(): M1 negative control -- a ci.yml copy pinning okf-kit@0.9.0 (fixtures unchanged, still 0.8.0) exits 1 on the version mismatch', () => {
+test('run(): M1 negative control -- a ci.yml copy pinning okf-kit@0.9.1 (fixtures unchanged, still 0.9.0) exits 1 on the version mismatch', () => {
   const before = fs.readFileSync(REAL_CI_YAML, 'utf8');
-  const mutated = before.replace('npm install -g okf-kit@0.8.0', 'npm install -g okf-kit@0.9.0');
+  const mutated = before.replace('npm install -g okf-kit@0.9.0', 'npm install -g okf-kit@0.9.1');
   assert.notEqual(mutated, before, 'the okf-kit pin must actually be present to mutate');
 
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-okf-selectors-pin-bump-'));
