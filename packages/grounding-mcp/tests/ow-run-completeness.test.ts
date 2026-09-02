@@ -2108,6 +2108,34 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     ).toBe(true);
   });
 
+  it('two 4-space-indented backtick fence lines are not fences, yet their backticks pair as a span around the attempt (documented residual, pinned)', () => {
+    // FENCE_MARKER tolerates at most 3 spaces of indent, so a 4-space
+    // indented ``` line is ordinary text to the fence pass; its backticks
+    // then feed the single-backtick inline-span pass, which pairs the odd
+    // leftover of the opener line with the odd leftover of the closer line
+    // across the non-blank attempt line. The attempt is exempt (absent). For
+    // a fence nested under a list item this is the wanted quotation outcome;
+    // outside a list it is a fail-open residual. Pinned, not endorsed.
+    const goal = [
+      '# Goal',
+      '1. Example:',
+      '    ```',
+      '    - <!-- solution-acceptance: run-base[alpha] = aaaaaaa -->',
+      '    ```',
+      '',
+    ].join('\n');
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runBaseKind).toBe('absent');
+    expect(r.runBase).toBeNull();
+    expect(r.reasons.some((x) => x.includes('not well-formed'))).toBe(false);
+  });
+
   it('a fenced well-formed keyed marker is still selected as the binding (documented asymmetry, pinned)', () => {
     // Only the phrase net is quoting-aware: a genuine well-formed keyed
     // marker attempt is read the same way whether or not it sits inside a

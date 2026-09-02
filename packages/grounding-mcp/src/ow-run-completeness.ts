@@ -142,12 +142,12 @@
 //     everything to end of file. A blockquoted fence (`> \`\`\``) is NOT
 //     recognised as a fence at all: the `> ` prefix is not stripped, so its
 //     backtick run neither opens nor closes fence state (fails closed).
-//     Residual: an unrecognised backtick-delimited fence's own backticks are
-//     still ordinary characters to the separate single-backtick inline-span
-//     pass below, so an odd leftover backtick from one such line can pair
-//     with a leftover from another (a heuristic quirk of not being a real
-//     parser); a tilde-delimited fence has no such interaction, since tildes
-//     are not inline-code delimiters.
+//     Residual: an unrecognised backtick fence's own backticks stay ordinary
+//     characters to the single-backtick inline-span pass below, so leftovers
+//     from two such lines (e.g. two ``` lines indented 4+ spaces) pair around
+//     a marker attempt between them with no blank line and exempt it: wanted
+//     for a fence nested under a list item (a quotation), fail-open when such
+//     a line sits outside any list. Pinned by a test; tildes never pair.
 //     Only this third net is quoting-aware; the loose-net keyed-attempt check
 //     above is NOT (a genuine keyed-marker attempt at the line start still
 //     blocks the same way whether or not it sits inside a fence: this is a
