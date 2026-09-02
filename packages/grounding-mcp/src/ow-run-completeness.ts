@@ -122,29 +122,51 @@
 //     signals the run intended to bind a `run-base` and failed, which must
 //     block rather than silently fall through to the legacy date heuristic.
 //     QUOTATION EXEMPTION (orchestrator decision D-027, round 2 of task
-//     6da2c230, amending round 1's fence choice above): a phrase occurrence
-//     that is entirely inside backtick-delimited inline code (a single
-//     backtick pair, matched non-greedily across the WHOLE file so a span may
-//     cross a line break the same way rendered Markdown treats one; double/
-//     triple-backtick inline delimiters are not recognised, the run files
-//     this reads do not use them), or entirely inside a FENCED code block
-//     (any line starting, after optional leading whitespace, with three or
-//     more backticks or tildes toggles fence state; the fence delimiter line
-//     and every line between it and the matching close count as fenced; this
-//     is a heuristic, not a CommonMark parser: nesting, mismatched fence
-//     lengths/characters, and info strings are not validated) reads as a
-//     QUOTATION of the marker syntax, not an attempted marker, and does not
-//     trip THIS position-independent phrase check. Only this third net is
-//     quoting-aware; the loose-net keyed-attempt check above is NOT (a
-//     genuine keyed-marker attempt at the line start still blocks the same
-//     way whether or not it sits inside a fence). A phrase occurrence that
-//     survives quoting removal, including one on a line that ALSO carries a
-//     code span elsewhere when the phrase itself sits outside it, still
-//     blocks, unchanged. This narrows round 1's stance (a fence was
+//     6da2c230, amending round 1's fence choice above; round 3 tightened both
+//     nets below): a phrase occurrence that is entirely inside backtick-
+//     delimited inline code, or entirely inside a FENCED code block, reads as
+//     a QUOTATION of the marker syntax, not an attempted marker, and does not
+//     trip THIS position-independent phrase check. This is a HEURISTIC, not a
+//     CommonMark parser, and stays deliberately narrow rather than
+//     approximating full Markdown rendering: an inline span is a single
+//     backtick pair (double/triple-backtick inline delimiters are not
+//     recognised) that may cross line breaks but never a BLANK line: a code
+//     span cannot contain a paragraph break, so two stray backticks
+//     separated by a blank line never pair with each other. A fenced block is
+//     any line, indented up to 3 spaces, starting with a run of 3+ backticks
+//     or 3+ tildes; a fence CLOSES only on a later line whose run is the SAME
+//     character and AT LEAST AS LONG (a `~~~` line inside a ``` fence does
+//     not close it, and the reverse holds too, same requirement). An opener with no matching
+//     closer anywhere after it fences NOTHING (fails closed: neither the
+//     opener line nor anything after it is exempt), rather than exempting
+//     everything to end of file. A blockquoted fence (`> \`\`\``) is NOT
+//     recognised as a fence at all: the `> ` prefix is not stripped, so its
+//     backtick run neither opens nor closes fence state (fails closed).
+//     Residual: an unrecognised backtick-delimited fence's own backticks are
+//     still ordinary characters to the separate single-backtick inline-span
+//     pass below, so an odd leftover backtick from one such line can pair
+//     with a leftover from another (a heuristic quirk of not being a real
+//     parser); a tilde-delimited fence has no such interaction, since tildes
+//     are not inline-code delimiters.
+//     Only this third net is quoting-aware; the loose-net keyed-attempt check
+//     above is NOT (a genuine keyed-marker attempt at the line start still
+//     blocks the same way whether or not it sits inside a fence: this is a
+//     deliberate ASYMMETRY: only the phrase net treats a fence or code span
+//     as quotation, a line-start keyed attempt, well-formed or malformed, is
+//     read or blocked inside a fence exactly as outside it). A phrase
+//     occurrence that survives quoting removal, including one on a line that
+//     ALSO carries a code span elsewhere when the phrase itself sits outside
+//     it, still blocks, unchanged. This narrows round 1's stance (a fence was
 //     previously never an excuse); the residual left standing is narrower
 //     still: only a `00-goal.md` with NO UNQUOTED line naming both tokens
 //     anywhere reads as truly MARKERLESS and falls through to the legacy date
 //     heuristic (fail-open by design, the kit's documented markerless path).
+//     A separate, ACCEPTED residual: a purely QUOTED unkeyed marker that is
+//     the only occurrence of the marker tokens in the file is still resolved
+//     by the legacy substring matcher (`matchMarker`), which is not
+//     quote-aware at all; quoting exempts a line from the malformed-phrase
+//     check, it does not stop the unkeyed resolver from reading a value out
+//     of it.
 //     Malformed lines caught by the third (phrase) net report a DIFFERENT
 //     reason than lines caught by the loose keyed-attempt net: the keyed
 //     hint (`expected '<!-- solution-acceptance: run-base[<key>] = <sha>
@@ -182,13 +204,14 @@
 //     `<!--` followed by `solution-acceptance:` (whitespace, no space before
 //     the colon, the exact literal `matchMarker` requires), whitespace,
 //     `run-base`, whitespace, `=`, whitespace, and a non-whitespace value,
-//     REGARDLESS of what follows that value on the line (an annotation
-//     `(agent-tasks); harness ...`, the pandora multi-repo convention's `;
-//     see keyed markers below`, or an unclosed comment). The earlier
-//     whole-line-only shape under-matched relative to what the resolver
-//     actually reads a value from, so a legitimately resolving annotated
-//     unkeyed marker was both used AND reported malformed; this exemption
-//     closes that gap without widening what the resolver itself accepts.
+//     REGARDLESS of what follows that value on the line: an unkeyed marker
+//     whose value is followed by a trailing annotation, or one left with an
+//     unclosed comment, both included. The earlier whole-line-only shape
+//     under-matched relative to what the resolver actually reads a value
+//     from, so a legitimately resolving annotated unkeyed marker was both
+//     used AND reported malformed; this exemption closes that gap without
+//     widening what the resolver itself accepts. Anchored by a corpus
+//     measurement, see CHANGELOG [Unreleased].
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -506,11 +529,10 @@ const PLACEHOLDER_KEY = /^<[^>]*>$/;
 // solution-acceptance: run-base = ...` comment specifically, not any bare
 // mid-line mention of the resolver's grammar. Deliberately NOT required to
 // close its own comment (`-->`) or stop at the value (unlike the old
-// whole-line-only shape this replaces): an annotation
-// (`= 863800c (agent-tasks); harness ...`) or the pandora multi-repo
-// convention (`= multi-repo; see keyed markers below`) both resolve a value
-// via the same substring search `matchMarker` performs and must not ALSO be
-// reported malformed for it.
+// whole-line-only shape this replaces): an unkeyed marker whose value is
+// followed by a trailing annotation resolves a value via the same substring
+// search `matchMarker` performs and must not ALSO be reported malformed for
+// it. Anchored by a corpus measurement, see CHANGELOG [Unreleased].
 const UNKEYED_RUN_BASE_LINE_START = /^\s*<!--\s*solution-acceptance:\s*run-base\s*=\s*\S+/;
 /**
  * True when `line` is a line the legacy unkeyed matcher (`matchMarker` with
@@ -523,22 +545,60 @@ function isUnkeyedRunBaseMarkerLine(line: string): boolean {
   return UNKEYED_RUN_BASE_LINE_START.test(line) && matchMarker(line, 'run-base', '\\S+') !== null;
 }
 
-// Fenced code block detector (round 2, D-027; see the module docstring's
-// QUOTATION EXEMPTION paragraph): any line starting, after optional leading
-// whitespace, with three or more backticks or tildes toggles fence state.
-// Heuristic, not a CommonMark parser: nesting, differing fence lengths/
-// characters on open vs close, and info strings are not validated.
-const FENCE_MARKER = /^\s*(`{3,}|~{3,})/;
+// Fenced code block detector (round 2, D-027; round 3 tightened the matching
+// rule; see the module docstring's QUOTATION EXEMPTION paragraph). A fence
+// delimiter line is at most 3 leading spaces (CommonMark's indented-fence
+// allowance) followed by a run of 3+ backticks or 3+ tildes; a `> ` (or any
+// other) blockquote prefix is NOT a fence, deliberately fail-closed: a
+// blockquoted fence is never recognised as one, so its own backtick/tilde run
+// never opens or closes a fence. Heuristic, not a CommonMark parser: info
+// strings are not validated.
+const FENCE_MARKER = /^ {0,3}(`{3,}|~{3,})/;
+
+/** The fence delimiter (character and run length) on `line`, or null. */
+function matchFenceMarker(line: string): { char: string; length: number } | null {
+  const m = FENCE_MARKER.exec(line);
+  if (m === null) return null;
+  return { char: m[1][0], length: m[1].length };
+}
+
+/**
+ * A fence CLOSES only on a later line whose delimiter is the SAME character
+ * and AT LEAST AS LONG as the opener's (CommonMark's own closing rule): a
+ * `~~~` line inside a ``` fence does not close it, and vice versa. An opener
+ * with no matching closer anywhere after it fences NOTHING: it fails closed
+ * (the opener line itself is exempted from being "fenced" too), rather than
+ * the earlier behaviour of an unclosed fence swallowing everything to EOF.
+ * When an opener has no matching closer, the scan resumes at the very next
+ * line, so a later, genuinely well-formed fence pair further down the file
+ * is still recognised.
+ */
 function computeFencedLineFlags(lines: string[]): boolean[] {
   const flags: boolean[] = new Array(lines.length).fill(false);
-  let open = false;
-  for (let i = 0; i < lines.length; i++) {
-    if (FENCE_MARKER.test(lines[i])) {
-      flags[i] = true; // the delimiter line itself counts as fenced
-      open = !open;
+  let i = 0;
+  while (i < lines.length) {
+    const open = matchFenceMarker(lines[i]);
+    if (open === null) {
+      i++;
       continue;
     }
-    flags[i] = open;
+    let closeIdx = -1;
+    for (let j = i + 1; j < lines.length; j++) {
+      const candidate = matchFenceMarker(lines[j]);
+      if (candidate !== null && candidate.char === open.char && candidate.length >= open.length) {
+        closeIdx = j;
+        break;
+      }
+    }
+    if (closeIdx === -1) {
+      // Unclosed: fences nothing, not even the opener line itself. Resume
+      // scanning from the very next line for another, possibly well-formed,
+      // fence pair.
+      i++;
+      continue;
+    }
+    for (let k = i; k <= closeIdx; k++) flags[k] = true;
+    i = closeIdx + 1;
   }
   return flags;
 }
@@ -548,22 +608,34 @@ function blank(s: string): string {
   return s.replace(/[^\n]/g, ' ');
 }
 
+// A single-backtick inline code span, bounded at a PARAGRAPH break: the span
+// may cross one or more consecutive non-blank line breaks (a backtick pair
+// opened on one line and closed on the next quotes cleanly, matching the one
+// real corpus file that relies on this, see the module docstring), but
+// never a BLANK line: a bare backtick followed, sometime later, by a blank
+// line and then another stray backtick must not pair across that gap (round
+// 3; the round-2 version paired across the WHOLE file, including across
+// blank-line paragraph breaks). `(?!\s*\n)` after each `\n` refuses to
+// continue the span onto a blank (or whitespace-only) line.
+const INLINE_CODE_SPAN = /`[^`\n]*(?:\n(?!\s*\n)[^`\n]*)*?`/g;
+
 /**
  * `goal` with every QUOTED range blanked out (fenced code block lines, then
  * single-backtick inline code spans; see the module docstring's QUOTATION
- * EXEMPTION paragraph and `computeFencedLineFlags`). Fences are blanked
- * FIRST so a backtick that is itself fenced content can never pair with a
- * backtick outside the fence. Line count and line boundaries are preserved
- * (only non-newline characters are ever replaced), so the result can be
- * re-split with the same `/\r?\n/` regex used on `goal` and indexed
- * line-for-line against it. An unmatched single backtick quotes nothing
- * (fails closed, same as before this exemption existed).
+ * EXEMPTION paragraph, `computeFencedLineFlags`, and `INLINE_CODE_SPAN`).
+ * Fences are blanked FIRST so a backtick that is itself fenced content can
+ * never pair with a backtick outside the fence. Line count and line
+ * boundaries are preserved (only non-newline characters are ever replaced),
+ * so the result can be re-split with the same `/\r?\n/` regex used on `goal`
+ * and indexed line-for-line against it. An unmatched single backtick, or one
+ * whose only pairing partner sits across a blank line, quotes nothing (fails
+ * closed).
  */
 function stripQuotedRunBaseText(goal: string): string {
   const lines = goal.split(/\r?\n/);
   const fenced = computeFencedLineFlags(lines);
   const fenceStripped = lines.map((line, i) => (fenced[i] ? blank(line) : line)).join('\n');
-  return fenceStripped.replace(/`[^`]*?`/g, blank);
+  return fenceStripped.replace(INLINE_CODE_SPAN, blank);
 }
 
 // Fail-closed phrase check (the residual this widens, see the module

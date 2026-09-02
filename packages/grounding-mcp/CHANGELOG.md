@@ -55,6 +55,60 @@
   distinct phrase-only reason, and a pin on the exact `line N: <excerpt>`
   text with the marker off line 1).
 
+  Round 3 (task 6da2c230, review round 2 findings) tightened both nets D-027
+  introduced, which the round-2 reviewer measured as too loose: (1) the
+  single-backtick inline-span pairing was whole-file and non-greedy, so a
+  stray backtick could pair with another stray backtick many lines away
+  across a blank-line paragraph break, accidentally exempting a real,
+  phrase-carrying line sitting between them. The span is now bounded at a
+  paragraph break (never contains `\n\s*\n`); crossing one or more
+  consecutive non-blank lines is still allowed, matching the one real corpus
+  file (`.ai/runs/2026-07-16-ow-kit-run-base-marker/00-goal.md`) that relies
+  on a span opened on one line and closed on the next. (2) the fence
+  detector toggled on ANY line starting with 3+ backticks or tildes,
+  regardless of character or run length, so an unclosed fence exempted
+  everything to end of file (fail-open) and a tilde-delimited fence line
+  inside a backtick-delimited fence closed it (or vice versa). A fence now
+  closes only on a later line whose delimiter is the SAME character and AT LEAST AS LONG as the
+  opener's; an opener with no matching closer fences NOTHING (fails closed,
+  not "to EOF"); a blockquoted fence's `> ` prefix is not recognised as a
+  fence at all (also fail-closed, and documented as a known residual: an
+  unrecognised backtick-delimited fence's own backticks can still interact
+  with the separate single-backtick span heuristic, a quirk of not being a
+  real parser). Both fixes are covered by new tests: a `~~~`-delimited fence
+  around a phrase-carrying bullet (exempt) with a negative control (a `~~~`
+  pair placed after the marker line does not retroactively exempt it); an
+  unclosed backtick-delimited fence opener followed by a phrase-carrying
+  bullet (blocks); a `~~~` line inside a backtick-delimited fence, and the
+  mirror, each still inside the fence (exempt); stray backticks before and after a bullet
+  separated by blank lines (blocks); a blockquoted fence around a bullet
+  (blocks); a fenced well-formed keyed marker (pinned: still selected as the
+  binding, `runBaseKind: 'sha'`, an intentional asymmetry: only the phrase
+  net is quoting-aware); and a purely quoted unkeyed marker as the only
+  occurrence in the file (pinned: still resolved by the legacy substring
+  matcher, an accepted residual). Also closed: module docstring, README, and
+  the `docs/okf/solution-acceptance-verdict-contract.md` consumer doc
+  previously said the quotation exemption worked "the same way rendered
+  Markdown treats one": corrected to describe the actual heuristic (span
+  and fence rules above) and to state the phrase-net/keyed-net asymmetry and
+  the purely-quoted-unkeyed-marker residual explicitly; the corpus counts
+  (94 run directories, the "2 real runs" and "9 runs" figures) and the
+  concrete pandora repo-name annotation example moved out of the module
+  docstring, README, and consumer doc into this changelog entry, replaced by
+  a generic description ("an unkeyed marker whose value is followed by a
+  trailing annotation") and a one-sentence pointer here.
+
+  Re-measured against the real corpus under a fresh worktree checkout at
+  every dated run directory found under `~/git/pandora/.ai/runs/` and every
+  nested `*/.ai/runs/` (104 run directories total, 2026-09-02): zero verdict
+  changes (`complete`/`runBaseKind`/`runBase`/`reasons`) between this
+  round's HEAD and both (a) the commit immediately before round 3's fixes,
+  and (b) the commit at the start of this task, before round 1. The one real
+  corpus file relying on the cross-line inline span
+  (`2026-07-16-ow-kit-run-base-marker/00-goal.md`) still resolves
+  `complete: true` with no blocker reasons after the paragraph-break
+  bounding.
+
 ## 0.9.0, 2026-08-28
 
 ### Added

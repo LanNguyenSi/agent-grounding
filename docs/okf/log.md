@@ -2,6 +2,58 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-02T08:08:21Z, task `6da2c230` round 3 (run-base fail-closed phrase
+  check, review round 2 fix-up): `solution-acceptance-verdict-contract.md`
+  re-verified and re-pointed against `ow-run-completeness.ts` after the
+  round-2 reviewer found the D-027 quotation exemption too loose in two
+  ways. (1) the single-backtick inline-span pairing was whole-file and
+  non-greedy, so a stray backtick could pair with another stray backtick
+  many lines away across a blank-line paragraph break, accidentally
+  exempting a real phrase-carrying line sitting between them; the span is
+  now bounded at a paragraph break (never contains a blank line), still
+  allowed to cross one or more consecutive non-blank lines, matching the
+  one real corpus file (`2026-07-16-ow-kit-run-base-marker/00-goal.md`)
+  that relies on a span opened on one line and closed on the next. (2) the
+  fence detector toggled on any line starting with 3+ backticks or tildes
+  regardless of character or run length, so an unclosed fence exempted
+  everything to end of file and a tilde run inside a backtick fence closed
+  it (or vice versa); a fence now closes only on a later line whose
+  delimiter is the same character and at least as long as the opener's, an
+  opener with no matching closer fences nothing (fails closed, not
+  everything to EOF), and a blockquoted fence's `> ` prefix is not
+  recognised as a fence at all. Nine new tests cover both fixes plus two
+  pinned residuals (a fenced well-formed keyed marker is still selected as
+  the binding, an intentional asymmetry since only the phrase net is
+  quoting-aware; a purely quoted unkeyed marker as the only occurrence in
+  the file is still resolved by the legacy substring matcher). Also closed:
+  the module docstring, README, and this doc previously described the
+  exemption as working "the same way rendered Markdown treats one", now
+  corrected to describe the actual heuristic and to state the phrase-net
+  versus keyed-net asymmetry explicitly; the corpus counts and the concrete
+  pandora repo-name annotation example moved out of the module docstring,
+  README, and this doc into `packages/grounding-mcp/CHANGELOG.md`
+  `[Unreleased]`, replaced by a generic description and a one-sentence
+  pointer. All `ow-run-completeness.ts` citation spans in this doc shifted
+  again and were re-pointed one by one against the current source, each
+  re-verified against its cited excerpt. Measured against the real corpus
+  (every dated run directory under `~/git/pandora/.ai/runs/` and every
+  nested `*/.ai/runs/`, 104 run directories total, via a synthetic
+  `.ai/run`-pointer worktree so every run directory is read, not just each
+  repo's active one): zero verdict changes against both the commit
+  immediately before this round's fixes and the commit at the start of
+  this task, before round 1; the one real corpus file relying on the
+  cross-line inline span still resolves `complete: true` with no blocker
+  reasons. Re-verified: `okf-kit check --json docs/okf` and `okf-kit check
+  --json --require-anchors docs/okf` on the committed tree both 0 errors, 1
+  pre-existing warning on a frozen historical citation further down this
+  log file, an append-only line-number reference from an earlier anchor
+  fix that now happens to land on a closing brace after this round's line
+  shifts; unrelated to this round's source edits and left untouched; `npm
+  run check:okf-test-citation-shape` and `npm run
+  test:check-okf-test-citation-shape` both pass; root `npm run build
+  --workspaces --if-present` then `npm test` exit 0, 1494 tests (1485 + 9
+  new regression tests this round).
+
 - 2026-09-02T07:29:00Z, task `6da2c230` round 2 (run-base fail-closed phrase
   check, review round 1 fix-up): `solution-acceptance-verdict-contract.md`
   re-verified and re-pointed against `ow-run-completeness.ts` after three

@@ -1833,7 +1833,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     expect(r.reasons).toEqual([]);
   });
 
-  it('the pandora multi-repo unkeyed convention line, byte-exact, is exempt and the keyed marker for this repo wins (review finding 1)', () => {
+  it('an unkeyed marker line with a trailing multi-repo annotation is exempt; a matching keyed marker still wins selection', () => {
     // Byte-exact line from the real pandora run corpus (batch 33/34/35/etc):
     // this ends its value at the first whitespace ('multi-repo;'), so the
     // legacy unkeyed matcher DOES read a value from it; the earlier
@@ -1861,7 +1861,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     expect(r.reasons).toEqual([]);
   });
 
-  it('an unkeyed marker annotated with per-repo shas, byte-exact, is exempt (review finding 1)', () => {
+  it('an unkeyed marker whose value is followed by a trailing per-repo annotation is exempt', () => {
     // Byte-exact line from the real pandora run corpus
     // (2026-08-23-home-widgets-plus-five): the value ends at the first
     // whitespace ('863800c'), with a parenthetical + more shas trailing on
@@ -1884,7 +1884,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     expect(r.reasons).toEqual([]);
   });
 
-  it('a phrase-carrying attempt inside a fenced code block is exempt (D-027 quotation, amends round 1)', () => {
+  it('a phrase-carrying attempt inside a fenced code block is exempt (D-027 quotation)', () => {
     // Round 1's choice, "a fence is not an excuse for an unreadable marker",
     // is amended by round 2's D-027 (review finding 2): a fenced code block
     // reads as a quotation of the marker syntax, not an attempted marker, so
@@ -1937,10 +1937,226 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     ).toBe(true);
   });
 
-  it('the malformed reason pins the exact "line N: <excerpt>" text, with the marker off line 1 (review finding 3)', () => {
+  it('a tilde-delimited fence around a phrase-carrying bullet is exempt', () => {
+    // Round 3 mutation probe (i): disabling the fence branch of
+    // stripQuotedRunBaseText turns this red (the bullet would then block).
+    const goal = ['# Goal', '~~~', '- <!-- solution-acceptance: run-base[alpha] = aaaaaaa -->', '~~~', ''].join(
+      '\n',
+    );
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runBaseKind).toBe('absent');
+    expect(r.runBase).toBeNull();
+    expect(r.reasons).toEqual([]);
+    expect(r.complete).toBe(true);
+  });
+
+  it('a tilde-delimited fence pair AFTER the marker line does not retroactively exempt it (negative control)', () => {
+    const goal = [
+      '# Goal',
+      '- <!-- solution-acceptance: run-base[alpha] = aaaaaaa -->',
+      '~~~',
+      'plain code, no marker mentions here',
+      '~~~',
+      '',
+    ].join('\n');
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(r.runBase).toBeNull();
+    expect(r.complete).toBe(false);
+    expect(
+      r.reasons.some((x) => x.startsWith('run-base marker mention(s) in 00-goal.md are not well-formed:')),
+    ).toBe(true);
+  });
+
+  it('an unclosed fence opener fences nothing: a phrase-carrying bullet right after it still blocks', () => {
+    // Fail-closed: an opener with no matching closer anywhere in the file
+    // exempts neither itself nor anything after it (unlike a naive toggle,
+    // which would exempt everything to EOF).
+    const goal = ['# Goal', '```', '- <!-- solution-acceptance: run-base[alpha] = aaaaaaa -->', ''].join(
+      '\n',
+    );
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(r.runBase).toBeNull();
+    expect(r.complete).toBe(false);
+    expect(
+      r.reasons.some((x) => x.startsWith('run-base marker mention(s) in 00-goal.md are not well-formed:')),
+    ).toBe(true);
+  });
+
+  it('a tilde run inside a backtick fence does not close it: the bullet after it is still exempt', () => {
+    // Round 3 mutation probe (iii): dropping the delimiter char/length
+    // matching (falling back to "any fence marker toggles") would make the
+    // inner '~~~' close the outer '```' fence, leaving the bullet unexempt
+    // and this test red.
+    const goal = [
+      '# Goal',
+      '```',
+      '~~~',
+      '- <!-- solution-acceptance: run-base[alpha] = aaaaaaa -->',
+      '```',
+      '',
+    ].join('\n');
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runBaseKind).toBe('absent');
+    expect(r.runBase).toBeNull();
+    expect(r.reasons).toEqual([]);
+    expect(r.complete).toBe(true);
+  });
+
+  it('a backtick run inside a tilde fence does not close it: the bullet after it is still exempt (mirror)', () => {
+    const goal = [
+      '# Goal',
+      '~~~',
+      '```',
+      '- <!-- solution-acceptance: run-base[alpha] = aaaaaaa -->',
+      '~~~',
+      '',
+    ].join('\n');
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runBaseKind).toBe('absent');
+    expect(r.runBase).toBeNull();
+    expect(r.reasons).toEqual([]);
+    expect(r.complete).toBe(true);
+  });
+
+  it('stray backticks separated from the bullet by blank lines do not pair across the paragraph break (blocks)', () => {
+    // Round 3 mutation probe (ii): restoring the whole-file, paragraph-
+    // unaware span regex would pair these two stray backticks across the
+    // blank lines and blank out the bullet's phrase, turning this red.
+    const goal = [
+      '# Goal',
+      'Some text with a stray `backtick here.',
+      '',
+      '- <!-- solution-acceptance: run-base[alpha] = aaaaaaa -->',
+      '',
+      'Another stray backtick` over here.',
+      '',
+    ].join('\n');
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(r.runBase).toBeNull();
+    expect(r.complete).toBe(false);
+    expect(
+      r.reasons.some((x) => x.startsWith('run-base marker mention(s) in 00-goal.md are not well-formed:')),
+    ).toBe(true);
+  });
+
+  it('a blockquoted fence is not recognised as a fence: the bullet inside it still blocks', () => {
+    // The '> ' blockquote prefix is deliberately not stripped, so a
+    // blockquoted fence's own delimiter run neither opens nor closes fence
+    // state (fails closed) and the bullet line inside it is not exempt.
+    // Tildes (not backticks) delimit this fence so the assertion isolates
+    // the fence-recognition question from the separate single-backtick
+    // inline-span heuristic (an unrelated stray-backtick pairing artifact is
+    // covered by its own tests above).
+    const goal = [
+      '# Goal',
+      '> ~~~',
+      '> - <!-- solution-acceptance: run-base[alpha] = aaaaaaa -->',
+      '> ~~~',
+      '',
+    ].join('\n');
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runBaseKind).toBe('malformed');
+    expect(r.runBase).toBeNull();
+    expect(r.complete).toBe(false);
+    expect(
+      r.reasons.some((x) => x.startsWith('run-base marker mention(s) in 00-goal.md are not well-formed:')),
+    ).toBe(true);
+  });
+
+  it('a fenced well-formed keyed marker is still selected as the binding (documented asymmetry, pinned)', () => {
+    // Only the phrase net is quoting-aware: a genuine well-formed keyed
+    // marker attempt is read the same way whether or not it sits inside a
+    // fence. This pins that residual behaviour, unchanged from before D-027.
+    const root = namedRoot('alpha');
+    const goal = [
+      '# Goal',
+      '```',
+      '<!-- solution-acceptance: run-base[alpha] = aaaaaaa -->',
+      '```',
+      '',
+    ].join('\n');
+    makeRunAt(path.join(root, '.ai', 'runs', '2026-01-01-a'), {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(root);
+    expect(r.runBase).toBe('aaaaaaa');
+    expect(r.runBaseKind).toBe('sha');
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('a purely quoted unkeyed marker, the only occurrence in the file, is still resolved by the substring matcher (documented residual, pinned)', () => {
+    // Quoting exempts a line from the malformed-phrase check; it does not
+    // stop matchMarker's own bare substring search from reading a value out
+    // of a quoted marker. This is an accepted residual, pinned here.
+    const goal = ['# Goal', 'Use `<!-- solution-acceptance: run-base = bbbbbbb -->` as an example.', ''].join(
+      '\n',
+    );
+    makeRun('2026-01-01-a', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+      goal,
+    });
+
+    const r = readOwRunCompleteness(repo);
+    expect(r.runBase).toBe('bbbbbbb');
+    expect(r.runBaseKind).toBe('sha');
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('the malformed reason pins the exact "line N: <excerpt>" text, with the marker off line 1', () => {
     // Before this test, dropping the 'line N: ' prefix (or an off-by-one in
-    // the line number) left 94/94 green; nothing pinned the prefix or the
-    // exact line number. The marker is deliberately on line 5 (not line 1),
+    // the line number) left the suite green; nothing pinned the prefix or
+    // the exact line number. The marker is deliberately on line 5 (not line 1),
     // so a 0-based/1-based mixup fails this assertion.
     const goal = [
       '# Goal',
@@ -1967,7 +2183,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     ).toBe(true);
   });
 
-  it('the keyed-attempt excerpt gets its full character budget, not eaten by the "line N: " prefix (review finding 6)', () => {
+  it('the keyed-attempt excerpt gets its full character budget, not eaten by the "line N: " prefix', () => {
     // Before this fix, boundedList truncated the ALREADY-PREFIXED string to
     // 80 chars, so the prefix ('line 3: ') ate into the excerpt's own
     // budget and the excerpt itself was cut 8 characters short of 80.
