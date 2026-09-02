@@ -108,16 +108,72 @@
 //     dashes after `<!`. A line the loose net catches but the strict shape
 //     rejects is a MALFORMED marker line — collected and surfaced as its own
 //     fail-closed blocker (`runBaseKind: 'malformed'`) rather than silently
-//     falling through to the legacy date heuristic. Both nets are anchored at
-//     the LINE START and require the literal tokens `solution-acceptance`, a colon and `run-base[`; that anchoring and exactness are the residual:
-//     a keyed marker that does not start its own line (a list bullet `- <!-- ... -->`, a marker embedded in prose, a bare `run-base[k] = <sha>`
-//     with no comment wrapper) or a whole-line comment deviating in those tokens (e.g. the colon omitted, `run_base`, `runbase`)
-//     is NOT a marker — neither well-formed nor malformed. With no other
-//     applicable marker in the file the run then behaves as MARKERLESS and
-//     falls through to the legacy date heuristic (fail-open by design, the
-//     kit's documented markerless path; a fully fail-closed variant is
-//     tracked as its own task). A strict match whose key is
-//     placeholder-shaped (`<repo-basename>`-style, `/^<[^>]*>$/`) is a
+//     falling through to the legacy date heuristic. The loose net stays
+//     anchored at the LINE START (it widens the strict shape's own tokens,
+//     case, spacing, dash count, not the line position); a THIRD, position-
+//     independent check widens coverage further: any line anywhere in the
+//     file that names both exact, case-sensitive tokens `solution-acceptance`
+//     and `run-base` (a list bullet (`- <!-- ... -->`), a marker embedded in
+//     prose, a bare `run-base[k] = <sha>` with no comment wrapper, an attempt
+//     preceded by leading text, or a whole-line comment deviating in those
+//     tokens, e.g. the colon omitted) is ALSO collected as malformed unless
+//     it is already accepted as a well-formed keyed or unkeyed marker. An
+//     attempted-but-unreadable marker is worse than no marker at all: it
+//     signals the run intended to bind a `run-base` and failed, which must
+//     block rather than silently fall through to the legacy date heuristic.
+//     QUOTATION EXEMPTION (orchestrator decision D-027, round 2 of task
+//     6da2c230, amending round 1's fence choice above; round 3 tightened both
+//     nets below): a phrase occurrence that is entirely inside backtick-
+//     delimited inline code, or entirely inside a FENCED code block, reads as
+//     a QUOTATION of the marker syntax, not an attempted marker, and does not
+//     trip THIS position-independent phrase check. This is a HEURISTIC, not a
+//     CommonMark parser, and stays deliberately narrow rather than
+//     approximating full Markdown rendering: an inline span is a single
+//     backtick pair (double/triple-backtick inline delimiters are not
+//     recognised) that may cross line breaks but never a BLANK line: a code
+//     span cannot contain a paragraph break, so two stray backticks
+//     separated by a blank line never pair with each other. A fenced block is
+//     any line, indented up to 3 spaces, starting with a run of 3+ backticks
+//     or 3+ tildes; a fence CLOSES only on a later line whose run is the SAME
+//     character and AT LEAST AS LONG (a `~~~` line inside a ``` fence does
+//     not close it, and the reverse holds too, same requirement). An opener with no matching
+//     closer anywhere after it fences NOTHING (fails closed: neither the
+//     opener line nor anything after it is exempt), rather than exempting
+//     everything to end of file. A blockquoted fence (`> \`\`\``) is NOT
+//     recognised as a fence at all: the `> ` prefix is not stripped, so its
+//     backtick run neither opens nor closes fence state (fails closed).
+//     Residual: an unrecognised backtick fence's own backticks stay ordinary
+//     characters to the single-backtick inline-span pass below, so leftovers
+//     from two such lines (e.g. two ``` lines indented 4+ spaces) pair around
+//     a marker attempt between them with no blank line and exempt it: wanted
+//     for a fence nested under a list item (a quotation), fail-open when such
+//     a line sits outside any list. Pinned by a test; tildes never pair.
+//     Only this third net is quoting-aware; the loose-net keyed-attempt check
+//     above is NOT (a genuine keyed-marker attempt at the line start still
+//     blocks the same way whether or not it sits inside a fence: this is a
+//     deliberate ASYMMETRY: only the phrase net treats a fence or code span
+//     as quotation, a line-start keyed attempt, well-formed or malformed, is
+//     read or blocked inside a fence exactly as outside it). A phrase
+//     occurrence that survives quoting removal, including one on a line that
+//     ALSO carries a code span elsewhere when the phrase itself sits outside
+//     it, still blocks, unchanged. This narrows round 1's stance (a fence was
+//     previously never an excuse); the residual left standing is narrower
+//     still: only a `00-goal.md` with NO UNQUOTED line naming both tokens
+//     anywhere reads as truly MARKERLESS and falls through to the legacy date
+//     heuristic (fail-open by design, the kit's documented markerless path).
+//     A separate, ACCEPTED residual: a purely QUOTED unkeyed marker that is
+//     the only occurrence of the marker tokens in the file is still resolved
+//     by the legacy substring matcher (`matchMarker`), which is not
+//     quote-aware at all; quoting exempts a line from the malformed-phrase
+//     check, it does not stop the unkeyed resolver from reading a value out
+//     of it.
+//     Malformed lines caught by the third (phrase) net report a DIFFERENT
+//     reason than lines caught by the loose keyed-attempt net: the keyed
+//     hint (`expected '<!-- solution-acceptance: run-base[<key>] = <sha>
+//     -->' ...`) is misleading for a phrase-only hit (prose, a quoted
+//     regex) that never attempted keyed bracket syntax, so phrase-only hits
+//     get their own wording naming the tokens found rather than the keyed
+//     shape. A strict match whose key is
 //     documentation example, not a marker, and is skipped the same way (not counted as present); an example that itself deviates
 //     from the strict shape is an attempt like any other and blocks as malformed. All well-formed keyed markers are
 //     collected in a single scan (first occurrence per key wins on a
@@ -140,8 +196,22 @@
 //     `'unmatched-keyed'` one, since a malformed line is evidence of an
 //     attempted-but-broken marker rather than merely a missing one. Documented
 //     asymmetry: the legacy UNKEYED `run-base` matcher (`matchMarker`) is not
-//     line-anchored (a substring match anywhere in the file) and is
-//     unaffected by any of the above — only the keyed grammar was hardened.
+//     line-anchored (a substring match anywhere in the file), resolves values
+//     exactly as before this change, and is unaffected by the keyed grammar
+//     hardening. The phrase check's UNKEYED exemption tracks that same
+//     resolver grammar (round 2 of task 6da2c230, review finding 1): a line
+//     is exempt when it starts (after optional leading whitespace) with
+//     `<!--` followed by `solution-acceptance:` (whitespace, no space before
+//     the colon, the exact literal `matchMarker` requires), whitespace,
+//     `run-base`, whitespace, `=`, whitespace, and a non-whitespace value,
+//     REGARDLESS of what follows that value on the line: an unkeyed marker
+//     whose value is followed by a trailing annotation, or one left with an
+//     unclosed comment, both included. The earlier whole-line-only shape
+//     under-matched relative to what the resolver actually reads a value
+//     from, so a legitimately resolving annotated unkeyed marker was both
+//     used AND reported malformed; this exemption closes that gap without
+//     widening what the resolver itself accepts. Anchored by a corpus
+//     measurement, see CHANGELOG [Unreleased].
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -193,10 +263,11 @@ export interface OwRunCompleteness {
    *     marker exists either, and no malformed keyed marker line was found —
    *     the reader has already pushed its own explicit blocker reason into
    *     `reasons` for this case — `runBase` is null.
-   *   - `'malformed'`: at least one line looks like an attempted keyed
-   *     `run-base[<key>] = <value>` marker but does not match the strict
-   *     grammar (see the module docstring), AND no well-formed keyed marker
-   *     matched a candidate key, AND no unkeyed marker exists — the reader
+   *   - `'malformed'`: at least one line names both marker tokens
+   *     (`solution-acceptance` and `run-base`) but is not accepted as a
+   *     well-formed keyed or unkeyed marker (see the module docstring), AND
+   *     no well-formed keyed marker matched a candidate key, AND no unkeyed
+   *     marker exists, the reader
    *     has already pushed its own explicit blocker reason into `reasons` —
    *     `runBase` is null. When a malformed line coexists with a value that
    *     WAS selected (keyed match or unkeyed fallback), `runBaseKind` stays
@@ -398,12 +469,27 @@ interface KeyedRunBaseMarker {
   value: string;
 }
 
+/**
+ * One line naming the run-base marker tokens without matching a well-formed
+ * marker grammar. `kind` distinguishes an attempted KEYED marker (loose net:
+ * `run-base[` at the line start) from a bare PHRASE occurrence (third,
+ * position-independent net: names both tokens, nothing more specific); see
+ * the module docstring for why they get different reasons.
+ */
+interface MalformedRunBaseLine {
+  /** 1-based line number in `goal`. */
+  line: number;
+  /** Whole, trimmed text of the line. */
+  excerpt: string;
+  kind: 'keyed-attempt' | 'phrase-only';
+}
+
 /** Result of one pass over `goal`'s lines collecting keyed run-base markers. */
 interface KeyedMarkerScan {
   /** Well-formed markers, placeholder-keyed ones excluded. First occurrence per key wins. */
   markers: KeyedRunBaseMarker[];
-  /** Whole, trimmed text of every line that started like a keyed marker but did not match the strict grammar. */
-  malformedLines: string[];
+  /** Every line that named the run-base marker tokens without a well-formed match. */
+  malformedLines: MalformedRunBaseLine[];
 }
 
 // Strict shape: the ENTIRE line (leading/trailing whitespace only) is the
@@ -422,16 +508,148 @@ const KEYED_RUN_BASE_STRICT =
 // heuristic: case-insensitive (`RUN-BASE[`), whitespace around the colon
 // (`solution-acceptance : run-base[`), one or more dashes in the comment
 // opener (`<!--- `), and stray whitespace before the bracket (`run-base [k]`).
-// Still anchored at the line start: a keyed marker that does not START its own
-// line is not an attempt at all, it is simply not a marker (see the module
-// docstring's fail-open residual). Any strict match is also a loose match, so
-// this is checked only after a strict-match attempt fails.
+// Anchored at the line start: it exists to widen the STRICT shape's own
+// tokens (case, spacing, dash count), not the line position. Line position is
+// covered separately by the phrase check below. Any strict match is also a
+// loose match, so this is checked only after a strict-match attempt fails.
 const KEYED_RUN_BASE_LOOSE_START = /^\s*<!--+\s*solution-acceptance\s*:\s*run-base\s*\[/i;
 // A key that is itself an angle-bracket placeholder (`<repo-basename>`,
 // `<key>`, ...) — the template's own documentation example, not an authored
 // marker. `[^>]*` deliberately excludes `>` so the placeholder must be a
 // single bracketed token spanning the whole (already-trimmed) key.
 const PLACEHOLDER_KEY = /^<[^>]*>$/;
+// The LEGACY UNKEYED marker LINE shape (round 2, review finding 1): a line
+// is an unkeyed marker line, exempt from the phrase check below, whatever
+// its value resolves to and whatever follows on the line, iff it is a line
+// the resolver (`matchMarker`, via `isUnkeyedRunBaseMarkerLine` below) would
+// actually read an unkeyed value from, ANCHORED at the line start (after
+// optional leading whitespace) with the HTML comment opener. Anchoring to
+// the line start (unlike `matchMarker` itself, which is a bare substring
+// search) keeps this exemption narrow: it recognises an attempted `<!--
+// solution-acceptance: run-base = ...` comment specifically, not any bare
+// mid-line mention of the resolver's grammar. Deliberately NOT required to
+// close its own comment (`-->`) or stop at the value (unlike the old
+// whole-line-only shape this replaces): an unkeyed marker whose value is
+// followed by a trailing annotation resolves a value via the same substring
+// search `matchMarker` performs and must not ALSO be reported malformed for
+// it. Anchored by a corpus measurement, see CHANGELOG [Unreleased].
+const UNKEYED_RUN_BASE_LINE_START = /^\s*<!--\s*solution-acceptance:\s*run-base\s*=\s*\S+/;
+/**
+ * True when `line` is a line the legacy unkeyed matcher (`matchMarker` with
+ * field `run-base`) would read a value from, anchored at the line start (see
+ * `UNKEYED_RUN_BASE_LINE_START`). Reuses `matchMarker` itself rather than a
+ * hand-duplicated grammar, so the exemption can never drift from what the
+ * resolver actually reads.
+ */
+function isUnkeyedRunBaseMarkerLine(line: string): boolean {
+  return UNKEYED_RUN_BASE_LINE_START.test(line) && matchMarker(line, 'run-base', '\\S+') !== null;
+}
+
+// Fenced code block detector (round 2, D-027; round 3 tightened the matching
+// rule; see the module docstring's QUOTATION EXEMPTION paragraph). A fence
+// delimiter line is at most 3 leading spaces (CommonMark's indented-fence
+// allowance) followed by a run of 3+ backticks or 3+ tildes; a `> ` (or any
+// other) blockquote prefix is NOT a fence, deliberately fail-closed: a
+// blockquoted fence is never recognised as one, so its own backtick/tilde run
+// never opens or closes a fence. Heuristic, not a CommonMark parser: info
+// strings are not validated.
+const FENCE_MARKER = /^ {0,3}(`{3,}|~{3,})/;
+
+/** The fence delimiter (character and run length) on `line`, or null. */
+function matchFenceMarker(line: string): { char: string; length: number } | null {
+  const m = FENCE_MARKER.exec(line);
+  if (m === null) return null;
+  return { char: m[1][0], length: m[1].length };
+}
+
+/**
+ * A fence CLOSES only on a later line whose delimiter is the SAME character
+ * and AT LEAST AS LONG as the opener's (CommonMark's own closing rule): a
+ * `~~~` line inside a ``` fence does not close it, and vice versa. An opener
+ * with no matching closer anywhere after it fences NOTHING: it fails closed
+ * (the opener line itself is exempted from being "fenced" too), rather than
+ * the earlier behaviour of an unclosed fence swallowing everything to EOF.
+ * When an opener has no matching closer, the scan resumes at the very next
+ * line, so a later, genuinely well-formed fence pair further down the file
+ * is still recognised.
+ */
+function computeFencedLineFlags(lines: string[]): boolean[] {
+  const flags: boolean[] = new Array(lines.length).fill(false);
+  let i = 0;
+  while (i < lines.length) {
+    const open = matchFenceMarker(lines[i]);
+    if (open === null) {
+      i++;
+      continue;
+    }
+    let closeIdx = -1;
+    for (let j = i + 1; j < lines.length; j++) {
+      const candidate = matchFenceMarker(lines[j]);
+      if (candidate !== null && candidate.char === open.char && candidate.length >= open.length) {
+        closeIdx = j;
+        break;
+      }
+    }
+    if (closeIdx === -1) {
+      // Unclosed: fences nothing, not even the opener line itself. Resume
+      // scanning from the very next line for another, possibly well-formed,
+      // fence pair.
+      i++;
+      continue;
+    }
+    for (let k = i; k <= closeIdx; k++) flags[k] = true;
+    i = closeIdx + 1;
+  }
+  return flags;
+}
+
+/** Replace every non-newline character of `s` with a space (preserves length and line structure). */
+function blank(s: string): string {
+  return s.replace(/[^\n]/g, ' ');
+}
+
+// A single-backtick inline code span, bounded at a PARAGRAPH break: the span
+// may cross one or more consecutive non-blank line breaks (a backtick pair
+// opened on one line and closed on the next quotes cleanly, matching the one
+// real corpus file that relies on this, see the module docstring), but
+// never a BLANK line: a bare backtick followed, sometime later, by a blank
+// line and then another stray backtick must not pair across that gap (round
+// 3; the round-2 version paired across the WHOLE file, including across
+// blank-line paragraph breaks). `(?!\s*\n)` after each `\n` refuses to
+// continue the span onto a blank (or whitespace-only) line.
+const INLINE_CODE_SPAN = /`[^`\n]*(?:\n(?!\s*\n)[^`\n]*)*?`/g;
+
+/**
+ * `goal` with every QUOTED range blanked out (fenced code block lines, then
+ * single-backtick inline code spans; see the module docstring's QUOTATION
+ * EXEMPTION paragraph, `computeFencedLineFlags`, and `INLINE_CODE_SPAN`).
+ * Fences are blanked FIRST so a backtick that is itself fenced content can
+ * never pair with a backtick outside the fence. Line count and line
+ * boundaries are preserved (only non-newline characters are ever replaced),
+ * so the result can be re-split with the same `/\r?\n/` regex used on `goal`
+ * and indexed line-for-line against it. An unmatched single backtick, or one
+ * whose only pairing partner sits across a blank line, quotes nothing (fails
+ * closed).
+ */
+function stripQuotedRunBaseText(goal: string): string {
+  const lines = goal.split(/\r?\n/);
+  const fenced = computeFencedLineFlags(lines);
+  const fenceStripped = lines.map((line, i) => (fenced[i] ? blank(line) : line)).join('\n');
+  return fenceStripped.replace(INLINE_CODE_SPAN, blank);
+}
+
+// Fail-closed phrase check (the residual this widens, see the module
+// docstring): ANY line, regardless of position (list bullet, prose, no
+// comment wrapper, leading text before the comment), that mentions BOTH
+// exact, case-sensitive tokens the template uses is an attempted `run-base`
+// marker unless it is already accepted as well-formed (keyed or unkeyed,
+// checked before this is reached) OR the occurrence is entirely inside a
+// quoted range (round 2, D-027; see `stripQuotedRunBaseText`). Deliberately
+// simple and total otherwise: no attempt to enumerate shapes, since
+// enumerating shapes is exactly what left the residual open before.
+function lineCarriesRunBasePhrase(line: string): boolean {
+  return line.includes('solution-acceptance') && line.includes('run-base');
+}
 
 /**
  * Collect every well-formed keyed `run-base[<key>] = <value>` marker in
@@ -441,13 +659,24 @@ const PLACEHOLDER_KEY = /^<[^>]*>$/;
  * (malformed). First well-formed occurrence per key wins (case-insensitive
  * dedup) — a later duplicate for the same key is ignored. A well-formed
  * match whose key is placeholder-shaped is skipped entirely (not counted as
- * present, not malformed).
+ * present, not malformed). A well-formed LEGACY UNKEYED marker line is also
+ * skipped entirely (it is handled by the separate unkeyed matcher, not
+ * malformed; see `isUnkeyedRunBaseMarkerLine`). Every other line naming
+ * both marker tokens (attempted keyed syntax the loose net already caught,
+ * `kind: 'keyed-attempt'`, or a bullet/prose/wrapper-less/leading-text
+ * mention the loose net's line-start anchor cannot see, `kind:
+ * 'phrase-only'`, and only when it survives the quoting exemption, see
+ * `stripQuotedRunBaseText`) is collected as malformed with its 1-based line
+ * number and its category.
  */
 function collectKeyedRunBaseMarkers(goal: string): KeyedMarkerScan {
   const seen = new Set<string>();
   const markers: KeyedRunBaseMarker[] = [];
-  const malformedLines: string[] = [];
-  for (const line of goal.split(/\r?\n/)) {
+  const malformedLines: MalformedRunBaseLine[] = [];
+  const lines = goal.split(/\r?\n/);
+  const unquotedLines = stripQuotedRunBaseText(goal).split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const strict = line.match(KEYED_RUN_BASE_STRICT);
     if (strict !== null) {
       const key = strict[1].trim();
@@ -458,34 +687,73 @@ function collectKeyedRunBaseMarkers(goal: string): KeyedMarkerScan {
       markers.push({ key, value: strict[2] });
       continue;
     }
+    if (isUnkeyedRunBaseMarkerLine(line)) continue; // legitimate legacy marker line, not an attempt
     if (KEYED_RUN_BASE_LOOSE_START.test(line)) {
-      malformedLines.push(line.trim());
+      malformedLines.push({ line: i + 1, excerpt: line.trim(), kind: 'keyed-attempt' });
+      continue;
+    }
+    if (lineCarriesRunBasePhrase(unquotedLines[i])) {
+      malformedLines.push({ line: i + 1, excerpt: line.trim(), kind: 'phrase-only' });
     }
   }
   return { markers, malformedLines };
 }
 
 /**
- * Join `items` (already trimmed strings) into a single bounded string: each
- * item truncated to `truncateChars`, at most `maxItems` shown, with
- * `(+N more)` appended when more were dropped. Keeps blocker messages from
- * growing unbounded when a goal file carries many/long keys or malformed
- * lines.
+ * Truncate `s` to `n` characters. Applied to an EXCERPT before it is
+ * prefixed with `line N: ` (round 2, review finding 6): truncating the
+ * already-prefixed string, as the previous version did, let the prefix eat
+ * into the excerpt's own character budget instead of the excerpt getting
+ * the full `n` characters it was promised.
  */
-function boundedList(items: string[], truncateChars: number, maxItems: number, sep: string): string {
-  const shown = items
-    .slice(0, maxItems)
-    .map((s) => (s.length > truncateChars ? s.slice(0, truncateChars) : s));
+function truncate(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n) : s;
+}
+
+/**
+ * Join `items` into a single bounded string: at most `maxItems` shown, with
+ * `(+N more)` appended when more were dropped. Per-item character bounding
+ * (when wanted) is the caller's job, via `truncate`, applied BEFORE any
+ * `line N: ` style prefix is added; see `truncate`'s own note. Keeps
+ * blocker messages from growing unbounded when a goal file carries many/long
+ * keys or malformed lines.
+ */
+function joinBounded(items: string[], maxItems: number, sep: string): string {
+  const shown = items.slice(0, maxItems);
   const dropped = items.length - shown.length;
   const joined = shown.join(sep);
   return dropped > 0 ? `${joined} (+${dropped} more)` : joined;
 }
 
-function malformedKeyedReason(malformedLines: string[]): string {
-  return (
-    `malformed keyed run-base marker(s) in 00-goal.md: ${boundedList(malformedLines, 80, 5, ' | ')} ` +
-    "(expected '<!-- solution-acceptance: run-base[<key>] = <sha> -->' on its own line)"
-  );
+/**
+ * Reason string(s) for the malformed run-base lines `collectKeyedRunBaseMarkers`
+ * found, ONE entry per category present (round 2, review finding 5): a
+ * `keyed-attempt` line gets the original keyed-shape hint (it named
+ * `run-base[`, so the keyed grammar is the actionable fix); a `phrase-only`
+ * line gets a DIFFERENT message that does not point at the keyed shape;
+ * that hint misleads an operator whose line never attempted bracket syntax
+ * at all (prose, a quoted marker, a quoted regex). Returns 0-2 strings, in
+ * this fixed order when both are present.
+ */
+function malformedRunBaseReasons(malformedLines: MalformedRunBaseLine[]): string[] {
+  const keyedAttempts = malformedLines.filter((l) => l.kind === 'keyed-attempt');
+  const phraseOnly = malformedLines.filter((l) => l.kind === 'phrase-only');
+  const reasons: string[] = [];
+  if (keyedAttempts.length > 0) {
+    const items = keyedAttempts.map((l) => `line ${l.line}: ${truncate(l.excerpt, 80)}`);
+    reasons.push(
+      `malformed keyed run-base marker(s) in 00-goal.md: ${joinBounded(items, 5, ' | ')} ` +
+        "(expected '<!-- solution-acceptance: run-base[<key>] = <sha> -->' on its own line)",
+    );
+  }
+  if (phraseOnly.length > 0) {
+    const items = phraseOnly.map(
+      (l) =>
+        `line ${l.line} names the run-base marker tokens but is not a well-formed marker: ${truncate(l.excerpt, 80)}`,
+    );
+    reasons.push(`run-base marker mention(s) in 00-goal.md are not well-formed: ${joinBounded(items, 5, ' | ')}`);
+  }
+  return reasons;
 }
 
 /**
@@ -525,7 +793,7 @@ function selectRunBase(goal: string | null, keys: string[]): RunBaseSelection {
   // to the date heuristic.
   const unkeyed = matchMarker(goal, 'run-base', '\\S+');
   const { markers: keyedMarkers, malformedLines } = collectKeyedRunBaseMarkers(goal);
-  const malformedReasons = malformedLines.length > 0 ? [malformedKeyedReason(malformedLines)] : [];
+  const malformedReasons = malformedRunBaseReasons(malformedLines);
 
   for (const key of keys) {
     const lowerKey = key.toLowerCase();
@@ -553,7 +821,7 @@ function selectRunBase(goal: string | null, keys: string[]): RunBaseSelection {
     runBase: null,
     runBaseKind: 'unmatched-keyed',
     reasons: [
-      `run-base markers in 00-goal.md are keyed (keys: ${boundedList(keyedMarkers.map((km) => km.key), 64, 10, ', ')}) ` +
+      `run-base markers in 00-goal.md are keyed (keys: ${joinBounded(keyedMarkers.map((km) => truncate(km.key, 64)), 10, ', ')}) ` +
         `but none matches this worktree (tried: ${keys.join(', ')}) and no unkeyed run-base marker ` +
         'exists; add a run-base[<key>] marker for this repo or an unkeyed run-base marker',
     ],

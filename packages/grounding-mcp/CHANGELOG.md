@@ -1,5 +1,114 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`run-base` marker: fail closed on an unreadable attempted marker, not just
+  an unmatched or near-miss one** (task 6da2c230). `readOwRunCompleteness`
+  (`src/ow-run-completeness.ts`) previously fell through to the legacy
+  date-heuristic path whenever a keyed marker attempt did not start its own
+  line: a list bullet (`- <!-- ... -->`), a marker embedded in prose, a bare
+  `run-base[k] = <sha>` with no comment wrapper, or an attempt preceded by
+  leading text all read as markerless, fail-open. Measured in task 43a7ef58
+  review round 3/4: five such variants each resolved `runBaseKind 'absent'`,
+  `complete true`. A third, position-independent check now closes this: any
+  UNQUOTED line in `00-goal.md` naming BOTH exact, case-sensitive marker
+  tokens (`solution-acceptance` and `run-base`) but not accepted as a
+  well-formed keyed or unkeyed marker collects into a `malformed` blocker
+  (`runBaseKind: 'malformed'`); a well-formed marker (keyed or unkeyed) still
+  carrying the template's `TODO` placeholder is unaffected and stays
+  fail-open (`runBaseKind: 'todo'`), per the orchestrator-workflow kit's
+  documented markerless/TODO contract. No change to `src/solution-verdict.ts`:
+  it already composes the reader's `reasons`/`complete` generically, so the
+  new blocker surfaces through the existing `owBindingBlockers` path with no
+  code change there.
+
+  Round 2 (task 6da2c230, review round 1 findings) closed three false
+  positives found by measuring the round-1 check against the real corpus of
+  94 run directories under pandora/harness/agent-grounding: (1) the
+  well-formed-unkeyed-marker exemption now tracks what the resolver
+  (`matchMarker`) actually reads a value from (a line starting with the
+  comment opener, `solution-acceptance:`, `run-base`, `=`, and a
+  non-whitespace value, WHATEVER follows on the line), instead of a
+  whole-line-only shape; 9 real runs whose unkeyed marker carried a trailing
+  annotation or the pandora multi-repo convention's `= multi-repo; see keyed
+  markers below` had resolved a value AND been reported malformed under the
+  whole-line-only shape, regressing `complete: true` to `complete: false`.
+  (2) Orchestrator decision D-027 amends round 1's fence choice: a phrase
+  occurrence entirely inside a single-backtick inline code span or a fenced
+  code block now reads as a quotation of the marker syntax, not an attempted
+  marker, and is exempt (a second, unquoted mention of the phrase on the same
+  line still blocks). 2 real runs that only ever quoted the marker syntax in
+  backticks (prose documentation, template examples) had self-blocked under
+  round 1's "a fence is not an excuse" stance; this fixes them. (3) a malformed line caught
+  only by the third (phrase) net now gets a distinct reason ("names the
+  run-base marker tokens but is not a well-formed marker") instead of the
+  keyed-shape hint, which misled an operator whose line never attempted
+  bracket syntax at all. After all three fixes, re-measuring the same 94-run
+  corpus: zero runs regress from `complete: true` at the pre-round-1 baseline
+  to `complete: false`. Also fixed: the malformed-line excerpt is now
+  truncated to its 80-char budget BEFORE the `line N: ` prefix is added (the
+  prefix previously ate into the excerpt's own budget). Covered by
+  `tests/ow-run-completeness.test.ts` (byte-exact regression tests for the
+  real corpus lines, the quotation exemption plus negative controls, the
+  distinct phrase-only reason, and a pin on the exact `line N: <excerpt>`
+  text with the marker off line 1).
+
+  Round 3 (task 6da2c230, review round 2 findings) tightened both nets D-027
+  introduced, which the round-2 reviewer measured as too loose: (1) the
+  single-backtick inline-span pairing was whole-file and non-greedy, so a
+  stray backtick could pair with another stray backtick many lines away
+  across a blank-line paragraph break, accidentally exempting a real,
+  phrase-carrying line sitting between them. The span is now bounded at a
+  paragraph break (never contains `\n\s*\n`); crossing one or more
+  consecutive non-blank lines is still allowed, matching the one real corpus
+  file (`.ai/runs/2026-07-16-ow-kit-run-base-marker/00-goal.md`) that relies
+  on a span opened on one line and closed on the next. (2) the fence
+  detector toggled on ANY line starting with 3+ backticks or tildes,
+  regardless of character or run length, so an unclosed fence exempted
+  everything to end of file (fail-open) and a tilde-delimited fence line
+  inside a backtick-delimited fence closed it (or vice versa). A fence now
+  closes only on a later line whose delimiter is the SAME character and AT LEAST AS LONG as the
+  opener's; an opener with no matching closer fences NOTHING (fails closed,
+  not "to EOF"); a blockquoted fence's `> ` prefix is not recognised as a
+  fence at all (also fail-closed, and documented as a known residual: an
+  unrecognised backtick-delimited fence's own backticks can still interact
+  with the separate single-backtick span heuristic, a quirk of not being a
+  real parser). Both fixes are covered by new tests: a `~~~`-delimited fence
+  around a phrase-carrying bullet (exempt) with a negative control (a `~~~`
+  pair placed after the marker line does not retroactively exempt it); an
+  unclosed backtick-delimited fence opener followed by a phrase-carrying
+  bullet (blocks); a `~~~` line inside a backtick-delimited fence, and the
+  mirror, each still inside the fence (exempt); stray backticks before and after a bullet
+  separated by blank lines (blocks); a blockquoted fence around a bullet
+  (blocks); a fenced well-formed keyed marker (pinned: still selected as the
+  binding, `runBaseKind: 'sha'`, an intentional asymmetry: only the phrase
+  net is quoting-aware); and a purely quoted unkeyed marker as the only
+  occurrence in the file (pinned: still resolved by the legacy substring
+  matcher, an accepted residual). Also closed: module docstring, README, and
+  the `docs/okf/solution-acceptance-verdict-contract.md` consumer doc
+  previously said the quotation exemption worked "the same way rendered
+  Markdown treats one": corrected to describe the actual heuristic (span
+  and fence rules above) and to state the phrase-net/keyed-net asymmetry and
+  the purely-quoted-unkeyed-marker residual explicitly; the corpus counts
+  (94 run directories, the "2 real runs" and "9 runs" figures) and the
+  concrete pandora repo-name annotation example moved out of the module
+  docstring, README, and consumer doc into this changelog entry, replaced by
+  a generic description ("an unkeyed marker whose value is followed by a
+  trailing annotation") and a one-sentence pointer here.
+
+  Re-measured against the real corpus under a fresh worktree checkout at
+  every dated run directory found under `~/git/pandora/.ai/runs/` and every
+  nested `*/.ai/runs/` (104 run directories total, 2026-09-02): zero verdict
+  changes (`complete`/`runBaseKind`/`runBase`/`reasons`) between this
+  round's HEAD and both (a) the commit immediately before round 3's fixes,
+  and (b) the commit at the start of this task, before round 1. The one real
+  corpus file relying on the cross-line inline span
+  (`2026-07-16-ow-kit-run-base-marker/00-goal.md`) still resolves
+  `complete: true` with no blocker reasons after the paragraph-break
+  bounding.
+
 ## 0.9.0, 2026-08-28
 
 ### Added

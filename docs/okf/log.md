@@ -2,6 +2,128 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-02T08:36:59Z, task `6da2c230` round 4 (review of round 3):
+  commit `10e4004` addressed the round-3 medium finding (two triple-backtick
+  lines indented four or more spaces are not fences to the heuristic, so
+  their backticks pair as an inline span around a marker attempt between
+  them and exempt it) as a pinned, documented residual rather than a
+  behaviour change: the docstring residual paragraph of
+  `ow-run-completeness.ts` was rewritten within the same line count, so no
+  citation moved (`okf-kit check` 0 errors with and without
+  `--require-anchors`), and one test pins the case. The round-4 reviewer
+  then found `solution-acceptance-verdict-contract.md` stale against that
+  commit (measured before the commit, not after); timestamp-only re-stamp
+  here, measured after this commit. Also earlier in round 3: one historical
+  span citation in the round-2 entry of this log stated in prose (commit
+  `f09c6bc`), which cleared the closing-brace warning it had started to
+  raise.
+
+- 2026-09-02T08:08:21Z, task `6da2c230` round 3 (run-base fail-closed phrase
+  check, review round 2 fix-up): `solution-acceptance-verdict-contract.md`
+  re-verified and re-pointed against `ow-run-completeness.ts` after the
+  round-2 reviewer found the D-027 quotation exemption too loose in two
+  ways. (1) the single-backtick inline-span pairing was whole-file and
+  non-greedy, so a stray backtick could pair with another stray backtick
+  many lines away across a blank-line paragraph break, accidentally
+  exempting a real phrase-carrying line sitting between them; the span is
+  now bounded at a paragraph break (never contains a blank line), still
+  allowed to cross one or more consecutive non-blank lines, matching the
+  one real corpus file (`2026-07-16-ow-kit-run-base-marker/00-goal.md`)
+  that relies on a span opened on one line and closed on the next. (2) the
+  fence detector toggled on any line starting with 3+ backticks or tildes
+  regardless of character or run length, so an unclosed fence exempted
+  everything to end of file and a tilde run inside a backtick fence closed
+  it (or vice versa); a fence now closes only on a later line whose
+  delimiter is the same character and at least as long as the opener's, an
+  opener with no matching closer fences nothing (fails closed, not
+  everything to EOF), and a blockquoted fence's `> ` prefix is not
+  recognised as a fence at all. Nine new tests cover both fixes plus two
+  pinned residuals (a fenced well-formed keyed marker is still selected as
+  the binding, an intentional asymmetry since only the phrase net is
+  quoting-aware; a purely quoted unkeyed marker as the only occurrence in
+  the file is still resolved by the legacy substring matcher). Also closed:
+  the module docstring, README, and this doc previously described the
+  exemption as working "the same way rendered Markdown treats one", now
+  corrected to describe the actual heuristic and to state the phrase-net
+  versus keyed-net asymmetry explicitly; the corpus counts and the concrete
+  pandora repo-name annotation example moved out of the module docstring,
+  README, and this doc into `packages/grounding-mcp/CHANGELOG.md`
+  `[Unreleased]`, replaced by a generic description and a one-sentence
+  pointer. All `ow-run-completeness.ts` citation spans in this doc shifted
+  again and were re-pointed one by one against the current source, each
+  re-verified against its cited excerpt. Measured against the real corpus
+  (every dated run directory under `~/git/pandora/.ai/runs/` and every
+  nested `*/.ai/runs/`, 104 run directories total, via a synthetic
+  `.ai/run`-pointer worktree so every run directory is read, not just each
+  repo's active one): zero verdict changes against both the commit
+  immediately before this round's fixes and the commit at the start of
+  this task, before round 1; the one real corpus file relying on the
+  cross-line inline span still resolves `complete: true` with no blocker
+  reasons. Re-verified: `okf-kit check --json docs/okf` and `okf-kit check
+  --json --require-anchors docs/okf` on the committed tree both 0 errors, 1
+  pre-existing warning on a frozen historical citation further down this
+  log file, an append-only line-number reference from an earlier anchor
+  fix that now happens to land on a closing brace after this round's line
+  shifts; unrelated to this round's source edits and left untouched; `npm
+  run check:okf-test-citation-shape` and `npm run
+  test:check-okf-test-citation-shape` both pass; root `npm run build
+  --workspaces --if-present` then `npm test` exit 0, 1494 tests (1485 + 9
+  new regression tests this round).
+
+- 2026-09-02T07:29:00Z, task `6da2c230` round 2 (run-base fail-closed phrase
+  check, review round 1 fix-up): `solution-acceptance-verdict-contract.md`
+  re-verified and re-pointed against `ow-run-completeness.ts` after three
+  round-1 review findings were closed there, measured against the real corpus
+  of 94 run directories under pandora/harness/agent-grounding (before: 9 runs
+  regressed `complete: true` to `complete: false`; after: zero regress). (1)
+  The unkeyed-marker exemption from the phrase check now tracks what
+  `matchMarker` actually reads a value from (line start + the comment opener
+  through a non-whitespace value, whatever follows), not a whole-line-only
+  shape, fixing an annotated-sha unkeyed marker and the pandora multi-repo
+  convention line both resolving a value AND being reported malformed. (2)
+  Orchestrator decision D-027 amends round 1's fence stance: a phrase
+  occurrence entirely inside a single-backtick inline span or a fenced code
+  block is now a quotation, exempt from the check (a second unquoted mention
+  on the same line still blocks), fixing two real runs that only ever quoted
+  the marker syntax in backticks. (3) a malformed line caught only by the
+  phrase net (no keyed bracket syntax attempted) now gets a distinct reason
+  instead of the misleading keyed-shape hint. All `ow-run-completeness.ts`
+  citation spans in the doc shifted again (the module docstring's decision
+  paragraph and the `collectKeyedRunBaseMarkers`/`malformedRunBaseReasons`
+  functions both grew) and were re-pointed one by one against the current
+  source, each re-verified against its cited excerpt; the `run-base` grammar
+  paragraph and the top-level README paragraph were both rewritten to
+  describe the code's actual current exemptions rather than the round-1
+  ones. `solution-verdict.ts` citations were untouched (that file did not
+  change). Re-verified: `okf-kit check --json docs/okf` and `okf-kit check
+  --json --require-anchors docs/okf` on the committed tree both 0 errors / 0
+  warnings; `npm run check:okf-test-citation-shape` and `npm run
+  test:check-okf-test-citation-shape` both pass; root `npm run build
+  --workspaces --if-present` then `npm test` exit 0, 1485 tests (1479 +
+  6 new regression tests this round).
+
+- 2026-09-02T06:42:12Z, task `6da2c230` (run-base fail-closed phrase check):
+  `solution-acceptance-verdict-contract.md` re-verified and re-pointed
+  against `ow-run-completeness.ts` after the reader gained a third,
+  position-independent malformed check (`lineCarriesRunBasePhrase`): any
+  line in `00-goal.md` naming both marker tokens (`solution-acceptance` and
+  `run-base`) but not accepted as a well-formed keyed/unkeyed marker now
+  blocks as `runBaseKind: 'malformed'`, closing the line-position residual
+  (list bullet, prose, no comment wrapper, leading text) documented as
+  fail-open by task 43a7ef58's review round 4. All 26 `ow-run-completeness.ts`
+  citation spans in the doc shifted (the reader's header docstring and the
+  `run-base` grammar section both grew) and were re-pointed one by one against
+  the current source, each re-verified against its cited excerpt; the
+  `run-base` grammar paragraph was rewritten with an explicit decision
+  paragraph naming the new check and its rationale, plus two new citations
+  (`UNKEYED_RUN_BASE_STRICT`, `lineCarriesRunBasePhrase`). `solution-verdict.ts`
+  citations were untouched (that file did not change; the verdict layer needs
+  no change since it already composes `readOwRunCompleteness`'s `reasons`/
+  `complete` generically). Re-verified: `okf-kit check --json docs/okf` and
+  `okf-kit check --json --require-anchors docs/okf` on the committed tree
+  both 0 errors / 0 warnings; `npm run check:okf-test-citation-shape` and
+  `npm run test:check-okf-test-citation-shape` both pass.
+
 - 2026-09-02T05:43:25Z, task `44ee799a` (pin sweep, post-rebase): `merge-approval-gate-mechanics.md`
   went STALE against `.github/workflows/merge-approval.yml` after the
   Node-24 action bump landed on master (`actions/checkout` v4 to v5,
@@ -425,7 +547,7 @@
   named by the review and both confirmed reproducing:
   `solution-acceptance-verdict-contract.md`:128 (`verdict-signing.ts:100-109`,
   anchor `return newPath;` also matches line 107, not just the last line
-  109) and same doc:245 (`ow-run-completeness.ts:397-454`, anchor
+  109) and same doc:245 (ow-run-completeness.ts lines 397 to 454 at that commit, anchor
   `return scan;` also matches line 399, not just the last line 454). Both
   fixed by widening the anchor text to include its own 2-space indent
   (`  return newPath;` / `  return scan;`), which the shallower-indented
