@@ -13,21 +13,47 @@
   leading text all read as markerless, fail-open. Measured in task 43a7ef58
   review round 3/4: five such variants each resolved `runBaseKind 'absent'`,
   `complete true`. A third, position-independent check now closes this: any
-  line in `00-goal.md` naming BOTH exact, case-sensitive marker tokens
-  (`solution-acceptance` and `run-base`) but not accepted as a well-formed
-  keyed or unkeyed marker collects into the same `malformed` blocker as the
-  existing near-miss grammar, including inside a fenced code block. A
-  well-formed legacy unkeyed marker line is explicitly exempted, so it is
-  never misread as an attempted-but-broken keyed one; a well-formed marker
-  (keyed or unkeyed) still carrying the template's `TODO` placeholder is
-  unaffected and stays fail-open (`runBaseKind: 'todo'`), per the
-  orchestrator-workflow kit's documented markerless/TODO contract. No change
-  to `src/solution-verdict.ts`: it already composes the reader's `reasons`/
-  `complete` generically, so the new blocker surfaces through the existing
-  `owBindingBlockers` path with no code change there. Covered by
-  `tests/ow-run-completeness.test.ts` (new tests for each residual shape, a
-  fenced-code-block variant, and a pin that a well-formed unkeyed marker is
-  exempt from the new check).
+  UNQUOTED line in `00-goal.md` naming BOTH exact, case-sensitive marker
+  tokens (`solution-acceptance` and `run-base`) but not accepted as a
+  well-formed keyed or unkeyed marker collects into a `malformed` blocker
+  (`runBaseKind: 'malformed'`); a well-formed marker (keyed or unkeyed) still
+  carrying the template's `TODO` placeholder is unaffected and stays
+  fail-open (`runBaseKind: 'todo'`), per the orchestrator-workflow kit's
+  documented markerless/TODO contract. No change to `src/solution-verdict.ts`:
+  it already composes the reader's `reasons`/`complete` generically, so the
+  new blocker surfaces through the existing `owBindingBlockers` path with no
+  code change there.
+
+  Round 2 (task 6da2c230, review round 1 findings) closed three false
+  positives found by measuring the round-1 check against the real corpus of
+  94 run directories under pandora/harness/agent-grounding: (1) the
+  well-formed-unkeyed-marker exemption now tracks what the resolver
+  (`matchMarker`) actually reads a value from — a line starting with the
+  comment opener, `solution-acceptance:`, `run-base`, `=`, and a
+  non-whitespace value, WHATEVER follows on the line — instead of a
+  whole-line-only shape; 9 real runs whose unkeyed marker carried a trailing
+  annotation or the pandora multi-repo convention's `= multi-repo; see keyed
+  markers below` had resolved a value AND been reported malformed under the
+  whole-line-only shape, regressing `complete: true` to `complete: false`.
+  (2) Orchestrator decision D-027 amends round 1's fence choice: a phrase
+  occurrence entirely inside a single-backtick inline code span or a fenced
+  code block now reads as a quotation of the marker syntax, not an attempted
+  marker, and is exempt (a second, unquoted mention of the phrase on the same
+  line still blocks) — 2 real runs that only ever quoted the marker syntax in
+  backticks (prose documentation, template examples) had self-blocked under
+  round 1's "a fence is not an excuse" stance. (3) a malformed line caught
+  only by the third (phrase) net now gets a distinct reason ("names the
+  run-base marker tokens but is not a well-formed marker") instead of the
+  keyed-shape hint, which misled an operator whose line never attempted
+  bracket syntax at all. After all three fixes, re-measuring the same 94-run
+  corpus: zero runs regress from `complete: true` at the pre-round-1 baseline
+  to `complete: false`. Also fixed: the malformed-line excerpt is now
+  truncated to its 80-char budget BEFORE the `line N: ` prefix is added (the
+  prefix previously ate into the excerpt's own budget). Covered by
+  `tests/ow-run-completeness.test.ts` (byte-exact regression tests for the
+  real corpus lines, the quotation exemption plus negative controls, the
+  distinct phrase-only reason, and a pin on the exact `line N: <excerpt>`
+  text with the marker off line 1).
 
 ## 0.9.0, 2026-08-28
 

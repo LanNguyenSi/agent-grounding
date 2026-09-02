@@ -2,6 +2,38 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-02T07:29:00Z, task `6da2c230` round 2 (run-base fail-closed phrase
+  check, review round 1 fix-up): `solution-acceptance-verdict-contract.md`
+  re-verified and re-pointed against `ow-run-completeness.ts` after three
+  round-1 review findings were closed there, measured against the real corpus
+  of 94 run directories under pandora/harness/agent-grounding (before: 9 runs
+  regressed `complete: true` to `complete: false`; after: zero regress). (1)
+  The unkeyed-marker exemption from the phrase check now tracks what
+  `matchMarker` actually reads a value from (line start + the comment opener
+  through a non-whitespace value, whatever follows), not a whole-line-only
+  shape — fixes an annotated-sha unkeyed marker and the pandora multi-repo
+  convention line both resolving a value AND being reported malformed. (2)
+  Orchestrator decision D-027 amends round 1's fence stance: a phrase
+  occurrence entirely inside a single-backtick inline span or a fenced code
+  block is now a quotation, exempt from the check (a second unquoted mention
+  on the same line still blocks) — fixes two real runs that only ever quoted
+  the marker syntax in backticks. (3) a malformed line caught only by the
+  phrase net (no keyed bracket syntax attempted) now gets a distinct reason
+  instead of the misleading keyed-shape hint. All `ow-run-completeness.ts`
+  citation spans in the doc shifted again (the module docstring's decision
+  paragraph and the `collectKeyedRunBaseMarkers`/`malformedRunBaseReasons`
+  functions both grew) and were re-pointed one by one against the current
+  source, each re-verified against its cited excerpt; the `run-base` grammar
+  paragraph and the top-level README paragraph were both rewritten to
+  describe the code's actual current exemptions rather than the round-1
+  ones. `solution-verdict.ts` citations were untouched (that file did not
+  change). Re-verified: `okf-kit check --json docs/okf` and `okf-kit check
+  --json --require-anchors docs/okf` on the committed tree both 0 errors / 0
+  warnings; `npm run check:okf-test-citation-shape` and `npm run
+  test:check-okf-test-citation-shape` both pass; root `npm run build
+  --workspaces --if-present` then `npm test` exit 0, 1485 tests (1479 +
+  6 new regression tests this round).
+
 - 2026-09-02T06:42:12Z, task `6da2c230` (run-base fail-closed phrase check):
   `solution-acceptance-verdict-contract.md` re-verified and re-pointed
   against `ow-run-completeness.ts` after the reader gained a third,
