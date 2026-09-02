@@ -2,6 +2,22 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-02T08:36:59Z, task `6da2c230` round 4 (review of round 3):
+  commit `10e4004` addressed the round-3 medium finding (two triple-backtick
+  lines indented four or more spaces are not fences to the heuristic, so
+  their backticks pair as an inline span around a marker attempt between
+  them and exempt it) as a pinned, documented residual rather than a
+  behaviour change: the docstring residual paragraph of
+  `ow-run-completeness.ts` was rewritten within the same line count, so no
+  citation moved (`okf-kit check` 0 errors with and without
+  `--require-anchors`), and one test pins the case. The round-4 reviewer
+  then found `solution-acceptance-verdict-contract.md` stale against that
+  commit (measured before the commit, not after); timestamp-only re-stamp
+  here, measured after this commit. Also earlier in round 3: one historical
+  span citation in the round-2 entry of this log stated in prose (commit
+  `f09c6bc`), which cleared the closing-brace warning it had started to
+  raise.
+
 - 2026-09-02T08:08:21Z, task `6da2c230` round 3 (run-base fail-closed phrase
   check, review round 2 fix-up): `solution-acceptance-verdict-contract.md`
   re-verified and re-pointed against `ow-run-completeness.ts` after the
