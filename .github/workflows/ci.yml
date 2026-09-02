@@ -68,7 +68,7 @@ jobs:
     env:
       BUNDLE_PATH: docs/okf
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # citations-resolve's repo-root auto-detection runs `git
           # rev-parse --show-toplevel`; a full checkout keeps this job's
@@ -76,7 +76,7 @@ jobs:
           # second, subtly different recipe to keep in sync.
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -296,9 +296,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
