@@ -162,6 +162,26 @@ test('checkFixture: real ci.yml selectors against error-report.json produce zero
   assert.equal(wouldBlock, true, 'error-report.json must make the guard block on the errors leg alone');
 });
 
+test('drifted-report.json: contains exactly one sources-fresh notice (regeneration regression guard)', () => {
+  // Guards against a future in-place regeneration silently losing this
+  // notice: it only reproduces when the fixture's declared `sources:`
+  // file is untracked by git AT THE MOMENT the report is generated (see
+  // scripts/fixtures/okf-selectors/README.md's Regenerating section). A
+  // regeneration run after the source file has already been committed
+  // produces a report with zero sources-fresh notices instead, and this
+  // assertion is what turns that into a loud test failure rather than a
+  // silently stale fixture.
+  const drifted = JSON.parse(fs.readFileSync(DRIFTED_REPORT_PATH, 'utf8'));
+  const sourcesFreshNotices = drifted.findings.filter(
+    (f) => f.ruleId === 'sources-fresh' && f.severity === 'notice',
+  );
+  assert.equal(
+    sourcesFreshNotices.length,
+    1,
+    'drifted-report.json must carry exactly one sources-fresh notice',
+  );
+});
+
 // ── run() (CLI core, exit code) ──────────────────────────────────────────
 
 test('run(): the real repo (rootDir=ROOT_DIR, real ci.yml) exits 0', () => {

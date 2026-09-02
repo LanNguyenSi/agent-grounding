@@ -1,11 +1,11 @@
 ---
 type: reference
 title: Example drifted doc
-description: fixture doc engineered to trigger every citations-resolve rule subtype plus a base citations-resolve warning and a non-citation notice. Only `src/never-committed.ts` is declared under `sources:`, on purpose, so `sources-fresh` reports exactly the one untracked-file notice this fixture wants and nothing else.
+description: fixture doc engineered to trigger every citations-resolve rule subtype plus a base citations-resolve warning and a non-citation notice. Only `src/fixture-source-2.ts` is declared under `sources:`, on purpose, so `sources-fresh` reports exactly the one untracked-file notice this fixture wants and nothing else.
 tags: [example]
 timestamp: 2026-08-31T00:00:00Z
 sources:
-  - scripts/fixtures/okf-selectors/src/never-committed.ts
+  - scripts/fixtures/okf-selectors/src/fixture-source-2.ts
 ---
 
 # Example drifted
@@ -22,4 +22,4 @@ Test file citation range starts mid-body and straddles into the sibling block (`
 
 Ambiguous bare filename citation, matches two files (`shared.ts:1#"export const A = 1;"`).
 
-Untracked source, staleness not assessable (`scripts/fixtures/okf-selectors/src/never-committed.ts:1#"export const untracked = true;"`).
+Untracked source, staleness not assessable (`scripts/fixtures/okf-selectors/src/fixture-source-2.ts:1#"export const untracked = true;"`).

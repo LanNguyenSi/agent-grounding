@@ -20,6 +20,17 @@ together is a check failure, not a silent no-op.
 
 ## Regenerating
 
+Before anything else: `bundle-drifted/doc.md`'s one `sources:` entry
+must point at a `src/*` file that has never been committed to this
+repo, or the `sources-fresh` "untracked by git, staleness unknown"
+notice this fixture depends on cannot be reproduced (see below). Pick
+the next unused number under `src/fixture-source-<N>.ts` (the file
+currently in use, checked in below, is `fixture-source-2.ts`; the next
+bump uses `fixture-source-3.ts`), rename it, and update
+`bundle-drifted/doc.md`'s `sources:` entry and its own citation into
+that file, all BEFORE you run `okf-kit` and BEFORE `git add`ing the
+renamed file.
+
 From the repo root, with the pinned `okf-kit` version reachable via
 `npx` (`<VERSION>` below must match `.github/workflows/ci.yml`'s
 `okf-kit@...` pin and this directory's `fixture-version.json` once
@@ -34,9 +45,13 @@ npx -y okf-kit@<VERSION> check --require-anchors --json scripts/fixtures/okf-sel
 Then patch `bundleDir` in all three files back to the repo-relative form
 shown above (`jq '.bundleDir = "scripts/fixtures/okf-selectors/bundle-clean"'`
 etc.), update `fixture-version.json`'s `"okfKitVersion"` to `<VERSION>`,
-and re-run `npm run test:check-okf-selectors`.
+`git add` the renamed `src/fixture-source-<N>.ts` (only now, after the
+report above was captured), and re-run `npm run test:check-okf-selectors`
+(it asserts `drifted-report.json` still carries exactly one
+`sources-fresh` notice, so a regeneration that silently loses it fails
+loud).
 
-`src/never-committed.ts` was deliberately left untracked (never `git
+`src/fixture-source-2.ts` was deliberately left untracked (never `git
 add`ed) at the moment `drifted-report.json` was generated -- it's the
 one source `bundle-drifted/doc.md` declares under `sources:`, so
 `okf-kit`'s `sources-fresh` rule reported exactly the one "untracked by
@@ -50,19 +65,21 @@ original `src/untracked.ts`, which had been committed by an earlier
 regeneration -- neither version's `sources-fresh` treated it as
 untracked once it had git history, `git rm --cached` or not). Because of
 that, this fixture's source file was renamed from `src/untracked.ts` to
-`src/never-committed.ts` (a name that has never been committed as of
-this writing) when the fixtures were regenerated for the okf-kit@0.9.0
-pin bump, specifically so the notice could be reproduced honestly rather
-than left stale in the checked-in JSON. It is committed here as part of
-this fixture set (so the fixture directory is complete and
-self-contained), which means it is now git-tracked and, by the same
-mechanism, a literal re-run of the commands above will NOT reproduce
-that one notice verbatim starting with the next regeneration. To
-regenerate faithfully next time: pick a fresh filename under `src/` that
-has never been committed to this repo, point `bundle-drifted/doc.md`'s
-`sources:` (and its own citation into that file) at it, `git add` it
-only AFTER capturing `drifted-report.json` (so `git log` on that path
-still finds no history at generation time), then run `okf-kit`. None of
+`src/never-committed.ts` for the okf-kit@0.9.0 pin bump, and that name
+turned out to have the same problem one round later: once
+`never-committed.ts` was itself committed as part of that bump, a
+literal re-run of the commands above stopped reproducing the notice
+verbatim, because the "never committed" name was no longer true. It was
+renamed again, to `src/fixture-source-2.ts`, specifically so the notice
+could keep being reproduced honestly rather than left stale in the
+checked-in JSON -- and to make that failure mode impossible to repeat,
+the filename is now a plain sequence number instead of a claim
+("never-committed") that a future commit falsifies. `fixture-source-2.ts`
+is committed here as part of this fixture set (so the fixture directory
+is complete and self-contained), which means it is now git-tracked and,
+by the same mechanism, a literal re-run of the commands above will NOT
+reproduce that one notice verbatim starting with the next regeneration
+-- follow the renaming step at the top of this section instead. None of
 the other `src/*` files are declared under any doc's `sources:` key, so
 their git-tracked state doesn't matter.
 

@@ -2,12 +2,42 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-02, round-2 review fix-up for the 0.9.0 pin bump below (task
+  44ee799a): reworded a fleet-count claim in
+  `.github/workflows/okf-staleness.yml`'s branch-name comment and its
+  continuation-shorthand summary line; fixed a mis-escaped
+  continuation-shorthand notation (`:N`, `-M`, `(N)`) in this file and in
+  `.github/workflows/ci.yml`; corrected a stale "two canonical" ->
+  "three canonical" fixture-count comment in `ci.yml`; cleaned up two
+  weak anchors in `evidence-ledger-session-key-shapes.md` (the
+  trailing-space `policyDecisions: all.filter((e) => e.type === "` form
+  replaced with the clean `policyDecisions: all.filter` spelling already
+  used elsewhere in the same doc) and one weak anchor in
+  `claim-gate-vs-review-claim-gate.md` (`} else {` replaced with
+  `opts.evidenceLogged === true`, on the forced branch's actual
+  condition rather than the following else-head). Re-verified: `okf-kit
+  check --require-anchors --json docs/okf` on the committed tree still
+  0 errors / 0 warnings / 0 notices; only the cited spans in the two
+  touched docs were re-opened and confirmed for this sweep, not every
+  prose paragraph. Also fixed the drifted-fixture regeneration procedure
+  (`scripts/fixtures/okf-selectors/`): the fixture source file
+  (previously `src/never-committed.ts`) had itself been committed by the
+  0.9.0 bump below, which silently falsified its own name and would have
+  broken the "untracked by git" notice on the next literal regeneration;
+  renamed it to `src/fixture-source-2.ts` (a plain sequence number
+  instead of a claim a future commit falsifies), regenerated
+  `drifted-report.json` with the new file still uncommitted, and moved
+  the rename requirement to the first line of the README's Regenerating
+  section. Added a unit test asserting `drifted-report.json` carries
+  exactly one `sources-fresh` notice, so a future in-place regeneration
+  that silently loses it fails loud instead of shipping a stale fixture.
+
 - 2026-09-02, okf-kit pin bump 0.8.0 -> 0.9.0 for fleet parity (task
   44ee799a): bumped both `.github/workflows/ci.yml`'s blocking
   `okf-anchor-guard` job and `.github/workflows/okf-staleness.yml`'s
   warn-only job to `okf-kit@0.9.0`. 0.9.0 adds the
   `anchor-required-continuation` rule (opt-in, `--require-anchors`): a
-  continuation citation (`:N`, `-`M``, `(`N`)`) chained to a full,
+  continuation citation (`:N`, `-M`, `(N)`) chained to a full,
   in-repo-resolving citation cannot carry its own `#anchor`, and is now
   flagged rather than silently exempt. `npx -y okf-kit@0.9.0 check --json
   --require-anchors docs/okf` on the pre-bump tree: 0 errors, 24

@@ -3,7 +3,7 @@ type: invariant
 title: claim-gate vs review-claim-gate — same word, opposite trust models
 description: Two sibling packages both gate on "evidence" but claim-gate trusts a caller-supplied boolean (self-discipline) while review-claim-gate reads a store (CI gate) — never treat them as interchangeable.
 tags: [claim-gate, review-claim-gate, evidence, trust-boundary]
-timestamp: 2026-08-26T11:26:42Z
+timestamp: 2026-09-02T05:26:42Z
 sources:
   - packages/claim-gate/src/lib.ts
   - packages/claim-gate/src/cli.ts
@@ -75,7 +75,7 @@ review-claim-gate's non-`evidence_logged` flags are verified — defeats the gat
   (`packages/review-claim-gate/src/cli.ts:248-290#"deriveEvidenceLogged(opts.taskId, opts.ledgerDb)"`; README "Evidence source
   precedence"):
   1. **forced** — `--evidence-logged` sets `evidence_logged=true` unconditionally,
-     bypassing any lookup (`runCheck`, `packages/review-claim-gate/src/cli.ts:260-264#"} else {"`; `buildContext` then
+     bypassing any lookup (`runCheck`, `packages/review-claim-gate/src/cli.ts:260#"opts.evidenceLogged === true"`; `buildContext` then
    applies it at `packages/review-claim-gate/src/cli.ts:209-219#"opts.evidenceLogged === true ? true : evidenceEntries > 0"`).
   2. **committed file** — an explicit `--evidence-file <path>` (must exist, else
      throws) or the auto-detected convention path

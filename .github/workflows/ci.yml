@@ -120,7 +120,7 @@ jobs:
           # is omitted: check-okf-anchors.js's own ALLOWLIST was empty --
           # every full citation in this bundle already carries an anchor.
           # anchor-required-continuation shipped in okf-kit@0.9.0: every
-          # continuation citation in this bundle (`:N`, `-`M``, `(`N`)`)
+          # continuation citation in this bundle (`:N`, `-M`, `(N)`)
           # has been lifted into its own anchored full citation (see
           # docs/okf/log.md's entry for the 0.9.0 bump).
           okf-kit check --require-anchors --json "${BUNDLE_PATH}" > okf-anchor-report.json
@@ -283,7 +283,7 @@ jobs:
 
       - name: okf-kit selector-coupling check
         # Couples this job's own jq selectors (above) to okf-kit's JSON
-        # finding shape: replays the extracted selectors against two
+        # finding shape: replays the extracted selectors against three
         # canonical okf-kit@0.9.0 reports (scripts/fixtures/okf-selectors/)
         # and asserts each blocking selector still selects exactly what it
         # is supposed to. See scripts/check-okf-selectors.js for why (this

@@ -5,7 +5,7 @@
       "ruleId": "sources-fresh",
       "severity": "notice",
       "file": "doc.md",
-      "message": "untracked by git, staleness unknown: `scripts/fixtures/okf-selectors/src/never-committed.ts`"
+      "message": "untracked by git, staleness unknown: `scripts/fixtures/okf-selectors/src/fixture-source-2.ts`"
     },
     {
       "ruleId": "citations-resolve",

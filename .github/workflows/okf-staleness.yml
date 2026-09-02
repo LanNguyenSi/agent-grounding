@@ -14,8 +14,8 @@ name: OKF staleness
 on:
   pull_request:
     # The one repo-specific line in the canonical pattern: set this to the
-    # target repo's default branch when porting (all five currently use
-    # master); a wrong name here means the watch silently never runs.
+    # target repo's default branch when porting; a wrong name here means
+    # the watch silently never runs.
     branches: [master]
 
 permissions:
@@ -105,8 +105,8 @@ jobs:
               echo "the doc against the source, then update its timestamp."
               echo ""
               echo "A \`citations-resolve\` warning means a \`path:N[-M]\`"
-              echo "citation (including this bundle's \`:N\`, -\`N\`/–\`N\`, and"
-              echo "(\`N\`) continuation-ref shorthands) no longer points at real"
+              echo "citation (including continuation-ref shorthands, a form"
+              echo "okf-kit supports) no longer points at real"
               echo "content, including sub-rules like \`blank-start-line\`,"
               echo "\`closing-brace-start-line\`, \`missing-file\`,"
               echo "\`inverted-range\`, \`range-exceeds-file\`, and"

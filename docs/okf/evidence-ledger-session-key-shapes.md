@@ -3,7 +3,7 @@ type: invariant
 title: Evidence-ledger session keys — one opaque column, two conventions
 description: The ledger `session` is a single opaque TEXT column; grounding-mcp keys it by a generated `gs-*` id while the merge-approval CI Action keys it by the PR head branch name, so evidence written under one key is invisible to a reader expecting the other.
 tags: [evidence-ledger, sessions, keys, ci, mcp]
-timestamp: 2026-08-28T12:43:59Z
+timestamp: 2026-09-02T05:26:42Z
 sources:
   - packages/evidence-ledger/src/types.ts
   - packages/evidence-ledger/src/db.ts
@@ -33,7 +33,7 @@ A separate structural guard keeps decision rows from polluting evidence reads: `
 
 ## Where it's enforced
 
-- **Column + read API (the opaque key):** `packages/evidence-ledger/src/db.ts:160#"DEFAULT 'default'"` (`session TEXT` def), `packages/evidence-ledger/src/db.ts:190#"NOT NULL DEFAULT 'default'"` (rebuild copy), `packages/evidence-ledger/src/db.ts:314-317#"params.session = opts.session;"` (`listEntries` equality filter), `packages/evidence-ledger/src/db.ts:358-377#"policyDecisions: all.filter((e) => e.type === "` (`getSummary`, including the `policy_decision` bucket split at `packages/evidence-ledger/src/db.ts:375#"policyDecisions: all.filter((e) => e.type === "`).
+- **Column + read API (the opaque key):** `packages/evidence-ledger/src/db.ts:160#"DEFAULT 'default'"` (`session TEXT` def), `packages/evidence-ledger/src/db.ts:190#"NOT NULL DEFAULT 'default'"` (rebuild copy), `packages/evidence-ledger/src/db.ts:314-317#"params.session = opts.session;"` (`listEntries` equality filter), `packages/evidence-ledger/src/db.ts:358-377#"policyDecisions: all.filter"` (`getSummary`, including the `policy_decision` bucket split at `packages/evidence-ledger/src/db.ts:375#"policyDecisions: all.filter"`).
 - **Type bucket:** `packages/evidence-ledger/src/types.ts:9-14#"policy_decision"` (`EntryType`), `packages/evidence-ledger/src/types.ts:41#"policyDecisions: LedgerEntry[];"` (`policyDecisions` on `LedgerSummary`).
 - **Writer convention (`gs-*`):** `packages/grounding-mcp/src/server.ts:189#"Session id — used as the ledger session namespace."` (param doc), `packages/grounding-mcp/src/server.ts:196-202#"session: sessionId,"` (write-through); id shape `packages/grounding-wrapper/src/lib.ts:58-61#"gs-${slug}-${ts}"`.
 - **CI reader convention (branch name):** `.github/workflows/merge-approval.yml:49#"task-id: ${{ github.event.pull_request.head.ref }}"` (`task-id: …head.ref`), consumed by the action pinned at `.github/workflows/merge-approval.yml:47#"review-claim-gate-v0.1.5"`.
