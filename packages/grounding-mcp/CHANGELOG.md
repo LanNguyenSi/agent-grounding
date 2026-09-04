@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## 0.10.0, 2026-09-04
+
 ### Added
 
 - **`run-base` marker: fail closed on an unreadable attempted marker, not just

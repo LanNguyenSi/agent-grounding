@@ -2,6 +2,15 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-04T05:43:29Z, grounding-mcp 0.10.0 release preparation (task
+  `62c3865a`): moved the unchanged grounding-mcp Unreleased notes into the
+  dated 0.10.0 release block and updated the package manifest, lockfile, and
+  server `PACKAGE_VERSION`. Re-pointed the solution-acceptance consumer's
+  version anchor to 0.10.0; re-verified and re-stamped every bundle doc that
+  cites `server.ts`, plus the release-topology overview whose package-version
+  claim changed. Verification commands and final committed-tree OKF results
+  are recorded in the task's orchestrator run.
+
 - 2026-09-02T08:36:59Z, task `6da2c230` round 4 (review of round 3):
   commit `10e4004` addressed the round-3 medium finding (two triple-backtick
   lines indented four or more spaces are not fences to the heuristic, so
