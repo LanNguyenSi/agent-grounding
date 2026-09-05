@@ -14,7 +14,9 @@
 //      so an agent cannot weaken the gate at call time.
 //   3. HEAD-pinned: a verdict counts only at the HEAD it was produced
 //      at; any rework shifts HEAD and invalidates a green verdict.
-//   4. No stale green: a not-ready run overwrites a prior green marker.
+//   4. No stale green: every completed re-evaluation first removes any prior
+//      marker for that id, before either recording its new result or returning
+//      its error.
 //
 // The verdict marker lives OUTSIDE the agent-writable evidence-ledger on
 // purpose: a ledger row is forgeable via `ledger_add` (the lesson behind
@@ -173,22 +175,10 @@ export async function getHeadSha(repoPath: string): Promise<string | null> {
  * key, so this can fail if the key file cannot be read or written. Returns
  * the marker's path.
  *
- * Signing failure and a stale marker (F6, D-006, task 9b6c4beb /
- * grounding-mcp CHANGELOG 0.8.0): `signVerdict` is called BEFORE any write
- * to `target`. If it throws, this function throws too and `target` is never
- * touched — a marker already on disk from an earlier, successful
- * `writeVerdict` call for the same id is left exactly as it was (it is not
- * deleted, truncated, or otherwise invalidated). That pre-existing marker
- * may now be stale relative to the caller's intent (e.g. a solver expecting
- * a fresh not-ready verdict after a broken change still sees the last green
- * one at the same HEAD). This is a deliberate, documented, NOT a new
- * behavior change: the same class of residual predates 0.8.0 (any
- * exception before the write already had this shape), signing only raises
- * how often the write path can throw. Deleting the stale marker before
- * rethrowing was considered and rejected: that would add a new destructive
- * write on an error path in a security-relevant function, for a narrow,
- * loud (an exception, not a silent success) failure mode, which is a worse
- * trade than the residual it would close.
+ * `evaluateSolution` invalidates its existing marker before it calls this
+ * function. Consequently, signing or final-write failures cannot leave a
+ * previous successful marker usable after a failed re-evaluation. Callers of
+ * `writeVerdict` directly retain its simple write-or-throw behavior.
  */
 export function writeVerdict(verdict: Verdict): string {
   const target = verdictPath(verdict.id);
@@ -196,6 +186,22 @@ export function writeVerdict(verdict: Verdict): string {
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, `${JSON.stringify(signed, null, 2)}\n`, 'utf8');
   return target;
+}
+
+/**
+ * Remove the prior marker for an evaluation id. A missing marker is already
+ * invalid. Other I/O errors are surfaced to the caller because an old marker
+ * may still remain usable. This is a sequential guarantee for writable marker
+ * storage; it does not serialize concurrent writers or repair id collisions.
+ */
+export function invalidateVerdict(id: string): void {
+  const target = verdictPath(id);
+  try {
+    fs.unlinkSync(target);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw new Error(`could not invalidate existing verdict marker at ${target}: ${(err as Error).message}`);
+  }
 }
 
 /** Read the verdict marker for an id, or null when absent / unparseable. */
@@ -284,17 +290,36 @@ interface PreflightJson {
 
 function parsePreflightJson(payload: unknown): PreflightJson {
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
-    throw new Error("preflight JSON is missing a boolean 'ready' field");
+    throw new Error('preflight JSON payload must be an object');
   }
   const parsed = payload as Partial<PreflightJson>;
   if (typeof parsed.ready !== 'boolean') {
     throw new Error("preflight JSON is missing a boolean 'ready' field");
   }
+  if (typeof parsed.confidence !== 'number' || !Number.isFinite(parsed.confidence) || parsed.confidence < 0 || parsed.confidence > 1) {
+    throw new Error('preflight confidence must be a finite number between 0 and 1');
+  }
+  if (!Array.isArray(parsed.blockers) || !parsed.blockers.every((blocker) => typeof blocker === 'string')) {
+    throw new Error('preflight blockers must be a string array');
+  }
+  if (parsed.ready && parsed.blockers.length > 0) {
+    throw new Error('preflight ready=true requires an empty blockers array');
+  }
   return {
     ready: parsed.ready,
-    confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0,
-    blockers: Array.isArray(parsed.blockers) ? parsed.blockers : [],
+    confidence: parsed.confidence,
+    blockers: parsed.blockers,
   };
+}
+
+function preflightOutcomeError(preflight: PreflightJson, execution: PreflightExecution): string | null {
+  const expectedExitCode = preflight.ready ? 0 : 1;
+  if (execution.error !== undefined) return 'preflight invocation reported an execution error';
+  if (execution.signal !== null) return `preflight ended with signal ${execution.signal}`;
+  if (execution.exitCode !== expectedExitCode) {
+    return `preflight ready=${preflight.ready} requires exit code ${expectedExitCode}, got ${execution.exitCode ?? 'unavailable'}`;
+  }
+  return null;
 }
 
 /** Orchestrator-workflow (OW) arm knob. */
@@ -600,9 +625,10 @@ async function oldestChangeAuthorDate(repoPath: string): Promise<string | null> 
  * Producer: run `preflight run <repoPath> --json` and record a HEAD-pinned
  * verdict for `id` derived from its result. The verb running this is the
  * producer; the agent supplies no results and cannot weaken the check set
- * (it comes from the repo configuration preflight loads). preflight exits
- * non-zero when not ready but still prints its JSON, so a non-zero exit with
- * parseable stdout is a normal not-ready verdict, not a failure.
+ * (it comes from the repo configuration preflight loads). Only exit 0 with
+ * `ready:true`, or exit 1 with `ready:false`, is a normal outcome; either
+ * pairing also requires no signal or invocation error. Other exits and errors
+ * return an error even if they captured parseable JSON.
  *
  * The verdict also reflects OW process-completeness: after preflight is parsed,
  * `owBlockersFor(repoPath)` is folded into `ready` and `blockers` ONLY — the
@@ -614,8 +640,10 @@ async function oldestChangeAuthorDate(repoPath: string): Promise<string | null> 
  * are no OW blockers; `blockers` is the preflight blockers followed by the
  * (prefixed) OW blockers.
  *
- * Fails closed: when preflight is absent or its output is unusable, returns an
- * `error` and writes NO marker (so the gate stays closed via "no verdict").
+ * Fails closed for writable marker storage: every valid-id failed evaluation
+ * invalidates an earlier same-id marker before returning its `error`. If that
+ * deletion fails, the returned error says the old marker may remain. This is
+ * a sequential guarantee only; it does not serialize concurrent writers.
  */
 export async function evaluateSolution(
   id: string,
@@ -635,15 +663,28 @@ export async function evaluateSolution(
     };
   }
 
+  const invalidateExisting = (): string | null => {
+    try {
+      invalidateVerdict(id);
+    } catch (err) {
+      return (err as Error).message;
+    }
+    return null;
+  };
+  const failAfterEvaluation = (error: string, diagnostics: PreflightDiagnostics): EvaluateResult => {
+    const invalidationError = invalidateExisting();
+    if (invalidationError !== null) {
+      return { verdict: null, markerPath: null, error: `${error}; ${invalidationError}. The previous marker may remain.`, diagnostics };
+    }
+    return { verdict: null, markerPath: null, error, diagnostics };
+  };
+
   const head = await getHeadSha(repoPath);
   if (!head) {
-    return {
-      verdict: null,
-      markerPath: null,
-      error:
-        'cannot resolve a committed git HEAD; solution-acceptance requires a git repository with at least one commit',
-      diagnostics: unavailable({ exitCode: null, signal: null }, 'preflight was not started because git HEAD is unavailable'),
-    };
+    return failAfterEvaluation(
+      'cannot resolve a committed git HEAD; solution-acceptance requires a git repository with at least one commit',
+      unavailable({ exitCode: null, signal: null }, 'preflight was not started because git HEAD is unavailable'),
+    );
   }
 
   const bin = process.env.SOLUTION_PREFLIGHT_BIN ?? 'preflight';
@@ -666,23 +707,19 @@ export async function evaluateSolution(
         : { error: e.message }),
     };
     if (e.code === 'ENOENT') {
-      return {
-        verdict: null,
-        markerPath: null,
-        error: `preflight binary not found (\`${bin}\`); install @lannguyensi/agent-preflight or set SOLUTION_PREFLIGHT_BIN`,
-        diagnostics: unavailable(execution, 'preflight binary is unavailable'),
-      };
+      return failAfterEvaluation(
+        `preflight binary not found (\`${bin}\`); install @lannguyensi/agent-preflight or set SOLUTION_PREFLIGHT_BIN`,
+        unavailable(execution, 'preflight binary is unavailable'),
+      );
     }
     // preflight exits 1 when not ready but prints JSON to stdout first.
     if (typeof e.stdout === 'string' && e.stdout.trim().length > 0) {
       stdout = e.stdout;
     } else {
-      return {
-        verdict: null,
-        markerPath: null,
-        error: `preflight invocation failed: ${(err as Error).message}`,
-        diagnostics: unavailable(execution, 'preflight produced no JSON payload'),
-      };
+      return failAfterEvaluation(
+        `preflight invocation failed: ${(err as Error).message}`,
+        unavailable(execution, 'preflight produced no JSON payload'),
+      );
     }
   }
 
@@ -690,21 +727,31 @@ export async function evaluateSolution(
   try {
     payload = JSON.parse(stdout);
   } catch {
-    return {
-      verdict: null,
-      markerPath: null,
-      error: 'preflight ran but its output was not parseable JSON',
-      diagnostics: unavailable(execution, 'preflight output was not parseable JSON'),
-    };
+    return failAfterEvaluation(
+      'preflight ran but its output was not parseable JSON',
+      unavailable(execution, 'preflight output was not parseable JSON'),
+    );
   }
   diagnostics = inspectPreflightPayload(payload, execution);
   try {
     pf = parsePreflightJson(payload);
-  } catch {
+  } catch (err) {
+    return failAfterEvaluation(`preflight produced an invalid verdict core: ${(err as Error).message}`, diagnostics);
+  }
+  const outcomeError = preflightOutcomeError(pf, execution);
+  if (outcomeError !== null) {
+    return failAfterEvaluation(`preflight produced an invalid execution outcome: ${outcomeError}`, diagnostics);
+  }
+
+  // From here onwards the run has a valid core and accepted process outcome.
+  // Remove any earlier same-id marker before OW folding, signing, or writing;
+  // a later failure must never leave that old marker usable.
+  const invalidationError = invalidateExisting();
+  if (invalidationError !== null) {
     return {
       verdict: null,
       markerPath: null,
-      error: 'preflight ran but its output was not parseable JSON',
+      error: `${invalidationError}. The previous marker may remain.`,
       diagnostics,
     };
   }
@@ -716,7 +763,17 @@ export async function evaluateSolution(
   // here is still the pre-signing 7-key shape; see `EvaluateResult`.) For a
   // non-OW repo under the default (auto) knob, owBlockers is [] and the
   // output stays byte-identical.
-  const owBlockers = await owBlockersFor(repoPath);
+  let owBlockers: string[];
+  try {
+    owBlockers = await owBlockersFor(repoPath);
+  } catch (err) {
+    return {
+      verdict: null,
+      markerPath: null,
+      error: `could not evaluate orchestrator-workflow blockers: ${(err as Error).message}`,
+      diagnostics,
+    };
+  }
   const ready = pf.ready && owBlockers.length === 0;
   const blockers = [...pf.blockers, ...owBlockers];
 
@@ -729,6 +786,15 @@ export async function evaluateSolution(
     timestamp: opts.timestamp ?? new Date().toISOString(),
     source: 'preflight',
   };
-  const markerPath = writeVerdict(verdict);
-  return { verdict, markerPath, diagnostics };
+  try {
+    const markerPath = writeVerdict(verdict);
+    return { verdict, markerPath, diagnostics };
+  } catch (err) {
+    return {
+      verdict: null,
+      markerPath: null,
+      error: `could not write verdict marker: ${(err as Error).message}`,
+      diagnostics,
+    };
+  }
 }
