@@ -2,6 +2,28 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-05T19:03:38Z, `solution_evaluate` progress notifications (task
+  `8c9a99fc`): added `src/progress.ts` (`withProgressPings`) and wrapped
+  `solution_evaluate`'s single preflight invocation in `server.ts` with it;
+  no change to `solution-verdict.ts`, signing, gate, or verdict/marker
+  shape. The edit shifted every citation into `server.ts` past the new
+  import line and `createServer`'s `progressIntervalMs` setup (a uniform
+  +3 through `ledger_add` and the start of `solution_evaluate`'s own
+  registration, +7 from `solution_gate` through every `hypothesis_*` tool
+  below it, since that handler's body itself grew by 4 lines); a
+  README.md insertion (new "Progress notifications while `solution_evaluate`
+  runs" section) shifted the collateral OPENAI_API_KEY citation, and two
+  new import lines at the top of
+  `tests/grounding-gate-mcp-roundtrip.test.ts` shifted the not-ready-preflight
+  test citation. Re-pinned every affected citation individually in
+  `evidence-ledger-session-key-shapes.md`, `hypothesis-tracker-persistence-split.md`,
+  and `solution-acceptance-verdict-contract.md` (line numbers only; every
+  quoted anchor text was unchanged and still resolves verbatim at its
+  pinned line). `okf-kit check --json --require-anchors docs/okf` reported
+  0 errors, 0 warnings, 0 notices against a clean pre-edit baseline run
+  from the same commit (`eefd18f`), confirming the fixes account for every
+  finding this edit introduced.
+
 - 2026-09-04T05:43:29Z, grounding-mcp 0.10.0 release preparation (task
   `62c3865a`): moved the unchanged grounding-mcp Unreleased notes into the
   dated 0.10.0 release block and updated the package manifest, lockfile, and
@@ -1170,3 +1192,23 @@
   validation, and the duplicate-run condition now names its full unchanged
   scope. Re-pinned the helper, MCP test, and README references after the
   reviewed source/test additions; prior validation evidence remains unchanged.
+
+- 2026-09-05T19:25:07Z, progress-notifications review-round-2 closing delta
+  (task 8c9a99fc): added `packages/grounding-mcp/src/progress.ts` to sources
+  and one clause to the `solution_evaluate` bullet noting it calls
+  `evaluateSolution` wrapped in `withProgressPings` when the request carries
+  a `progressToken`, with no effect on the verdict. The underlying
+  `server.ts` edit (interval validation via a new exported
+  `resolveProgressIntervalMs`, plus an explicit `message` argument) shifted
+  every later line in the file by +14/+15; re-pinned both bounds of every
+  shifted citation in this doc (`solution_evaluate`/`solution_gate`
+  registration lines) and, because the shift also broke citations outside
+  this doc's own edits, in `evidence-ledger-session-key-shapes.md` (the
+  `ledger_add` sessionId param doc and write-through range, plus the
+  `preflight:` incidental-match test citation) and
+  `hypothesis-tracker-persistence-split.md` (all seven `hypothesis_*`
+  registration lines, the `saveStore` call-site list, and the
+  not-found-rejected-or-checks-pending error line). `okf-kit check
+  --require-anchors --json docs/okf` reported 0 errors, 0 warnings, 0
+  notices; `check:okf-test-citation-shape` and `check:okf-selectors` both
+  passed.

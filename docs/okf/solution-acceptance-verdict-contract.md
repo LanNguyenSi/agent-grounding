@@ -3,7 +3,7 @@ type: invariant
 title: Solution-acceptance verdict contract — why the marker lives outside the ledger
 description: A "done" verdict is derived from a real preflight+OW run, HEAD-pinned, and written to an XDG state marker outside the agent-writable evidence-ledger because ledger rows are forgeable via ledger_add.
 tags: [solution-acceptance, verdicts, anti-hacking, trust-boundary]
-timestamp: 2026-09-05T18:00:35Z
+timestamp: 2026-09-05T19:25:07Z
 sources:
   - packages/grounding-mcp/src/solution-verdict.ts
   - packages/grounding-mcp/src/preflight-diagnostics.ts
@@ -11,6 +11,7 @@ sources:
   - packages/grounding-mcp/src/ow-run-completeness.ts
   - packages/grounding-mcp/src/session-store.ts
   - packages/grounding-mcp/src/server.ts
+  - packages/grounding-mcp/src/progress.ts
   - packages/grounding-mcp/tests/interop/harness-verifier.vendored.ts
   - packages/grounding-mcp/tests/interop/verdict-signing-interop.test.ts
   - packages/grounding-mcp/README.md
@@ -245,12 +246,15 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
   this producer and the harness consumer that would silently break verification is
   meant to surface here first.
 
-### The two MCP tools (server.ts, `PACKAGE_VERSION = '0.10.0'` at `server.ts:49#"PACKAGE_VERSION = '0.10.0'"`)
+### The two MCP tools (server.ts, `PACKAGE_VERSION = '0.10.0'` at `server.ts:50#"PACKAGE_VERSION = '0.10.0'"`)
 
-- **`solution_evaluate`** (registered `server.ts:316#"'solution_evaluate'"`) — the producer. Runs preflight against
+- **`solution_evaluate`** (registered `server.ts:333#"'solution_evaluate'"`) — the producer. Runs preflight against
   the repo, records a HEAD-pinned verdict for `id`. Args: `id` (min 1), optional
-  `repoPath` (defaults to cwd). Calls `evaluateSolution(id, repoPath ?? process.cwd())`.
-- **`solution_gate`** (registered `server.ts:332#"'solution_gate'"`) — read-only checker. Resolves current HEAD
+  `repoPath` (defaults to cwd). Calls `evaluateSolution(id, repoPath ?? process.cwd())`,
+  wrapped in `withProgressPings` (`packages/grounding-mcp/src/progress.ts`) when the
+  request carries a `progressToken`; this only sends `notifications/progress` pings
+  while preflight runs and has no effect on the verdict.
+- **`solution_gate`** (registered `server.ts:354#"'solution_gate'"`) — read-only checker. Resolves current HEAD
   via `getHeadSha`, then `evaluateGate(id, head)`. Deny reasons are precise: no verdict /
   not ready + blockers / HEAD drift / unresolvable HEAD.
 
