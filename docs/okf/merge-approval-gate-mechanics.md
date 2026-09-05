@@ -111,7 +111,7 @@ an applicable branch-protection rule or ruleset's **required status checks**
 - **Advisory state.** When neither an applicable ruleset nor branch protection
   requires `merge-approval`, the Check-Run still posts and can go red, but **a
   red merge-approval does not block a merge**. The rollout doc correctly
-  describes the hard-gate *end state*; it is not yet wired.
+  describes the hard-gate *end state*.
 
 **How to tell which one is live:** inspect the branch's applicable rulesets and
 branch-protection required status checks.
