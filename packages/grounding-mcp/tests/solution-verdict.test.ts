@@ -192,6 +192,60 @@ describe('evaluateSolution (producer)', () => {
     expect(evaluateGate('task-1', head).allowed).toBe(true);
   });
 
+  it('returns complete diagnostics with the original acknowledged payload while keeping it out of the marker', async () => {
+    const payload = {
+      ready: true,
+      confidence: 0.9,
+      checks: [
+        {
+          name: 'test',
+          kind: 'test',
+          status: 'acknowledged',
+          message: 'linux-only suite failed — acknowledged: CI covers it',
+          details: ['full output: /tmp/preflight-test.log'],
+          durationMs: 12,
+          confidenceContribution: 0.1,
+        },
+      ],
+      blockers: [],
+      warnings: [],
+      limitations: ['test failure acknowledged: CI covers it'],
+      durationMs: 12,
+      timestamp: '2026-05-30T00:00:00.000Z',
+      additiveField: { preserved: true },
+    };
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-complete-diagnostics.sh',
+      `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(payload)}'\n`,
+    );
+    const res = await evaluateSolution('task-1', repo);
+    expect(res.diagnostics).toMatchObject({
+      availability: 'available',
+      complete: true,
+      execution: { exitCode: 0, signal: null },
+      payload,
+    });
+    expect(res.diagnostics.issues).toEqual([]);
+    const onDisk = JSON.parse(fs.readFileSync(res.markerPath as string, 'utf8'));
+    expect(onDisk).not.toHaveProperty('diagnostics');
+    expect(onDisk).not.toHaveProperty('additiveField');
+  });
+
+  it('marks an acknowledged check without its reason incomplete', async () => {
+    const payload = {
+      ready: true, confidence: 0.9,
+      checks: [{ name: 'test', kind: 'test', status: 'acknowledged', durationMs: 2, confidenceContribution: 0 }],
+      blockers: [], warnings: [], limitations: [], durationMs: 2, timestamp: '2026-05-30T00:00:00.000Z',
+    };
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-unexplained-acknowledged.sh',
+      `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(payload)}'\n`,
+    );
+    const res = await evaluateSolution('task-1', repo);
+    expect(res.diagnostics).toMatchObject({ availability: 'available', complete: false });
+    expect(res.diagnostics?.issues).toContain('checks[0].acknowledged status is missing its reason in message');
+  });
+
   it('the MCP response verdict is pre-signing (no alg/signature); the written marker carries both (G4, R2-L1/L2)', async () => {
     process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
       'stub-ready-signed.sh',
@@ -234,6 +288,30 @@ describe('evaluateSolution (producer)', () => {
     expect(evaluateGate('task-1', head).allowed).toBe(false);
   });
 
+  it('reports an exit-1 not-ready complete diagnostic', async () => {
+    const payload = {
+      ready: false,
+      confidence: 0.4,
+      checks: [{ name: 'test', kind: 'test', status: 'fail', durationMs: 4, confidenceContribution: 0 }],
+      blockers: ['test: 1 failing'],
+      warnings: [],
+      limitations: [],
+      durationMs: 4,
+      timestamp: '2026-05-30T00:00:00.000Z',
+    };
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-complete-notready.sh',
+      `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(payload)}'\nexit 1\n`,
+    );
+    const res = await evaluateSolution('task-1', repo);
+    expect(res.verdict?.ready).toBe(false);
+    expect(res.diagnostics).toMatchObject({
+      availability: 'available',
+      complete: true,
+      execution: { exitCode: 1, signal: null },
+    });
+  });
+
   it('fails closed (error, no marker) when the preflight binary is missing', async () => {
     process.env.SOLUTION_PREFLIGHT_BIN = path.join(tmpDir, 'does-not-exist-preflight');
     const res = await evaluateSolution('task-1', repo);
@@ -241,6 +319,7 @@ describe('evaluateSolution (producer)', () => {
     expect(res.markerPath).toBeNull();
     expect(res.error).toContain('preflight binary not found');
     expect(readVerdict('task-1')).toBeNull();
+    expect(res.diagnostics).toMatchObject({ availability: 'unavailable', complete: false });
   });
 
   it('returns an error for an invalid id without throwing', async () => {
@@ -259,6 +338,7 @@ describe('evaluateSolution (producer)', () => {
     expect(res.markerPath).toBeNull();
     expect(res.error).toContain('not parseable JSON');
     expect(readVerdict('task-1')).toBeNull();
+    expect(res.diagnostics).toMatchObject({ availability: 'unavailable', complete: false, execution: { exitCode: 1 } });
   });
 
   it('fails closed when preflight exits non-zero with no output', async () => {
@@ -268,6 +348,53 @@ describe('evaluateSolution (producer)', () => {
     expect(res.markerPath).toBeNull();
     expect(res.error).toContain('preflight invocation failed');
     expect(readVerdict('task-1')).toBeNull();
+    expect(res.diagnostics).toMatchObject({ availability: 'unavailable', complete: false, execution: { exitCode: 1 } });
+  });
+
+  it('keeps valid but incomplete JSON available without fabricating a complete run', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-incomplete.sh',
+      '#!/bin/sh\necho \'{"ready":true,"confidence":0.9,"blockers":[]}\'\n',
+    );
+    const res = await evaluateSolution('task-1', repo);
+    expect(res.verdict?.ready).toBe(true);
+    expect(res.diagnostics).toMatchObject({ availability: 'available', complete: false, execution: { exitCode: 0 } });
+    expect(res.diagnostics.issues).toContain('preflight checks must be an array');
+  });
+
+  it('reports an anomalous exit code without changing the legacy ready verdict', async () => {
+    const payload = {
+      ready: true,
+      confidence: 0.9,
+      checks: [{ name: 'lint', kind: 'lint', status: 'pass', durationMs: 4, confidenceContribution: 0.1 }],
+      blockers: [],
+      warnings: [],
+      limitations: [],
+      durationMs: 4,
+      timestamp: '2026-05-30T00:00:00.000Z',
+    };
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-exit2-ready.sh',
+      `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(payload)}'\nexit 2\n`,
+    );
+    const res = await evaluateSolution('task-1', repo);
+    expect(res.verdict?.ready).toBe(true);
+    expect(res.diagnostics).toMatchObject({ availability: 'available', complete: false, execution: { exitCode: 2 } });
+    expect(res.diagnostics.issues).toContain('preflight ready=true requires exit code 0, got 2');
+  });
+
+  it('does not start preflight before id and HEAD validation, then invokes it exactly once', async () => {
+    const counter = path.join(tmpDir, 'preflight-count');
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-counter.sh',
+      `#!/bin/sh\nprintf x >> '${counter}'\necho '{"ready":true,"confidence":0.9,"blockers":[]}'\n`,
+    );
+    await evaluateSolution('..', repo);
+    expect(fs.existsSync(counter)).toBe(false);
+    await evaluateSolution('task-no-head', path.join(tmpDir, 'not-a-repo'));
+    expect(fs.existsSync(counter)).toBe(false);
+    await evaluateSolution('task-1', repo);
+    expect(fs.readFileSync(counter, 'utf8')).toBe('x');
   });
 });
 
@@ -416,6 +543,11 @@ describe('evaluateSolution (producer) — orchestrator-workflow arm', () => {
     expect(res.error).toBeUndefined();
     expect(res.verdict?.ready).toBe(false);
     expect(res.verdict?.blockers.some((b) => /orchestrator-workflow/.test(b))).toBe(true);
+    expect(res.diagnostics).toMatchObject({
+      availability: 'available',
+      complete: false,
+      payload: { ready: true, confidence: 0.9, blockers: [] },
+    });
     expect(evaluateGate('task-1', head).allowed).toBe(false);
   });
 

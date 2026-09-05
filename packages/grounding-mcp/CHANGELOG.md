@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- `solution_evaluate` now returns advisory preflight diagnostics for its single
+  evaluation process. The compact verdict and its marker projection remain unchanged;
+  diagnostics preserve the parsed payload and report availability, execution outcome,
+  shape completeness, and issues without becoming signed or gate authority.
+
 ## 0.10.0, 2026-09-04
 
 ### Added

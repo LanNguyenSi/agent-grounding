@@ -52,10 +52,14 @@ The verdict marker is the contract a consumer (e.g. harness, gating task-finishi
 
 `solution_evaluate`'s MCP response returns the verdict as it looked *before* signing (the 7-key shape above, minus `alg`/`signature`); the on-disk marker file additionally carries `alg` and `signature`, added by `writeVerdict` (see "Verdict marker signing" below) after the response value was already built.
 
+The MCP response also includes advisory `diagnostics` for that same fresh preflight invocation. `diagnostics.payload` preserves the original parsed JSON, including additive fields, while `availability`, `complete`, `execution` (`exitCode`, `signal`, and an optional error), and `issues` explain whether the documented preflight result shape was present. A complete diagnostic requires `ready`, `confidence`, `checks`, `blockers`, `warnings`, `limitations`, `durationMs`, and `timestamp`, with valid nested check fields. It also records execution anomalies such as an unexpected exit code or signal. `complete` does not mean `ready`, sufficient coverage, independently trusted evidence, or cacheability; acknowledged and skipped checks remain visible in the payload.
+
+Diagnostics are response-only: they are neither part of the verdict nor written into, signed in, or consumed from the marker. `solution_evaluate` starts one preflight process only after its id and HEAD checks pass; it does not rerun preflight to produce diagnostics.
+
 Anti-hacking contract:
 
 1. **Derived, not claimed**: `ready` comes from preflight's real run; the caller supplies no result.
-2. **Producer != solver**: `solution_evaluate` runs preflight; the check set is the repo's committed `.preflight.json`, not call arguments, so an agent cannot weaken the gate at call time.
+2. **Producer != solver**: `solution_evaluate` runs preflight; evaluation arguments supply neither check results nor configuration overrides. preflight loads the repository's configured policy, including its clean-state checks.
 3. **HEAD-pinned**: a verdict counts only at the HEAD it was produced at; any rework shifts HEAD and invalidates a green verdict.
 4. **No stale green**: a not-ready run overwrites a prior green marker.
 
