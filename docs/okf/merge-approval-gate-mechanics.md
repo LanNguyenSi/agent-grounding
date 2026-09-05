@@ -108,27 +108,30 @@ an applicable branch-protection rule or ruleset's **required status checks**
   required check on `master`; a red / `allowed: false` verdict blocks the Merge
   button until all five prereqs are satisfied and the check flips to ALLOWED
   (`merge-approval-rollout.md:6-8#"until the gate returns"`, 99-100).
-- **Advisory in fact (the live state on agent-grounding as of 2026-09-05).**
-  `master` has a ruleset that requires pull requests, but no
-  `required_status_checks` rule. `merge-approval` is therefore not a required
-  check. The Check-Run still posts and can go red, but **a red
-  merge-approval does not block a merge** right now. The rollout doc correctly
+- **Advisory state.** When neither an applicable ruleset nor branch protection
+  requires `merge-approval`, the Check-Run still posts and can go red, but **a
+  red merge-approval does not block a merge**. The rollout doc correctly
   describes the hard-gate *end state*; it is not yet wired.
 
 **How to tell which one is live:** inspect the branch's applicable rulesets and
 branch-protection required status checks.
 
 ```bash
+gh api repos/LanNguyenSi/agent-grounding/rules/branches/master \
+  --jq '.[] | select(.type == "required_status_checks")'
+
 gh api repos/LanNguyenSi/agent-grounding/branches/master/protection \
   --jq '.required_status_checks.contexts'
 ```
 
-If neither an applicable ruleset nor branch protection requires
-`merge-approval`, the gate is **advisory** — a red check is informational and
-does not stop the merge. If either requires it, it is a **hard gate**. To
-promote it to a hard gate, add `merge-approval` (alongside the existing `ci`)
-to the required checks per `merge-approval-rollout.md:53-81#"alongside it.)"`
-(requires Admin).
+Treat a successful empty ruleset query and a successful legacy query without
+`merge-approval` as evidence that the gate is **advisory**. If either response
+lists `merge-approval`, it is a **hard gate**. A failed, unauthorized, or
+otherwise incomplete query does not establish absence; a legacy-protection 404
+only means legacy branch protection is unavailable and must be evaluated with
+the ruleset result. To promote it to a hard gate, add `merge-approval` (alongside
+the existing `ci`) to the required checks per
+`merge-approval-rollout.md:53-81#"alongside it.)"` (requires Admin).
 
 ## How to make it pass legitimately
 
