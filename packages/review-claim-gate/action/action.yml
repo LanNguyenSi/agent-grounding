@@ -51,10 +51,12 @@ runs:
   using: composite
   steps:
     - name: Set up Node
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v5
       with:
         node-version: '22'
-      # npm cache intentionally disabled: actions/setup-node@v4 rejects
+        package-manager-cache: false
+      # Package-manager caching is explicitly disabled: setup-node@v5
+      # otherwise auto-detects npm and enables its default cache. It rejects
       # `..` segments in cache-dependency-path, and the action's own
       # checkout sits at $_actions/…/packages/review-claim-gate/action/
       # with no clean way to name the monorepo root's lockfile from that
@@ -155,7 +157,7 @@ runs:
         echo "report=$REPORT" >> "$GITHUB_OUTPUT"
 
     - name: Post Check-Run
-      uses: actions/github-script@v7
+      uses: actions/github-script@v8
       with:
         github-token: ${{ inputs.github-token }}
         script: |

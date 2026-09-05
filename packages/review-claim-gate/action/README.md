@@ -133,14 +133,14 @@ write checks; `act` with a PAT works.
 
 ## How the action works
 
-1. `actions/setup-node@v4`: Node 22 with `npm` cache.
+1. `actions/setup-node@v5`: Node 22 with package-manager caching disabled.
 2. `npm ci && build:deps && build -w @lannguyensi/review-claim-gate` at the monorepo
    root (relative to the action path). Reuses the exact `merge_approval`
    policy from `review-claim-gate`; the action is a thin transport
    wrapper, never a duplicated policy.
 3. Invokes `review-claim-gate check ... --json`, captures stdout into
    `$RUNNER_TEMP/merge-approval.json`.
-4. `actions/github-script@v7` reads the report and calls
+4. `actions/github-script@v8` reads the report and calls
    `github.rest.checks.create` to post the `merge-approval` Check-Run,
    attached to the PR's head SHA.
 5. If `fail-on-block=true` and the gate blocked, the final step exits 1

@@ -3,7 +3,7 @@ type: runbook
 title: Merge-approval gate — labels, keys, and when it actually blocks
 description: How the merge-approval Check-Run maps five review:* PR labels to merge_approval booleans, keys evidence by the PR HEAD BRANCH NAME, and blocks only when required in branch protection — which on agent-grounding master it is not, so it is advisory in fact today.
 tags: [merge-approval, review-claim-gate, ci, runbook, labels]
-timestamp: 2026-09-02T05:43:25Z
+timestamp: 2026-09-05T00:00:00Z
 sources:
   - .github/workflows/merge-approval.yml
   - packages/review-claim-gate/README.md
@@ -25,7 +25,7 @@ true for `allowed: true` / score 100 (`README.md:36#"Missing prereqs surface in"
 The action is pinned by SHA, not a floating tag:
 
 ```
-uses: LanNguyenSi/agent-grounding/packages/review-claim-gate/action@62faca5b4ad7f9b9072fdad284287a351a114097 # review-claim-gate-v0.1.0
+uses: LanNguyenSi/agent-grounding/packages/review-claim-gate/action@97dfa51c5b278048dd6ec1006a6866977398a3cc # review-claim-gate-v0.1.5
 ```
 
 (`merge-approval.yml:47#"review-claim-gate-v0.1.5"`; the referenced `packages/review-claim-gate/action/`
