@@ -4,6 +4,23 @@
 
 ### Added
 
+- `solution_evaluate` sends standard MCP `notifications/progress` pings while its
+  single preflight invocation (in-band with the request: awaited, not
+  backgrounded) is running, mirroring agent-preflight's
+  own `withProgressPings` convention: only when the request carries a
+  `progressToken` (no token means no timer at all, not just no notification), a
+  monotonically increasing tick count every ~10s (configurable for tests via
+  `createServer({ progressIntervalMs })`), meaning "still running", never a
+  fabricated percentage. The ping timer is always cleared on completion (success,
+  a returned error, or a thrown exception) and also as soon as the SDK's own
+  cancellation signal fires for the request; a notification send failure is
+  swallowed and does not change the evaluation's outcome. No schema, gate, signing,
+  or preflight-invocation-count change: still exactly one preflight process per
+  evaluation. See README's "Progress notifications while `solution_evaluate` runs"
+  for what this does and does not fix (a client still needs
+  `resetTimeoutOnProgress` or a raised timeout for the pings to help, and a hard
+  total deadline, a dropped connection, or a client that ignores progress
+  altogether are all unresolved by this alone).
 - `solution_evaluate` now returns advisory preflight diagnostics for its single
   evaluation process. The compact verdict and its marker projection remain unchanged;
   diagnostics preserve the parsed payload and report availability, execution outcome,

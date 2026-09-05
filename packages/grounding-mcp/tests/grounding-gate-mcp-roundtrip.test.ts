@@ -15,6 +15,15 @@
 //   solution_evaluate, solution_gate
 //   verify_memory_reference
 //
+// Also covers, in two dedicated blocks further below (not MCP-roundtrip
+// tests in the same sense as the above — see each block's own intro
+// comment): the `withProgressPings — unit` block (src/progress.ts's timer
+// helper, exercised directly against a fake `ToolExtra` plus vitest fake
+// timers, and `resolveProgressIntervalMs`, server.ts's exported
+// progressIntervalMs validator) and the `solution_evaluate — progress
+// notifications (MCP roundtrip)` block (the SDK's real onprogress/
+// resetTimeoutOnProgress wire behavior).
+//
 // `solution_evaluate`/`solution_gate` write through `writeVerdict`, which
 // always signs (verdict-signing.ts) and resolves + lazily creates a shared
 // harness signing key under `<HARNESS_HOME>/harness.generated/`; this suite
@@ -22,7 +31,7 @@
 // writes the host's real ~/.harness (or ~/.claude fallback) — mirrors
 // solution-verdict.test.ts's isolation pattern.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -30,8 +39,15 @@ import { join } from 'node:path';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { ErrorCode, ProgressNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 
-import { createServer } from '../src/server.js';
+import { createServer, resolveProgressIntervalMs } from '../src/server.js';
+import {
+  withProgressPings,
+  DEFAULT_PROGRESS_MESSAGE,
+  DEFAULT_PROGRESS_INTERVAL_MS,
+  type ToolExtra,
+} from '../src/progress.js';
 import { resetStores } from '../src/hypothesis-store.js';
 import { resetLedgerDb } from '../src/ledger-bridge.js';
 import { writeVerdict } from '../src/solution-verdict.js';
@@ -847,6 +863,438 @@ describe('solution_evaluate — MCP roundtrip', () => {
       arguments: { id: '', repoPath: repo },
     });
     expectValidationError(raw, 'solution_evaluate', 'id');
+  });
+});
+
+// ── withProgressPings — unit ────────────────────────────────────────────────
+//
+// Direct tests against the helper solution_evaluate's handler wraps around
+// (src/progress.ts), using a fake ToolExtra and vitest fake timers. This is
+// where the "many heartbeat intervals, including a virtual >60s span" case
+// from the task lives: driving a real preflight stub that long would be
+// slow and flaky, but the helper itself has no dependency on what `work` is
+// — a controlled, manually-resolved promise plus fake timers exercises the
+// exact same timer/notification logic deterministically. The real
+// client-server roundtrip tests further below cover the SDK's actual wire
+// behavior (onprogress, resetTimeoutOnProgress) with short REAL intervals.
+//
+// This block (and the `resolveProgressIntervalMs` unit tests inside it)
+// deliberately ignores the file-level `beforeEach`/`afterEach` above: it
+// never touches `client`/`tmpRoot`/the MCP handshake those set up, since
+// `makeFakeExtra` builds its own minimal `ToolExtra` and `resolveProgressIntervalMs`
+// is a pure function. The outer hooks still run before/after each of these
+// tests (cheap: tempdir + in-memory client/server), they are just unused
+// here.
+
+function makeFakeExtra(overrides: {
+  progressToken?: string | number;
+  signal?: AbortSignal;
+  sendNotification?: (n: unknown) => Promise<void>;
+} = {}): { extra: ToolExtra; sendNotification: ReturnType<typeof vi.fn> } {
+  const sendNotification =
+    (overrides.sendNotification as ReturnType<typeof vi.fn>) ?? vi.fn().mockResolvedValue(undefined);
+  const extra = {
+    signal: overrides.signal ?? new AbortController().signal,
+    requestId: 1,
+    sendNotification,
+    sendRequest: vi.fn(),
+    ...(overrides.progressToken !== undefined ? { _meta: { progressToken: overrides.progressToken } } : {}),
+  } as unknown as ToolExtra;
+  return { extra, sendNotification };
+}
+
+// A promise the test controls the resolution/rejection of, standing in for
+// solution_evaluate's real (uninterruptible) preflight invocation.
+function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: (e: unknown) => void } {
+  let resolve!: (v: T) => void;
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+describe('withProgressPings — unit', () => {
+  afterEach(() => {
+    // Belt-and-braces: every test below either calls this itself or leaves
+    // no pending fake timer, but a failed assertion mid-test could skip an
+    // explicit vi.useRealTimers() call — never let fake timers leak into a
+    // later test in this file.
+    vi.useRealTimers();
+  });
+
+  it('sends notifications/progress with the echoed token and strictly monotonic progress across many ticks (virtual >60s span)', async () => {
+    vi.useFakeTimers();
+    const work = deferred<string>();
+    const { extra, sendNotification } = makeFakeExtra({ progressToken: 'tok-123' });
+
+    const resultPromise = withProgressPings(extra, () => work.promise, 1_000);
+
+    // 65 ticks at 1s each = 65s of virtual time, comfortably past the 60s
+    // mark named in the acceptance criteria.
+    await vi.advanceTimersByTimeAsync(65_000);
+
+    expect(sendNotification).toHaveBeenCalledTimes(65);
+    const calls = sendNotification.mock.calls.map((c) => c[0] as {
+      method: string;
+      params: { progressToken: unknown; progress: number; message?: string; total?: number };
+    });
+    for (const call of calls) {
+      expect(call.method).toBe('notifications/progress');
+      expect(call.params.progressToken).toBe('tok-123');
+      // Pinned payload shape: the default message, and never a `total` key
+      // (this helper never claims a known end point — see the header's
+      // "never a fabricated percentage" note).
+      expect(call.params.message).toBe(DEFAULT_PROGRESS_MESSAGE);
+      expect(call.params).not.toHaveProperty('total');
+    }
+    const progressValues = calls.map((c) => c.params.progress);
+    expect(progressValues).toEqual([...Array(65)].map((_, i) => i + 1));
+
+    work.resolve('final-result');
+    await expect(resultPromise).resolves.toBe('final-result');
+
+    // Timer is cleared once work settles: no leaked interval.
+    expect(vi.getTimerCount()).toBe(0);
+
+    // No further notifications after terminal completion, even if time
+    // keeps moving.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(sendNotification).toHaveBeenCalledTimes(65);
+
+    vi.useRealTimers();
+  });
+
+  it('never starts a timer when the request carries no progressToken', async () => {
+    vi.useFakeTimers();
+    const work = deferred<string>();
+    const { extra, sendNotification } = makeFakeExtra(); // no progressToken
+
+    const resultPromise = withProgressPings(extra, () => work.promise, 10);
+    // withProgressPings without a token is a plain passthrough to work(): no
+    // interval is ever created, so there is nothing to advance past.
+    expect(vi.getTimerCount()).toBe(0);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(sendNotification).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+
+    work.resolve('done-no-token');
+    await expect(resultPromise).resolves.toBe('done-no-token');
+    vi.useRealTimers();
+  });
+
+  it('stops the timer when work rejects, and propagates the same rejection', async () => {
+    vi.useFakeTimers();
+    const work = deferred<string>();
+    const { extra, sendNotification } = makeFakeExtra({ progressToken: 'tok-reject' });
+
+    const resultPromise = withProgressPings(extra, () => work.promise, 10);
+    await vi.advanceTimersByTimeAsync(35);
+    expect(sendNotification).toHaveBeenCalledTimes(3);
+
+    const boom = new Error('preflight invocation blew up');
+    work.reject(boom);
+    await expect(resultPromise).rejects.toBe(boom);
+
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(sendNotification).toHaveBeenCalledTimes(3);
+    vi.useRealTimers();
+  });
+
+  it('a rejecting sendNotification does not change the outcome and never surfaces as an unhandled rejection', async () => {
+    vi.useFakeTimers();
+    const work = deferred<string>();
+    const failingSend = vi.fn().mockRejectedValue(new Error('transport hiccup'));
+    const { extra } = makeFakeExtra({ progressToken: 'tok-flaky', sendNotification: failingSend });
+
+    const resultPromise = withProgressPings(extra, () => work.promise, 10);
+    // Multiple ticks with a permanently-rejecting sendNotification: if the
+    // rejection were not swallowed, this would surface as an unhandled
+    // rejection and fail the test run.
+    await vi.advanceTimersByTimeAsync(55);
+    expect(failingSend).toHaveBeenCalledTimes(5);
+
+    work.resolve('unaffected-by-notification-failures');
+    await expect(resultPromise).resolves.toBe('unaffected-by-notification-failures');
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it('stops pinging when extra.signal aborts, without touching the outcome of the still-pending work', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const work = deferred<string>();
+    const { extra, sendNotification } = makeFakeExtra({ progressToken: 'tok-abort', signal: controller.signal });
+
+    const resultPromise = withProgressPings(extra, () => work.promise, 10);
+    await vi.advanceTimersByTimeAsync(25);
+    expect(sendNotification).toHaveBeenCalledTimes(2);
+
+    controller.abort();
+    expect(vi.getTimerCount()).toBe(0);
+
+    // Further virtual time produces no more pings — the timer is gone, not
+    // just failing silently.
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(sendNotification).toHaveBeenCalledTimes(2);
+
+    // The underlying work is untouched by the abort: it settles on its own,
+    // and withProgressPings still returns its result (no silent kill, no
+    // retry, no second producer started here — solution-verdict.ts's single
+    // preflight invocation is unaffected by this helper's own cancellation
+    // handling).
+    work.resolve('work-still-completes-after-abort');
+    await expect(resultPromise).resolves.toBe('work-still-completes-after-abort');
+    vi.useRealTimers();
+  });
+
+  it('passes a caller-supplied message through to every ping instead of the default', async () => {
+    vi.useFakeTimers();
+    const work = deferred<string>();
+    const { extra, sendNotification } = makeFakeExtra({ progressToken: 'tok-msg' });
+
+    const resultPromise = withProgressPings(extra, () => work.promise, 10, 'custom still-running message');
+    await vi.advanceTimersByTimeAsync(25);
+    expect(sendNotification).toHaveBeenCalledTimes(2);
+    for (const call of sendNotification.mock.calls) {
+      const params = (call[0] as { params: { message?: string } }).params;
+      expect(params.message).toBe('custom still-running message');
+    }
+
+    work.resolve('done-custom-message');
+    await expect(resultPromise).resolves.toBe('done-custom-message');
+    vi.useRealTimers();
+  });
+
+  it('never starts a timer and removes no listener when extra.signal is already aborted before the call', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    controller.abort();
+    const work = deferred<string>();
+    const { extra, sendNotification } = makeFakeExtra({ progressToken: 'tok-pre-aborted', signal: controller.signal });
+    const removeSpy = vi.spyOn(controller.signal, 'removeEventListener');
+    const addSpy = vi.spyOn(controller.signal, 'addEventListener');
+
+    const resultPromise = withProgressPings(extra, () => work.promise, 10);
+    // The mutation this guards against: registering the abort listener (and
+    // starting the timer) unconditionally, without first checking whether
+    // the signal is already aborted — an already-cancelled request would
+    // then keep pinging until work settles.
+    expect(vi.getTimerCount()).toBe(0);
+    expect(addSpy).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(sendNotification).not.toHaveBeenCalled();
+
+    work.resolve('done-pre-aborted');
+    // work() itself is unaffected by the pre-aborted signal: it still runs
+    // and its result is still returned.
+    await expect(resultPromise).resolves.toBe('done-pre-aborted');
+    // No listener was ever attached, so there is nothing to remove.
+    expect(removeSpy).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('removes the abort listener in finally when work settles normally (no listener leak)', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const work = deferred<string>();
+    const { extra } = makeFakeExtra({ progressToken: 'tok-listener-leak', signal: controller.signal });
+    const removeSpy = vi.spyOn(controller.signal, 'removeEventListener');
+
+    const resultPromise = withProgressPings(extra, () => work.promise, 10);
+    await vi.advanceTimersByTimeAsync(15);
+
+    work.resolve('done-listener-leak');
+    await expect(resultPromise).resolves.toBe('done-listener-leak');
+    // The mutation this guards against: dropping `clearInterval(timer)` (or
+    // the listener removal) from the `finally` block — either would leave
+    // this call unmade or the timer running after work settles.
+    expect(removeSpy).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+  });
+});
+
+// ── resolveProgressIntervalMs — unit ────────────────────────────────────────
+//
+// Direct tests against server.ts's exported interval validator: any raw
+// value that is not a positive finite number falls back to the default
+// (0 and negative values would otherwise reach `setInterval` and flood the
+// client with notifications; NaN/Infinity/non-number inputs are equally
+// invalid). Pure function, so no fake timers or fake ToolExtra needed here.
+
+describe('resolveProgressIntervalMs — unit', () => {
+  it('passes through a valid positive finite number unchanged', () => {
+    expect(resolveProgressIntervalMs(20)).toBe(20);
+    expect(resolveProgressIntervalMs(10_000)).toBe(10_000);
+  });
+
+  it('falls back to the default for 0', () => {
+    expect(resolveProgressIntervalMs(0)).toBe(DEFAULT_PROGRESS_INTERVAL_MS);
+  });
+
+  it('falls back to the default for a negative value', () => {
+    expect(resolveProgressIntervalMs(-5)).toBe(DEFAULT_PROGRESS_INTERVAL_MS);
+  });
+
+  it('falls back to the default for non-finite or non-number input', () => {
+    expect(resolveProgressIntervalMs(NaN)).toBe(DEFAULT_PROGRESS_INTERVAL_MS);
+    expect(resolveProgressIntervalMs(Infinity)).toBe(DEFAULT_PROGRESS_INTERVAL_MS);
+    expect(resolveProgressIntervalMs(undefined)).toBe(DEFAULT_PROGRESS_INTERVAL_MS);
+    expect(resolveProgressIntervalMs('20')).toBe(DEFAULT_PROGRESS_INTERVAL_MS);
+  });
+});
+
+// ── solution_evaluate — progress notifications (real MCP roundtrip) ─────────
+//
+// Unlike the rest of this file, these tests connect their OWN client/server
+// pair (via createServer({ progressIntervalMs })) instead of the outer
+// beforeEach's shared `client`, because the outer server is always built
+// with createServer()'s default ~10s interval. They still rely on the outer
+// beforeEach/afterEach for env isolation (GROUNDING_MCP_SESSIONS_DIR,
+// EVIDENCE_LEDGER_DB, SOLUTION_VERDICT_DIR, HARNESS_HOME all point at this
+// test's own tmpRoot already). Real short intervals (20ms) and a real stub
+// preflight binary that sleeps a bounded, short real duration (200-300ms)
+// — no fake timers here, this is testing the actual SDK wire behavior
+// (onprogress, resetTimeoutOnProgress), which fake timers cannot stand in
+// for.
+
+describe('solution_evaluate — progress notifications (MCP roundtrip)', () => {
+  let repo: string;
+  let prevPreflightBin: string | undefined;
+  let progClient: Client;
+  let progClose: () => Promise<void>;
+
+  function writeStub(name: string, body: string): string {
+    const p = join(tmpRoot, name);
+    writeFileSync(p, body, { mode: 0o755 });
+    chmodSync(p, 0o755);
+    return p;
+  }
+
+  beforeEach(async () => {
+    prevPreflightBin = process.env.SOLUTION_PREFLIGHT_BIN;
+    repo = mkdtempSync(join(tmpdir(), 'solution-repo-progress-'));
+    execFileSync('git', ['init', '-q'], { cwd: repo });
+    execFileSync('git', ['config', 'user.email', 't@t.local'], { cwd: repo });
+    execFileSync('git', ['config', 'user.name', 'test'], { cwd: repo });
+    writeFileSync(join(repo, 'readme.txt'), 'hello', 'utf8');
+    execFileSync('git', ['add', '-A'], { cwd: repo });
+    execFileSync('git', ['commit', '-q', '-m', 'init'], { cwd: repo });
+
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const server = createServer({ progressIntervalMs: 20 });
+    await server.connect(serverTransport);
+    progClient = new Client({ name: 'progress-roundtrip-test', version: '0.0.0' });
+    await progClient.connect(clientTransport);
+    progClose = async () => {
+      await progClient.close();
+      await server.close();
+    };
+  });
+
+  afterEach(async () => {
+    await progClose();
+    if (prevPreflightBin === undefined) delete process.env.SOLUTION_PREFLIGHT_BIN;
+    else process.env.SOLUTION_PREFLIGHT_BIN = prevPreflightBin;
+    rmSync(repo, { recursive: true, force: true });
+  });
+
+  it('a caller that attaches onprogress observes at least one real notifications/progress ping while solution_evaluate is running', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-progress-sleep.sh',
+      '#!/bin/sh\nsleep 0.25\necho \'{"ready":true,"confidence":0.9,"blockers":[]}\'\n',
+    );
+    const progressUpdates: number[] = [];
+    const raw = await progClient.callTool(
+      { name: 'solution_evaluate', arguments: { id: 'progress-happy', repoPath: repo } },
+      undefined,
+      { onprogress: (p) => progressUpdates.push(p.progress) },
+    );
+    expect((raw as ToolTextResponse).isError).toBeFalsy();
+    // The mutation this guards against: the heartbeat send never actually
+    // firing (removed timer callback, or the callback never calling
+    // sendNotification) — the client asked for progress, so at least one
+    // ping must arrive over the real transport.
+    expect(progressUpdates.length).toBeGreaterThanOrEqual(1);
+    for (let i = 1; i < progressUpdates.length; i++) {
+      expect(progressUpdates[i]).toBeGreaterThan(progressUpdates[i - 1]);
+    }
+  });
+
+  it('sends no notifications/progress at all when the caller attaches no onprogress/progressToken', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-progress-sleep-notoken.sh',
+      '#!/bin/sh\nsleep 0.25\necho \'{"ready":true,"confidence":0.9,"blockers":[]}\'\n',
+    );
+    const rawNotifications: unknown[] = [];
+    progClient.setNotificationHandler(ProgressNotificationSchema, (notification) => {
+      rawNotifications.push(notification);
+    });
+    const raw = await progClient.callTool({
+      name: 'solution_evaluate',
+      arguments: { id: 'progress-notoken', repoPath: repo },
+    });
+    expect((raw as ToolTextResponse).isError).toBeFalsy();
+    expect(rawNotifications).toEqual([]);
+  });
+
+  it('invokes preflight exactly once during a progress-enabled evaluation (no duplicate/detached producer)', async () => {
+    const counter = join(tmpRoot, 'progress-preflight-count');
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-progress-counter.sh',
+      `#!/bin/sh\nprintf x >> '${counter}'\nsleep 0.25\necho '{"ready":true,"confidence":0.9,"blockers":[]}'\n`,
+    );
+    await progClient.callTool(
+      { name: 'solution_evaluate', arguments: { id: 'progress-count', repoPath: repo } },
+      undefined,
+      { onprogress: () => {} },
+    );
+    expect(readFileSync(counter, 'utf8')).toBe('x');
+  });
+
+  it('resetTimeoutOnProgress:true lets solution_evaluate outrun its own shortened per-request timeout', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-progress-long.sh',
+      '#!/bin/sh\nsleep 0.3\necho \'{"ready":true,"confidence":0.9,"blockers":[]}\'\n',
+    );
+    const raw = await progClient.callTool(
+      { name: 'solution_evaluate', arguments: { id: 'progress-reset', repoPath: repo } },
+      undefined,
+      { onprogress: () => {}, timeout: 80, resetTimeoutOnProgress: true },
+    );
+    expect((raw as ToolTextResponse).isError).toBeFalsy();
+    const result = parseToolResult(raw) as { verdict: { ready: boolean } | null };
+    expect(result.verdict?.ready).toBe(true);
+  });
+
+  it('without resetTimeoutOnProgress, the same shortened timeout fires an explicit McpError even though progress pings still arrive', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-progress-long-noreset.sh',
+      '#!/bin/sh\nsleep 0.3\necho \'{"ready":true,"confidence":0.9,"blockers":[]}\'\n',
+    );
+    const progressUpdates: number[] = [];
+    await expect(
+      progClient.callTool(
+        { name: 'solution_evaluate', arguments: { id: 'progress-noreset', repoPath: repo } },
+        undefined,
+        { onprogress: (p) => progressUpdates.push(p.progress), timeout: 80 },
+      ),
+    ).rejects.toMatchObject({ code: ErrorCode.RequestTimeout });
+    // The mutation this guards against: the heartbeat timer callback never
+    // actually firing (or never calling sendNotification) even though the
+    // request carries a progressToken — the client's timeout would then
+    // fire "for free" regardless of whether pinging works at all. At least
+    // one real ping must have arrived over the wire before the timeout, and
+    // the ticks must still be strictly increasing.
+    expect(progressUpdates.length).toBeGreaterThanOrEqual(1);
+    for (let i = 1; i < progressUpdates.length; i++) {
+      expect(progressUpdates[i]).toBeGreaterThan(progressUpdates[i - 1]);
+    }
   });
 });
 

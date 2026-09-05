@@ -91,6 +91,14 @@ export default defineConfig({
           functions: 92,
           lines: 88,
         },
+        'src/progress.ts': {
+          // measured (2026-09-05 run, after the review-round-2 additions):
+          // stmts 100, branches 100, funcs 100, lines 100
+          statements: 90,
+          branches: 90,
+          functions: 90,
+          lines: 90,
+        },
       },
     },
   },
