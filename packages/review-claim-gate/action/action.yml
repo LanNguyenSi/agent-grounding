@@ -54,7 +54,9 @@ runs:
       uses: actions/setup-node@v5
       with:
         node-version: '22'
-      # npm cache intentionally disabled: actions/setup-node@v5 rejects
+        package-manager-cache: false
+      # Package-manager caching is explicitly disabled: setup-node@v5
+      # otherwise auto-detects npm and enables its default cache. It rejects
       # `..` segments in cache-dependency-path, and the action's own
       # checkout sits at $_actions/…/packages/review-claim-gate/action/
       # with no clean way to name the monorepo root's lockfile from that

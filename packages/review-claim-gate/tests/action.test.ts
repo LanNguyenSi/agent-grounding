@@ -158,6 +158,7 @@ describe("action.yml — shape", () => {
       (s: any) => s.name === "Post Check-Run",
     );
     expect(setupStep?.uses).toBe("actions/setup-node@v5");
+    expect(setupStep?.with?.["package-manager-cache"]).toBe(false);
     expect(checkStep?.uses).toBe("actions/github-script@v8");
   });
 
