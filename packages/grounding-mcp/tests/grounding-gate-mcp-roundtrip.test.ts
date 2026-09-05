@@ -722,24 +722,62 @@ describe('solution_evaluate — MCP roundtrip', () => {
     expect(result.diagnostics).toMatchObject({ availability: 'available', complete: true, payload });
   });
 
-  it('returns an incomplete diagnostic for a ready payload with unexpected exit 2', async () => {
+  it('rejects an exit-2 ready payload through MCP and removes a previous same-id ready marker', async () => {
     const payload = {
       ready: true, confidence: 0.9,
       checks: [{ name: 'lint', kind: 'lint', status: 'pass', durationMs: 2, confidenceContribution: 0.1 }],
       blockers: [], warnings: [], limitations: [], durationMs: 2, timestamp: '2026-05-30T00:00:00.000Z',
     };
     process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-ready-before-exit2-mcp.sh',
+      '#!/bin/sh\necho \'{"ready":true,"confidence":0.9,"blockers":[]}\'\n',
+    );
+    const initialRaw = await client.callTool({ name: 'solution_evaluate', arguments: { id: 'mcp-exit2', repoPath: repo } });
+    expect((parseToolResult(initialRaw) as { verdict: { ready: boolean } | null }).verdict?.ready).toBe(true);
+    const initialGateRaw = await client.callTool({ name: 'solution_gate', arguments: { id: 'mcp-exit2', repoPath: repo } });
+    expect((parseToolResult(initialGateRaw) as { allowed: boolean }).allowed).toBe(true);
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
       'stub-exit2-mcp.sh',
       `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(payload)}'\nexit 2\n`,
     );
     const raw = await client.callTool({ name: 'solution_evaluate', arguments: { id: 'mcp-exit2', repoPath: repo } });
     const result = parseToolResult(raw) as {
-      verdict: { ready: boolean } | null;
+      verdict: null;
+      markerPath: null;
+      error: string;
       diagnostics: { availability: string; complete: boolean; execution: { exitCode: number | null }; issues: string[] };
     };
-    expect(result.verdict?.ready).toBe(true);
+    expect(result.verdict).toBeNull();
+    expect(result.markerPath).toBeNull();
+    expect(result.error).toContain('invalid execution outcome');
     expect(result.diagnostics).toMatchObject({ availability: 'available', complete: false, execution: { exitCode: 2 } });
     expect(result.diagnostics.issues).toContain('preflight ready=true requires exit code 0, got 2');
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo }).toString().trim();
+    const gateRaw = await client.callTool({ name: 'solution_gate', arguments: { id: 'mcp-exit2', repoPath: repo } });
+    const gate = parseToolResult(gateRaw) as { allowed: boolean; currentHead: string };
+    expect(gate.allowed).toBe(false);
+    expect(gate.currentHead).toBe(head);
+  });
+
+  it.each([
+    ['array payload', '[]'],
+    ['missing blockers', '{"ready":true,"confidence":0.9}'],
+    ['non-finite confidence', '{"ready":true,"confidence":1e400,"blockers":[]}'],
+    ['ready with blockers', '{"ready":true,"confidence":0.9,"blockers":["contradiction"]}'],
+  ])('rejects malformed verdict core through MCP: %s', async (_name, payload) => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub('stub-invalid-core-mcp.sh', `#!/bin/sh\necho '${payload}'\n`);
+    const raw = await client.callTool({ name: 'solution_evaluate', arguments: { id: `mcp-core-${_name}`, repoPath: repo } });
+    const result = parseToolResult(raw) as {
+      verdict: null; markerPath: null; error: string;
+      diagnostics: { availability: string; payload: unknown };
+    };
+    expect(result.verdict).toBeNull();
+    expect(result.markerPath).toBeNull();
+    expect(result.error).toContain('invalid verdict core');
+    expect(result.diagnostics).toMatchObject({
+      availability: 'available',
+      payload: JSON.parse(JSON.stringify(JSON.parse(payload))),
+    });
   });
 
   it('preserves the fresh technical payload when an OW blocker changes only the verdict', async () => {

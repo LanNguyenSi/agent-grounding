@@ -12,7 +12,7 @@
 // HARNESS_HOME to a tempdir so no test run ever reads or writes the host's
 // real ~/.harness (or ~/.claude fallback).
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -192,6 +192,29 @@ describe('evaluateSolution (producer)', () => {
     expect(evaluateGate('task-1', head).allowed).toBe(true);
   });
 
+  it('invalidates a same-id ready marker when an exit-2 ready payload fails re-evaluation, without touching another id', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-ready-then-exit2.sh',
+      '#!/bin/sh\necho \'{"ready":true,"confidence":0.9,"blockers":[]}\'\n',
+    );
+    expect((await evaluateSolution('task-1', repo)).verdict?.ready).toBe(true);
+    writeVerdict(makeVerdict({ id: 'other-id', head }));
+
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-exit2-ready.sh',
+      '#!/bin/sh\necho \'{"ready":true,"confidence":0.9,"blockers":[]}\'\nexit 2\n',
+    );
+    const res = await evaluateSolution('task-1', repo);
+
+    expect(res.verdict).toBeNull();
+    expect(res.markerPath).toBeNull();
+    expect(res.error).toContain('invalid execution outcome');
+    expect(res.diagnostics).toMatchObject({ availability: 'available', execution: { exitCode: 2, signal: null } });
+    expect(evaluateGate('task-1', head).allowed).toBe(false);
+    expect(evaluateGate('other-id', head).allowed).toBe(true);
+    expect(verdictPath('task-1')).not.toBe(verdictPath('other-id'));
+  });
+
   it('returns complete diagnostics with the original acknowledged payload while keeping it out of the marker', async () => {
     const payload = {
       ready: true,
@@ -322,6 +345,15 @@ describe('evaluateSolution (producer)', () => {
     expect(res.diagnostics).toMatchObject({ availability: 'unavailable', complete: false });
   });
 
+  it('invalidates a prior ready marker when HEAD resolution prevents a new preflight launch', async () => {
+    writeVerdict(makeVerdict({ id: 'task-no-head', ready: true, head }));
+    const res = await evaluateSolution('task-no-head', path.join(tmpDir, 'not-a-repo'));
+    expect(res.verdict).toBeNull();
+    expect(res.error).toContain('cannot resolve a committed git HEAD');
+    expect(res.diagnostics).toMatchObject({ availability: 'unavailable', execution: { exitCode: null, signal: null } });
+    expect(evaluateGate('task-no-head', head).allowed).toBe(false);
+  });
+
   it('returns an error for an invalid id without throwing', async () => {
     const res = await evaluateSolution('..', repo);
     expect(res.verdict).toBeNull();
@@ -348,16 +380,16 @@ describe('evaluateSolution (producer)', () => {
     expect(res.diagnostics).toMatchObject({ availability: 'unavailable', complete: false, execution: { exitCode: 0, signal: null } });
   });
 
-  it.each(['null', '1'])('keeps parseable scalar JSON %s available while returning the legacy error', async (scalar) => {
+  it.each(['null', '1', '[]'])('rejects a parseable non-object JSON payload %s with its captured diagnostics', async (scalar) => {
     process.env.SOLUTION_PREFLIGHT_BIN = writeStub('stub-scalar.sh', `#!/bin/sh\necho '${scalar}'\n`);
     const res = await evaluateSolution('task-1', repo);
     expect(res.verdict).toBeNull();
-    expect(res.error).toContain('not parseable JSON');
+    expect(res.error).toContain('invalid verdict core');
     expect(res.diagnostics).toMatchObject({ availability: 'available', complete: false, payload: JSON.parse(scalar) });
     expect(res.diagnostics?.issues).toContain('preflight JSON payload must be an object');
   });
 
-  it('keeps a signal termination visible in diagnostics without changing the parsed legacy verdict', async () => {
+  it('rejects a signal termination while preserving its payload and signal diagnostics', async () => {
     const payload = {
       ready: true, confidence: 0.9,
       checks: [{ name: 'lint', kind: 'lint', status: 'pass', durationMs: 1, confidenceContribution: 0.1 }],
@@ -368,7 +400,8 @@ describe('evaluateSolution (producer)', () => {
       `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(payload)}'\nkill -TERM $$\n`,
     );
     const res = await evaluateSolution('task-1', repo);
-    expect(res.verdict?.ready).toBe(true);
+    expect(res.verdict).toBeNull();
+    expect(res.error).toContain('invalid execution outcome');
     expect(res.diagnostics).toMatchObject({ availability: 'available', complete: false, execution: { signal: 'SIGTERM' }, payload });
     expect(res.diagnostics?.issues).toContain('preflight ended with signal SIGTERM');
   });
@@ -383,7 +416,23 @@ describe('evaluateSolution (producer)', () => {
     expect(res.diagnostics).toMatchObject({ availability: 'unavailable', complete: false, execution: { exitCode: 1 } });
   });
 
-  it('keeps valid but incomplete JSON available without fabricating a complete run', async () => {
+  it('rejects a valid ready core when max-buffer reports an execution error', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-max-buffer.sh',
+      '#!/bin/sh\nprintf \'%s\' \'{"ready":true,"confidence":0.9,"blockers":[]}\'\nhead -c 17000000 /dev/zero | tr \'\\000\' \' \'\n',
+    );
+    const res = await evaluateSolution('task-1', repo);
+    expect(res.verdict).toBeNull();
+    expect(res.markerPath).toBeNull();
+    expect(res.error).toContain('invalid execution outcome');
+    expect(res.diagnostics).toMatchObject({
+      availability: 'available',
+      payload: { ready: true, confidence: 0.9, blockers: [] },
+      execution: { error: expect.any(String) },
+    });
+  });
+
+  it('keeps missing advisory fields available without making them a new verdict gate policy', async () => {
     process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
       'stub-incomplete.sh',
       '#!/bin/sh\necho \'{"ready":true,"confidence":0.9,"blockers":[]}\'\n',
@@ -394,7 +443,7 @@ describe('evaluateSolution (producer)', () => {
     expect(res.diagnostics.issues).toContain('preflight checks must be an array');
   });
 
-  it('reports an anomalous exit code without changing the legacy ready verdict', async () => {
+  it('rejects an anomalous exit code with otherwise valid ready JSON', async () => {
     const payload = {
       ready: true,
       confidence: 0.9,
@@ -410,9 +459,98 @@ describe('evaluateSolution (producer)', () => {
       `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(payload)}'\nexit 2\n`,
     );
     const res = await evaluateSolution('task-1', repo);
-    expect(res.verdict?.ready).toBe(true);
+    expect(res.verdict).toBeNull();
+    expect(res.error).toContain('invalid execution outcome');
     expect(res.diagnostics).toMatchObject({ availability: 'available', complete: false, execution: { exitCode: 2 } });
     expect(res.diagnostics.issues).toContain('preflight ready=true requires exit code 0, got 2');
+  });
+
+  it.each([
+    ['ready with exit 1', '{"ready":true,"confidence":0.9,"blockers":[]}', 1],
+    ['not-ready with exit 0', '{"ready":false,"confidence":0.4,"blockers":["test failed"]}', 0],
+    ['not-ready with exit 2', '{"ready":false,"confidence":0.4,"blockers":["test failed"]}', 2],
+  ])('rejects %s as an invalid execution outcome', async (_name, payload, exitCode) => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      `stub-outcome-${exitCode}.sh`,
+      `#!/bin/sh\necho '${payload}'\nexit ${exitCode}\n`,
+    );
+    const res = await evaluateSolution('task-1', repo);
+    expect(res.verdict).toBeNull();
+    expect(res.error).toContain('invalid execution outcome');
+    expect(res.diagnostics).toMatchObject({ execution: { exitCode, signal: null } });
+  });
+
+  it.each([
+    ['missing ready', '{"confidence":0.9,"blockers":[]}', 'ready'],
+    ['non-boolean ready', '{"ready":"yes","confidence":0.9,"blockers":[]}', 'ready'],
+    ['missing confidence', '{"ready":true,"blockers":[]}', 'confidence'],
+    ['negative confidence', '{"ready":true,"confidence":-0.1,"blockers":[]}', 'confidence'],
+    ['non-finite confidence', '{"ready":true,"confidence":1e400,"blockers":[]}', 'confidence'],
+    ['out-of-range confidence', '{"ready":true,"confidence":1.1,"blockers":[]}', 'confidence'],
+    ['missing blockers', '{"ready":true,"confidence":0.9}', 'blockers'],
+    ['non-string blocker', '{"ready":false,"confidence":0.4,"blockers":[42]}', 'blockers'],
+    ['ready with blockers', '{"ready":true,"confidence":0.9,"blockers":["contradiction"]}', 'empty blockers'],
+  ])('rejects an invalid verdict core: %s', async (_name, payload, expectedError) => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub('stub-invalid-core.sh', `#!/bin/sh\necho '${payload}'\n`);
+    const res = await evaluateSolution('task-1', repo);
+    expect(res.verdict).toBeNull();
+    expect(res.markerPath).toBeNull();
+    expect(res.error).toContain('invalid verdict core');
+    expect(res.error).toContain(expectedError);
+    expect(res.diagnostics).toMatchObject({ availability: 'available', payload: JSON.parse(payload) });
+  });
+
+  it('surfaces marker invalidation I/O failure and documents that the previous marker may remain', async () => {
+    writeVerdict(makeVerdict({ id: 'task-1', head }));
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub('stub-invalid-after-lock.sh', '#!/bin/sh\necho not-json\nexit 2\n');
+    const unlink = vi.spyOn(fs, 'unlinkSync').mockImplementation(() => {
+      throw Object.assign(new Error('permission denied'), { code: 'EACCES' });
+    });
+    try {
+      const res = await evaluateSolution('task-1', repo);
+      expect(res.verdict).toBeNull();
+      expect(res.error).toContain('could not invalidate existing verdict marker');
+      expect(res.error).toContain('previous marker may remain');
+    } finally {
+      unlink.mockRestore();
+    }
+  });
+
+  it('keeps a previous marker invalidated when signing fails after a valid preflight', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub('stub-ready-before-sign-fail.sh', '#!/bin/sh\necho \'{"ready":true,"confidence":0.9,"blockers":[]}\'\n');
+    expect((await evaluateSolution('task-1', repo)).verdict?.ready).toBe(true);
+    const savedKey = process.env.SOLUTION_VERDICT_SIGNING_KEY;
+    process.env.SOLUTION_VERDICT_SIGNING_KEY = path.join(tmpDir, 'missing-parent', 'key');
+    fs.mkdirSync(path.join(tmpDir, 'missing-parent'));
+    fs.chmodSync(path.join(tmpDir, 'missing-parent'), 0o500);
+    try {
+      const res = await evaluateSolution('task-1', repo);
+      expect(res.verdict).toBeNull();
+      expect(res.error).toContain('could not write verdict marker');
+      expect(evaluateGate('task-1', head).allowed).toBe(false);
+    } finally {
+      fs.chmodSync(path.join(tmpDir, 'missing-parent'), 0o700);
+      if (savedKey === undefined) delete process.env.SOLUTION_VERDICT_SIGNING_KEY;
+      else process.env.SOLUTION_VERDICT_SIGNING_KEY = savedKey;
+    }
+  });
+
+  it('keeps a previous marker invalidated when the final marker write fails', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub('stub-ready-before-write-fail.sh', '#!/bin/sh\necho \'{"ready":true,"confidence":0.9,"blockers":[]}\'\n');
+    expect((await evaluateSolution('task-1', repo)).verdict?.ready).toBe(true);
+    // The first evaluation created the signing key, so this spy reaches only
+    // the second evaluation's final marker write.
+    const write = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {
+      throw new Error('injected final marker write failure');
+    });
+    try {
+      const res = await evaluateSolution('task-1', repo);
+      expect(res.verdict).toBeNull();
+      expect(res.error).toContain('could not write verdict marker');
+      expect(evaluateGate('task-1', head).allowed).toBe(false);
+    } finally {
+      write.mockRestore();
+    }
   });
 
   it('does not start preflight before id and HEAD validation, then invokes it exactly once', async () => {
