@@ -54,7 +54,7 @@ jobs:
         # ci.yml's own pin (asserted by `npm run check:okf-kit-pin`);
         # 0.8.0 adds `--require-anchors`, which ci.yml's blocking
         # okf-anchor-guard job opts into, this warn-only job does not.
-        run: npm install -g okf-kit@0.9.0
+        run: npm install -g okf-kit@0.9.0 --no-audit --no-fund
 
       - name: Assert CLI is alive (output, not exit code)
         shell: bash

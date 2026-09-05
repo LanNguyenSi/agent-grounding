@@ -21,7 +21,7 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --no-audit --no-fund
 
       - name: Verify package.json version matches tag
         run: |
@@ -61,7 +61,7 @@ jobs:
         # package's Trusted Publisher entry on npmjs.com (repo
         # LanNguyenSi/agent-grounding, workflow publish-understanding-gate.yml (understanding-gate));
         # Node 22 bundles npm 10. Auth via id-token permission, no NPM_TOKEN.
-        run: npm install -g npm@11
+        run: npm install -g npm@11 --no-audit --no-fund
 
       - name: Publish
         run: npm publish --workspace=@lannguyensi/understanding-gate --access public --provenance

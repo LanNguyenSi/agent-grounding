@@ -45,7 +45,7 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --no-audit --no-fund
 
       - name: Verify package version matches tag
         run: |
@@ -72,7 +72,7 @@ jobs:
       # npmjs.com (repo LanNguyenSi/agent-grounding, workflow
       # publish-libs.yml) — no NPM_TOKEN secret involved.
       - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@11
+        run: npm install -g npm@11 --no-audit --no-fund
 
       - name: Publish (OIDC trusted publishing, tokenless)
         run: npm publish --workspace=@lannguyensi/${{ steps.parse.outputs.pkg }} --access public --provenance
