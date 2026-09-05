@@ -585,7 +585,11 @@ and never reasons about attempts.
   or `solution_evaluate_result` with a known `attemptId`, or calling
   `solution_evaluate({ id })` again while that id's attempt is still
   `running` (the join case, section 7), are all reconnects to the SAME
-  attempt. None of them start a new `preflight` process.
+  attempt. None of them start a new `preflight` process. An id reported
+  `running-unconfirmed` (section 5 states, section 7 "Write order and
+  crash windows") is the same reconnect case with no `attemptId` to name
+  yet: keep polling with the returned hint; it is neither an error nor a
+  licence to retry.
 - Explicit new retry: calling `solution_evaluate({ id })` (with or without
   `forceNewAttempt`) starts a genuinely new attempt with a new `attemptId`
   and a new `preflight` process ONLY when its own attempt to acquire that
