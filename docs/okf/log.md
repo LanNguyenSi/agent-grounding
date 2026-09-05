@@ -2,6 +2,28 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-05T19:03:38Z, `solution_evaluate` progress notifications (task
+  `8c9a99fc`): added `src/progress.ts` (`withProgressPings`) and wrapped
+  `solution_evaluate`'s single preflight invocation in `server.ts` with it;
+  no change to `solution-verdict.ts`, signing, gate, or verdict/marker
+  shape. The edit shifted every citation into `server.ts` past the new
+  import line and `createServer`'s `progressIntervalMs` setup (a uniform
+  +3 through `ledger_add` and the start of `solution_evaluate`'s own
+  registration, +7 from `solution_gate` through every `hypothesis_*` tool
+  below it, since that handler's body itself grew by 4 lines); a
+  README.md insertion (new "Progress notifications while `solution_evaluate`
+  runs" section) shifted the collateral OPENAI_API_KEY citation, and two
+  new import lines at the top of
+  `tests/grounding-gate-mcp-roundtrip.test.ts` shifted the not-ready-preflight
+  test citation. Re-pinned every affected citation individually in
+  `evidence-ledger-session-key-shapes.md`, `hypothesis-tracker-persistence-split.md`,
+  and `solution-acceptance-verdict-contract.md` (line numbers only; every
+  quoted anchor text was unchanged and still resolves verbatim at its
+  pinned line). `okf-kit check --json --require-anchors docs/okf` reported
+  0 errors, 0 warnings, 0 notices against a clean pre-edit baseline run
+  from the same commit (`eefd18f`), confirming the fixes account for every
+  finding this edit introduced.
+
 - 2026-09-04T05:43:29Z, grounding-mcp 0.10.0 release preparation (task
   `62c3865a`): moved the unchanged grounding-mcp Unreleased notes into the
   dated 0.10.0 release block and updated the package manifest, lockfile, and

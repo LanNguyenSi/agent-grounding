@@ -18,7 +18,7 @@ The other packages in this repo are CLI-first. That works fine for scripted invo
 | `ledger_status` | `ledger-bridge.ledgerStatus` | No-arg ledger reachability + stats probe (entry count, db path, last-write timestamp) for harness MCP health checks; no session required. |
 | `claim_evaluate` | `claim-gate.evaluateClaim` | Run a claim through the gate with caller-supplied context. |
 | `claim_evaluate_from_session` | claim-gate + grounding-wrapper + evidence-ledger | Same, but auto-derive the context from the session's phase status + ledger entries. The default path. |
-| `solution_evaluate` | `solution-verdict` + `preflight` CLI | Run preflight against a repo and record a HEAD-pinned solution-acceptance verdict for an id, derived from preflight's real results. Earn "done" instead of claiming it. See below. |
+| `solution_evaluate` | `solution-verdict` + `preflight` CLI | Run preflight against a repo and record a HEAD-pinned solution-acceptance verdict for an id, derived from preflight's real results. Earn "done" instead of claiming it. Sends `notifications/progress` pings while it runs, if the request carries a progressToken. See below. |
 | `solution_gate` | `solution-verdict.evaluateGate` | Allowed only if a ready verdict exists at the current git HEAD; else a precise deny reason (no verdict / not ready / HEAD drift). |
 | `verify_memory_reference` | `runtime-reality-checker.verifyMemoryReference` | Check whether a memory-referenced path / symbol / flag still exists in the repo. Call before recommending anything from a memory that cites a concrete file, function, or flag. |
 | `hypothesis_record` | `hypothesis-tracker.addHypothesis` | Add a competing hypothesis with required checks. Use when you can name more than one possible cause. |
@@ -76,6 +76,19 @@ Since 0.8.0, `writeVerdict` signs the marker unconditionally (HMAC-SHA256, no un
 This closes casual/accidental forgery, and it closes silent tampering: mutating any signed field after signing (intentionally or by a bug) invalidates the signature and is rejected. It does **not** close a shell-capable, same-UID forger: the signing key is read (and, on a fresh machine, first created) under the SAME UID that runs `grounding-mcp` and the same UID a shell-capable agent runs under, so such an agent could still read that key and compute a valid signature itself, exactly the same same-UID threat model the harness consumer's own signing already documents. This is pragmatic defense-in-depth, not a new authorization boundary. Composing additional ground-truth (CI, review, unresolved hypotheses from the session) into the verdict is the next layer.
 
 The verdict pins to the committed HEAD, so edits made after a green `solution_evaluate` do not shift HEAD: re-run it after any change. preflight's own clean-worktree check fails a dirty tree, so a fresh `solution_evaluate` on uncommitted work yields a not-ready verdict.
+
+### Progress notifications while `solution_evaluate` runs
+
+`solution_evaluate` runs one real preflight invocation synchronously (lint / typecheck / test / audit / secret detection against the target repo), which can easily take longer than the MCP SDK's default 60s request timeout. While that invocation is pending, the tool sends a `notifications/progress` ping roughly every 10s (mirrors agent-preflight's own `preflight_run`/`preflight_batch` convention) — but **only** when your client attaches a `progressToken` to the request; passing an `onprogress` callback (e.g. `client.callTool(..., { onprogress })` in the TypeScript SDK) does that automatically. Each ping's `progress` is a plain monotonically increasing tick count meaning "still running" — never a fabricated percentage, and never a signal about any check's outcome.
+
+Attaching `onprogress` alone only gets you the pings. For the heartbeat to actually help a slow run survive, your client also needs to **reset (or otherwise extend) its own request timeout on progress** — pass `resetTimeoutOnProgress: true` in the same call's request options (TypeScript SDK), or raise the request's own `timeout` outright. Without one of those two, the pings arrive but the client's timeout still fires on schedule regardless.
+
+What this heartbeat does **not** fix, and does not claim to fix:
+
+- A client-side hard total deadline (the SDK's own `maxTotalTimeout`, or an equivalent enforced elsewhere) is not extended by progress at all, by design — it is a ceiling, not a soft timeout.
+- A client that drops the connection, or otherwise never sees the ping, gets no benefit; a disconnect mid-run is not repaired by this feature.
+- Some clients treat their tool timeout as a hard limit that progress does not extend, regardless of `resetTimeoutOnProgress` on the underlying MCP request. This heartbeat cannot repair that: it is scoped to the MCP request/response layer this server controls, not every host's own tool-call timeout policy layered on top of it.
+- None of this changes what "done" means: a slow but eventually-`ready` verdict is exactly as durable, and exactly as re-runnable after HEAD moves, as a fast one. The heartbeat only helps a well-behaved, progress-aware client avoid abandoning the call before that verdict comes back — it does not make a timed-out call's result durable, and it does not retry or resume one on your behalf.
 
 ### Orchestrator-workflow (OW) process-completeness arm
 

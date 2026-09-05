@@ -42,6 +42,7 @@ import { ledgerDb, ledgerStatus } from './ledger-bridge.js';
 import { deriveContext } from './derive-context.js';
 import { getOrCreateStore, getStore, resetStore, saveStore } from './hypothesis-store.js';
 import { evaluateSolution, evaluateGate, getHeadSha } from './solution-verdict.js';
+import { withProgressPings, DEFAULT_PROGRESS_INTERVAL_MS } from './progress.js';
 
 // Single source of truth for the version string emitted by both the
 // MCP `name+version` handshake and the `--version` CLI short-circuit.
@@ -127,7 +128,9 @@ const evidenceTextSchema = z
 // can hook a fresh server up to an InMemoryTransport without triggering
 // the CLI `main()` path that opens stdio.
 
-export function createServer(): McpServer {
+export function createServer(options: { progressIntervalMs?: number } = {}): McpServer {
+  const progressIntervalMs = options.progressIntervalMs ?? DEFAULT_PROGRESS_INTERVAL_MS;
+
   const server = new McpServer({
     name: 'grounding-mcp',
     version: PACKAGE_VERSION,
@@ -314,7 +317,7 @@ export function createServer(): McpServer {
 
   server.tool(
     'solution_evaluate',
-    'Run preflight against a repo and record a HEAD-pinned solution-acceptance verdict for <id>, derived from preflight\'s real results (lint/typecheck/test/audit/secret), not from caller input, and with the check set taken from the repo\'s committed .preflight.json. Use this to earn "done" instead of claiming it. Requires the `preflight` binary (agent-preflight) on PATH or via SOLUTION_PREFLIGHT_BIN; fails closed (writes no verdict) when it is unavailable.',
+    'Run preflight against a repo and record a HEAD-pinned solution-acceptance verdict for <id>, derived from preflight\'s real results (lint/typecheck/test/audit/secret), not from caller input, and with the check set taken from the repo\'s committed .preflight.json. Use this to earn "done" instead of claiming it. Requires the `preflight` binary (agent-preflight) on PATH or via SOLUTION_PREFLIGHT_BIN; fails closed (writes no verdict) when it is unavailable. If the request carries a progressToken, sends periodic notifications/progress pings ("still running", no percentage) while preflight runs; a client that also enables timeout reset on progress can then avoid its own client-side timeout on a slow preflight run — see README.',
     {
       id: z.string().min(1).describe('Identifier the verdict is scoped to, e.g. a task id.'),
       repoPath: z
@@ -322,8 +325,12 @@ export function createServer(): McpServer {
         .optional()
         .describe('Repository to evaluate. Defaults to the current working directory.'),
     },
-    async ({ id, repoPath }) => {
-      const result = await evaluateSolution(id, repoPath ?? process.cwd());
+    async ({ id, repoPath }, extra) => {
+      const result = await withProgressPings(
+        extra,
+        () => evaluateSolution(id, repoPath ?? process.cwd()),
+        progressIntervalMs,
+      );
       return jsonResponse(result);
     },
   );
