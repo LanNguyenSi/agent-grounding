@@ -25,6 +25,34 @@ unstated (now explicit, section 7); and five documentation corrections
 number, an out-of-repo run artifact's first reference, and `markerPresent`'s
 exact meaning).
 
+Revision (round 4, after review round 3 and an advisor consult): the
+cross-process half of section 7 no longer derives a lock protocol of its
+own. The advisor's recommendation, adopted as this round's decision, is to
+delegate mutual exclusion to the primitive this codebase already depends
+on elsewhere (`proper-lockfile`, wrapped as `withFileLock` in
+`harness/src/io/lock.ts`) and to cite that library's documented semantics
+rather than re-derive them in prose. Removed with it: the
+`.lock.takeover` marker, the five-step takeover sequence, the
+byte-identity re-read, the recursive stale reclamation, the
+hand-specified mtime heartbeat, the PID-liveness authority, and the
+hand-rolled host identifier. Acquisition, staleness, the heartbeat,
+compromise detection, and ownership-checked release are now the library's
+behavior, cited; this document states only the invariant, the join rule,
+the compromise rule, and where the lock lives. Round 3's remaining
+findings are closed in the same pass: the attempt log's reconciliation
+append, its compaction, and its liveness check all run under the same id
+lock (section 6); persisted records are size-bounded and an unparseable
+line has a stated reader rule (section 6); a compacted `unknown` stays
+`unknown` (section 5, section 6); the persisted error string's truncation
+and the intended file modes are stated (section 8); the sibling task's
+branch state is re-measured with a timestamp (section 3);
+`EvaluateResult.error`'s actual type is corrected (section 5); and this
+document's branch is merged with `master` at PR #211 (`eefd18fe`).
+Section 7 and section 9 now also state the proportionality fact that
+bounds this design's complexity budget: `evaluateGate` fails closed on
+every duplicate-run outcome, so the lock buys wasted CPU and a single
+in-flight handle, never gate safety.
+
 ## Why this document exists
 
 `solution_evaluate` (`packages/grounding-mcp/src/server.ts`, tool
@@ -148,12 +176,18 @@ notifications during `solution_evaluate`, mirroring the pattern already
 shipped in `agent-preflight/src/mcp.ts` (`withProgressPings`,
 `DEFAULT_PROGRESS_INTERVAL_MS = 10_000`): if the caller supplied
 `_meta.progressToken`, ping it periodically while the child process runs.
-Its own state, checked with `git branch -a --list '*8c9a99fc*'` and
-`gh pr list`: a local branch `feat/8c9a99fc-evaluate-progress` exists on
-this machine, but neither command found a corresponding commit reachable
-from any remote ref (`git log --all` shows no unique commits on it at the
-time of this check) nor an open PR; treat the task as not yet landed
-anywhere shared, not as untouched.
+Its own state, measured 2026-09-05 19:36Z with `git branch -a --list
+'*8c9a99fc*'`, `git log --oneline master..feat/8c9a99fc-evaluate-progress`,
+`git ls-remote --heads origin '*8c9a99fc*'`, and `gh pr list --search
+8c9a99fc --state all`: a local branch `feat/8c9a99fc-evaluate-progress`
+exists on this machine and carries two commits that are not on `master`
+(a progress-notification implementation plus a follow-up fix); no remote
+branch matches, and no PR exists in any state. A prior round of this
+document claimed the branch had no unique commits, which that
+re-measurement contradicts; the corrected reading is that the work exists
+locally and has never been pushed or proposed. Treat the task as started
+but not landed anywhere shared, and coordinate with whoever owns that
+branch rather than duplicating it.
 
 This is a real, low-risk, additive improvement, and this design treats it
 as a complementary layer, not a substitute:
@@ -344,9 +378,10 @@ orthogonal to attempt status; a `false`-ready verdict is still a
   registry, on-disk lock (section 7), or on-disk attempt-log entry (section
   6) can account for; typically because the `grounding-mcp` process that
   tracked it restarted and lost the in-memory record while the log entry
-  itself was still `running` and its holder's PID is now dead (the
-  reconciliation pass in section 6 is what actually assigns this status;
-  it is never inferred merely from "we don't have an opinion"). Once an
+  itself was still `running` and no process holds that id's lock any more
+  (the reconciliation pass in section 6 is what actually assigns this
+  status, and section 7's lock is the liveness authority it consults; it
+  is never inferred merely from "we don't have an opinion"). Once an
   attempt is reported `unknown`, it must remain `unknown` in any persisted
   attempt history forever; a later, successful marker for the same `id` is
   recorded as a new, distinct attempt and never retroactively treated as
@@ -359,7 +394,12 @@ orthogonal to attempt status; a `false`-ready verdict is still a
 - `expired` (new): terminal-ish, reserved for an attempt whose full log
   entry has been pruned by the retention/rotation policy (section 5,
   "Restart, retention, cleanup, log access") after it had already reached
-  a genuine terminal state (`completed` or `failed`). Distinct from
+  a genuine terminal state (`completed` or `failed`). Compaction of an
+  attempt that reached `unknown` rather than a genuine terminal state does
+  NOT produce `expired`: its tombstone records the `unknown` outcome class
+  and the attempt keeps resolving to `unknown` after compaction, so
+  pruning can never launder an unestablished fate into an established one
+  (section 6, record kind 4). Distinct from
   `unknown` on purpose: `expired` means the attempt's outcome IS known to
   have been terminal, the detail was simply not retained long enough for
   this lookup; `unknown` means the attempt's fate was never established at
@@ -409,8 +449,8 @@ orthogonal to attempt status; a `false`-ready verdict is still a
   memory of the process whose own `evaluateSolution` invocation produced
   them (`solution-verdict.ts`, `evaluateSolution`); neither is persisted
   verbatim across a process boundary (section 6 persists only a short
-  summary, an `outcomeClass`, and, for a failure, the `error` string
-  itself, never the full diagnostics payload):
+  summary, an `outcomeClass`, and, for a failure, a size-bounded copy of
+  the `error` string, never the full diagnostics payload):
   - When the answering process is the SAME process whose in-memory attempt
     registry created this attempt (the common case: the same
     `grounding-mcp` process the caller originally reached, still holding
@@ -428,10 +468,17 @@ orthogonal to attempt status; a `false`-ready verdict is still a
     BOTH `isLatestForId` and `markerPresent` hold (re-checked at read
     time, below), re-read from the marker file itself, never from any
     in-memory or logged copy. `outcomeClass` (`ready` / `not-ready` /
-    `error`) and `summary` are the same fields persisted in the attempt
-    log (section 6); `error`, when present, is the persisted error STRING,
-    not the full `EvaluateResult.error` object a same-process answer might
-    carry if that shape ever differs.
+    `error` / `compromised`) and `summary` are the same fields persisted
+    in the attempt log (section 6); `error`, when present, is the
+    persisted error string. `EvaluateResult.error` is itself already a
+    string today (`error?: string`,
+    `packages/grounding-mcp/src/solution-verdict.ts`, `EvaluateResult`),
+    so the difference between the two is not a shape difference but a
+    LENGTH one: what a cross-process answer returns is the persisted,
+    size-bounded copy (section 6, "Record size bound"), which may be a
+    truncated prefix of what the owning process holds in memory. A prior
+    round of this document called the same-process value an "object",
+    which was simply wrong about the existing type.
 
   This narrowing for a cross-process answer is intentional, not an
   oversight: full `EvaluateResult.diagnostics` never crosses a process
@@ -474,14 +521,14 @@ and never reasons about attempts.
   attempt. None of them start a new `preflight` process.
 - Explicit new retry: calling `solution_evaluate({ id })` (with or without
   `forceNewAttempt`) starts a genuinely new attempt with a new `attemptId`
-  and a new `preflight` process ONLY when the on-disk lock for that `id`
-  (section 7) is not currently held by a live process. A prior attempt's
+  and a new `preflight` process ONLY when its own attempt to acquire that
+  `id`'s lock (section 7) actually succeeds. A prior attempt's
   reported STATUS (`completed`, `failed`, `unknown`, or `expired`) is
   informational, not the gate: in particular, an attempt reported
   `unknown` or `expired` because this process's in-memory registry lost
-  track of it does NOT by itself license a new attempt while an orphaned
-  `preflight` process might still be running and might still hold the
-  lock (this closes the restart-race in section 9, blocker 2, and in the
+  track of it does NOT by itself license a new attempt while another
+  process still holds that id's lock (this closes the restart-race in
+  section 9, blocker 2, and in the
   producer brief). The one override is an explicit `forceNewAttempt: true`
   while a live lock exists, which is refused by default (section 7) and,
   if a future revision chooses to honor it under some operator-controlled
@@ -542,7 +589,8 @@ and never reasons about attempts.
   `solution_evaluate_status`/`_result` lookup therefore always falls back
   to the on-disk lock and attempt log, not only the in-memory registry,
   before concluding `unknown`; it resolves to `unknown` only when the log
-  entry itself is `running` with a dead holder PID, confirmed and recorded
+  entry itself is `running` and that id's lock is confirmed free (the
+  lookup's own retry-free acquisition of it succeeds, section 7), recorded
   either by the startup reconciliation pass or by this very lookup's own
   read-path liveness check (section 6, "Read-path liveness"), never merely
   because this process's own in-memory cache is cold, and never only at
@@ -554,9 +602,9 @@ and never reasons about attempts.
   killed when its parent `grounding-mcp` process exits (Node's
   `execFileAsync` without `detached: true`, platform-dependent
   process-group behavior) was not verified for this document; section 7's
-  lock design bounds the resulting risk with a stale-lock timeout rather
-  than resolving it outright, and it remains a listed blocker in section
-  9.
+  lock bounds the resulting risk with the lock library's own stale window
+  rather than resolving it outright, and it remains a listed blocker in
+  section 9.
 - Retention/cleanup: terminal attempts are pruned from the in-memory
   registry and compacted in the on-disk attempt log after a bounded
   retention window past their terminal timestamp (a configuration value,
@@ -567,14 +615,17 @@ and never reasons about attempts.
   advertised poll cadence can never have its target pruned out from under
   it before its next poll lands. Compaction does not fully delete a
   pruned, formerly-terminal entry; it replaces the full entry (outcome
-  summary, diagnostics) with a small, much-longer-retained tombstone
-  (`attemptId`, `id`, terminal-outcome class, prune timestamp) so a later
-  lookup can still distinguish "this attempt existed and finished, its
-  detail was pruned" (`expired`, above) from "this attempt's fate was
-  never established" (`unknown`, above); a pruned attempt resolves to
-  `expired`, never `unknown`, and, like `unknown`, does not by itself
-  license a new attempt (the lock-liveness check in section 7 still
-  governs). The exact retention/rotation numbers themselves remain an
+  summary, persisted error string) with a small, much-longer-retained
+  tombstone (`attemptId`, `id`, the pruned attempt's OUTCOME CLASS, prune
+  timestamp) so a later lookup can still distinguish "this attempt existed
+  and finished, its detail was pruned" (`expired`, above) from "this
+  attempt's fate was never established" (`unknown`, above). The outcome
+  class in the tombstone is what decides which of the two a compacted
+  attempt resolves to: a compacted `completed`/`failed` attempt resolves
+  to `expired`, a compacted `unknown` attempt keeps resolving to
+  `unknown`, and compaction never converts one into the other. Neither
+  status by itself licenses a new attempt; the lock acquisition in
+  section 7 still governs. The exact retention/rotation numbers themselves remain an
   implementation-brief decision (section 10); the invariant that retention
   exceeds `pollAfterMs`, and that pruning produces `expired` rather than
   `unknown`, is fixed here.
@@ -614,18 +665,30 @@ attemptIds still present (not yet compacted away, below).
 Every record carries `attemptId`, `id`, and a `kind`. Exactly four kinds
 exist:
 
-1. `start`: `head`, `startedAt`, holder PID, status `running`. Written
+1. `start`: `head`, `startedAt`, the holder process's PID, status
+   `running`. Written
    once, the moment an attempt's lock is acquired (section 7), before the
    `preflight` child process is spawned, by the attempt's own process.
    Without this write, a lookup mid-run, before any terminal record
    exists, has nothing to read at all; this is the fix for a prior
-   round's gap. The component responsible is the same module that owns
+   round's gap. The recorded PID is a diagnostic aid for a human reading
+   the log, NOT the liveness authority: since round 4, whether an attempt
+   is still live is answered only by whether that id's lock can be
+   acquired (section 7), never by probing the PID. The component
+   responsible is the same module that owns
    the lock, `solution-attempt-log.ts` (suggested name, brief 01), invoked
-   synchronously in the same call that acquires the lock.
+   synchronously inside the same lock acquisition that authorized the
+   attempt.
 2. `terminal`: `status` (`completed` or `failed`), terminal timestamp,
-   `outcomeClass` (`ready` / `not-ready` / `error`), a short `summary`
+   `outcomeClass` (`ready` / `not-ready` / `error` / `compromised`), a
+   short `summary`
    (counts, not the full diagnostics payload), and, for a `failed`
-   terminal write, the persisted `error` string (section 5). Written
+   terminal write, the persisted, size-bounded `error` string (section 5
+   for what a caller sees, "Record size bound and unparseable lines"
+   below for the cap). `compromised` is the outcome class for an
+   attempt whose holder lost its lock mid-run (section 7, "Compromise");
+   it maps onto the `failed` attempt state, so section 5's state list is
+   unchanged by it. Written
    exactly once, by the SAME process that wrote the `start` record for
    this `attemptId`, when that attempt's own `evaluateSolution` invocation
    resolves; before appending, that process re-reads the log for its own
@@ -634,33 +697,79 @@ exist:
    terminal write from ever overriding an already-reconciled `unknown`,
    section 9's corrected residual explains when this can actually occur).
 3. `reconciled-unknown`: written for an `attemptId` whose last record is
-   still `start` (`running`) and whose recorded holder PID is confirmed
-   dead, by either `reconcileOrphanedAttempts()` at startup or the
-   read-path liveness check described below; exactly one
+   still `start` (`running`) at a moment when that id's lock is provably
+   free, by either `reconcileOrphanedAttempts()` at startup or the
+   read-path liveness check described below. "Provably free" has exactly
+   one meaning under this design: the writing process itself acquired
+   that id's lock with no retries (section 7), which is why the append
+   happens INSIDE that acquisition. Exactly one
    `reconciled-unknown` record may ever exist for a given `attemptId`,
-   guarded the same way (re-read immediately before append, skip if one is
-   already present, so two liveness checks racing each other cannot both
-   append it). Once written, that attemptId's outcome is `unknown` forever
+   and the lock is what guarantees it: two liveness checks racing each
+   other cannot both be inside the lock, so the second one to get in finds
+   the record already there (re-read immediately before append, skip if
+   one is already present) and appends nothing. Once written, that
+   attemptId's outcome is `unknown` forever
    (its own attempt log entry list will never again change kind).
 4. `tombstone`: written only during compaction (below), replacing an
    entire attempt's records (`start` plus `terminal`, or `start` plus
-   `reconciled-unknown`) with one small record (`attemptId`, `id`,
-   terminal-outcome class, prune timestamp) once the retention window has
-   elapsed.
+   `reconciled-unknown`) with one small record (`attemptId`, `id`, the
+   attempt's OUTCOME CLASS, prune timestamp) once the retention window has
+   elapsed. The outcome class recorded is the one the attempt actually
+   reached, including `unknown`: a compacted `completed`/`failed` attempt
+   resolves to `expired` afterwards, a compacted `unknown` attempt still
+   resolves to `unknown` (section 5). Compaction is a retention
+   mechanism, never a laundering step that turns an unestablished fate
+   into an established one.
 
 No writer other than an attempt's own process may ever append a `start` or
 a `terminal` record for that attempt. The two narrow exceptions, named
 explicitly because they are the only records one attempt's process
 appends on another attempt's behalf: reconciliation (startup pass or
 read-path check) may append ONLY a `reconciled-unknown` record, and only
-for an attempt whose holder is confirmed dead; compaction may append ONLY
-a `tombstone` record, and only while holding that id's on-disk lock
-(section 7), so it cannot race a concurrently-appending attempt for the
-same id. Compaction rewrites the whole per-id file via a temp file plus an
-atomic rename (`fs.rename`, same directory, same filesystem), never an
-in-place truncate-and-rewrite: everything not yet past its retention
-window is carried over unchanged, and each triplet past its window is
-replaced by its `tombstone`.
+inside a successful, retry-free acquisition of that id's lock; compaction
+may append ONLY a `tombstone` record, and only inside a lock acquisition
+some other operation on that id already holds.
+
+Compaction never acquires the id lock on its own account. It runs as a
+tail step inside a lock acquisition already made for another reason (an
+attempt start, or a reconciliation pass), and only when that acquisition
+succeeded; an acquisition that came back `ELOCKED` skips compaction
+entirely and leaves it for a later pass. This is deliberate and closes a
+race the join rule would otherwise have: section 7 treats `ELOCKED` as
+"join, do not spawn", so a lock held by a compaction-only holder would
+make a caller join an attempt that does not exist. Because compaction
+never holds the lock by itself, the only non-attempt holder a joiner can
+ever meet is a reconciliation pass, which does a bounded number of file
+reads and at most one append; section 7's join rule states what a caller
+sees in that window. Compaction rewrites the whole per-id file via a temp
+file plus an atomic rename (`fs.rename`, same directory, same
+filesystem), never an in-place truncate-and-rewrite: everything not yet
+past its retention window is carried over unchanged, and each attempt's
+records past its window are replaced by that attempt's `tombstone`.
+
+### Record size bound and unparseable lines
+
+Two rules keep the log's growth and its parsing failure mode bounded,
+since it is the only place this design persists free-form text (an error
+string) that a caller can influence indirectly (section 8):
+
+- Size bound: every record is serialized as ONE line and written with ONE
+  `O_APPEND` write, and the whole record is capped at 2 KiB of UTF-8. The
+  variable-length fields are the persisted `error` string and the
+  `summary`; both are truncated (with an explicit truncation marker) as
+  far as needed for the serialized record to fit that cap, error string
+  first. A single write per record is what keeps a concurrent append from
+  interleaving inside a line on the platforms where `O_APPEND` writes up
+  to that size are atomic; a record that could not be made to fit is a
+  bug, not a reason to emit a longer line.
+- Unparseable line: a reader that cannot parse a line SKIPS that line and
+  keeps reading, and interprets each attempt by the records it can still
+  read. It never aborts the whole file, never rewrites or truncates it,
+  and never treats an unparseable line as an outcome. The consequence is
+  stated rather than hidden: an attempt whose only outcome record is the
+  damaged line reads as still `running` and is then resolved by the
+  ordinary liveness path (the lock is free, so it becomes `unknown`,
+  above), which fails safe in the same direction as everything else here.
 
 Reword the prior round's own vocabulary: this design guarantees "at most
 one live outcome per attempt, reached through a bounded set of
@@ -675,33 +784,45 @@ narrowly-scoped records under the rules above.
 
 ### Reconciliation and read-path liveness (closes review round 2 finding M1)
 
+The liveness check, in one sentence: try to acquire that id's lock with no
+retries (section 7). Success means no process holds it, so any log row for
+that id still reading `running` belongs to a holder that is gone. `ELOCKED`
+means a holder is alive, so there is nothing to reconcile. The acquisition
+IS the check; nothing else probes liveness, and in particular no PID is
+probed any more (round 4; a PID cannot be checked reliably across PID
+reuse, and the library's own stale window already covers a holder that
+died without releasing).
+
 Reconciliation: a `reconcileOrphanedAttempts()` pass (suggested name, in
 `solution-attempt-log.ts`) runs once at `grounding-mcp` process startup,
 before the transport connects (`server.ts`, `main()`), and scans every
 per-id log file for an `attemptId` whose last record is `start`
-(`running`). For each, it checks whether the recorded holder PID is
-alive; if the PID is dead, it appends a `reconciled-unknown` record,
-exactly once, per the guard in kind 3 above. It additionally sweeps for an
-on-disk LOCK file (section 7) whose `attemptId` has no corresponding log
-row at all (a crash between lock-acquisition and the `start` record's
-append) and treats that lock exactly as a stale lock once its age exceeds
-the stale-lock window, through the same atomic-takeover procedure section
-7 defines, never a separate code path.
+(`running`). For each such id it acquires that id's lock with no retries;
+on `ELOCKED` it moves on (the holder is alive), and on success it appends
+a `reconciled-unknown` record for every still-`running` row of that id,
+inside the acquisition, exactly once per attemptId per the guard in kind 3
+above, then releases. Because the append happens under the lock, a holder
+that is still alive can never have its own row reconciled out from under
+it, and two reconcilers cannot both append: the race the prior round
+resolved with a precedence rule is removed rather than adjudicated. The
+pass additionally sweeps for a LOCK whose id has no corresponding log row
+at all (a crash between lock acquisition and the `start` record's append):
+if that lock can be acquired, there is nothing to reconcile and the id is
+simply free again; if it cannot, section 7's join rule describes what a
+caller sees.
 
 Startup-only reconciliation cannot stop a `running` row whose holder died
 AFTER the last startup; nothing would re-check it until the next restart,
 which may be arbitrarily far off. `solution_evaluate_status`,
 `solution_evaluate_result`, and `solution_evaluate`'s own join path
-therefore each run the IDENTICAL liveness check (holder PID alive on this
-host, and the lock's age against the stale-lock window, section 7) as
-part of every lookup or join attempt against a `running` row, not only
-once at process startup; every `solution_evaluate` lock-acquire attempt
-that finds an existing lock runs the same sweep too (lock present with no
-matching log row, or a log row `running` with a dead holder), so the
-atomic takeover in section 7 can fire promptly rather than waiting for the
-next process restart. When any of these checks finds the holder dead, it
-appends the SAME one-time `reconciled-unknown` record reconciliation would
-have appended, guarded identically.
+therefore each run the IDENTICAL check, the same retry-free acquisition,
+as part of every lookup or join against a `running` row, not only once at
+process startup. When any of them acquires the lock and finds a stale
+`running` row underneath it, it appends the SAME one-time
+`reconciled-unknown` record reconciliation would have appended, guarded
+identically and under the same lock. Read-path checks are therefore not a
+weaker copy of the startup pass; they are literally the same operation
+run from a different entry point.
 
 This narrows, rather than removes, the invariant from the prior round:
 "never inferred at read time" forbids only inferring `unknown` from "we
@@ -709,12 +830,13 @@ have no opinion" (a lookup that finds no in-memory record must NOT
 conclude `unknown` on that basis alone; section 5's "Restart" bullet). It
 does not forbid the read path from RUNNING the same liveness check and
 APPENDING the same kind of record reconciliation would; a `reconciled-
-unknown` record is always evidence-backed (a confirmed-dead holder PID),
-regardless of which pass wrote it. Section 5's "Restart" bullet is worded
+unknown` record is always evidence-backed (a lock this process itself
+acquired while the row still read `running`), regardless of which pass
+wrote it. Section 5's "Restart" bullet is worded
 to match: a lookup resolves to `unknown` only once some liveness check,
-whichever process or pass ran it, has confirmed the holder dead and
-appended the record, never merely because an in-memory registry happens to
-be cold.
+whichever process or pass ran it, has held the lock over a stale
+`running` row and appended the record, never merely because an in-memory
+registry happens to be cold.
 
 This satisfies the tracker's requirement directly:
 
@@ -730,8 +852,8 @@ This satisfies the tracker's requirement directly:
   its own new records.
 - Retry never silently launches a duplicate process: guaranteed
   structurally by the join-in-flight rule (section 7), which makes a
-  genuinely new attempt possible only once the on-disk lock for that `id`
-  is confirmed free, not merely once a prior attempt's log row reads
+  genuinely new attempt possible only when an acquisition of that `id`'s
+  lock actually succeeds, not merely once a prior attempt's log row reads
   terminal.
 
 ## 7. Concurrency: join-in-flight, not duplicate
@@ -749,168 +871,316 @@ and returns the same `attemptId`, never starting a second process. This
 guarantee holds ONLY within one process's event loop; it is not, by
 itself, a cross-process guarantee (see below).
 
-### Cross-process concurrency (on-disk lock, new in this revision)
+### Cross-process concurrency (delegated to a lock library, revised in round 4)
 
-grounding-mcp uses `StdioServerTransport` (`server.ts`, imported at the
-top of the file and instantiated in `main()`): every client registered
-against it (Claude Code, Codex, and, if wired, opencode) spawns its OWN,
-separate `grounding-mcp` OS process. Those processes share no memory, so
-an id-keyed in-memory lock in one process cannot see or coordinate with
-another process's in-memory lock for the same `id`. The prior round of
-this document claimed the in-memory lock alone made two preflight
-processes for one id structurally impossible; that claim was unsound
-across processes and is corrected here.
+The invariant, and the whole of what this design promises across
+processes: AT MOST ONE LIVE `preflight` PROCESS PER SANITIZED ID PER HOST.
+Nothing more is claimed. In particular this is not a gate-safety property
+(see "Proportionality and the complexity budget" at the end of this
+section); it buys a caller a single in-flight handle to join and saves the
+machine from running the same expensive verification twice.
 
-The fix is an on-disk advisory lock file, one per sanitized id, alongside
-the verdict marker: suggested path
-`path.join(verdictDir(), \`${sanitizeVerdictId(id)}.lock\`)`
-(`packages/grounding-mcp/src/solution-verdict.ts`, `verdictDir`,
-`sanitizeVerdictId`). Its contents: the holder's OS process id (the
-`grounding-mcp` process that accepted the call, not the `preflight` child;
-see below for why), a start timestamp, the `attemptId`, and a host
-identifier (see "Single-host assumption" below).
+An in-memory lock cannot provide it. grounding-mcp uses
+`StdioServerTransport` (`server.ts`, imported at the top of the file and
+instantiated in `main()`): every client registered against it (Claude
+Code, Codex, and, if wired, opencode) spawns its OWN, separate
+`grounding-mcp` OS process. Those processes share no memory, so an
+id-keyed in-memory lock in one process cannot see or coordinate with
+another process's in-memory lock for the same `id`. Round 1 of this
+document claimed the in-memory lock alone made two preflight processes for
+one id structurally impossible; that claim was unsound across processes
+and was corrected in round 2.
 
-- Acquisition: before spawning the `preflight` child process, the handling
-  process attempts to CREATE the lock file with an exclusive,
-  create-if-absent open (the platform's O_EXCL-equivalent), so that when
-  two processes race to create it near-simultaneously exactly one create
-  succeeds; the loser falls back to the join path below without ever
-  spawning a child.
-- Release: deleted by the same process when its own attempt reaches a
-  terminal state (`completed` or `failed`); never deleted by a different
-  process, and never "released" merely because a status query observed
-  `unknown` or `expired`, since those are read-only reporting outcomes,
-  not attempt-terminal write events. Release happens LAST, after the
-  marker write and the attempt log's own terminal write, in the fixed
-  order "Write order and crash windows" below specifies; it is never the
-  first of the three terminal-path writes.
-- Liveness check: a process that finds an existing lock checks whether the
-  recorded holder PID is alive. A live PID means a genuinely running
-  attempt; that process JOINS by treating the lock's `attemptId` as its
-  own running handle (recording it in its own in-memory registry so its
-  own `solution_evaluate_status`/`_result` calls can resolve it), and
-  either polls the lock/log file at an interval within its own internal
-  wait bound (mirroring the same-process join's synchronous wait, just
-  over disk reads instead of an in-memory promise) or, if its own bound
-  elapses first, returns `{status:"running", attemptId, id, pollAfterMs}`
-  exactly as the winning process's own callers would.
-- Stale-lock timeout and atomic takeover (closes review round 2 finding H1): a
-  PID-liveness check alone is not fully reliable (an OS can reuse a PID
-  after the original process exits, and a crash can leave a lock behind
-  with no process left to release it). A lock older than a configurable
-  stale-lock window, independent of and comfortably longer than any real
-  `preflight` run is expected to take, is treated as stale regardless of
-  what the PID-liveness check reports. Reclaiming a stale lock is itself a
-  check-then-act sequence (read the lock, decide it is stale, remove it,
-  create a new one), and two processes can both perform that sequence
-  against the SAME stale lock at nearly the same time; without a further
-  guard, both would observe it as stale and both would go on to spawn a
-  `preflight` process, exactly the double-preflight failure this closes.
-  This is closed by a second, narrower exclusive-create step, not by
-  checking staleness more carefully:
-  1. The reclaiming process first creates a takeover marker,
-     `path.join(verdictDir(), \`${sanitizeVerdictId(id)}.lock.takeover\`)`,
-     via the same exclusive, create-if-absent open used for the lock
-     itself. Exactly one of any number of racing reclaimers succeeds;
-     every other reclaimer's create fails, and that process falls back to
-     the join path, since it no longer believes the lock is free.
-  2. The process whose takeover marker was created re-reads the stale
-     lock file's bytes and verifies they are byte-identical to the ones it
-     originally observed as stale. A change here means a different
-     process already completed a takeover (or the original holder is
-     somehow still live and rewrote its own lock) in the interim; this
-     reclaimer deletes its own takeover marker and re-joins as if the lock
-     had been live all along, never proceeding to the next step.
-  3. Only if the re-read matches does the reclaimer unlink the stale lock
-     and create the new lock, again via exclusive create, with its own
-     PID, start time, and new `attemptId`, then delete its takeover
-     marker.
-  4. Before spawning the `preflight` child, the reclaimer re-reads the
-     lock file it just created and verifies the bytes are its own (its
-     own PID and `attemptId`). Only on that confirmation does it spawn the
-     child; a mismatch means another process won a race in some other
-     window and this process instead joins that lock's `attemptId`.
-  5. A takeover marker is itself subject to the same stale-lock window: a
-     `.takeover` file older than the window (its own creator having died
-     or hung between steps 1 and 3) is reclaimable by a later process
-     through the identical exclusive-create procedure above, so a crash
-     mid-takeover cannot permanently wedge the id.
-  This makes "two processes both observe the same lock as stale" resolve
-  to exactly one process spawning a `preflight` process, never two (see
-  the acceptance-matrix row in section 10 and brief 01's added test).
-- Named failure modes: (a) the lock file exists but is malformed or
-  unparseable: treated as stale, reclaimed, and a diagnostic is logged;
-  (b) the recorded PID is alive but belongs to an unrelated process due to
-  PID reuse: indistinguishable from a live legitimate holder by the
-  liveness check alone, bounded only by the stale-lock timeout, which is
-  exactly why that timeout exists independent of PID liveness; (c) the
-  holding `grounding-mcp` process dies after acquiring the lock but before
-  its `preflight` child exits: the lock's PID (the parent) is now dead.
-  Per the parent-only invocation shape already established in section 1
-  (`evaluateSolution` itself calls `writeVerdict` synchronously after its
-  own `execFileAsync` call resolves, inside the SAME process that spawned
-  the child), NO process is ever left alive that could call `writeVerdict`
-  for this child's output once its parent is gone; there is no "eventual
-  write" for a later attempt's own write to race against, because nothing
-  will ever attempt that write on the dead parent's behalf. The actual
-  residual is simpler and total, not a race (corrected from a prior
-  round's claim; see section 9, blocker 2, for the full correction): the
-  orphaned child's output, whether it keeps running per section 5's
-  recommendation not to kill it, or dies when its stdout pipe breaks on
-  the parent's exit (platform-dependent, unverified here), is
-  unrecoverable either way; the run itself is wasted, consuming CPU/IO
-  until it exits, with nothing ever persisting its outcome. This is
-  bounded, not eliminated, by the stale-lock timeout: the lock is
-  dead-but-not-yet-stale for up to that window, after which a new,
-  independent attempt is licensed through the atomic-takeover procedure
-  above, entirely unaffected by whatever the orphan is still doing, since
-  the orphan was never going to write anything regardless; (d) two
-  acquisition attempts race at the OS-call level, whether acquiring a free
-  lock or reclaiming a stale one: resolved by the exclusive-create
-  primitive above (the lock file itself for a free-lock race, the
-  `.lock.takeover` marker for a stale-lock race), not by any
-  application-level check-then-set.
-- The holder PID recorded is the `grounding-mcp` process's own PID, not
-  the `preflight` child's PID: the liveness check's purpose is "is any
-  process still alive that is responsible for eventually finishing this
-  attempt and writing its result," which is the parent, not the child;
-  tracking the child's PID would make the lock read as live for as long
-  as an orphaned child survives even though nothing will ever act on its
-  output, which is a worse signal for callers deciding whether to wait.
-- Single-host assumption (closes review round 2 finding L2): this lock design is valid
-  only when every `grounding-mcp` process sharing a given `verdictDir()`
-  (section 1, `verdictDir`) runs on the SAME host, and that host's
-  filesystem provides an atomic, create-if-absent (O_EXCL-equivalent)
-  primitive for local files. This document makes no claim about a
-  `verdictDir()` shared across hosts (for example a network filesystem
-  whose create-if-absent semantics are not atomic, or are not even
-  well-defined, under concurrent writers from different hosts); that
-  configuration is out of scope. To make a cross-host mismatch detectable
-  rather than silently assumed away, the lock's own contents (alongside
-  PID, start time, `attemptId`) also record a host identifier (for
-  example `os.hostname()`); a lock whose recorded host identifier does
-  not match the CURRENT host is treated as stale regardless of its age or
-  its PID's apparent liveness (a PID number is meaningless across hosts),
-  and is reclaimed through the identical atomic-takeover procedure above,
-  never a separate code path.
+#### The primitive
+
+Mutual exclusion is DELEGATED to `proper-lockfile` (npm, 4.x), the same
+library the harness already uses for cross-process file locking, wrapped
+there as `withFileLock` in `harness/src/io/lock.ts`. This document does
+not define a lock protocol; it names the primitive, states how this design
+calls it, and cites the library's documented semantics for everything
+else. The semantics below were read from 4.1.2's `README.md` and
+`lib/lockfile.js`:
+
+- Acquisition is a `mkdir` of the lock path, which is the locked file's
+  path suffixed with `.lock` (`acquireLock`, `getLockFile`; README,
+  "Design"). `mkdir` is the atomicity primitive, chosen by the library
+  precisely because `O_EXCL` is unreliable on network filesystems. The
+  lock is therefore a DIRECTORY, and it carries no payload: no PID, no
+  attempt id, no host name, nothing this design has to parse or validate.
+- A lock already held by a live holder fails the acquisition with error
+  code `ELOCKED` (`acquireLock`).
+- Liveness is an mtime heartbeat, not a process probe: the holder refreshes
+  its lock's mtime on an interval (`updateLock`, `update` option,
+  defaulting to half the stale window), and any acquirer treats a lock
+  whose mtime is older than the stale window as stale (`isLockStale`,
+  `stale` option, default 10 s), removes it, and acquires it itself, all
+  inside the same `acquireLock` call. Reclaiming a stale lock is therefore
+  the library's operation, not this document's.
+- Compromise is detected and signalled: if the heartbeat finds the lock
+  gone, or keeps failing to refresh it past the stale threshold, or finds
+  the lock's mtime is no longer the one it wrote (`isMtimeOurs`, which is
+  the library's own ownership check), it marks the lock compromised and
+  calls the `onCompromised` callback with an
+  `ECOMPROMISED` error (`updateLock`, `setLockAsCompromised`). A refresh
+  failure that is neither of those is retried rather than escalated. The
+  default callback rethrows; this design supplies its own (below).
+- Release only ever releases the caller's OWN lock: `unlock` refuses a
+  path this process does not hold with `ENOTACQUIRED`, and a second
+  release with `ERELEASED`. "A process never deletes another process's
+  lock" is thus a property of the library, not a rule this document has to
+  state and hope implementors honor.
+- On process exit the library removes the locks that process held, EXCEPT
+  after `SIGKILL` or a VM fatal error such as out-of-memory (README,
+  "Graceful exit"). Those two cases leave a lock behind, and the stale
+  window above is what reclaims it.
+- The library documents what it does NOT detect (README, "Compromised"): a
+  lock directory removed by hand, after which someone else acquires the
+  lock; and two callers using different `stale`/`update` values for the
+  same path. Both are inherited by this design as accepted residuals
+  ("Residuals" below), cited rather than re-derived.
+
+#### Where the lock lives
+
+One lock per sanitized id, next to that id's marker and attempt log under
+`verdictDir()` (`packages/grounding-mcp/src/solution-verdict.ts`,
+`verdictDir`, `sanitizeVerdictId`). Because the library locks a PATH by
+creating `<path>.lock` beside it, the design must say which path it locks:
+a per-id ANCHOR FILE, suggested
+`path.join(verdictDir(), \`${sanitizeVerdictId(id)}.attempt-lock\`)`,
+created empty on first use, whose presence means nothing by itself and
+whose contents are never read. The lock the library then manages is that
+anchor's `.lock` directory.
+
+Two paths were rejected as the lock target, for reasons worth recording:
+the verdict marker itself (`verdictPath(id)`), because `invalidateVerdict`
+unlinks it (`solution-verdict.ts`, `invalidateVerdict`), so the locked
+path would come and go underneath the lock; and the attempt log
+(`<sanitizedId>.attempts.jsonl`), because compaction replaces it via
+`fs.rename` (section 6), which swaps the file out from under a
+`realpath`-resolved target. An anchor file that nothing else ever unlinks
+or renames avoids both. The harness's wrapper already establishes this
+exact shape: `ensureLockTarget` in `harness/src/io/lock.ts` creates the
+target file if absent and passes `realpath: false`, because the library's
+`realpath` option (default true) requires the locked path to exist.
+
+#### Acquisition, and what joining means
+
+- Acquire with NO retries. Every acquisition in this design, whether by
+  `solution_evaluate` starting an attempt, by a lookup running the
+  liveness check, or by the startup reconciliation pass, uses the
+  library's default `retries: 0`. Nothing in this design ever waits on a
+  lock.
+- Acquisition SUCCEEDS: this process owns the id. It appends the `start`
+  record (section 6) and spawns the `preflight` child, in that order, and
+  HOLDS the lock for the attempt's whole lifetime, releasing it only as
+  step 3 of the terminal write order below. That is what makes `ELOCKED`
+  mean "an attempt is live" for everyone else, and it is why the
+  heartbeat matters: a run longer than the stale window stays protected
+  only because the library keeps refreshing the lock's mtime underneath
+  it.
+- Acquisition fails with `ELOCKED`: a holder is alive. The caller JOINS.
+  It does not wait, does not retry, and never spawns a `preflight`
+  process. Joining means answering with the running attempt's `attemptId`,
+  read from the attempt log's LATEST `start` record for that sanitized id
+  (section 6), together with `status: "running"` and a `pollAfterMs`, so
+  the caller has a handle to poll exactly as the holder's own callers do.
+- Acquisition fails with `ELOCKED` but the log has no `start` record to
+  answer with: the response is `running-unconfirmed` (see "Write order and
+  crash windows" below), never a fabricated handle and never a second
+  spawn. This covers three real situations, all of which resolve on a
+  later poll: the holder acquired the lock and has not appended its
+  `start` record yet; the holder is a reconciliation pass rather than an
+  attempt (section 6, which is why compaction never takes the lock by
+  itself); or the log's newest `start` record already carries an outcome
+  record, which likewise means the current holder is not an attempt (an
+  abandoned lock after a `SIGKILL`, "Write order and crash windows"
+  below). This rule governs `solution_evaluate`'s spawn decision only. A
+  `solution_evaluate_status`/`_result` lookup does not need the lock to
+  answer a row that already carries an outcome record; it reads the log
+  and reports what is there, and consults the lock only for a row that
+  still reads `running` (section 6).
+- Acquisition fails with any other error: it is surfaced to the caller as
+  a failure of that call. An unreadable or unwritable `verdictDir()` is
+  not something this design papers over, and it is the same directory the
+  marker write already depends on.
+
+#### Compromise
+
+The design supplies an `onCompromised` callback rather than leaving the
+library's default (which rethrows into whatever context the heartbeat
+timer runs in). A holder whose lock is reported compromised has lost the
+right to act on behalf of that id, and behaves accordingly:
+
+1. It records a terminal outcome for its own attempt in the attempt log:
+   one `terminal` record with `status: "failed"` and `outcomeClass:
+   "compromised"` (section 6, record kind 2). The attempt's fate is
+   established and honest: it ran, and it lost its exclusivity before
+   finishing.
+2. It does NOT write the marker for that attempt. `writeVerdict` is not
+   called on behalf of a lock this process no longer holds. The check is a
+   flag set by `onCompromised` and read immediately before the
+   `writeVerdict` call in the terminal path (see the write order below).
+3. It returns an explicit error to its own caller, saying the attempt lost
+   its lock and no marker was written. It never returns a `completed`
+   result for a compromised attempt.
+4. It does not delete any lock. The lock it held is already gone or is now
+   someone else's; the library has already marked it released internally
+   (`setLockAsCompromised`), and a release call would return `ERELEASED`
+   or `ENOTACQUIRED` rather than removing a foreign lock.
+
+This is the honest form of the "ownership-checked release" a previous
+round tried to specify by hand (re-reading the lock file's bytes to prove
+they were still ours). The library already performs that check on every
+heartbeat, using its own mtime rather than file contents, and reports the
+answer through `onCompromised`; this design consumes that report instead
+of re-implementing it.
+
+One window is disclosed rather than closed: if the compromise
+notification arrives AFTER `writeVerdict` has already returned, the marker
+is already on disk and step 2 cannot un-write it. The attempt then records
+its real terminal outcome, with the lost lock noted in the record's
+`summary`. What that costs is bounded by the proportionality argument
+below: the worst case is the same one a duplicate run produces, and
+`evaluateGate` denies on every one of its outcomes.
+
+#### Release
+
+Release is the library's `release` function returned by its own `lock`
+call, called once, in the fixed write order below. It removes only this
+process's own lock (`unlock`, `ENOTACQUIRED` / `ERELEASED`), so no rule
+about "never release someone else's lock" needs to be enforced by this
+design at all.
+
+#### What round 4 removed
+
+Named explicitly, so a future revision does not reintroduce them by
+accident: the `.lock.takeover` marker file and its five-step takeover
+sequence; the byte-identity re-read of a stale lock; the recursive stale
+reclamation; the hand-specified heartbeat and its interval; the lock's own
+payload (PID, start time, `attemptId`, hand-rolled host identifier) and
+every check that parsed it; and the PID-liveness probe as the authority
+for whether an attempt is alive. Each of those
+either duplicated something `proper-lockfile` already does, or existed
+only to repair a race introduced by the previous item on the list. What
+replaces all of them is one call with `retries: 0` and two outcomes,
+acquired or `ELOCKED`.
+
+#### Residuals
+
+- `SIGKILL` or a VM fatal error leaves the lock directory behind (README,
+  "Graceful exit"). The library's stale window reclaims it on the next
+  acquisition attempt. Until then, callers join an attempt that is no
+  longer running and see `running` or `running-unconfirmed`; nothing
+  spawns a duplicate, and nothing writes a marker.
+- A lock removed by hand, or by an unrelated cleanup of `verdictDir()`,
+  followed by another acquirer, is not detected by the library and not
+  detected here (README, "Compromised"). Two `preflight` processes for one
+  id become possible in that case. It is bounded by the proportionality
+  argument below, not by a mechanism.
+- Mismatched `stale`/`update` values between two processes locking the
+  same path are likewise undetected (README, "Compromised"). This design's
+  mitigation is that every acquirer is the same code path with the same
+  configured values (brief 01); a mixed-version deployment against one
+  shared `verdictDir()` violates that assumption, and this document does
+  not claim to cover it.
+- The `grounding-mcp` process dies after acquiring the lock but before its
+  `preflight` child exits. Per the parent-only invocation shape
+  established in section 1 (`evaluateSolution` calls `writeVerdict`
+  synchronously after its own `execFileAsync` call resolves, in the SAME
+  process that spawned the child), no process is left alive that could
+  ever call `writeVerdict` for that child's output. The residual is total
+  loss, not a race: the orphan's run is wasted, consuming CPU and IO until
+  it exits or its broken stdout pipe kills it (platform-dependent,
+  unverified here, section 9 blocker 2), and its lock stops being
+  refreshed, so the id becomes acquirable again after the stale window.
+
+#### Single-host assumption (closes review round 2 finding L2)
+
+This design's invariant is stated PER HOST: it holds when every
+`grounding-mcp` process sharing a given `verdictDir()` (section 1,
+`verdictDir`) runs on the same host. The library itself advertises
+inter-machine locking on network filesystems (README, "Design"), and its
+`mkdir` strategy is chosen for exactly that case, so a cross-host
+deployment is not obviously broken; but its staleness test compares a
+remote file's mtime against the local clock (`isLockStale`), which makes
+the guarantee depend on clock agreement between hosts, and nothing about
+a cross-host `verdictDir()` was measured for this document. So the claim
+stays scoped to one host, and the previous round's hand-rolled host
+identifier inside the lock's payload is dropped rather than reworked:
+there is no payload any more, and a home-made host check would have been a
+second, weaker copy of a question the library already answers with its own
+strategy.
+
+#### Proportionality and the complexity budget
+
+Worth stating plainly, because successive review rounds of this document
+went into a lock protocol that was growing faster than the problem it
+solved: `evaluateGate` FAILS CLOSED on every outcome a duplicate run can
+produce. Its deny branches, in `packages/grounding-mcp/src/solution-verdict.ts`,
+function `evaluateGate`, are: no verdict marker readable for the id
+(`readVerdict` returns null both when the file is absent and when it is
+unparseable, `readVerdict`), the verdict is not `ready`, the current HEAD
+cannot be resolved (`currentHead === null`), and the verdict's `head` does
+not equal the current HEAD. A duplicated, interleaved, or half-written
+marker lands in one of those branches or is a valid marker at the current
+HEAD, which is the same answer a single run would have produced.
+
+Therefore the lock buys avoided waste (one `preflight` run instead of two)
+and a single in-flight handle callers can join. It does NOT buy gate
+safety, and no amount of additional protocol here would, because the gate
+does not consult the lock at all. That is this design's complexity budget:
+the cited primitive plus the join, compromise and release rules above. A
+future revision that finds a new residual should first ask whether the
+gate already fails closed on it, and re-inflate the protocol only if the
+answer is genuinely no.
+
+#### Forced retry while an attempt is running
+
+`forceNewAttempt: true` is refused (returns an error, starts nothing) when
+the acquisition for that `id` comes back `ELOCKED`. This is deliberate:
+honoring a forced new attempt against a still-running one would reintroduce
+exactly the race PR #211 documents as an accepted, NOT-closed residual:
+"Remove the prior marker for an evaluation id. A missing marker is already
+invalid. Other I/O errors are surfaced to the caller because an old marker
+may still remain usable. This is a sequential guarantee for writable marker
+storage; it does not serialize concurrent writers or repair id collisions."
+(full comment, `packages/grounding-mcp/src/solution-verdict.ts`, function
+`invalidateVerdict`, master `eefd18fe`). The lock in this section closes
+the "does not serialize concurrent writers" half of that disclosure for
+THIS design's own preflight-spawn race specifically: a genuinely
+independent new attempt for the same `id` is created only by a successful
+acquisition, so two `preflight` processes racing to invalidate and write
+the same marker for the same `id` cannot happen through this contract's
+own entry points. The "repair id collisions" half of that same disclosure
+remains explicitly out of scope (section 5, "Identifiers", "Keying"); this
+design neither introduces nor repairs it. A "cancel the in-flight attempt,
+then retry immediately" capability (killing the child process on request)
+is a separate capability this document does not design; it is listed as a
+dependency in the producer brief (section 10) for whoever wants true
+force-retry-while-running later.
 
 ### Write order and crash windows (closes review round 2 finding M2)
 
-When an attempt reaches a terminal state, the three writes involved happen
+When an attempt reaches a terminal state, the writes involved happen
 in this fixed order, never interleaved or reordered:
 
+0. The compromise flag is read (section 7, "Compromise"). If it is set,
+   steps 1 and 2 are replaced by a single `terminal` record with
+   `outcomeClass: "compromised"` and an explicit error to the caller, and
+   step 3 is skipped (there is no lock left to release).
 1. `writeVerdict` (existing code, `solution-verdict.ts`, unchanged by this
    design) persists the signed marker at `verdictPath(id)`, exactly as it
    does today.
 2. The attempt log's `terminal` record (section 6) is appended for this
    `attemptId`.
-3. The on-disk lock file for this `id` is deleted (released).
+3. The lock for this `id` is released, through the `release` function the
+   lock library returned to this process (section 7, "Release").
 
 A crash between any two of these steps is a real, disclosed residual, not
 a silently-ignored one:
 
 - Crash between (1) and (2): the marker is written and correct, but the
-  attempt log still shows `running`. The stale-lock window plus
+  attempt log still shows `running`. The lock library's stale window plus
   reconciliation/read-path liveness (section 6) eventually resolves this
   attempt's row to `unknown`, even though its marker was in fact written
   successfully; a caller relying on `solution_evaluate_result` for this
@@ -920,53 +1190,34 @@ a silently-ignored one:
   undercounts its own success. Not fully closed by this design; recorded
   here rather than silently assumed away.
 - Crash between (2) and (3): the attempt log correctly shows the terminal
-  outcome, but the lock file is left behind. The next process that finds
-  it sees a dead holder PID against an already-terminal log row (not
-  `running`), which the read-path liveness check or the next lock-acquire
-  attempt's sweep (section 6, "Reconciliation") reclaims immediately,
-  without waiting for the stale-lock window; there is no "maybe still
-  running" ambiguity left to protect against once the log row itself
-  already reads terminal.
+  outcome, but the lock is left behind (this is the `SIGKILL`/fatal-error
+  case; an ordinary process exit removes it, section 7, "The primitive").
+  Until the stale window elapses, an acquisition for that id comes back
+  `ELOCKED`. No caller is told a false `running`: a
+  `solution_evaluate_status`/`_result` lookup answers from the log, which
+  already reads terminal, and a `solution_evaluate` call, which cannot
+  acquire and must not serve a prior result in place of a fresh run
+  (section 8), returns `running-unconfirmed` with a poll hint. Once the
+  stale window elapses, the next acquisition reclaims the lock inside the
+  library. This design does not shortcut that window by deleting a lock it
+  does not hold, which is exactly the hand-rolled reclamation round 4
+  removed.
 
-Lookup for an id whose on-disk LOCK exists but whose attempt log has no
-row at all for that lock's `attemptId` (a crash between lock-acquisition
-and the log's own `start` record, or a lock for an id whose log file was
-never created): resolves to a distinct outcome, `running-unconfirmed`, not
-`running` and not `unknown`. A `running-unconfirmed` attempt is
-reclaimable exactly like a stale lock once the stale-lock window elapses,
-through the same atomic-takeover procedure, since there is no log row to
-consult for a liveness-independent terminal outcome; before that window
-elapses, a lookup by `id` still reports it (there is a live-looking lock,
-after all) but a lookup by that specific `attemptId` has nothing to join,
-since no in-memory registry entry exists either.
-`reconcileOrphanedAttempts()` sweeps for exactly this shape (lock present,
-no matching log row) at startup, per section 6, "Reconciliation".
-
-`forceNewAttempt: true` is refused (returns an error, starts nothing)
-while the on-disk lock for that `id` is held by a live (non-stale) holder.
-This is deliberate: honoring a forced new attempt against a still-running
-one would reintroduce exactly the race PR #211 documents as an accepted,
-NOT-closed residual: "Remove the prior marker for an evaluation id. A
-missing marker is already invalid. Other I/O errors are surfaced to the
-caller because an old marker may still remain usable. This is a
-sequential guarantee for writable marker storage; it does not serialize
-concurrent writers or repair id collisions." (full comment,
-`packages/grounding-mcp/src/solution-verdict.ts`, function
-`invalidateVerdict`, master `eefd18fe`). The on-disk
-lock in this section closes the "does not serialize concurrent
-writers" half of that disclosure for THIS design's own preflight-spawn
-race specifically: under this contract, a genuinely independent new
-attempt for the same `id` is only ever created after the on-disk lock for
-that `id` is confirmed free (live-holder check plus stale-lock timeout),
-so two `preflight` processes racing to invalidate and write the same
-marker for the same `id` cannot happen through this contract's own entry
-points. The "repair id collisions" half of that same disclosure remains
-explicitly out of scope (section 5, "Identifiers", "Keying"); this design
-neither introduces nor repairs it. A "cancel the in-flight attempt, then
-retry immediately" capability (killing the child process on request) is a
-separate capability this document does not design; it is listed as a
-dependency in the producer brief (section 10) for whoever wants true
-force-retry-while-running later.
+`running-unconfirmed` is the outcome for an id whose lock cannot be
+acquired while its attempt log has no `running` row to name (a crash
+between the acquisition and the log's own `start` record, a lock held by
+a reconciliation pass, an abandoned lock whose newest attempt already has
+an outcome record, or an id whose log file was never created). It is
+deliberately distinct from both `running` (this design will not invent an
+`attemptId` it cannot read) and `unknown` (nothing has been established
+about any attempt's fate). It resolves by itself: either the holder
+appends its `start` record and the next poll reads `running` with a real
+handle, or the holder was never an attempt and the next poll acquires the
+lock, or the lock goes stale and the library reclaims it on the next
+acquisition. No separate reclamation path exists for it, and none is
+needed. `reconcileOrphanedAttempts()` covers the same shape at startup
+(section 6, "Reconciliation"): a lock it can acquire has nothing running
+under it, and a lock it cannot acquire is someone else's business.
 
 ## 8. Trust boundary
 
@@ -999,9 +1250,34 @@ force-retry-while-running later.
   document made and which was already false for today's behavior.
   `solution_evaluate_status`/`_result` inherit exactly that same exposure,
   unchanged and un-widened, narrowed only by the `isLatestForId` gating
-  immediately above for a superseded attempt. No environment variable or
-  signing key path is exposed through any of these tools, today or under
-  this design.
+  immediately above for a superseded attempt. No signing key path is
+  exposed through any of these tools, today or under this design.
+- Persisting the error string DOES widen one thing, and it is the
+  durability rather than the content: two of today's error messages carry
+  environment-derived text that currently lives only in one response, and
+  section 6 writes it to a file that outlives the call. Both are in
+  `packages/grounding-mcp/src/solution-verdict.ts`, `evaluateSolution`:
+  on `ENOENT` the message embeds the resolved binary name, which is the
+  value of `SOLUTION_PREFLIGHT_BIN` whenever that variable is set
+  (`preflight binary not found (...)`); and on an invocation failure the
+  message is the underlying `execFile` error's own `message`
+  (`preflight invocation failed: ...`), which carries the command line
+  and can carry captured stderr. Three requirements follow, and they are
+  fixed here rather than left to the brief:
+  1. The persisted copy is truncated to the record bound in section 6,
+     which caps how much of an `execFile` message (stderr included) ever
+     reaches disk.
+  2. The attempt log file and the per-id lock anchor file (section 7) are
+     created with mode `0600`. This is deliberately narrower than the
+     verdict marker's own mode, which stays as it is: `writeVerdict`
+     calls `fs.writeFileSync` without a `mode` option
+     (`solution-verdict.ts`, `writeVerdict`), so the marker inherits the
+     process umask default, and the harness reads it back through
+     `readVerdict` (`harness/src/policy-packs/builtin/solution-acceptance-runtime.ts`).
+     Changing the marker's mode is out of scope for this document; the
+     new files this design adds do not inherit that choice by default.
+  3. Nothing in the log is treated as sanitized for display. It is
+     advisory history, like `diagnostics`, and never gate input.
 - Joining an in-flight attempt is explicitly NOT the "cache reuse" the
   playbook document (`verification-handoff-first-slice.md`) and the OKF
   contract doc warn against. It dedupes only an already-physically-running
@@ -1043,13 +1319,13 @@ blockers rather than papered over:
    reliably survives its parent `grounding-mcp` process exiting (crash or
    deliberate restart) was not verified against this platform's actual
    process-group behavior. This risk is now bounded, not eliminated, by
-   section 7's on-disk lock: if the parent dies while its child preflight
-   survives orphaned, the lock is dead-but-not-yet-stale for at most the
-   stale-lock timeout, after which a new attempt is licensed through the
-   atomic-takeover procedure (section 7). CORRECTED from a prior round's
+   section 7's lock: if the parent dies while its child preflight
+   survives orphaned, the lock stops being refreshed and the next
+   acquirer reclaims it once the library's stale window elapses, inside
+   the library (section 7, "The primitive"). CORRECTED from a prior round's
    claim (finding M3, review round 2): since `evaluateSolution` calls
    `writeVerdict` only inside the SAME process that spawned the child
-   (section 1; section 7, failure mode (c)), an orphaned child never
+   (section 1; section 7, "Residuals"), an orphaned child never
    itself produces a competing marker write for a later attempt's write to
    race against; nothing is ever left alive to make that write on the dead
    parent's behalf. The actual, disclosed residual is total loss, not a
@@ -1059,15 +1335,20 @@ blockers rather than papered over:
    here). PR #211's own disclosed "does not serialize concurrent writers"
    residual (quoted in section 7) concerns a DIFFERENT scenario, two LIVE
    processes both calling `invalidateVerdict`/`writeVerdict` for the same
-   id at nearly the same time, which this design's on-disk lock closes for
+   id at nearly the same time, which this design's lock closes for
    its own entry points (section 7); it is not the same risk as an
    orphaned child, and this document no longer conflates the two. This
    affects both the "restart" and the "two client sessions, same id" rows
    of the acceptance matrix and the recommendation in section 5 not to
    kill child processes on disconnect; if orphaned processes turn out to
-   accumulate unbounded even under the stale-lock bound, that
+   accumulate unbounded even under the stale-window bound, that
    recommendation needs revisiting together with the retention policy in
-   section 5.
+   section 5. Sizing this blocker against the proportionality fact in
+   section 7: an orphaned child cannot produce a marker at all (nothing
+   is left alive to call `writeVerdict`), and `evaluateGate` denies on a
+   missing, unparseable, not-ready, or HEAD-mismatched marker, so what is
+   at stake here is wasted CPU and a temporarily unacquirable id, never a
+   gate that opens when it should not.
 3. Whether a real MCP stdio session between grounding-mcp and Claude Code
    or Codex ever actually delivers a transport-level disconnect or
    `notifications/cancelled` mid-call (as opposed to the process pair
@@ -1081,8 +1362,10 @@ blockers rather than papered over:
 4. The exact bound used inside `solution_evaluate` before it falls back to
    returning a handle (configurable, with a documented default; section 5
    fixes only the invariant that it must not assume the SDK's 60 s
-   constant, not a number), the stale-lock timeout (section 7), and the
-   retention/rotation numbers for the in-memory registry and the on-disk
+   constant, not a number), the `stale` and `update` values passed to the
+   lock library (section 7), the dependency decision that adds that
+   library to `@lannguyensi/grounding-mcp`, and the retention/rotation
+   numbers for the in-memory registry and the on-disk
    attempt log (fixed only by the invariant in section 5 that retention
    exceeds `pollAfterMs`) are implementation-brief decisions, deliberately
    left open here.
@@ -1097,14 +1380,15 @@ blockers rather than papered over:
 | Transport disconnect / cancellation mid-run | Child process is not killed (section 5, flagged blocker); attempt remains queryable once terminal | Producer brief test plus blocker 3, section 9 |
 | Process failure (crash, signal, unexpected exit) | Attempt terminal state `failed`; existing `preflightOutcomeError`/marker-invalidation behavior unchanged; new log entry `failed` | Existing `tests/solution-verdict.test.ts` cases (for example "keeps a signal termination visible in diagnostics...") plus new attempt-log assertions; see brief 01 |
 | Malformed preflight output | Attempt terminal state `failed`, unchanged parser/diagnostics behavior (`parsePreflightJson`, `inspectPreflightPayload`) | Existing `tests/solution-verdict.test.ts` cases plus new attempt-log assertions; see brief 01 |
-| Server restart mid-attempt | Old `attemptId` resolves to `unknown` ONLY once startup reconciliation OR a read-path liveness check confirms the holder PID is dead (section 6); a later independent attempt for the same `id` is licensed only once the on-disk lock is confirmed free (blocker 2, section 9, for the orphan-process question), never merely because the reported status reads `unknown` | Producer brief test simulating registry loss plus reconciliation; see brief 01 |
-| Holder dies AFTER another process already reconciled a different, earlier attempt for the same id (holder death not caught by the last startup) | A read-path liveness check on the CURRENT lookup (not only the startup pass) catches the dead holder and appends `reconciled-unknown` for THIS attempt, exactly once, independent of when the last restart happened | Producer brief test simulating a second holder death observed only via a live lookup, not startup; see brief 01 |
-| Two processes both observe the same stale lock at nearly the same time | Exactly one process completes the takeover (`.lock.takeover` exclusive create) and spawns a `preflight` process; the other re-reads, finds it lost the takeover race, and joins the winner's `attemptId` | Producer brief stale-lock double-takeover test; see brief 01 |
-| Lock present, no corresponding attempt-log row (crash between lock-acquire and the log's own `start` record) | Lookup resolves to `running-unconfirmed`, never `running` forever and never `unknown`; reclaimable exactly like a stale lock once the stale-lock window elapses, via the same atomic-takeover procedure | Producer brief lock-without-log-row test; see brief 01 |
+| Server restart mid-attempt | Old `attemptId` resolves to `unknown` ONLY once startup reconciliation OR a read-path liveness check has acquired that id's lock over a still-`running` row (section 6); a later independent attempt for the same `id` is licensed only by a successful acquisition (blocker 2, section 9, for the orphan-process question), never merely because the reported status reads `unknown` | Producer brief test simulating registry loss plus reconciliation; see brief 01 |
+| Holder dies AFTER another process already reconciled a different, earlier attempt for the same id (holder death not caught by the last startup) | A read-path liveness check on the CURRENT lookup (not only the startup pass) acquires that id's lock over the still-`running` row and appends `reconciled-unknown` for THIS attempt, exactly once, independent of when the last restart happened | Producer brief test simulating a second holder death observed only via a live lookup, not startup; see brief 01 |
+| Two processes both find the same abandoned lock | Reclamation happens inside `proper-lockfile`'s own acquisition (stale mtime, remove, re-acquire), so exactly one acquisition succeeds and the other gets `ELOCKED` and joins; this design contributes no reclamation code of its own | Library behavior, cited (section 7, "The primitive"); no test of this design's own is owed for it |
+| Holder's lock is reported compromised mid-run (`onCompromised`) | The holder writes NO marker for that attempt, records a `terminal` record with `outcomeClass: "compromised"`, and returns an explicit error to its caller | Producer brief compromised-holder test; see brief 01 |
+| Lock present, no corresponding attempt-log row (crash between acquisition and the log's own `start` record) | Lookup resolves to `running-unconfirmed`, never `running` forever and never `unknown`; it resolves by itself once the holder appends its `start` record, or once the library reclaims the lock as stale on a later acquisition | Producer brief lock-without-log-row test; see brief 01 |
 | `solution_evaluate_result` answered by a process that does not own the attempt in its in-memory registry (cross-process or post-restart), for a completed and for a failed attempt | Response uses the documented reduced shape (`outcomeClass`, `summary`, persisted `error` string for a failure; `verdict`/`markerPath` only when `isLatestForId` and `markerPresent` both hold), never the full same-process `EvaluateResult` shape | Producer brief cross-process payload-shape test (completed and failed); see brief 01 |
 | Concurrent starts for the same id, SAME process | Exactly one `preflight` process; the second caller joins and receives the same `attemptId` | Producer brief unit test asserting a single child-process invocation across two concurrent calls; see brief 01 |
-| Two client sessions, same id (cross-process) | Exactly one `preflight` process across BOTH processes; the second process's `grounding-mcp` finds the on-disk lock live, joins by returning the lock's `attemptId`, and never spawns its own child | Producer brief test with two real `grounding-mcp` processes, or one process plus a pre-written lock file simulating the other holder; see brief 01 |
-| Retry after a caller's own timeout | If the on-disk lock for that id is still live, the retry joins it (no duplicate, same `attemptId`); if the lock is free (prior attempt terminal, or stale-lock timeout elapsed), the retry is a genuinely new attempt with its own log entry | Producer brief test covering both sub-cases; see brief 01 |
+| Two client sessions, same id (cross-process) | Exactly one `preflight` process across BOTH processes; the second process's acquisition returns `ELOCKED`, so it joins by answering with the `attemptId` from the log's latest `start` record and never spawns its own child | Producer brief test with two real `grounding-mcp` processes, or one process plus a lock held by the test itself; see brief 01 |
+| Retry after a caller's own timeout | If the acquisition returns `ELOCKED`, the retry joins (no duplicate, same `attemptId`); if the acquisition succeeds (prior attempt terminal, or the lock reclaimed as stale by the library), the retry is a genuinely new attempt with its own log entry | Producer brief test covering both sub-cases; see brief 01 |
 | Cleanup | Terminal attempts age out of the in-memory registry and are compacted in the on-disk log after their retention window, which exceeds the advertised `pollAfterMs` by a stated margin (section 5) | Producer brief test with an injectable clock; see brief 01 |
 | Retention prunes a formerly-terminal attempt | Lookup resolves to `expired`, never `unknown`; does not license a new attempt bypass (lock-liveness still governs) | Producer brief pruned-before-poll test; see brief 01 |
 | `solution_evaluate_result` for a superseded attempt | Response carries `isLatestForId: false` and omits `verdict`/`markerPath`; only status, outcome class, and summary are returned | Producer brief test asserting result-retrieval authority for a non-latest attempt; see brief 01 |
@@ -1119,20 +1403,26 @@ document. Their real labels, after this round's changes:
    The brief's own label was already "implementation-ready" before the
    first review round, but that assessment predated review round 1
    catching its own finding H1 (the in-memory lock's cross-process
-   unsoundness; distinct from review round 2's finding H1, the stale-lock
-   takeover race, closed in section 7 above); it was correct in its own
+   unsoundness); it was correct in its own
    terms only because it had not yet been checked against the fact that
    grounding-mcp runs one process per client. That design gap is now
-   closed by section 7's on-disk lock, so the label is re-confirmed here,
-   not merely carried forward. The one remaining open item is the orphan
+   closed by section 7's lock, so the label is re-confirmed here,
+   not merely carried forward. Round 4 shrinks this brief rather than
+   growing it: the hand-written lock protocol it was to implement is
+   replaced by calls into `proper-lockfile`, and the tests for the
+   takeover sequence go away with the sequence itself. Two open items
+   remain. The first is the orphan
    child-process kill-vs-survive question (blocker 2, section 9), which
    this brief ships against with a documented default (do not kill) and a
-   bounded residual (the stale-lock timeout); that item was already
+   bounded residual (the library's stale window); that item was already
    flagged, unresolved, before this round and stays unresolved, but bounded
-   rather than open-ended, after it. This is an explicit call, not an
-   oversight: the lock design itself is accepted here; only the
-   platform-behavior question around orphaned children remains open, and
-   it does not block starting implementation.
+   rather than open-ended, after it. The second is new in round 4 and is
+   an operator decision rather than a design gap: adding `proper-lockfile`
+   as a runtime dependency of `@lannguyensi/grounding-mcp`. The brief
+   states the fallback if that is refused (tolerate duplicates and detect
+   them through the log alone, accepting the wasted run the
+   proportionality argument in section 7 already bounds). Neither item
+   blocks starting implementation.
 2. `02-client-polling-integration.md`: the harness policy-pack prompt text
    and README updates that teach a solving agent when to poll versus retry,
    plus the standard-progress ergonomics layer from section 3 (the sibling
@@ -1168,7 +1458,16 @@ number) so it can be checked directly: `packages/grounding-mcp/src/server.ts`
 `sanitizeVerdictId`, `verdictPath`, `EvaluateResult`),
 `harness/src/policy-packs/builtin/solution-acceptance-runtime.ts`
 (`readVerdict`), and the installed `@modelcontextprotocol/sdk@1.30.0`
-`.d.ts` files cited in `t006-client-capabilities.md`. Claims about local
+`.d.ts` files cited in `t006-client-capabilities.md`. Section 7's lock
+semantics are cited the same way, against the library rather than
+re-derived: `proper-lockfile` 4.1.2, `lib/lockfile.js` (`acquireLock`,
+`getLockFile`, `isLockStale`, `updateLock`, `setLockAsCompromised`,
+`unlock`, `check`) and its `README.md` sections "Design", "Compromised",
+"Graceful exit", and the `.lock` option list; plus this org's existing
+wrapper, `harness/src/io/lock.ts` (`withFileLock`, `ensureLockTarget`).
+Every behavior section 7 attributes to the library is checkable in one of
+those, and anything section 7 asserts beyond them is stated as this
+design's own rule, not as library behavior. Claims about local
 client configuration cite the exact config file and key path, kept in
 `t006-client-capabilities.md` rather than this document (section 2). The
 Claude Code capability claims in section 2 are measured, not assumed: the
