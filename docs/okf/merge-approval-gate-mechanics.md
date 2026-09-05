@@ -1,7 +1,7 @@
 ---
 type: runbook
 title: Merge-approval gate — labels, keys, and when it actually blocks
-description: How the merge-approval Check-Run maps five review:* PR labels to merge_approval booleans, keys evidence by the PR HEAD BRANCH NAME, and blocks only when required in branch protection — which on agent-grounding master it is not, so it is advisory in fact today.
+description: How the merge-approval Check-Run maps five review:* PR labels to merge_approval booleans, keys evidence by the PR HEAD BRANCH NAME, and blocks only when required by an applicable branch-protection rule or ruleset.
 tags: [merge-approval, review-claim-gate, ci, runbook, labels]
 timestamp: 2026-09-05T00:00:00Z
 sources:
@@ -25,10 +25,10 @@ true for `allowed: true` / score 100 (`README.md:36#"Missing prereqs surface in"
 The action is pinned by SHA, not a floating tag:
 
 ```
-uses: LanNguyenSi/agent-grounding/packages/review-claim-gate/action@97dfa51c5b278048dd6ec1006a6866977398a3cc # review-claim-gate-v0.1.5
+uses: LanNguyenSi/agent-grounding/packages/review-claim-gate/action@cd3971866e48050514bfa5056bcb7e1d79615bd7 # review-claim-gate-v0.1.6
 ```
 
-(`merge-approval.yml:47#"review-claim-gate-v0.1.5"`; the referenced `packages/review-claim-gate/action/`
+(`merge-approval.yml:47#"review-claim-gate-v0.1.6"`; the referenced `packages/review-claim-gate/action/`
 directory exists and contains `action.yml`.)
 
 ## What it reads: the five labels → booleans
@@ -101,32 +101,33 @@ follow-up task `5ea6d7cf` tracks history).
 ## When it actually blocks (two states — know which is live)
 
 The Check-Run is **only** a hard merge gate when `merge-approval` is listed in
-the branch's **required status checks** in branch protection
+an applicable branch-protection rule or ruleset's **required status checks**
 (`merge-approval-rollout.md:6-8#"until the gate returns"`, `README.md:180-185#"the verdict as a Check-Run lives in"`). There are two states:
 
 - **Hard gate (end state the rollout doc describes).** `merge-approval` is a
   required check on `master`; a red / `allowed: false` verdict blocks the Merge
   button until all five prereqs are satisfied and the check flips to ALLOWED
   (`merge-approval-rollout.md:6-8#"until the gate returns"`, 99-100).
-- **Advisory in fact (the live state on agent-grounding today).** Verified by the
-  orchestrator via the GitHub API on 2026-07-10: agent-grounding's `master` is
-  **not branch-protected**, so `merge-approval` is **not** a required check. The
-  Check-Run still posts and can go red, but **a red merge-approval does not block
-  a merge** right now. The rollout doc correctly describes the hard-gate *end
-  state*; it is not yet wired.
+- **Advisory in fact (the live state on agent-grounding as of 2026-09-05).**
+  `master` has a ruleset that requires pull requests, but no
+  `required_status_checks` rule. `merge-approval` is therefore not a required
+  check. The Check-Run still posts and can go red, but **a red
+  merge-approval does not block a merge** right now. The rollout doc correctly
+  describes the hard-gate *end state*; it is not yet wired.
 
-**How to tell which one is live:** inspect the branch's required status checks.
+**How to tell which one is live:** inspect the branch's applicable rulesets and
+branch-protection required status checks.
 
 ```bash
 gh api repos/LanNguyenSi/agent-grounding/branches/master/protection \
   --jq '.required_status_checks.contexts'
 ```
 
-If the call 404s / errors "Branch not protected", or the returned list does not
-contain `merge-approval`, the gate is **advisory** — a red check is informational
-and does not stop the merge. If the list contains `merge-approval`, it is a
-**hard gate**. To promote it to a hard gate, add `merge-approval` (alongside the
-existing `ci`) to the required checks per `merge-approval-rollout.md:53-81#"alongside it.)"`
+If neither an applicable ruleset nor branch protection requires
+`merge-approval`, the gate is **advisory** — a red check is informational and
+does not stop the merge. If either requires it, it is a **hard gate**. To
+promote it to a hard gate, add `merge-approval` (alongside the existing `ci`)
+to the required checks per `merge-approval-rollout.md:53-81#"alongside it.)"`
 (requires Admin).
 
 ## How to make it pass legitimately
