@@ -94,7 +94,7 @@ jobs:
         # scripts/fixtures/okf-selectors/ against the new version (see
         # that directory's README.md) or the "okf-kit selector-coupling
         # check" step below fails loud on a version mismatch.
-        run: npm install -g okf-kit@0.9.0
+        run: npm install -g okf-kit@0.9.0 --no-audit --no-fund
 
       - name: Assert CLI is alive (output, not exit code)
         shell: bash
@@ -333,7 +333,7 @@ jobs:
         run: npm run test:check-lockfile-integrity
 
       - name: Install
-        run: npm ci
+        run: npm ci --no-audit --no-fund
 
       - name: Pin consistency check
         # Asserts every internal @lannguyensi/* dependency pin across
