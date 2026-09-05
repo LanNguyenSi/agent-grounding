@@ -9,6 +9,19 @@
   diagnostics preserve the parsed payload and report availability, execution outcome,
   shape completeness, and issues without becoming signed or gate authority.
 
+### Changed
+
+- `solution_evaluate` accepts a preflight verdict only for exit `0` plus
+  `ready:true`, or exit `1` plus `ready:false`, with no signal or invocation
+  error. It validates the independent verdict core (`ready`, finite bounded
+  `confidence`, string-array `blockers`, and no blockers when ready) before
+  producing a marker. Diagnostics remain advisory and preserve additive fields.
+  Every valid-id re-evaluation invalidates an earlier same-id marker before an
+  error return or marker write, including signing/write failures. If deletion
+  itself fails, the error states that the old marker may remain; the guarantee
+  is sequential for writable marker storage and does not cover concurrent
+  writers or id collisions.
+
 ## 0.10.0, 2026-09-04
 
 ### Added

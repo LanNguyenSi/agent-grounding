@@ -54,6 +54,8 @@ The verdict marker is the contract a consumer (e.g. harness, gating task-finishi
 
 The MCP response also includes advisory `diagnostics` for that same fresh preflight invocation. `diagnostics.payload` preserves the original parsed JSON, including additive fields, while `availability`, `complete`, `execution` (`exitCode`, `signal`, and an optional error), and `issues` explain whether the documented preflight result shape was present. A complete diagnostic requires `ready`, `confidence`, `checks`, `blockers`, `warnings`, `limitations`, `durationMs`, and `timestamp`, with valid nested check fields. It also records execution anomalies such as an unexpected exit code or signal. `complete` does not mean `ready`, sufficient coverage, independently trusted evidence, or cacheability; acknowledged and skipped checks remain visible in the payload.
 
+Verdict production has a smaller mandatory core: the payload must be an object with a boolean `ready`, a finite `confidence` in `[0,1]`, and a string-array `blockers`; a ready result must have no blockers. The only accepted execution pairings are exit `0` with `ready:true` and exit `1` with `ready:false`, with no signal or execution error. Any other exit, signal, invocation error, malformed JSON, or malformed core returns an error and cannot produce a ready verdict. Advisory-field incompleteness stays in diagnostics and does not create another verdict policy.
+
 Diagnostics are response-only: they are neither part of the verdict nor written into, signed in, or consumed from the marker. `solution_evaluate` starts one preflight process only after its id and HEAD checks pass; it does not rerun preflight to produce diagnostics.
 
 When a caller already has complete diagnostics, it may omit a duplicate run only when the repository, working directory, configuration, required coverage, tool, and environment scope are identical and unchanged, and all installed requirements remain honored. This does not authorize caching or reusing diagnostics as evidence.
@@ -63,9 +65,9 @@ Anti-hacking contract:
 1. **Derived, not claimed**: `ready` comes from preflight's real run; the caller supplies no result.
 2. **Producer != solver**: `solution_evaluate` runs preflight; evaluation arguments supply neither check results nor configuration overrides. preflight loads the repository's configured policy, including its clean-state checks.
 3. **HEAD-pinned**: a verdict counts only at the HEAD it was produced at; any rework shifts HEAD and invalidates a green verdict.
-4. **No stale green**: a not-ready run overwrites a prior green marker.
+4. **No stale green**: each valid-id evaluation removes its prior same-id marker before returning an error or writing its new verdict. This is a sequential guarantee when marker storage is writable; a deletion I/O error is returned explicitly and the old marker may remain. It does not serialize concurrent writers or repair id collisions.
 
-The marker lives outside the agent-writable evidence-ledger on purpose (a ledger row is forgeable via `ledger_add`). Requirements / knobs: the `preflight` binary on `PATH` (override with `SOLUTION_PREFLIGHT_BIN`); fails closed (writes no verdict) when preflight is unavailable.
+The marker lives outside the agent-writable evidence-ledger on purpose (a ledger row is forgeable via `ledger_add`). Requirements / knobs: the `preflight` binary on `PATH` (override with `SOLUTION_PREFLIGHT_BIN`). For writable marker storage, a failed valid-id evaluation removes its earlier same-id marker before returning an error; if deletion fails, the error says the old marker may remain.
 
 ### Verdict marker signing (0.8.0)
 
