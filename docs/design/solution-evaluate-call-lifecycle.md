@@ -53,6 +53,38 @@ bounds this design's complexity budget: `evaluateGate` fails closed on
 every duplicate-run outcome, so the lock buys wasted CPU and a single
 in-flight handle, never gate safety.
 
+Revision (round 5, bounded closing delta; the orchestrator has decided a
+merge-hold after this round, leaving the dependency confirmation and the
+merge itself to the operator): the round-4 headline invariant and the
+"Release" bullet in section 7 overstated what `proper-lockfile` actually
+guarantees; the library's `unlock` consults only its own in-process
+registry, never the lock directory's on-disk identity, so a holder whose
+heartbeat is starved past the stale window can have its release remove a
+different, later holder's lock rather than its own (reproduced with two
+real processes). The invariant is now scoped to hold only while every
+holder's heartbeat keeps its lock fresh, and this residual, together with
+the README's own "Compromised" section quoted in full, is recorded in
+section 7. Section 6's "retry never upgrades unknown" guarantee is
+corrected from a write-side check to a reader-side precedence rule: the
+write-side re-read the attempt log's `terminal` record performed before
+appending is an optimization, not the guarantee, because the writer no
+longer holds the lock by the time it runs; the actual guarantee, that any
+`reconciled-unknown` record for an `attemptId` supersedes a later
+`terminal` record for the same `attemptId` regardless of order, is now
+stated as a reader rule every consumer of the log must implement. The
+sibling task (tracker `8c9a99fc`) is re-measured and found landed: PR #212
+merged to master as `df9722d` (2026-09-05 20:02:33Z), adding progress-ping
+support this document's section 1 and section 3 now cite instead of
+describing as absent or as a coordination risk; section 10 and brief 02
+are rescoped accordingly, from "implement progress pings" to "document
+what shipped". A `running-unconfirmed` bullet is added to section 5's
+state list (it already existed in section 7's prose; section 5's list was
+missing it). Section 7's "Where the lock lives" now states plainly that
+the anchor file exists only for parity with the harness's own
+`ensureLockTarget` convention and path stability, that nothing reads it,
+that it need not even exist for `lock()` to succeed under `realpath:
+false`, and that no code may make behavior conditional on its existence.
+
 ## Why this document exists
 
 `solution_evaluate` (`packages/grounding-mcp/src/server.ts`, tool
@@ -91,13 +123,28 @@ marker: a second call for the same `id` starts a second, fully independent
 **Server / MCP transport** (`packages/grounding-mcp/src/server.ts`): the
 `solution_evaluate` tool registration is a plain
 `server.tool('solution_evaluate', description, schema, handler)` call (the
-SDK's legacy shorthand). The handler awaits `evaluateSolution` fully and
-returns its result as one JSON-in-text response
-(`jsonResponse(result)`, defined near the top of `server.ts`). No progress
-notifications are sent, no `_meta.progressToken` is read, and the SDK's
+SDK's legacy shorthand). Re-measured for round 5 (`gh pr view 212`, `git
+log --oneline -1 df9722d`): the handler's await of `evaluateSolution` is
+now wrapped, since PR #212 (master `df9722d`, merged 2026-09-05
+20:02:33Z), in `withProgressPings` (`packages/grounding-mcp/src/progress.ts`,
+`DEFAULT_PROGRESS_INTERVAL_MS`); if the caller's request carries
+`_meta.progressToken`, the handler now DOES ping `notifications/progress`
+on it periodically while `evaluateSolution` is still pending, and reads
+`_meta.progressToken` to do so. A caller that supplies no token gets no
+pings, per the SDK's own "not obligated" language (section 3). This
+document's own prior claim, "No progress notifications are sent, no
+`_meta.progressToken` is read", is corrected by this measurement; see
+section 3 for the sibling task's now-landed state. The handler still
+awaits `evaluateSolution` to a terminal result either way today (there is
+no bounded-wait fallback yet; that is what this document's own section 4
+and 5 add) and returns its result as one JSON-in-text response
+(`jsonResponse(result)`, defined near the top of `server.ts`). The SDK's
 default per-request timeout (60 s, `DEFAULT_REQUEST_TIMEOUT_MSEC` in the
 installed `@modelcontextprotocol/sdk@1.30.0`,
-`dist/esm/shared/protocol.js`) is therefore unmodified for this call. See
+`dist/esm/shared/protocol.js`) is unmodified by any of this: sending a
+progress ping does not itself change any client's own timeout behavior,
+and no client this document measures resets its deadline on them today
+(section 2). See
 `t006-client-capabilities.md` (this task's run-evidence file, kept
 out-of-repo under this workspace's `.ai/runs/` tree, not part of the
 agent-grounding repository) for the exact SDK file citations.
@@ -170,24 +217,27 @@ support the latter.
 
 ## 3. What "standard progress" solves, and what it does not
 
-The sibling task (agent-grounding tracker id `8c9a99fc`) proposes adding
+The sibling task (agent-grounding tracker id `8c9a99fc`) proposed adding
 standard MCP progress
 notifications during `solution_evaluate`, mirroring the pattern already
 shipped in `agent-preflight/src/mcp.ts` (`withProgressPings`,
 `DEFAULT_PROGRESS_INTERVAL_MS = 10_000`): if the caller supplied
 `_meta.progressToken`, ping it periodically while the child process runs.
-Its own state, measured 2026-09-05 19:36Z with `git branch -a --list
-'*8c9a99fc*'`, `git log --oneline master..feat/8c9a99fc-evaluate-progress`,
-`git ls-remote --heads origin '*8c9a99fc*'`, and `gh pr list --search
-8c9a99fc --state all`: a local branch `feat/8c9a99fc-evaluate-progress`
-exists on this machine and carries two commits that are not on `master`
-(a progress-notification implementation plus a follow-up fix); no remote
-branch matches, and no PR exists in any state. A prior round of this
-document claimed the branch had no unique commits, which that
-re-measurement contradicts; the corrected reading is that the work exists
-locally and has never been pushed or proposed. Treat the task as started
-but not landed anywhere shared, and coordinate with whoever owns that
-branch rather than duplicating it.
+Re-measured for round 5, 2026-09-05, with `gh pr view 212
+--json number,title,mergedAt,createdAt,mergeCommit` and `git log --oneline
+-1 df9722d`: that work has LANDED. PR #212, opened 2026-09-05 19:38:29Z
+from branch `feat/8c9a99fc-evaluate-progress` (the same branch a prior
+round of this document found only locally present, never pushed), merged
+2026-09-05 20:02:33Z as master `df9722d`, adding exactly
+`packages/grounding-mcp/src/progress.ts` (`withProgressPings`,
+`DEFAULT_PROGRESS_INTERVAL_MS`) and `_meta.progressToken` handling wired
+into the `solution_evaluate` handler in `server.ts` (section 1), plus its
+own test coverage in `tests/grounding-gate-mcp-roundtrip.test.ts`. A prior
+round of this document reported the branch as started but not landed
+anywhere shared; this round's re-measurement supersedes that finding
+rather than merely restating it. There is no longer a sibling task to
+coordinate with; the coordination need this section previously described
+is closed.
 
 This is a real, low-risk, additive improvement, and this design treats it
 as a complementary layer, not a substitute:
@@ -216,9 +266,10 @@ Standard progress is therefore the right mechanism for keeping a single
 patient, still-connected caller's timeout from firing during the common
 case (a run that finishes in, say, 90 seconds and the caller stays
 connected the whole time). It is not, by itself, a call lifecycle. Section
-4 below builds the lifecycle underneath it, and recommends still sending
-progress pings on the synchronous fast path as an ergonomics layer over
-that lifecycle, not instead of it.
+4 below builds the lifecycle underneath it; the progress pings themselves
+already ship today (PR #212, above), independently of and ahead of that
+lifecycle, as an ergonomics layer over the synchronous fast path, not a
+substitute for it.
 
 ## 4. Alternatives considered for the lifecycle contract
 
@@ -409,6 +460,22 @@ orthogonal to attempt status; a `false`-ready verdict is still a
   the same "does not license a bypass" rule as `unknown`: an `expired`
   prior attempt does not itself license a new attempt for that `id`; the
   lock-liveness check in section 7 still governs.
+- `running-unconfirmed` (new): non-terminal, an `id`-level status only,
+  never carries an `attemptId` (there is nothing to name: this is exactly
+  the case where the log has no `start` record to answer with). Reserved
+  for a lock that cannot be acquired while no `running` log row for that
+  sanitized id can be found to name it (section 7, "Acquisition, and what
+  joining means"): a crash between an acquisition and the log's own
+  `start` record, a lock currently held by a reconciliation pass rather
+  than an attempt, or an abandoned lock whose newest attempt row already
+  carries an outcome record. Carries a poll hint (`pollAfterMs`), the same
+  as `running` does, so a caller sees this is not an error; it is not a
+  licence to retry either, since a `solution_evaluate` call still cannot
+  acquire the lock while this state holds and must not spawn a second
+  process (section 7). It resolves by itself on a later poll: either the
+  holder appends its `start` record and the next poll reads `running` with
+  a real handle, or the lock goes stale and the library reclaims it on the
+  next acquisition. See section 7 for the full derivation.
 
 ### Tools
 
@@ -658,8 +725,24 @@ Each line is one self-contained JSON record, appended via an `O_APPEND`
 open; a record already written is NEVER mutated in place, only ever
 superseded by a LATER record for the same `attemptId`. A reader loads the
 whole file, groups records by `attemptId`, and for each id takes the LAST
-record appended (last-record-wins); "the latest attempt for `id`" is the
-attempt whose `start` record has the latest `startedAt` among the
+record appended (last-record-wins), WITH ONE READER-SIDE EXCEPTION: if any
+`reconciled-unknown` record exists anywhere among an `attemptId`'s
+records, that attempt resolves to `unknown` regardless of what any record
+appended later for the same `attemptId` says, superseding last-record-wins
+for that one `attemptId` specifically. This is a READER rule, enforced by
+every consumer of the log, not a write-order guarantee: the write-side
+re-read described under record kind 2 below (a `terminal` write skips
+itself when a `reconciled-unknown` record for its own `attemptId` is
+already present) is an optimization that reduces how often a stale write
+is even attempted, but it cannot BE the guarantee, because the writer no
+longer holds that id's lock by the time it performs this re-read (section
+7; a `reconciled-unknown` record for a still-live attempt is written only
+once the writer no longer holds the lock in the first place), so the
+writer's own read-then-append is not atomic against a concurrent append
+the way the reconciliation pass's read-then-append under the lock is. The
+reader rule above is what actually closes "retry never upgrades unknown
+to success", not the write-side check alone. "The latest attempt for `id`"
+is the attempt whose `start` record has the latest `startedAt` among the
 attemptIds still present (not yet compacted away, below).
 
 Every record carries `attemptId`, `id`, and a `kind`. Exactly four kinds
@@ -693,9 +776,16 @@ exist:
    this `attemptId`, when that attempt's own `evaluateSolution` invocation
    resolves; before appending, that process re-reads the log for its own
    attemptId and skips the append if a `reconciled-unknown` record for it
-   is already present (see kind 3; this is what keeps a late-arriving
-   terminal write from ever overriding an already-reconciled `unknown`,
-   section 9's corrected residual explains when this can actually occur).
+   is already present (see kind 3). This re-read is an OPTIMIZATION, not
+   the guarantee: it reduces how often a stale `terminal` record is even
+   attempted, but the writer no longer holds that id's lock by the time it
+   performs this re-read (section 7), so the read and the append are not
+   atomic with each other the way a lock-held reconciliation append is.
+   The actual guarantee that a late-arriving terminal write can never
+   upgrade an already-`reconciled-unknown` attempt is the READER-side
+   precedence rule stated above under "Log file layout"; section 9's
+   corrected residual explains when a late terminal write can actually
+   occur despite this write-side check.
 3. `reconciled-unknown`: written for an `attemptId` whose last record is
    still `start` (`running`) at a moment when that id's lock is provably
    free, by either `reconcileOrphanedAttempts()` at startup or the
@@ -803,8 +893,13 @@ a `reconciled-unknown` record for every still-`running` row of that id,
 inside the acquisition, exactly once per attemptId per the guard in kind 3
 above, then releases. Because the append happens under the lock, a holder
 that is still alive can never have its own row reconciled out from under
-it, and two reconcilers cannot both append: the race the prior round
-resolved with a precedence rule is removed rather than adjudicated. The
+it, and two reconcilers cannot both append for the same `attemptId`: the
+second one to acquire the lock finds the `reconciled-unknown` record
+already there and appends nothing (kind 3, "exactly one ... record may
+ever exist"). That is the race this acquisition closes, the WRITER race
+for the `reconciled-unknown` record itself; a separately-arriving
+`terminal` write for the same `attemptId` is handled by the reader-side
+precedence rule above ("Log file layout"), not by this acquisition. The
 pass additionally sweeps for a LOCK whose id has no corresponding log row
 at all (a crash between lock acquisition and the `start` record's append):
 if that lock can be acquired, there is nothing to reconcile and the id is
@@ -845,11 +940,14 @@ This satisfies the tracker's requirement directly:
   `terminal` OR `reconciled-unknown` record, appended only by its own
   process (or, for `reconciled-unknown` only, by a reconciliation pass);
   no attempt's outcome record is ever touched by a different attempt.
-- Retry never upgrades `unknown` to success: a `reconciled-unknown`
-  record, once written, is never followed by a `terminal` record for the
-  same `attemptId` (the write-order guard in kind 2 above); a later,
+- Retry never upgrades `unknown` to success: guaranteed by the READER-side
+  precedence rule ("Log file layout" above), not by the write-side
+  re-read in kind 2 (which is an optimization only): once any
+  `reconciled-unknown` record exists for an `attemptId`, every reader
+  resolves that `attemptId` to `unknown` regardless of any `terminal`
+  record physically appended afterward for the same `attemptId`. A later,
   independent attempt for the same `id` gets its own new `attemptId` and
-  its own new records.
+  its own new records, unaffected either way.
 - Retry never silently launches a duplicate process: guaranteed
   structurally by the join-in-flight rule (section 7), which makes a
   genuinely new attempt possible only when an acquisition of that `id`'s
@@ -874,11 +972,19 @@ itself, a cross-process guarantee (see below).
 ### Cross-process concurrency (delegated to a lock library, revised in round 4)
 
 The invariant, and the whole of what this design promises across
-processes: AT MOST ONE LIVE `preflight` PROCESS PER SANITIZED ID PER HOST.
-Nothing more is claimed. In particular this is not a gate-safety property
-(see "Proportionality and the complexity budget" at the end of this
-section); it buys a caller a single in-flight handle to join and saves the
-machine from running the same expensive verification twice.
+processes: AT MOST ONE LIVE `preflight` PROCESS PER SANITIZED ID PER HOST
+WHILE EACH HOLDER'S HEARTBEAT KEEPS ITS LOCK FRESH. Nothing more is
+claimed, and the qualifier is load-bearing, not decorative: a holder whose
+heartbeat is starved (a busy event loop, laptop sleep, `SIGSTOP`) past the
+stale window before it notices its own compromise can be reclaimed by a
+second acquirer, producing two live `preflight` processes for the same id
+plus a spurious `terminal` record with `outcomeClass: "compromised"` for
+the first holder's attempt even though that attempt may still be
+genuinely running (see "Residuals" below). In particular this is not a
+gate-safety property (see "Proportionality and the complexity budget" at
+the end of this section); it buys a caller a single in-flight handle to
+join and saves the machine from running the same expensive verification
+twice, in the common case where every holder's heartbeat keeps up.
 
 An in-memory lock cannot provide it. grounding-mcp uses
 `StdioServerTransport` (`server.ts`, imported at the top of the file and
@@ -924,20 +1030,40 @@ else. The semantics below were read from 4.1.2's `README.md` and
   `ECOMPROMISED` error (`updateLock`, `setLockAsCompromised`). A refresh
   failure that is neither of those is retried rather than escalated. The
   default callback rethrows; this design supplies its own (below).
-- Release only ever releases the caller's OWN lock: `unlock` refuses a
-  path this process does not hold with `ENOTACQUIRED`, and a second
-  release with `ERELEASED`. "A process never deletes another process's
-  lock" is thus a property of the library, not a rule this document has to
-  state and hope implementors honor.
+- Release checks only this process's OWN in-memory record of holding the
+  lock: `unlock` (`lib/lockfile.js`) looks up `locks[file]`, a per-process
+  registry keyed by canonical path, never re-reading the lock directory's
+  on-disk identity; a path this process's own registry has no entry for
+  fails with `ENOTACQUIRED`, and a second release with `ERELEASED`. This
+  is NOT the same guarantee as verifying, at release time, that the lock
+  directory on disk is still the one this process created. If this
+  process's heartbeat is starved long enough (a busy event loop, laptop
+  sleep, `SIGSTOP`) that a second acquirer reclaims the lock as stale
+  before this process's own heartbeat resumes and marks itself
+  compromised, this process's later `release()` call still finds its own
+  `locks[file]` entry, still calls through to the library's lock-removal
+  path, and removes the SECOND holder's lock directory, not its own
+  (reproduced with two real processes for this round; see "Residuals"
+  below). "A process never deletes another process's lock" therefore does
+  NOT hold unconditionally; it holds only while a holder's own heartbeat
+  keeps discovering compromise before that holder releases, which is
+  exactly the residual named below.
 - On process exit the library removes the locks that process held, EXCEPT
   after `SIGKILL` or a VM fatal error such as out-of-memory (README,
   "Graceful exit"). Those two cases leave a lock behind, and the stale
   window above is what reclaims it.
-- The library documents what it does NOT detect (README, "Compromised"): a
-  lock directory removed by hand, after which someone else acquires the
-  lock; and two callers using different `stale`/`update` values for the
-  same path. Both are inherited by this design as accepted residuals
-  ("Residuals" below), cited rather than re-derived.
+- The library documents both what it does NOT detect and what it DOES
+  detect (README, "Compromised"). NOT detected: a lock directory removed
+  by hand, after which someone else acquires the lock; and two callers
+  using different `stale`/`update` values for the same path. DETECTED,
+  quoted in full: "Updates to the lockfile fail" and "Updates take longer
+  than expected, possibly causing the lock to become stale for a certain
+  amount of time." That second detected case is exactly the
+  starved-heartbeat trigger named above: detection (the heartbeat noticing
+  it is compromised) and this process's own release are two separate code
+  paths, and the residual below is that release can run to completion
+  before detection ever catches up. All four are inherited by this design
+  as accepted residuals ("Residuals" below), cited rather than re-derived.
 
 #### Where the lock lives
 
@@ -962,6 +1088,19 @@ or renames avoids both. The harness's wrapper already establishes this
 exact shape: `ensureLockTarget` in `harness/src/io/lock.ts` creates the
 target file if absent and passes `realpath: false`, because the library's
 `realpath` option (default true) requires the locked path to exist.
+
+The anchor file's own existence exists for parity with the harness's
+`ensureLockTarget` convention and for path stability, not because anything
+in this design reads it: nothing ever opens, stats for content, or
+branches on the anchor file itself, only on the `.lock` directory the
+library manages beside it. Because this design passes `realpath: false`
+(matching `ensureLockTarget`), the anchor need not even exist for `lock()`
+to succeed; only its PARENT directory (`verdictDir()`) must, since
+acquisition is a `mkdir` of `<anchor path>.lock`, not an open of the
+anchor itself. Removing the anchor file while a lock is held is therefore
+harmless. No code in this design may make any behavior conditional on the
+anchor file's own existence; if a future revision wants to store anything
+readable, it belongs in the attempt log (section 6), not in this file.
 
 #### Acquisition, and what joining means
 
@@ -1067,6 +1206,26 @@ acquired or `ELOCKED`.
 
 #### Residuals
 
+- A holder whose heartbeat is starved (a busy event loop, laptop sleep,
+  `SIGSTOP`) past the `stale` window, while it is still logically running,
+  can have its lock reclaimed as stale by a second acquirer before the
+  starved holder's own heartbeat resumes and reports itself compromised.
+  When the starved holder does resume, its own release call ("Release"
+  above) does not re-verify on-disk ownership and removes the SECOND
+  holder's lock directory instead of its own (reproduced with two real
+  processes for this round). The result is two live `preflight` processes
+  for one id, plus a spurious `terminal` record with `outcomeClass:
+  "compromised"` for the first holder's attempt even though that attempt
+  may still be genuinely running to a correct result of its own. This is
+  bounded, not eliminated, by brief 01's `stale: 30_000` choice, whose own
+  stated reasoning is to trade reclamation latency against tolerating a
+  stalled event loop (brief 01, "Constraints", "Why 30 s"); a larger
+  `stale` value narrows the starvation window this residual needs but
+  cannot close it, since any finite window admits an arbitrarily long
+  stall. `evaluateGate` still fails closed on whatever either attempt's
+  marker outcome turns out to be (see "Proportionality and the complexity
+  budget" above), which is what keeps this a wasted-run residual rather
+  than a gate-safety one.
 - `SIGKILL` or a VM fatal error leaves the lock directory behind (README,
   "Graceful exit"). The library's stale window reclaims it on the next
   acquisition attempt. Until then, callers join an attempt that is no
@@ -1425,22 +1584,23 @@ document. Their real labels, after this round's changes:
    blocks starting implementation.
 2. `02-client-polling-integration.md`: the harness policy-pack prompt text
    and README updates that teach a solving agent when to poll versus retry,
-   plus the standard-progress ergonomics layer from section 3 (the sibling
-   task `8c9a99fc`'s scope, sequenced after brief 01 lands). Status:
-   **split**, unchanged in kind from the prior round: section A
-   (documentation) is implementation-ready; section B (progress pings) is
-   safe to implement but its VALUE claim stays qualified per client (now
-   confirmed unhelpful for Claude Code specifically, still unconfirmed for
-   Codex/opencode; see the brief's own updated cross-reference to section
-   2). Neither brief was marked `blocked-on-<x>` in review round 1's own
-   revision of this text, despite an earlier draft's summary claiming so;
-   that was the correction made in the prior round, scoped to that prior
-   revision only. Brief 02's OWN header, as of this round, DOES carry an
-   explicit `blocked-on-client-capability-verification` label, but only
-   for section B's VALUE claim, not its safety, and not for section A,
-   which stays implementation-ready; brief 02's own header text is
-   authoritative over this summary paragraph should the two ever again
-   appear to diverge.
+   plus documentation of the standard-progress ergonomics layer from
+   section 3, which has ITSELF now shipped independently of this design
+   (PR #212, master `df9722d`, the sibling task `8c9a99fc`'s own scope,
+   merged 2026-09-05 20:02:33Z, ahead of and independent from brief 01).
+   Status: **split**, RESCOPED this round: section A (documentation) is
+   still implementation-ready. Section B is NO LONGER an implementation
+   task, because the ergonomics layer this document recommended already
+   exists in master; brief 02's section B is rescoped from "implement
+   progress pings" to "document what shipped" (README guidance for
+   callers, and the per-client value caveats this section and section 2
+   already state: Claude Code is measured NOT to extend its deadline on
+   these pings, Codex/opencode remain unconfirmed). Brief 02's OWN header,
+   as of this round, reflects the rescoping directly rather than carrying
+   forward a stale `blocked-on-client-capability-verification`
+   implementation label for work that already merged; brief 02's own
+   header text is authoritative over this summary paragraph should the two
+   ever again appear to diverge.
 
 Both live in this task's run directory
 (`.ai/runs/2026-09-05-open-pool-batch37/t006-briefs/`), outside this repo,
