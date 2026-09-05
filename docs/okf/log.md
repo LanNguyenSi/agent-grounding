@@ -1164,3 +1164,9 @@
   re-pinned. `okf-kit check --require-anchors --json docs/okf` reported 0 errors, 0 warnings, and 1 nonblocking
   notice for the new untracked helper source; `check:okf-test-citation-shape`
   and its test both passed (one check each).
+
+- 2026-09-05T17:04:29Z, diagnostics review correction (task 60930b4e):
+  completeness now documents bounded confidence and canonical UTC timestamp
+  validation, and the duplicate-run condition now names its full unchanged
+  scope. Re-pinned the helper, MCP test, and README references after the
+  reviewed source/test additions; prior validation evidence remains unchanged.

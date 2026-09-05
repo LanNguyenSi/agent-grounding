@@ -3,7 +3,7 @@ type: invariant
 title: Evidence-ledger session keys — one opaque column, two conventions
 description: The ledger `session` is a single opaque TEXT column; grounding-mcp keys it by a generated `gs-*` id while the merge-approval CI Action keys it by the PR head branch name, so evidence written under one key is invisible to a reader expecting the other.
 tags: [evidence-ledger, sessions, keys, ci, mcp]
-timestamp: 2026-09-05T16:52:20Z
+timestamp: 2026-09-05T17:04:29Z
 sources:
   - packages/evidence-ledger/src/types.ts
   - packages/evidence-ledger/src/db.ts

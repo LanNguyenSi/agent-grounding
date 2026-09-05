@@ -24,7 +24,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -740,6 +740,42 @@ describe('solution_evaluate — MCP roundtrip', () => {
     expect(result.verdict?.ready).toBe(true);
     expect(result.diagnostics).toMatchObject({ availability: 'available', complete: false, execution: { exitCode: 2 } });
     expect(result.diagnostics.issues).toContain('preflight ready=true requires exit code 0, got 2');
+  });
+
+  it('preserves the fresh technical payload when an OW blocker changes only the verdict', async () => {
+    const payload = {
+      ready: true, confidence: 0.9, blockers: [], additive: { preserved: true },
+    };
+    const run = join(repo, '.ai', 'runs', '2026-05-30-blocked');
+    mkdirSync(run, { recursive: true });
+    writeFileSync(join(run, '06-handoff.md'), '<!-- solution-acceptance: final-status = blocked -->\nblocked\n');
+    writeFileSync(join(run, '05-review-findings.md'), '<!-- solution-acceptance: acceptance-recommendation = accept -->\naccept\n');
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-ow-blocked-mcp.sh',
+      `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(payload)}'\n`,
+    );
+    const raw = await client.callTool({ name: 'solution_evaluate', arguments: { id: 'mcp-ow-blocked', repoPath: repo } });
+    const result = parseToolResult(raw) as {
+      verdict: { ready: boolean; blockers: string[] } | null;
+      diagnostics: { payload: unknown; availability: string; complete: boolean };
+    };
+    expect(result.verdict?.ready).toBe(false);
+    expect(result.verdict?.blockers.some((blocker) => blocker.startsWith('orchestrator-workflow:'))).toBe(true);
+    expect(result.diagnostics).toMatchObject({ availability: 'available', complete: false, payload });
+  });
+
+  it('does not invoke preflight before id and HEAD validation, then invokes it once', async () => {
+    const counter = join(tmpRoot, 'mcp-preflight-count');
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-counter-mcp.sh',
+      `#!/bin/sh\nprintf x >> '${counter}'\necho '{"ready":true,"confidence":0.9,"blockers":[]}'\n`,
+    );
+    await client.callTool({ name: 'solution_evaluate', arguments: { id: '..', repoPath: repo } });
+    expect(existsSync(counter)).toBe(false);
+    await client.callTool({ name: 'solution_evaluate', arguments: { id: 'mcp-no-head', repoPath: tmpRoot } });
+    expect(existsSync(counter)).toBe(false);
+    await client.callTool({ name: 'solution_evaluate', arguments: { id: 'mcp-one-call', repoPath: repo } });
+    expect(readFileSync(counter, 'utf8')).toBe('x');
   });
 
   it('preflight binary missing: returns structured {error, verdict:null} — not isError', async () => {

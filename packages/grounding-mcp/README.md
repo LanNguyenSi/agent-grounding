@@ -56,6 +56,8 @@ The MCP response also includes advisory `diagnostics` for that same fresh prefli
 
 Diagnostics are response-only: they are neither part of the verdict nor written into, signed in, or consumed from the marker. `solution_evaluate` starts one preflight process only after its id and HEAD checks pass; it does not rerun preflight to produce diagnostics.
 
+When a caller already has complete diagnostics, it may omit a duplicate run only when the repository, working directory, configuration, required coverage, tool, and environment scope are identical and unchanged, and all installed requirements remain honored. This does not authorize caching or reusing diagnostics as evidence.
+
 Anti-hacking contract:
 
 1. **Derived, not claimed**: `ready` comes from preflight's real run; the caller supplies no result.

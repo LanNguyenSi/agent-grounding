@@ -341,6 +341,38 @@ describe('evaluateSolution (producer)', () => {
     expect(res.diagnostics).toMatchObject({ availability: 'unavailable', complete: false, execution: { exitCode: 1 } });
   });
 
+  it('records exit 0 when malformed output is unavailable', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub('stub-garbage-exit0.sh', '#!/bin/sh\necho not-json\n');
+    const res = await evaluateSolution('task-1', repo);
+    expect(res.error).toContain('not parseable JSON');
+    expect(res.diagnostics).toMatchObject({ availability: 'unavailable', complete: false, execution: { exitCode: 0, signal: null } });
+  });
+
+  it.each(['null', '1'])('keeps parseable scalar JSON %s available while returning the legacy error', async (scalar) => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub('stub-scalar.sh', `#!/bin/sh\necho '${scalar}'\n`);
+    const res = await evaluateSolution('task-1', repo);
+    expect(res.verdict).toBeNull();
+    expect(res.error).toContain('not parseable JSON');
+    expect(res.diagnostics).toMatchObject({ availability: 'available', complete: false, payload: JSON.parse(scalar) });
+    expect(res.diagnostics?.issues).toContain('preflight JSON payload must be an object');
+  });
+
+  it('keeps a signal termination visible in diagnostics without changing the parsed legacy verdict', async () => {
+    const payload = {
+      ready: true, confidence: 0.9,
+      checks: [{ name: 'lint', kind: 'lint', status: 'pass', durationMs: 1, confidenceContribution: 0.1 }],
+      blockers: [], warnings: [], limitations: [], durationMs: 1, timestamp: '2026-05-30T00:00:00.000Z',
+    };
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-signal.sh',
+      `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(payload)}'\nkill -TERM $$\n`,
+    );
+    const res = await evaluateSolution('task-1', repo);
+    expect(res.verdict?.ready).toBe(true);
+    expect(res.diagnostics).toMatchObject({ availability: 'available', complete: false, execution: { signal: 'SIGTERM' }, payload });
+    expect(res.diagnostics?.issues).toContain('preflight ended with signal SIGTERM');
+  });
+
   it('fails closed when preflight exits non-zero with no output', async () => {
     process.env.SOLUTION_PREFLIGHT_BIN = writeStub('stub-empty.sh', '#!/bin/sh\nexit 1\n');
     const res = await evaluateSolution('task-1', repo);

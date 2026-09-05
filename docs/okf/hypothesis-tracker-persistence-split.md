@@ -3,7 +3,7 @@ type: invariant
 title: Hypothesis state — one library, two consumers, two persistence shapes
 description: hypothesis-tracker is a pure in-memory library; grounding-mcp keeps a disk-backed LRU cache under ~/.grounding-mcp/hypotheses/ (since PR #139) while understanding-gate persists to hypotheses.json, and inside the library addEvidence and supportHypothesis disagree on whether required_checks gate promotion.
 tags: [hypothesis-tracker, persistence, grounding-mcp, understanding-gate]
-timestamp: 2026-09-05T16:52:20Z
+timestamp: 2026-09-05T17:04:29Z
 sources:
   - packages/hypothesis-tracker/src/lib.ts
   - packages/grounding-mcp/src/hypothesis-store.ts
@@ -84,7 +84,7 @@ writers save via `saveStore` (atomic tmp+rename, `hypothesis-store.ts:165-171#"r
 server.ts's `hypothesis_*` verbs call after every successful mutation (`server.ts:391#"saveStore(sessionId, store);"`, :437,
 :469, :491, :518). **A grounding-mcp process restart no longer loses hypothesis state** — it
 now has disk backing at parity with the session store and the evidence ledger
-(`packages/grounding-mcp/README.md:163#"the root cause is the backend container's missing OPENAI_API_KEY env var"`).
+(`packages/grounding-mcp/README.md:165#"the root cause is the backend container's missing OPENAI_API_KEY env var"`).
 
 The in-process Map is LRU-bounded. `getMaxSessions()` (`hypothesis-store.ts:190-195#"return parsed;"`)
 reads `GROUNDING_HYPOTHESIS_MAX_SESSIONS` lazily per call. **Default is `200`**; unset, empty,

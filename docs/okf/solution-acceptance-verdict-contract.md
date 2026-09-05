@@ -3,7 +3,7 @@ type: invariant
 title: Solution-acceptance verdict contract — why the marker lives outside the ledger
 description: A "done" verdict is derived from a real preflight+OW run, HEAD-pinned, and written to an XDG state marker outside the agent-writable evidence-ledger because ledger rows are forgeable via ledger_add.
 tags: [solution-acceptance, verdicts, anti-hacking, trust-boundary]
-timestamp: 2026-09-05T16:52:20Z
+timestamp: 2026-09-05T17:04:29Z
 sources:
   - packages/grounding-mcp/src/solution-verdict.ts
   - packages/grounding-mcp/src/preflight-diagnostics.ts
@@ -65,16 +65,19 @@ the process `execution` (`exitCode`, `signal`, and an optional error), `complete
 properties, while checking the documented result shape. It marks diagnostics
 unavailable when preflight did not produce usable JSON, and it records an unexpected
 exit, signal, or execution error as an issue. See
-`preflight-diagnostics.ts:71-102#"return {"` and
-`preflight-diagnostics.ts:111-113#"availability: 'unavailable'"`.
+`preflight-diagnostics.ts:77-110#"return {"` and
+`preflight-diagnostics.ts:119-121#"availability: 'unavailable'"`.
 
 `complete` means the diagnostic shape and its observed process outcome are internally
-consistent. It does **not** mean `ready`, adequate test coverage, independently trusted
-evidence, or a cacheable result. A complete diagnostic can describe a not-ready run;
-skipped and acknowledged checks remain visible in the preserved payload. A same-scope,
-identical duplicate direct evaluation may omit a run only after the previous result was complete
-and understood, its context is unchanged, and the installed requirements permit that
-reuse. Diagnostics themselves never grant that permission.
+consistent: confidence is finite and within `[0,1]`, and the timestamp is a canonical
+UTC ISO string that survives date parsing and serialization. It does **not** mean
+`ready`, adequate test coverage, independently trusted evidence, or a cacheable result.
+A complete diagnostic can describe a not-ready run; skipped and acknowledged checks
+remain visible in the preserved payload. A same-scope, identical duplicate direct
+evaluation may omit a run only after the previous result was complete and understood,
+the repository, working directory, configuration, coverage, tool, and environment are
+unchanged, and the installed requirements permit that reuse. Diagnostics themselves
+never grant that permission.
 
 ## Where it's enforced
 

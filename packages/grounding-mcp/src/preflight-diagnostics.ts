@@ -45,6 +45,12 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
 
+function isCanonicalUtcTimestamp(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && date.toISOString() === value;
+}
+
 function validateCheck(check: unknown, index: number, issues: string[]): void {
   const prefix = `checks[${index}]`;
   if (!isRecord(check)) {
@@ -78,7 +84,9 @@ export function inspectPreflightPayload(payload: unknown, execution: PreflightEx
     issues.push('preflight JSON payload must be an object');
   } else {
     if (typeof payload.ready !== 'boolean') issues.push("preflight JSON is missing a boolean 'ready' field");
-    if (!isFiniteNumber(payload.confidence)) issues.push('preflight confidence must be a number');
+    if (!isFiniteNumber(payload.confidence) || payload.confidence < 0 || payload.confidence > 1) {
+      issues.push('preflight confidence must be a number between 0 and 1');
+    }
     if (!Array.isArray(payload.checks)) {
       issues.push('preflight checks must be an array');
     } else {
@@ -88,8 +96,8 @@ export function inspectPreflightPayload(payload: unknown, execution: PreflightEx
     if (!isStringArray(payload.warnings)) issues.push('preflight warnings must be a string array');
     if (!isStringArray(payload.limitations)) issues.push('preflight limitations must be a string array');
     if (!isFiniteNumber(payload.durationMs) || payload.durationMs < 0) issues.push('preflight durationMs must be a non-negative number');
-    if (typeof payload.timestamp !== 'string' || Number.isNaN(Date.parse(payload.timestamp))) {
-      issues.push('preflight timestamp must be an ISO date string');
+    if (!isCanonicalUtcTimestamp(payload.timestamp)) {
+      issues.push('preflight timestamp must be a canonical UTC ISO date string');
     }
     if (typeof payload.ready === 'boolean' && execution.exitCode !== null && execution.signal === null) {
       const expectedExitCode = payload.ready ? 0 : 1;
