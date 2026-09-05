@@ -42,7 +42,7 @@ import { ledgerDb, ledgerStatus } from './ledger-bridge.js';
 import { deriveContext } from './derive-context.js';
 import { getOrCreateStore, getStore, resetStore, saveStore } from './hypothesis-store.js';
 import { evaluateSolution, evaluateGate, getHeadSha } from './solution-verdict.js';
-import { withProgressPings, DEFAULT_PROGRESS_INTERVAL_MS } from './progress.js';
+import { withProgressPings, DEFAULT_PROGRESS_INTERVAL_MS, DEFAULT_PROGRESS_MESSAGE } from './progress.js';
 
 // Single source of truth for the version string emitted by both the
 // MCP `name+version` handshake and the `--version` CLI short-circuit.
@@ -128,8 +128,22 @@ const evidenceTextSchema = z
 // can hook a fresh server up to an InMemoryTransport without triggering
 // the CLI `main()` path that opens stdio.
 
+// `raw` is untrusted caller input (options.progressIntervalMs), not just an
+// optional number: anything that is not a positive finite number (0,
+// negative, NaN, Infinity, a non-number) falls back to the default instead
+// of reaching `setInterval` — a non-positive interval would otherwise flood
+// the client with notifications. Exported so it is unit-testable without
+// standing up a full server.
+export function resolveProgressIntervalMs(raw: unknown): number {
+  return typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_PROGRESS_INTERVAL_MS;
+}
+
+// `progressIntervalMs` is test-oriented: it exists so the MCP-roundtrip
+// progress tests can use a short real interval (e.g. 20ms) instead of
+// waiting out the ~10s production default. Production callers should not
+// set it.
 export function createServer(options: { progressIntervalMs?: number } = {}): McpServer {
-  const progressIntervalMs = options.progressIntervalMs ?? DEFAULT_PROGRESS_INTERVAL_MS;
+  const progressIntervalMs = resolveProgressIntervalMs(options.progressIntervalMs);
 
   const server = new McpServer({
     name: 'grounding-mcp',
@@ -330,6 +344,7 @@ export function createServer(options: { progressIntervalMs?: number } = {}): Mcp
         extra,
         () => evaluateSolution(id, repoPath ?? process.cwd()),
         progressIntervalMs,
+        DEFAULT_PROGRESS_MESSAGE,
       );
       return jsonResponse(result);
     },

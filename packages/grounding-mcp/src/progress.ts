@@ -23,6 +23,11 @@ export type ToolExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 // same "avoid the SDK's 60s default request timeout" motivation).
 export const DEFAULT_PROGRESS_INTERVAL_MS = 10_000;
 
+// Default ping message. solution_evaluate is the only caller today, so this
+// reads as solution_evaluate-specific, but the `message` parameter below
+// lets a future caller override it instead of forking the helper.
+export const DEFAULT_PROGRESS_MESSAGE = 'solution_evaluate still running';
+
 /**
  * Runs `work` to completion. While it is pending, if the caller attached a
  * `progressToken` (`_meta.progressToken`), pings the client with a
@@ -30,7 +35,11 @@ export const DEFAULT_PROGRESS_INTERVAL_MS = 10_000;
  * is a plain passthrough to `work()`, unchanged.
  *
  * No token means no timer is ever started (not just "no notification sent"
- * — `vi.getTimerCount()` in the test suite asserts this directly).
+ * — `vi.getTimerCount()` in the test suite asserts this directly). The same
+ * holds when `extra.signal` is already aborted before this call even starts:
+ * `work()` still runs (this helper never kills or skips the underlying
+ * work), but no timer is created and no listener is attached, since there is
+ * no point pinging a caller that has already given up.
  *
  * The timer is always cleared before this function returns or throws
  * (`finally`), and also as soon as `extra.signal` aborts (the SDK's
@@ -56,14 +65,25 @@ export const DEFAULT_PROGRESS_INTERVAL_MS = 10_000;
  * `intervalMs` is a parameter (not a module-level constant) so tests can
  * inject a short interval, or fake timers can drive many virtual ticks,
  * without waiting out the real ~10s default.
+ *
+ * `message` is a parameter (default `DEFAULT_PROGRESS_MESSAGE`) so this
+ * helper can be reused by a future caller with different wording, instead
+ * of the message being hardcoded here despite the header's reuse claim.
  */
 export async function withProgressPings<T>(
   extra: ToolExtra,
   work: () => Promise<T>,
   intervalMs: number = DEFAULT_PROGRESS_INTERVAL_MS,
+  message: string = DEFAULT_PROGRESS_MESSAGE,
 ): Promise<T> {
   const progressToken = extra._meta?.progressToken;
   if (progressToken === undefined) {
+    return work();
+  }
+  if (extra.signal?.aborted) {
+    // Already cancelled before we even started: no timer, no listener, just
+    // run work() (unchanged from the non-aborted path — this helper never
+    // kills or skips the underlying work).
     return work();
   }
 
@@ -77,7 +97,7 @@ export async function withProgressPings<T>(
         params: {
           progressToken,
           progress,
-          message: 'solution_evaluate still running',
+          message,
         },
       })
       .catch(() => {});

@@ -5,7 +5,8 @@
 ### Added
 
 - `solution_evaluate` sends standard MCP `notifications/progress` pings while its
-  single synchronous preflight invocation is running, mirroring agent-preflight's
+  single preflight invocation (in-band with the request: awaited, not
+  backgrounded) is running, mirroring agent-preflight's
   own `withProgressPings` convention: only when the request carries a
   `progressToken` (no token means no timer at all, not just no notification), a
   monotonically increasing tick count every ~10s (configurable for tests via

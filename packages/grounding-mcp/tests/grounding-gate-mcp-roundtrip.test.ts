@@ -15,6 +15,15 @@
 //   solution_evaluate, solution_gate
 //   verify_memory_reference
 //
+// Also covers, in two dedicated blocks further below (not MCP-roundtrip
+// tests in the same sense as the above — see each block's own intro
+// comment): the `withProgressPings — unit` block (src/progress.ts's timer
+// helper, exercised directly against a fake `ToolExtra` plus vitest fake
+// timers, and `resolveProgressIntervalMs`, server.ts's exported
+// progressIntervalMs validator) and the `solution_evaluate — progress
+// notifications (MCP roundtrip)` block (the SDK's real onprogress/
+// resetTimeoutOnProgress wire behavior).
+//
 // `solution_evaluate`/`solution_gate` write through `writeVerdict`, which
 // always signs (verdict-signing.ts) and resolves + lazily creates a shared
 // harness signing key under `<HARNESS_HOME>/harness.generated/`; this suite
@@ -32,8 +41,13 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { ErrorCode, ProgressNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 
-import { createServer } from '../src/server.js';
-import { withProgressPings, type ToolExtra } from '../src/progress.js';
+import { createServer, resolveProgressIntervalMs } from '../src/server.js';
+import {
+  withProgressPings,
+  DEFAULT_PROGRESS_MESSAGE,
+  DEFAULT_PROGRESS_INTERVAL_MS,
+  type ToolExtra,
+} from '../src/progress.js';
 import { resetStores } from '../src/hypothesis-store.js';
 import { resetLedgerDb } from '../src/ledger-bridge.js';
 import { writeVerdict } from '../src/solution-verdict.js';
@@ -863,6 +877,14 @@ describe('solution_evaluate — MCP roundtrip', () => {
 // exact same timer/notification logic deterministically. The real
 // client-server roundtrip tests further below cover the SDK's actual wire
 // behavior (onprogress, resetTimeoutOnProgress) with short REAL intervals.
+//
+// This block (and the `resolveProgressIntervalMs` unit tests inside it)
+// deliberately ignores the file-level `beforeEach`/`afterEach` above: it
+// never touches `client`/`tmpRoot`/the MCP handshake those set up, since
+// `makeFakeExtra` builds its own minimal `ToolExtra` and `resolveProgressIntervalMs`
+// is a pure function. The outer hooks still run before/after each of these
+// tests (cheap: tempdir + in-memory client/server), they are just unused
+// here.
 
 function makeFakeExtra(overrides: {
   progressToken?: string | number;
@@ -916,11 +938,16 @@ describe('withProgressPings — unit', () => {
     expect(sendNotification).toHaveBeenCalledTimes(65);
     const calls = sendNotification.mock.calls.map((c) => c[0] as {
       method: string;
-      params: { progressToken: unknown; progress: number; message?: string };
+      params: { progressToken: unknown; progress: number; message?: string; total?: number };
     });
     for (const call of calls) {
       expect(call.method).toBe('notifications/progress');
       expect(call.params.progressToken).toBe('tok-123');
+      // Pinned payload shape: the default message, and never a `total` key
+      // (this helper never claims a known end point — see the header's
+      // "never a fabricated percentage" note).
+      expect(call.params.message).toBe(DEFAULT_PROGRESS_MESSAGE);
+      expect(call.params).not.toHaveProperty('total');
     }
     const progressValues = calls.map((c) => c.params.progress);
     expect(progressValues).toEqual([...Array(65)].map((_, i) => i + 1));
@@ -1022,6 +1049,103 @@ describe('withProgressPings — unit', () => {
     work.resolve('work-still-completes-after-abort');
     await expect(resultPromise).resolves.toBe('work-still-completes-after-abort');
     vi.useRealTimers();
+  });
+
+  it('passes a caller-supplied message through to every ping instead of the default', async () => {
+    vi.useFakeTimers();
+    const work = deferred<string>();
+    const { extra, sendNotification } = makeFakeExtra({ progressToken: 'tok-msg' });
+
+    const resultPromise = withProgressPings(extra, () => work.promise, 10, 'custom still-running message');
+    await vi.advanceTimersByTimeAsync(25);
+    expect(sendNotification).toHaveBeenCalledTimes(2);
+    for (const call of sendNotification.mock.calls) {
+      const params = (call[0] as { params: { message?: string } }).params;
+      expect(params.message).toBe('custom still-running message');
+    }
+
+    work.resolve('done-custom-message');
+    await expect(resultPromise).resolves.toBe('done-custom-message');
+    vi.useRealTimers();
+  });
+
+  it('never starts a timer and removes no listener when extra.signal is already aborted before the call', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    controller.abort();
+    const work = deferred<string>();
+    const { extra, sendNotification } = makeFakeExtra({ progressToken: 'tok-pre-aborted', signal: controller.signal });
+    const removeSpy = vi.spyOn(controller.signal, 'removeEventListener');
+    const addSpy = vi.spyOn(controller.signal, 'addEventListener');
+
+    const resultPromise = withProgressPings(extra, () => work.promise, 10);
+    // The mutation this guards against: registering the abort listener (and
+    // starting the timer) unconditionally, without first checking whether
+    // the signal is already aborted — an already-cancelled request would
+    // then keep pinging until work settles.
+    expect(vi.getTimerCount()).toBe(0);
+    expect(addSpy).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(sendNotification).not.toHaveBeenCalled();
+
+    work.resolve('done-pre-aborted');
+    // work() itself is unaffected by the pre-aborted signal: it still runs
+    // and its result is still returned.
+    await expect(resultPromise).resolves.toBe('done-pre-aborted');
+    // No listener was ever attached, so there is nothing to remove.
+    expect(removeSpy).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('removes the abort listener in finally when work settles normally (no listener leak)', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const work = deferred<string>();
+    const { extra } = makeFakeExtra({ progressToken: 'tok-listener-leak', signal: controller.signal });
+    const removeSpy = vi.spyOn(controller.signal, 'removeEventListener');
+
+    const resultPromise = withProgressPings(extra, () => work.promise, 10);
+    await vi.advanceTimersByTimeAsync(15);
+
+    work.resolve('done-listener-leak');
+    await expect(resultPromise).resolves.toBe('done-listener-leak');
+    // The mutation this guards against: dropping `clearInterval(timer)` (or
+    // the listener removal) from the `finally` block — either would leave
+    // this call unmade or the timer running after work settles.
+    expect(removeSpy).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+  });
+});
+
+// ── resolveProgressIntervalMs — unit ────────────────────────────────────────
+//
+// Direct tests against server.ts's exported interval validator: any raw
+// value that is not a positive finite number falls back to the default
+// (0 and negative values would otherwise reach `setInterval` and flood the
+// client with notifications; NaN/Infinity/non-number inputs are equally
+// invalid). Pure function, so no fake timers or fake ToolExtra needed here.
+
+describe('resolveProgressIntervalMs — unit', () => {
+  it('passes through a valid positive finite number unchanged', () => {
+    expect(resolveProgressIntervalMs(20)).toBe(20);
+    expect(resolveProgressIntervalMs(10_000)).toBe(10_000);
+  });
+
+  it('falls back to the default for 0', () => {
+    expect(resolveProgressIntervalMs(0)).toBe(DEFAULT_PROGRESS_INTERVAL_MS);
+  });
+
+  it('falls back to the default for a negative value', () => {
+    expect(resolveProgressIntervalMs(-5)).toBe(DEFAULT_PROGRESS_INTERVAL_MS);
+  });
+
+  it('falls back to the default for non-finite or non-number input', () => {
+    expect(resolveProgressIntervalMs(NaN)).toBe(DEFAULT_PROGRESS_INTERVAL_MS);
+    expect(resolveProgressIntervalMs(Infinity)).toBe(DEFAULT_PROGRESS_INTERVAL_MS);
+    expect(resolveProgressIntervalMs(undefined)).toBe(DEFAULT_PROGRESS_INTERVAL_MS);
+    expect(resolveProgressIntervalMs('20')).toBe(DEFAULT_PROGRESS_INTERVAL_MS);
   });
 });
 
@@ -1161,6 +1285,16 @@ describe('solution_evaluate — progress notifications (MCP roundtrip)', () => {
         { onprogress: (p) => progressUpdates.push(p.progress), timeout: 80 },
       ),
     ).rejects.toMatchObject({ code: ErrorCode.RequestTimeout });
+    // The mutation this guards against: the heartbeat timer callback never
+    // actually firing (or never calling sendNotification) even though the
+    // request carries a progressToken — the client's timeout would then
+    // fire "for free" regardless of whether pinging works at all. At least
+    // one real ping must have arrived over the wire before the timeout, and
+    // the ticks must still be strictly increasing.
+    expect(progressUpdates.length).toBeGreaterThanOrEqual(1);
+    for (let i = 1; i < progressUpdates.length; i++) {
+      expect(progressUpdates[i]).toBeGreaterThan(progressUpdates[i - 1]);
+    }
   });
 });
 

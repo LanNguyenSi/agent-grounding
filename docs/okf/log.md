@@ -1192,3 +1192,23 @@
   validation, and the duplicate-run condition now names its full unchanged
   scope. Re-pinned the helper, MCP test, and README references after the
   reviewed source/test additions; prior validation evidence remains unchanged.
+
+- 2026-09-05T19:25:07Z, progress-notifications review-round-2 closing delta
+  (task 8c9a99fc): added `packages/grounding-mcp/src/progress.ts` to sources
+  and one clause to the `solution_evaluate` bullet noting it calls
+  `evaluateSolution` wrapped in `withProgressPings` when the request carries
+  a `progressToken`, with no effect on the verdict. The underlying
+  `server.ts` edit (interval validation via a new exported
+  `resolveProgressIntervalMs`, plus an explicit `message` argument) shifted
+  every later line in the file by +14/+15; re-pinned both bounds of every
+  shifted citation in this doc (`solution_evaluate`/`solution_gate`
+  registration lines) and, because the shift also broke citations outside
+  this doc's own edits, in `evidence-ledger-session-key-shapes.md` (the
+  `ledger_add` sessionId param doc and write-through range, plus the
+  `preflight:` incidental-match test citation) and
+  `hypothesis-tracker-persistence-split.md` (all seven `hypothesis_*`
+  registration lines, the `saveStore` call-site list, and the
+  not-found-rejected-or-checks-pending error line). `okf-kit check
+  --require-anchors --json docs/okf` reported 0 errors, 0 warnings, 0
+  notices; `check:okf-test-citation-shape` and `check:okf-selectors` both
+  passed.
