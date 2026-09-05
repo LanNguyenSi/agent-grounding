@@ -129,7 +129,7 @@ Both are configured for public npm publish (`publishConfig.access: "public"` in
 each `package.json`):
 
 - `@lannguyensi/claim-gate` — version **0.6.0** (`packages/claim-gate/package.json`).
-- `@lannguyensi/review-claim-gate` — version **0.1.5**
+- `@lannguyensi/review-claim-gate` — version **0.1.6**
   (`packages/review-claim-gate/package.json`), depending on
   `@lannguyensi/claim-gate@0.6.0` and `@lannguyensi/evidence-ledger@0.6.0`
   (pinned, exact).

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.6] - 2026-09-05
+
+### Changed
+
+- Update the composite action's `actions/setup-node` and
+  `actions/github-script` dependencies to their Node 24 runtime majors
+  (`v5` and `v8`, respectively). Inputs, outputs, step ordering, and the
+  package's Node engine requirement remain unchanged.
+
 ## [0.1.5] - 2026-07-18
 
 ### Changed

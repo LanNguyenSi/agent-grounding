@@ -148,6 +148,19 @@ describe("action.yml — shape", () => {
     expect(checkStep.with.script).toContain("checks.create");
   });
 
+  it("uses Node 24 action majors for setup and Check-Run posting", () => {
+    const setupStep = action.runs.steps.find(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (s: any) => s.name === "Set up Node",
+    );
+    const checkStep = action.runs.steps.find(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (s: any) => s.name === "Post Check-Run",
+    );
+    expect(setupStep?.uses).toBe("actions/setup-node@v5");
+    expect(checkStep?.uses).toBe("actions/github-script@v8");
+  });
+
   it("fail-on-block step exits non-zero when gate reports BLOCKED", () => {
     const failStep = action.runs.steps.find(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
