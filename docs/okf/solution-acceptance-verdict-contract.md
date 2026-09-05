@@ -3,9 +3,10 @@ type: invariant
 title: Solution-acceptance verdict contract — why the marker lives outside the ledger
 description: A "done" verdict is derived from a real preflight+OW run, HEAD-pinned, and written to an XDG state marker outside the agent-writable evidence-ledger because ledger rows are forgeable via ledger_add.
 tags: [solution-acceptance, verdicts, anti-hacking, trust-boundary]
-timestamp: 2026-09-04T05:43:29Z
+timestamp: 2026-09-05T17:04:29Z
 sources:
   - packages/grounding-mcp/src/solution-verdict.ts
+  - packages/grounding-mcp/src/preflight-diagnostics.ts
   - packages/grounding-mcp/src/verdict-signing.ts
   - packages/grounding-mcp/src/ow-run-completeness.ts
   - packages/grounding-mcp/src/session-store.ts
@@ -29,14 +30,16 @@ Four properties hold, stated verbatim as the anti-hacking contract in the header
 
 1. **Derived, not claimed** — `ready` comes from preflight's real run; the caller
    supplies no result.
-2. **Producer != solver**: `evaluateSolution` (`solution-verdict.ts:609#"export async function evaluateSolution("`) *runs* preflight; the check
-   set is taken from the repo's committed `.preflight.json`, not from arguments, so an
-   agent cannot weaken the gate at call time.
+2. **Producer != solver**: `evaluateSolution` (`solution-verdict.ts:620#"export async function evaluateSolution("`) *runs* preflight; the evaluator
+   accepts no check-list argument. Preflight loads the repository's configuration from
+   the worktree when it runs, so this is not a guarantee that configuration was
+   committed; it is a guarantee that the caller cannot replace the executed check set
+   through this API.
 3. **HEAD-pinned** — a verdict counts only at the HEAD it was produced at; any rework
-   shifts HEAD and invalidates a green verdict (`evaluateGate`, `solution-verdict.ts:255-258#"re-run solution_evaluate"`, compares
+   shifts HEAD and invalidates a green verdict (`evaluateGate`, `solution-verdict.ts:263-266#"re-run solution_evaluate"`, compares
    `verdict.head !== currentHead`).
 4. **No stale green** — a not-ready run overwrites a prior green marker (`writeVerdict`,
-   `solution-verdict.ts:189#"fs.writeFileSync"`, unconditionally overwrites via `fs.writeFileSync`).
+   `solution-verdict.ts:193-197#"fs.writeFileSync"`, unconditionally overwrites via `fs.writeFileSync`).
 
 The reason the marker sits outside the ledger is stated exactly at `solution-verdict.ts:19-21#"Documented residual:"`:
 
@@ -48,9 +51,37 @@ So the verdict is a signal the solving agent's normal write path does not produc
 is a trust-boundary decision: anything the agent can write as part of its solution diff
 (ledger rows, working-tree files) cannot be the source of truth for "done".
 
+### Advisory preflight diagnostics
+
+`evaluateSolution` also returns `diagnostics` for the **same one** preflight process
+that produced (or failed to produce) a verdict. This response-only object is never a
+verdict field, is never signed, and is never persisted to or read from the marker. The
+compact, signed verdict projection remains in `solution-verdict.ts`; the diagnostic
+inspection helper is `preflight-diagnostics.ts`.
+
+Diagnostics expose `availability`, the original parsed `payload` when there is one,
+the process `execution` (`exitCode`, `signal`, and an optional error), `complete`, and
+`issues`. The helper preserves the original JSON value, including unknown additive
+properties, while checking the documented result shape. It marks diagnostics
+unavailable when preflight did not produce usable JSON, and it records an unexpected
+exit, signal, or execution error as an issue. See
+`preflight-diagnostics.ts:77-110#"return {"` and
+`preflight-diagnostics.ts:119-121#"availability: 'unavailable'"`.
+
+`complete` means the diagnostic shape and its observed process outcome are internally
+consistent: confidence is finite and within `[0,1]`, and the timestamp is a canonical
+UTC ISO string that survives date parsing and serialization. It does **not** mean
+`ready`, adequate test coverage, independently trusted evidence, or a cacheable result.
+A complete diagnostic can describe a not-ready run; skipped and acknowledged checks
+remain visible in the preserved payload. A same-scope, identical duplicate direct
+evaluation may omit a run only after the previous result was complete and understood,
+the repository, working directory, configuration, coverage, tool, and environment are
+unchanged, and the installed requirements permit that reuse. Diagnostics themselves
+never grant that permission.
+
 ## Where it's enforced
 
-### Marker location: `verdictDir()` (`solution-verdict.ts:116-122#"'agent-grounding', 'solution-verdicts'"`)
+### Marker location: `verdictDir()` (`solution-verdict.ts:124-130#"'agent-grounding', 'solution-verdicts'"`)
 
 Resolution order, exactly:
 
@@ -63,10 +94,10 @@ Resolution order, exactly:
    return path.join(base, 'agent-grounding', 'solution-verdicts');
    ```
 
-`verdictPath(id)` (`solution-verdict.ts:140-141#"sanitizeVerdictId(id)}.json"`) is `path.join(verdictDir(), \`${sanitizeVerdictId(id)}.json\`)`.
+`verdictPath(id)` (`solution-verdict.ts:148-149#"sanitizeVerdictId(id)}.json"`) is `path.join(verdictDir(), \`${sanitizeVerdictId(id)}.json\`)`.
 One JSON file per `id`, deliberately outside the repo and outside the ledger.
 
-### Path-traversal guard: `sanitizeVerdictId` (`solution-verdict.ts:131-137#"return base;"`)
+### Path-traversal guard: `sanitizeVerdictId` (`solution-verdict.ts:139-145#"return base;"`)
 
 ```js
 const cleaned = id.replace(/[^A-Za-z0-9._-]/g, '_');
@@ -84,12 +115,12 @@ must be sanitised before reaching the filesystem.
 
 ### The verdict shape (7 pinned keys + 2 additive signing fields)
 
-`Verdict` (`solution-verdict.ts:53-79#"signature?: string;"`): the 7 pinned keys `{ id, head, ready, confidence, blockers,
-timestamp, source }` (`solution-verdict.ts:53-67#"source: string;"`), plus, since 0.8.0, two additive OPTIONAL fields
-`alg?` (`solution-verdict.ts:77#"alg?: string;"`) and `signature?` (`solution-verdict.ts:79#"signature?: string;"`). `head` is a 40-hex sha; `ready` is derived;
+`Verdict` (`solution-verdict.ts:59-85#"signature?: string;"`): the 7 pinned keys `{ id, head, ready, confidence, blockers,
+timestamp, source }` (`solution-verdict.ts:59-73#"source: string;"`), plus, since 0.8.0, two additive OPTIONAL fields
+`alg?` (`solution-verdict.ts:74-83#"alg?: string;"`) and `signature?` (`solution-verdict.ts:74-85#"signature?: string;"`). `head` is a 40-hex sha; `ready` is derived;
 `source` is `'preflight'`. The 7-key shape is pinned by the harness consumer; see the
-`writeVerdict` docblock at `solution-verdict.ts:159-183#"trade than the residual it would close."` ("`alg` + `signature` in addition to the 7
-pinned fields", mirroring the consumer). The comments at `solution-verdict.ts:596-598#"OW state flows entirely through the"` and `solution-verdict.ts:666-668#"(Signing, which DOES add"`
+`writeVerdict` docblock at `solution-verdict.ts:167-191#"trade than the residual it would close."` ("`alg` + `signature` in addition to the 7
+pinned fields", mirroring the consumer). The comments at `solution-verdict.ts:599-609#"OW state flows entirely through the"` and `solution-verdict.ts:607-610#"(Signing, which DOES add"`
 scope the OW arms: they fold into `ready`/`blockers` only and do NOT add fields. `alg`/`signature` are the one addition
 to that pinning rule, and deliberately additive-only (see "Verdict marker signing"
 below): they are optional on the TypeScript type only because a hand-constructed
@@ -98,8 +129,8 @@ every marker `writeVerdict` actually puts on disk carries both, unconditionally.
 
 ### Verdict marker signing (0.8.0): `verdict-signing.ts`
 
-Since 0.8.0, `writeVerdict` (`solution-verdict.ts:185-190#"return target;"`) no longer writes the 7 pinned
-fields alone: it calls `signVerdict(resolveGeneratedDir(), verdict)` (`solution-verdict.ts:187#"signVerdict(resolveGeneratedDir()"`, from the
+Since 0.8.0, `writeVerdict` (`solution-verdict.ts:193-198#"return target;"`) no longer writes the 7 pinned
+fields alone: it calls `signVerdict(resolveGeneratedDir(), verdict)` (`solution-verdict.ts:193-195#"signVerdict(resolveGeneratedDir()"`, from the
 new `src/verdict-signing.ts`) BEFORE writing, and persists the signed copy. There is no
 unsigned fallback: signing is unconditional (D-002, task 9b6c4beb / grounding-mcp
 CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly the
@@ -209,18 +240,18 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
 
 `evaluateSolution` fails **closed**: an invalid `id`, an unresolvable git HEAD, a missing
 `preflight` binary (ENOENT), or unparseable preflight output all return an `error` and
-write NO marker (`solution-verdict.ts:609-661#"preflight invocation failed:"`), so the gate stays denied via "no verdict recorded". The
-binary is `SOLUTION_PREFLIGHT_BIN ?? 'preflight'` (`solution-verdict.ts:630#"SOLUTION_PREFLIGHT_BIN ?? 'preflight'"`); preflight exits non-zero
+write NO marker (`solution-verdict.ts:620-683#"preflight invocation failed:"`), so the gate stays denied via "no verdict recorded". The
+binary is `SOLUTION_PREFLIGHT_BIN ?? 'preflight'` (`solution-verdict.ts:649#"SOLUTION_PREFLIGHT_BIN ?? 'preflight'"`); preflight exits non-zero
 when not-ready but still prints JSON, so a non-zero exit with parseable stdout is a normal
 not-ready verdict, not a failure. `writeVerdict`, and therefore signing, is only ever
-reached (`solution-verdict.ts:686#"writeVerdict(verdict)"`) on a successfully parsed, non-error result.
+reached (`solution-verdict.ts:719-732#"writeVerdict(verdict)"`) on a successfully parsed, non-error result.
 
 ### The OW process-completeness arm (cross-repo coupling)
 
 Beyond preflight's technical floor, `solution_evaluate` folds in **orchestrator-workflow
-(OW) process-completeness** via `owBlockersFor` (`solution-verdict.ts:339#"export async function owBlockersFor"`), whose blockers are folded into
-`ready` and `blockers` only (`solution-verdict.ts:666-675#"...pf.blockers, ...owBlockers"`): `ready = pf.ready && owBlockers.length === 0`
-(`solution-verdict.ts:674#"owBlockers.length === 0"`). Each OW blocker is prefixed `orchestrator-workflow: ` (`solution-verdict.ts:353#"orchestrator-workflow: "`).
+(OW) process-completeness** via `owBlockersFor` (`solution-verdict.ts:324-350#"export async function owBlockersFor"`), whose blockers are folded into
+`ready` and `blockers` only (`solution-verdict.ts:712-721#"...pf.blockers, ...owBlockers"`): `ready = pf.ready && owBlockers.length === 0`
+(`solution-verdict.ts:719-720#"owBlockers.length === 0"`). Each OW blocker is prefixed `orchestrator-workflow: ` (`solution-verdict.ts:350-364#"orchestrator-workflow: "`).
 
 `ow-run-completeness.ts` is a **pure, side-effect-free reader** (no subprocess, no
 mutation — comment `ow-run-completeness.ts:3#"Pure, side-effect-free read"`, spelled out again at `ow-run-completeness.ts:9-11#"here writes, spawns, or mutates."`: "This module only READS...
@@ -402,7 +433,7 @@ OW run files under `<repoPath>/.ai/runs/`:
   `owBindingBlockers` in the verdict layer skips the legacy date heuristic
   outright for BOTH `'unmatched-keyed'` and `'malformed'`, so exactly one
   blocker is reported, never two
-  (`solution-verdict.ts:411-424#"if (ow.runBaseKind === 'unmatched-keyed' || ow.runBaseKind === 'malformed') return [];"`).
+  (`solution-verdict.ts:422-435#"if (ow.runBaseKind === 'unmatched-keyed' || ow.runBaseKind === 'malformed') return [];"`).
   Raw `\S+` capture for the value. `runBaseKind` (`'sha' | 'todo' | 'absent' |
   'unmatched-keyed' | 'malformed'`) names WHY `runBase` has the value it has,
   so the verdict layer can branch without re-deriving this key logic
@@ -420,22 +451,22 @@ machine-readable `<!-- solution-acceptance: <field> = <value> -->` marker wins; 
 the field is entirely absent does it fall back to the `## <heading>` prose value. A `TODO`
 or malformed marker surfaces its own blocker and never silently falls back (fail-closed).
 
-**Change binding** (`owBindingBlockers`, `solution-verdict.ts:411-468#"no OW run claims this change"`): completeness alone
+**Change binding** (`owBindingBlockers`, `solution-verdict.ts:422-479#"no OW run claims this change"`): completeness alone
 would let one old accepted run keep the gate green for every later change, so the active
 run must also *claim the current change*. New-kit runs carry a `run-base` sha in
 `00-goal.md` — possibly a keyed one, and the run itself may have been resolved via the
 pointer or the scan; either way `ow.runBase`/`ow.runName` are already resolved by the time
-this check sees them (`solution-verdict.ts:365-374#"run claims the current change iff the recorded base"`).
+this check sees them (`solution-verdict.ts:374-385#"run claims the current change iff the recorded base"`).
 It must (1) resolve to a commit here, (2) be an ancestor of HEAD, and (3)
 not lie strictly behind the fork point (merge-base of HEAD with the remote default branch).
-`RUN_BASE_SHA = /^[0-9a-f]{7,40}$/i` (`solution-verdict.ts:360#"RUN_BASE_SHA = /^[0-9a-f]{7,40}$/i"`) validates the agent-writable value BEFORE
+`RUN_BASE_SHA = /^[0-9a-f]{7,40}$/i` (`solution-verdict.ts:367-371#"RUN_BASE_SHA = /^[0-9a-f]{7,40}$/i"`) validates the agent-writable value BEFORE
 any git call (argv-injection guard). Legacy markerless runs downgrade to a day-granular
-date heuristic (`solution-verdict.ts:463-468#"no OW run claims this change"`). The knob `<repoPath>/.ai/solution-acceptance.json`
+date heuristic (`solution-verdict.ts:474-479#"no OW run claims this change"`). The knob `<repoPath>/.ai/solution-acceptance.json`
 `{ "orchestratorWorkflow": "auto"|"on"|"off" }` resolves **fail-SAFE** to `auto` on any
-missing/unparseable/invalid config (`resolveOwKnob`, `solution-verdict.ts:301-306#"v === 'auto' || v === 'on' || v === 'off'"`); a malformed file can
+missing/unparseable/invalid config (`resolveOwKnob`, `solution-verdict.ts:312-317#"v === 'auto' || v === 'on' || v === 'off'"`); a malformed file can
 never silently disable the gate. When enforced but no run was found at all (pointer absent
 AND no `.ai/runs/` dir), the `on` knob names both channels in its blocker
-(`solution-verdict.ts:349#"no OW run was found (no .ai/run pointer and no .ai/runs/ run directory)"`).
+(`solution-verdict.ts:350-360#"no OW run was found (no .ai/run pointer and no .ai/runs/ run directory)"`).
 
 ## What breaks it
 
@@ -463,7 +494,7 @@ AND no `.ai/runs/` dir), the `on` knob names both channels in its blocker
   change. preflight's own clean-worktree check also fails a dirty tree, so a fresh
   evaluate on uncommitted work is not-ready.
 - **Evaluating at an already-pushed default-branch tip.** Pre-merge by design: the binding
-  arm false-blocks (fork == HEAD), which is deliberate and pinned by a test (`solution-verdict.ts:403-409#"matches the ship-flow, which evaluates before pushing."`).
+  arm false-blocks (fork == HEAD), which is deliberate and pinned by a test (`solution-verdict.ts:414-420#"matches the ship-flow, which evaluates before pushing."`).
   The remedy in the blocker text — start a new run — matches the ship-flow, which evaluates
   before pushing.
 - **Marker-shadowing in run files.** First marker match wins; a quoted mention of marker

@@ -3,7 +3,7 @@ type: invariant
 title: Evidence-ledger session keys — one opaque column, two conventions
 description: The ledger `session` is a single opaque TEXT column; grounding-mcp keys it by a generated `gs-*` id while the merge-approval CI Action keys it by the PR head branch name, so evidence written under one key is invisible to a reader expecting the other.
 tags: [evidence-ledger, sessions, keys, ci, mcp]
-timestamp: 2026-09-04T05:43:29Z
+timestamp: 2026-09-05T17:04:29Z
 sources:
   - packages/evidence-ledger/src/types.ts
   - packages/evidence-ledger/src/db.ts
@@ -48,6 +48,6 @@ A separate structural guard keeps decision rows from polluting evidence reads: `
 
 ## Out-of-repo boundary
 
-The tag prefixes the harness gates consume — `preflight:<repo>`, `review-subagent:<id>`, `review:<id>`, `dogfood:<id>` — are **not defined anywhere in this repo.** Grep confirms zero occurrences as gate strings: `review-subagent` appears only in prose in `packages/review-claim-gate/README.md:137#"Drop this into the review-subagent prompt you spawn from a parent Claude"`; `dogfood:` appears nowhere in this repo; `preflight:` appears only incidentally inside a test description string (`packages/grounding-mcp/tests/grounding-gate-mcp-roundtrip.test.ts:648-662#"blockers).toContain('test: 2 failing')"`). None of them is a gate string here. Note the distinct, unrelated `review:*` **PR labels** the merge-approval workflow reads (`review:tests-pass`, `review:checklist-complete`, `review:comments-resolved`, `review:scope-matches-task`, `review:evidence-logged`, `.github/workflows/merge-approval.yml:40-44#"core.setOutput('evidence_logged',"`) — these are label names, not ledger tags, and are not the harness-owned `review:<id>` gate string. The harness gate prefixes are harness-owned; do not document them as an agent-grounding contract.
+The tag prefixes the harness gates consume — `preflight:<repo>`, `review-subagent:<id>`, `review:<id>`, `dogfood:<id>` — are **not defined anywhere in this repo.** Grep confirms zero occurrences as gate strings: `review-subagent` appears only in prose in `packages/review-claim-gate/README.md:137#"Drop this into the review-subagent prompt you spawn from a parent Claude"`; `dogfood:` appears nowhere in this repo; `preflight:` appears only incidentally inside a test description string (`packages/grounding-mcp/tests/grounding-gate-mcp-roundtrip.test.ts:654-668#"blockers).toContain('test: 2 failing')"`). None of them is a gate string here. Note the distinct, unrelated `review:*` **PR labels** the merge-approval workflow reads (`review:tests-pass`, `review:checklist-complete`, `review:comments-resolved`, `review:scope-matches-task`, `review:evidence-logged`, `.github/workflows/merge-approval.yml:40-44#"core.setOutput('evidence_logged',"`) — these are label names, not ledger tags, and are not the harness-owned `review:<id>` gate string. The harness gate prefixes are harness-owned; do not document them as an agent-grounding contract.
 
 ---

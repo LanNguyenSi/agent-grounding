@@ -10,7 +10,7 @@
 //   1. Derived, not claimed: `ready` comes from preflight's real run; the
 //      caller supplies no result.
 //   2. Producer != solver: `evaluateSolution` RUNS preflight; the check set
-//      is taken from the repo's committed `.preflight.json`, not from arguments,
+//      is loaded by preflight from the repo, not from evaluateSolution arguments,
 //      so an agent cannot weaken the gate at call time.
 //   3. HEAD-pinned: a verdict counts only at the HEAD it was produced
 //      at; any rework shifts HEAD and invalidates a green verdict.
@@ -46,6 +46,12 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 import { readOwRunCompleteness, type OwRunCompleteness } from './ow-run-completeness.js';
+import {
+  inspectPreflightPayload,
+  unavailablePreflightDiagnostics,
+  type PreflightDiagnostics,
+  type PreflightExecution,
+} from './preflight-diagnostics.js';
 import { resolveGeneratedDir, signVerdict } from './verdict-signing.js';
 
 const execFileAsync = promisify(execFile);
@@ -102,6 +108,8 @@ export interface EvaluateResult {
   verdict: Verdict | null;
   markerPath: string | null;
   error?: string;
+  /** Advisory details from the single preflight invocation; never signed. */
+  diagnostics?: PreflightDiagnostics;
 }
 
 /**
@@ -274,8 +282,11 @@ interface PreflightJson {
   blockers: string[];
 }
 
-function parsePreflightJson(stdout: string): PreflightJson {
-  const parsed = JSON.parse(stdout) as Partial<PreflightJson>;
+function parsePreflightJson(payload: unknown): PreflightJson {
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    throw new Error("preflight JSON is missing a boolean 'ready' field");
+  }
+  const parsed = payload as Partial<PreflightJson>;
   if (typeof parsed.ready !== 'boolean') {
     throw new Error("preflight JSON is missing a boolean 'ready' field");
   }
@@ -589,7 +600,7 @@ async function oldestChangeAuthorDate(repoPath: string): Promise<string | null> 
  * Producer: run `preflight run <repoPath> --json` and record a HEAD-pinned
  * verdict for `id` derived from its result. The verb running this is the
  * producer; the agent supplies no results and cannot weaken the check set
- * (it comes from the repo's committed `.preflight.json`). preflight exits
+ * (it comes from the repo configuration preflight loads). preflight exits
  * non-zero when not ready but still prints its JSON, so a non-zero exit with
  * parseable stdout is a normal not-ready verdict, not a failure.
  *
@@ -611,10 +622,17 @@ export async function evaluateSolution(
   repoPath: string,
   opts: { timestamp?: string } = {},
 ): Promise<EvaluateResult> {
+  const unavailable = (execution: PreflightExecution, issue: string): PreflightDiagnostics =>
+    unavailablePreflightDiagnostics(execution, issue);
   try {
     sanitizeVerdictId(id);
   } catch (err) {
-    return { verdict: null, markerPath: null, error: (err as Error).message };
+    return {
+      verdict: null,
+      markerPath: null,
+      error: (err as Error).message,
+      diagnostics: unavailable({ exitCode: null, signal: null }, 'preflight was not started because the verdict id is invalid'),
+    };
   }
 
   const head = await getHeadSha(repoPath);
@@ -624,43 +642,71 @@ export async function evaluateSolution(
       markerPath: null,
       error:
         'cannot resolve a committed git HEAD; solution-acceptance requires a git repository with at least one commit',
+      diagnostics: unavailable({ exitCode: null, signal: null }, 'preflight was not started because git HEAD is unavailable'),
     };
   }
 
   const bin = process.env.SOLUTION_PREFLIGHT_BIN ?? 'preflight';
   let pf: PreflightJson;
+  let diagnostics: PreflightDiagnostics;
+  let stdout: string;
+  let execution: PreflightExecution;
   try {
-    const { stdout } = await execFileAsync(bin, ['run', repoPath, '--json'], {
+    ({ stdout } = await execFileAsync(bin, ['run', repoPath, '--json'], {
       maxBuffer: 16 * 1024 * 1024,
-    });
-    pf = parsePreflightJson(stdout);
+    }));
+    execution = { exitCode: 0, signal: null };
   } catch (err) {
-    const e = err as { code?: string; stdout?: string };
+    const e = err as { code?: string | number; signal?: string; stdout?: string; message?: string };
+    execution = {
+      exitCode: typeof e.code === 'number' ? e.code : null,
+      signal: typeof e.signal === 'string' ? e.signal : null,
+      ...(typeof e.code === 'number' || typeof e.signal === 'string' || typeof e.message !== 'string'
+        ? {}
+        : { error: e.message }),
+    };
     if (e.code === 'ENOENT') {
       return {
         verdict: null,
         markerPath: null,
         error: `preflight binary not found (\`${bin}\`); install @lannguyensi/agent-preflight or set SOLUTION_PREFLIGHT_BIN`,
+        diagnostics: unavailable(execution, 'preflight binary is unavailable'),
       };
     }
     // preflight exits 1 when not ready but prints JSON to stdout first.
     if (typeof e.stdout === 'string' && e.stdout.trim().length > 0) {
-      try {
-        pf = parsePreflightJson(e.stdout);
-      } catch {
-        return {
-          verdict: null,
-          markerPath: null,
-          error: 'preflight ran but its output was not parseable JSON',
-        };
-      }
+      stdout = e.stdout;
     } else {
       return {
         verdict: null,
         markerPath: null,
         error: `preflight invocation failed: ${(err as Error).message}`,
+        diagnostics: unavailable(execution, 'preflight produced no JSON payload'),
       };
     }
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(stdout);
+  } catch {
+    return {
+      verdict: null,
+      markerPath: null,
+      error: 'preflight ran but its output was not parseable JSON',
+      diagnostics: unavailable(execution, 'preflight output was not parseable JSON'),
+    };
+  }
+  diagnostics = inspectPreflightPayload(payload, execution);
+  try {
+    pf = parsePreflightJson(payload);
+  } catch {
+    return {
+      verdict: null,
+      markerPath: null,
+      error: 'preflight ran but its output was not parseable JSON',
+      diagnostics,
+    };
   }
 
   // Fold the OW process-completeness arm into ready + blockers ONLY: the OW
@@ -684,5 +730,5 @@ export async function evaluateSolution(
     source: 'preflight',
   };
   const markerPath = writeVerdict(verdict);
-  return { verdict, markerPath };
+  return { verdict, markerPath, diagnostics };
 }

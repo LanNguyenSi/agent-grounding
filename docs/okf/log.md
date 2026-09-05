@@ -1151,3 +1151,22 @@
   evidence-ledger-session-key-shapes, solution-acceptance-verdict-contract,
   claim-gate-vs-review-claim-gate, hypothesis-tracker-persistence-split,
   merge-approval-gate-mechanics.
+
+- 2026-09-05T16:52:20Z, solution-preflight diagnostics contract (task
+  60930b4e): solution-acceptance-verdict-contract now distinguishes advisory
+  diagnostics from the unchanged signed verdict marker: availability, original
+  payload, execution outcome, completeness, and issues are response-only and
+  never authority. It also corrects the prior committed-configuration claim:
+  preflight loads repository configuration from the worktree at execution;
+  callers cannot supply a replacement check list. All live
+  solution-verdict.ts citations were re-derived individually; the complete
+  not-ready MCP test citation and the collateral README citation were
+  re-pinned. `okf-kit check --require-anchors --json docs/okf` reported 0 errors, 0 warnings, and 1 nonblocking
+  notice for the new untracked helper source; `check:okf-test-citation-shape`
+  and its test both passed (one check each).
+
+- 2026-09-05T17:04:29Z, diagnostics review correction (task 60930b4e):
+  completeness now documents bounded confidence and canonical UTC timestamp
+  validation, and the duplicate-run condition now names its full unchanged
+  scope. Re-pinned the helper, MCP test, and README references after the
+  reviewed source/test additions; prior validation evidence remains unchanged.

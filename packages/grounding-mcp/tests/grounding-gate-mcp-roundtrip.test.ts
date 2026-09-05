@@ -24,7 +24,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -636,6 +636,7 @@ describe('solution_evaluate — MCP roundtrip', () => {
     const result = parseToolResult(raw) as {
       verdict: { id: string; ready: boolean; blockers: string[]; source: string } | null;
       markerPath: string | null;
+      diagnostics: { availability: string; complete: boolean; execution: { exitCode: number | null } };
     };
     expect(result.verdict).not.toBeNull();
     expect(result.verdict?.id).toBe('mcp-task-1');
@@ -643,6 +644,11 @@ describe('solution_evaluate — MCP roundtrip', () => {
     expect(result.verdict?.blockers).toEqual([]);
     expect(result.verdict?.source).toBe('preflight');
     expect(result.markerPath).not.toBeNull();
+    expect(result.diagnostics).toMatchObject({
+      availability: 'available',
+      complete: false,
+      execution: { exitCode: 0 },
+    });
   });
 
   it('not-ready preflight: verdict has ready:false and blockers from preflight output', async () => {
@@ -661,6 +667,117 @@ describe('solution_evaluate — MCP roundtrip', () => {
     expect(result.verdict?.blockers).toContain('test: 2 failing');
   });
 
+  it('returns a complete exit-1 not-ready diagnostic', async () => {
+    const payload = {
+      ready: false, confidence: 0.4,
+      checks: [{ name: 'test', kind: 'test', status: 'fail', durationMs: 2, confidenceContribution: 0 }],
+      blockers: ['test: 2 failing'], warnings: [], limitations: [], durationMs: 2, timestamp: '2026-05-30T00:00:00.000Z',
+    };
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-notready-complete-mcp.sh',
+      `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(payload)}'\nexit 1\n`,
+    );
+    const raw = await client.callTool({ name: 'solution_evaluate', arguments: { id: 'mcp-notready-complete', repoPath: repo } });
+    const result = parseToolResult(raw) as {
+      verdict: { ready: boolean } | null;
+      diagnostics: { availability: string; complete: boolean; execution: { exitCode: number | null } };
+    };
+    expect(result.verdict?.ready).toBe(false);
+    expect(result.diagnostics).toMatchObject({ availability: 'available', complete: true, execution: { exitCode: 1 } });
+  });
+
+  it.each([
+    ['malformed output', '#!/bin/sh\necho not-json\nexit 1\n', 'preflight ran but its output was not parseable JSON'],
+    ['missing output', '#!/bin/sh\nexit 1\n', 'preflight invocation failed'],
+  ])('returns unavailable diagnostics for %s', async (_name, body, error) => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(`stub-${_name.replace(/ /g, '-')}.sh`, body);
+    const raw = await client.callTool({ name: 'solution_evaluate', arguments: { id: `mcp-${_name}`, repoPath: repo } });
+    const result = parseToolResult(raw) as {
+      verdict: null; error: string;
+      diagnostics: { availability: string; complete: boolean; execution: { exitCode: number | null } };
+    };
+    expect(result.verdict).toBeNull();
+    expect(result.error).toContain(error);
+    expect(result.diagnostics).toMatchObject({ availability: 'unavailable', complete: false, execution: { exitCode: 1 } });
+  });
+
+  it('returns complete raw diagnostics, including acknowledged log paths and additive fields', async () => {
+    const payload = {
+      ready: true,
+      confidence: 0.9,
+      checks: [{
+        name: 'test', kind: 'test', status: 'acknowledged',
+        message: 'linux-only suite failed — acknowledged: CI covers it',
+        details: ['full output: /tmp/preflight-test.log'], durationMs: 2, confidenceContribution: 0.1,
+      }],
+      blockers: [], warnings: [], limitations: ['test failure acknowledged: CI covers it'],
+      durationMs: 2, timestamp: '2026-05-30T00:00:00.000Z', additive: { retained: true },
+    };
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-complete-mcp.sh',
+      `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(payload)}'\n`,
+    );
+    const raw = await client.callTool({ name: 'solution_evaluate', arguments: { id: 'mcp-complete', repoPath: repo } });
+    const result = parseToolResult(raw) as { diagnostics: { availability: string; complete: boolean; payload: unknown } };
+    expect(result.diagnostics).toMatchObject({ availability: 'available', complete: true, payload });
+  });
+
+  it('returns an incomplete diagnostic for a ready payload with unexpected exit 2', async () => {
+    const payload = {
+      ready: true, confidence: 0.9,
+      checks: [{ name: 'lint', kind: 'lint', status: 'pass', durationMs: 2, confidenceContribution: 0.1 }],
+      blockers: [], warnings: [], limitations: [], durationMs: 2, timestamp: '2026-05-30T00:00:00.000Z',
+    };
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-exit2-mcp.sh',
+      `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(payload)}'\nexit 2\n`,
+    );
+    const raw = await client.callTool({ name: 'solution_evaluate', arguments: { id: 'mcp-exit2', repoPath: repo } });
+    const result = parseToolResult(raw) as {
+      verdict: { ready: boolean } | null;
+      diagnostics: { availability: string; complete: boolean; execution: { exitCode: number | null }; issues: string[] };
+    };
+    expect(result.verdict?.ready).toBe(true);
+    expect(result.diagnostics).toMatchObject({ availability: 'available', complete: false, execution: { exitCode: 2 } });
+    expect(result.diagnostics.issues).toContain('preflight ready=true requires exit code 0, got 2');
+  });
+
+  it('preserves the fresh technical payload when an OW blocker changes only the verdict', async () => {
+    const payload = {
+      ready: true, confidence: 0.9, blockers: [], additive: { preserved: true },
+    };
+    const run = join(repo, '.ai', 'runs', '2026-05-30-blocked');
+    mkdirSync(run, { recursive: true });
+    writeFileSync(join(run, '06-handoff.md'), '<!-- solution-acceptance: final-status = blocked -->\nblocked\n');
+    writeFileSync(join(run, '05-review-findings.md'), '<!-- solution-acceptance: acceptance-recommendation = accept -->\naccept\n');
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-ow-blocked-mcp.sh',
+      `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(payload)}'\n`,
+    );
+    const raw = await client.callTool({ name: 'solution_evaluate', arguments: { id: 'mcp-ow-blocked', repoPath: repo } });
+    const result = parseToolResult(raw) as {
+      verdict: { ready: boolean; blockers: string[] } | null;
+      diagnostics: { payload: unknown; availability: string; complete: boolean };
+    };
+    expect(result.verdict?.ready).toBe(false);
+    expect(result.verdict?.blockers.some((blocker) => blocker.startsWith('orchestrator-workflow:'))).toBe(true);
+    expect(result.diagnostics).toMatchObject({ availability: 'available', complete: false, payload });
+  });
+
+  it('does not invoke preflight before id and HEAD validation, then invokes it once', async () => {
+    const counter = join(tmpRoot, 'mcp-preflight-count');
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-counter-mcp.sh',
+      `#!/bin/sh\nprintf x >> '${counter}'\necho '{"ready":true,"confidence":0.9,"blockers":[]}'\n`,
+    );
+    await client.callTool({ name: 'solution_evaluate', arguments: { id: '..', repoPath: repo } });
+    expect(existsSync(counter)).toBe(false);
+    await client.callTool({ name: 'solution_evaluate', arguments: { id: 'mcp-no-head', repoPath: tmpRoot } });
+    expect(existsSync(counter)).toBe(false);
+    await client.callTool({ name: 'solution_evaluate', arguments: { id: 'mcp-one-call', repoPath: repo } });
+    expect(readFileSync(counter, 'utf8')).toBe('x');
+  });
+
   it('preflight binary missing: returns structured {error, verdict:null} — not isError', async () => {
     process.env.SOLUTION_PREFLIGHT_BIN = join(tmpRoot, 'does-not-exist-preflight-mcp');
     const raw = await client.callTool({
@@ -670,10 +787,20 @@ describe('solution_evaluate — MCP roundtrip', () => {
     // evaluateSolution returns a structured error payload (does not throw),
     // so this must NOT be an MCP-level error (isError must be absent/false).
     expect((raw as ToolTextResponse).isError).toBeUndefined();
-    const result = parseToolResult(raw) as { verdict: null; markerPath: null; error: string };
+    const result = parseToolResult(raw) as {
+      verdict: null;
+      markerPath: null;
+      error: string;
+      diagnostics: { availability: string; complete: boolean; execution: { exitCode: number | null } };
+    };
     expect(result.verdict).toBeNull();
     expect(result.markerPath).toBeNull();
     expect(result.error).toContain('preflight binary not found');
+    expect(result.diagnostics).toMatchObject({
+      availability: 'unavailable',
+      complete: false,
+      execution: { exitCode: null },
+    });
   });
 
   it('schema rejects id="" (min(1) violated)', async () => {
