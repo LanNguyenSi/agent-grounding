@@ -310,6 +310,36 @@ describe('cross-process join', () => {
     }
   }, 30_000);
 
+  it('reports running-unconfirmed for a held lock whose newest attempt already carries an outcome record', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = readyStub('stub-abandoned-lock.sh');
+    const key = sanitizeVerdictId('abandoned-lock');
+    appendStart('abandoned-lock', 'finished-attempt');
+    appendAttemptRecord(key, {
+      kind: 'terminal',
+      attemptId: 'finished-attempt',
+      id: 'abandoned-lock',
+      status: 'completed',
+      terminalAt: iso(),
+      outcomeClass: 'ready',
+      summary: 'ready=true confidence=0.9 blockers=0',
+    });
+    // A lock left behind by a killed holder: nothing running is under it, so
+    // there is no attemptId to hand back and nothing may be spawned either.
+    const release = await takeForeignLock('abandoned-lock');
+    try {
+      const registry = new SolutionAttemptRegistry({ waitBoundMs: 5_000, pollAfterMs: 20 });
+      const res = (await registry.evaluate('abandoned-lock', repo)) as Record<string, unknown>;
+      expect(res.status).toBe('running-unconfirmed');
+      expect(res.attemptId).toBeUndefined();
+      expect(invocations()).toBe(0);
+      // A lookup answers from the log for a row that already carries an
+      // outcome; it does not need the lock for that.
+      expect((await registry.status('abandoned-lock')).status).toBe('completed');
+    } finally {
+      await release();
+    }
+  }, 30_000);
+
   it('reports running-unconfirmed for a held lock with no running row, and starts an attempt once it is free', async () => {
     process.env.SOLUTION_PREFLIGHT_BIN = readyStub('stub-unconfirmed.sh');
     const release = await takeForeignLock('unconfirmed-id');
