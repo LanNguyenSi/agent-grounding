@@ -2,6 +2,114 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-06T08:37:00Z, `solution_evaluate` attempt lifecycle, review round 3 (task
+  `431a8e27`): bounded-delta fix round on accept_with_notes findings from round 2 (one
+  medium, four low). `MAX_LOOKUP_ID_LENGTH` now bounds `solution_evaluate`'s own `id`
+  schema too, not only the two lookups' (`server.ts`, `.max(MAX_LOOKUP_ID_LENGTH)` added
+  next to the existing `.min(1)`), and `SolutionAttemptRegistry.evaluate()` enforces the
+  identical bound again at the registry's own entry point, returning the ordinary
+  `{status:"failed", error}` payload before any filesystem call, so a library caller
+  that bypasses the MCP schema cannot reach the sanitizer, the lock, or the log with an
+  id that would overrun the filesystem name limit. The constant's own docstring is
+  re-derived candidate by candidate against `NAME_MAX` (255 bytes) rather than restating
+  the earlier approximate number: the binding case is the compaction temp file, 48 bytes
+  past the key (generous 10-digit `pid` headroom over Linux's own 7-digit `pid_max`
+  ceiling, plus a 13-digit `Date.now()`, true until the year 2286), not the lock
+  directory `proper-lockfile` creates beside the anchor (18 bytes past the key). README
+  and CHANGELOG corrected the same false claim ("`solution_evaluate` keeps its unbounded
+  schema... an over-long id already comes back from it as failed"), which was never true
+  once an id passed the lookups' bound but exceeded the filesystem's.
+
+  Two smaller risk points, same module: `execute()`'s `finally` used to run the
+  process-local `pruneOwned()` BEFORE releasing the id lock, so an unexpected throw
+  there would have skipped the release entirely and leaked the lock for up to the stale
+  window; `pruneOwned()` now runs after the release, so the same failure can cost only
+  the retention convenience. `lookup()`'s catch was a single undiscriminated branch
+  (any thrown error, `EACCES`/`ENOSPC`/`EMFILE` against `verdictDir()` included, became
+  `{status:"unknown"}` with the raw exception message, which can interpolate
+  `verdictDir()`'s own filesystem path); it is now split, keeping the broad catch (every
+  thrown error still resolves to `unknown`, never an isError envelope) but classifying
+  by the error itself: the sanitizer's own error keeps today's exact message, any other
+  error is routed through `warnSwallowed` and answered with a fixed, path-free message.
+
+  Tests: `grounding-gate-mcp-roundtrip.test.ts`'s id-band test now covers
+  `solution_evaluate` itself (accepted at the bound and round-tripped through both
+  lookups afterwards, schema-rejected one over it), not only the two lookups.
+  `solution-attempt-lifecycle.test.ts` gained two new describes — `id length bound on
+  solution_evaluate` (the registry's own `evaluate()` rejects one over the bound with
+  no preflight invocation and nothing written under `verdictDir()`, accepts one exactly
+  at the bound) and `lookup() catch classification` (a forced `EACCES` on the lock
+  anchor, via a `chmod 0o555` verdict dir restored in a `finally`, same pattern already
+  used in `solution-verdict.test.ts`, resolves to `unknown` with the fixed message and
+  is reported through `warnSwallowed`, asserted against a `console.error` spy) — and the
+  two-process describe now drains child stderr into a buffer instead of leaving it
+  unread on the pipe, gives `send()` a 20s timeout that rejects naming the method and
+  including that buffered stderr instead of hanging forever on a wedged child, tracks
+  and kills every spawned child in an `afterEach` backstop in addition to the test's own
+  `finally`, and asserts in a describe-level `beforeEach` that `dist/server.js` exists
+  and is not older than `src/server.ts`, naming `npm run build` in the failure message,
+  since both tests in that describe exec that build artifact directly.
+
+  Citation impact, re-verified individually against the actual diff rather than by a
+  blanket offset: the `server.ts` edit (a new comment block before the
+  `solution_evaluate` registration, plus widening its `id` schema to four lines, minus
+  one line off the now-redundant sentence in the lookups' own comment) shifted every
+  citation at or after `packages/grounding-mcp/src/server.ts:368#"'solution_evaluate'"`
+  (round 2's line) by +11, uniformly, all the way to the end of the file: re-pointed to
+  `packages/grounding-mcp/src/server.ts:376#"'solution_evaluate'"` and
+  `packages/grounding-mcp/src/server.ts:451#"'solution_gate'"` in
+  `solution-acceptance-verdict-contract.md`, and to
+  `packages/grounding-mcp/src/server.ts:496#"'hypothesis_record',"`,
+  `packages/grounding-mcp/src/server.ts:510#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:516#"'hypothesis_list',"`,
+  `packages/grounding-mcp/src/server.ts:539#"'hypothesis_evidence',"`,
+  `packages/grounding-mcp/src/server.ts:556#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:562#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:588#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:594#"'hypothesis_reject',"`,
+  `packages/grounding-mcp/src/server.ts:610#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:616#"'hypothesis_support',"`,
+  `packages/grounding-mcp/src/server.ts:632#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
+  `packages/grounding-mcp/src/server.ts:637#"saveStore(sessionId, store);"` and
+  `packages/grounding-mcp/src/server.ts:643#"'hypothesis_reset',"` in
+  `hypothesis-tracker-persistence-split.md`. `evidence-ledger-session-key-shapes.md`'s
+  own citations sit entirely before line 368 (`server.ts:241`, `server.ts:248-253/254`)
+  and did not move, but the file is re-stamped anyway: it declares `server.ts` as a
+  source, and that file changed. Every quoted anchor text is unchanged and still
+  resolves verbatim at its new line; none of the re-pointed docs' `sources:` lists
+  changed. `solution-acceptance-verdict-contract.md`'s `solution_evaluate` args
+  sentence also gained the new bound (`max 200 — MAX_LOOKUP_ID_LENGTH, the same bound
+  the two lookups below enforce`), a prose correction tied to the fix, not a citation
+  move. `log.md`'s own historical citations at these same pre-round-3 line numbers
+  (this entry and the one below it) are left exactly as written: this file is
+  reserved/append-only history, excluded from citations-resolve's blocking selectors by
+  the CI job's own carve-out, and describes what was true at ITS commit, not now.
+
+  Re-stamp ancestry: the three docs above are re-stamped in this FINAL, docs-only
+  commit, made after every source-touching commit of this round. The last such commit
+  is `5cf48929d77f196f8a79ea312fa4fde669a7de86` (test commit, committer time
+  2026-09-06T08:33:13Z); the preceding fix commit is
+  `2da953dc121be3f5c55c867aa798eac8c17dc0c3` (2026-09-06T08:33:02Z). The three docs'
+  `timestamp:` values are set to 2026-09-06T08:37:00Z, later than both, and this same
+  commit is the one that changes each doc's stamp value.
+
+  Verification, on the committed tree: `npx okf-kit@0.9.0 check docs/okf
+  --require-anchors` clean on the three re-stamped docs (only `log.md`'s own reserved,
+  non-blocking historical citations warn, per the carve-out above); a build of
+  okf-kit from `agent-dx` master (commit `08cfc07`, `packages/okf-kit`, `npm ci && npm
+  run build`) run as `node <build>/dist/cli.js check docs/okf --strict --json` reports
+  no `sources-fresh` or `sources-fresh-future` finding on the three re-stamped docs (the
+  pre-existing warnings on the two untouched docs from round 2 are unchanged, and remain
+  follow-ups, not this round's responsibility). In `packages/grounding-mcp`,
+  `agent-primitives verify -c build,typecheck,lint,test -x 'test=npm run test:ci'`
+  passes with 463 tests (was 460) and the configured coverage thresholds met, and the
+  lifecycle test file passes three consecutive runs with no flake and no orphaned
+  `server.js` process left behind afterward. Root `npm run build`, `npm run typecheck
+  --workspaces --if-present`, `npm run test --workspaces --if-present` and `npm run
+  test:ci --workspaces --if-present` all pass, with the same per-workspace test counts
+  as round 2 except grounding-mcp's own (463, was 460). All six `check:*` scripts at
+  the repo root pass.
+
 - 2026-09-06T07:35:00Z, `solution_evaluate` attempt lifecycle, review round 2 (task
   `431a8e27`): fix round on the entry below. `pruneOwned()` gained the two
   production call sites it never had, beside the `compactUnderLock` it shares a
