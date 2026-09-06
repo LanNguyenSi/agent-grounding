@@ -38,7 +38,7 @@ import {
   readAttemptRecords,
   reconcileOrphanedAttempts,
   resolveAttempts,
-  MAX_LOOKUP_ID_LENGTH,
+  MAX_ID_FILENAME_LENGTH,
   MAX_RECORD_BYTES,
   RETENTION_POLL_MARGIN,
   type AttemptRecord,
@@ -1139,16 +1139,16 @@ describe('lookup() catch classification', () => {
 // ── id length bound on solution_evaluate (registry entry point) ─────────
 
 describe('id length bound on solution_evaluate', () => {
-  it('rejects an id over MAX_LOOKUP_ID_LENGTH with the ordinary failed payload before any filesystem call, even called directly on the registry (bypassing the MCP schema)', async () => {
+  it('rejects an id over MAX_ID_FILENAME_LENGTH with the ordinary failed payload before any filesystem call, even called directly on the registry (bypassing the MCP schema)', async () => {
     process.env.SOLUTION_PREFLIGHT_BIN = readyStub('stub-should-never-run.sh');
     const registry = new SolutionAttemptRegistry({ waitBoundMs: 5_000 });
-    const overBound = 'o'.repeat(MAX_LOOKUP_ID_LENGTH + 1);
+    const overBound = 'o'.repeat(MAX_ID_FILENAME_LENGTH + 1);
 
     const res = (await registry.evaluate(overBound, repo)) as Record<string, unknown>;
     expect(res.status).toBe('failed');
     expect(res.verdict).toBeNull();
     expect(res.markerPath).toBeNull();
-    expect(String(res.error)).toContain(String(MAX_LOOKUP_ID_LENGTH));
+    expect(String(res.error)).toContain(String(MAX_ID_FILENAME_LENGTH));
     expect(String(res.error)).toContain('too long');
 
     // No preflight was ever started, and nothing was ever written under
@@ -1158,10 +1158,10 @@ describe('id length bound on solution_evaluate', () => {
     expect(fs.existsSync(verdictDir()) ? fs.readdirSync(verdictDir()) : []).toEqual([]);
   }, 20_000);
 
-  it('accepts an id exactly at MAX_LOOKUP_ID_LENGTH and runs it normally', async () => {
+  it('accepts an id exactly at MAX_ID_FILENAME_LENGTH and runs it normally', async () => {
     process.env.SOLUTION_PREFLIGHT_BIN = readyStub('stub-at-bound.sh');
     const registry = new SolutionAttemptRegistry({ waitBoundMs: 20_000 });
-    const atBound = 'o'.repeat(MAX_LOOKUP_ID_LENGTH);
+    const atBound = 'o'.repeat(MAX_ID_FILENAME_LENGTH);
 
     const res = (await registry.evaluate(atBound, repo)) as Record<string, unknown>;
     expect(res.status).toBe('completed');
@@ -1169,19 +1169,19 @@ describe('id length bound on solution_evaluate', () => {
   }, 20_000);
 });
 
-describe('MAX_LOOKUP_ID_LENGTH stays under NAME_MAX on every derived basename', () => {
+describe('MAX_ID_FILENAME_LENGTH stays under NAME_MAX on every derived basename', () => {
   it('keeps the longest real basename the module derives from a maximal-length id below the 255-byte NAME_MAX, including the compaction temp file', () => {
     // NAME_MAX itself (255) is not exported anywhere in this module; it is
-    // the filesystem limit MAX_LOOKUP_ID_LENGTH's own docstring is measured
+    // the filesystem limit MAX_ID_FILENAME_LENGTH's own docstring is measured
     // against, so it is named here the same way that docstring names it.
     const NAME_MAX = 255;
-    const maxId = 'a'.repeat(MAX_LOOKUP_ID_LENGTH);
+    const maxId = 'a'.repeat(MAX_ID_FILENAME_LENGTH);
     const key = sanitizeVerdictId(maxId);
     // A plain-letter id passes the sanitizer untouched; if that ever changed,
     // the byte-length assertions below would silently stop matching what
-    // MAX_LOOKUP_ID_LENGTH's own docstring claims, so pin it explicitly.
+    // MAX_ID_FILENAME_LENGTH's own docstring claims, so pin it explicitly.
     expect(key).toBe(maxId);
-    expect(key.length).toBe(MAX_LOOKUP_ID_LENGTH);
+    expect(key.length).toBe(MAX_ID_FILENAME_LENGTH);
 
     const candidates: Array<{ label: string; basename: string }> = [
       { label: 'attempt log', basename: path.basename(attemptLogPathForKey(key)) },
@@ -1197,7 +1197,7 @@ describe('MAX_LOOKUP_ID_LENGTH stays under NAME_MAX on every derived basename', 
       { label: 'verdict marker', basename: path.basename(verdictPath(key)) },
       {
         // compactUnderLock's own temp file: `${attemptLogPathForKey(key)}.compact-${process.pid}-${Date.now()}`.
-        // Per MAX_LOOKUP_ID_LENGTH's docstring this is the BINDING case (48
+        // Per MAX_ID_FILENAME_LENGTH's docstring this is the BINDING case (48
         // bytes past the key: 15 for the log suffix, 9 for ".compact-", 10
         // worst-case pid digits, 1 for the separator, 13 worst-case
         // Date.now() digits). Built from the worst-case digit counts the

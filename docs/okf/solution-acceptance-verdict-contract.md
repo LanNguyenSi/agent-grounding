@@ -251,7 +251,7 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
 
 - **`solution_evaluate`** (registered `server.ts:376#"'solution_evaluate'"`) — the producer. Runs preflight against
   the repo, records a HEAD-pinned verdict for `id`. Args: `id` (min 1, max 200,
-  `MAX_LOOKUP_ID_LENGTH`, the same bound the two lookups below enforce), optional
+  `MAX_ID_FILENAME_LENGTH`, the same bound the two lookups below enforce), optional
   `repoPath` (defaults to cwd), optional `forceNewAttempt`. It no longer calls
   `evaluateSolution` directly: the call goes through the attempt registry
   (`packages/grounding-mcp/src/solution-attempt-log.ts`), which owns the bounded wait,

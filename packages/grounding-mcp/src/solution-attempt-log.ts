@@ -132,7 +132,7 @@ export const MAX_RECORD_BYTES = 2_048;
  * 200 leaves `255 - 48 - 200 = 7` bytes of headroom under `NAME_MAX` on the
  * binding (compaction) case, with more to spare on every shorter one.
  *
- * The bound is enforced on ALL THREE tools up front: `.max(MAX_LOOKUP_ID_LENGTH)`
+ * The bound is enforced on ALL THREE tools up front: `.max(MAX_ID_FILENAME_LENGTH)`
  * on every tool's `id` schema in `server.ts`, and again at this module's own
  * entry point (`SolutionAttemptRegistry.evaluate()` rejects an over-long id
  * with the ordinary `{status:"failed", error}` payload before any filesystem
@@ -140,7 +140,7 @@ export const MAX_RECORD_BYTES = 2_048;
  * refusal. Ids are never paths either way: `sanitizeVerdictId` still reduces
  * every id to one safe segment before it is ever used to build a path.
  */
-export const MAX_LOOKUP_ID_LENGTH = 200;
+export const MAX_ID_FILENAME_LENGTH = 200;
 
 const TRUNCATION_MARKER = '... [truncated]';
 const MAX_SUMMARY_CHARS = 240;
@@ -779,9 +779,9 @@ export class SolutionAttemptRegistry {
     repoPath: string,
     options: { forceNewAttempt?: boolean } = {},
   ): Promise<EvaluateAttemptResponse> {
-    if (id.length > MAX_LOOKUP_ID_LENGTH) {
+    if (id.length > MAX_ID_FILENAME_LENGTH) {
       // Enforced here as well as by every tool's schema in server.ts (see
-      // MAX_LOOKUP_ID_LENGTH's docstring for the derivation), so a library
+      // MAX_ID_FILENAME_LENGTH's docstring for the derivation), so a library
       // caller that bypasses the MCP transport gets the identical refusal
       // before any filesystem call: an id this long would overrun NAME_MAX
       // once this module appends a suffix to it (the compaction temp file is
@@ -790,7 +790,7 @@ export class SolutionAttemptRegistry {
         status: 'failed' as const,
         verdict: null,
         markerPath: null,
-        error: `verdict id is too long: ${id.length} characters exceeds the ${MAX_LOOKUP_ID_LENGTH}-character limit`,
+        error: `verdict id is too long: ${id.length} characters exceeds the ${MAX_ID_FILENAME_LENGTH}-character limit`,
         diagnostics: unavailablePreflightDiagnostics(
           { exitCode: null, signal: null },
           'preflight was not started because the verdict id is too long',

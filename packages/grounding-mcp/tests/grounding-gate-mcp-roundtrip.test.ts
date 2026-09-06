@@ -51,7 +51,7 @@ import {
 import { resetStores } from '../src/hypothesis-store.js';
 import { resetLedgerDb } from '../src/ledger-bridge.js';
 import { writeVerdict } from '../src/solution-verdict.js';
-import { MAX_LOOKUP_ID_LENGTH } from '../src/solution-attempt-log.js';
+import { MAX_ID_FILENAME_LENGTH } from '../src/solution-attempt-log.js';
 import { expectValidationError } from './expect-validation-error.js';
 
 // ── Shared types ──────────────────────────────────────────────────────────────
@@ -1623,13 +1623,13 @@ describe('solution_evaluate_status / solution_evaluate_result (MCP roundtrip)', 
     }
   });
 
-  it('bounds id at MAX_LOOKUP_ID_LENGTH on all three tools (solution_evaluate included): the bound passes and round-trips, one over it is a schema rejection on every one', async () => {
+  it('bounds id at MAX_ID_FILENAME_LENGTH on all three tools (solution_evaluate included): the bound passes and round-trips, one over it is a schema rejection on every one', async () => {
     process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
       'stub-lifecycle-band.sh',
       '#!/bin/sh\necho \'{"ready":true,"confidence":0.9,"blockers":[]}\'\n',
     );
-    const atBound = 'i'.repeat(MAX_LOOKUP_ID_LENGTH);
-    const overBound = 'i'.repeat(MAX_LOOKUP_ID_LENGTH + 1);
+    const atBound = 'i'.repeat(MAX_ID_FILENAME_LENGTH);
+    const overBound = 'i'.repeat(MAX_ID_FILENAME_LENGTH + 1);
 
     // solution_evaluate: the bound passes and actually runs the attempt (this
     // is the id the two lookups below then round-trip); one over it is a
