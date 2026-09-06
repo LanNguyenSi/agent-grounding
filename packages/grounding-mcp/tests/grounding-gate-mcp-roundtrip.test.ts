@@ -1623,14 +1623,41 @@ describe('solution_evaluate_status / solution_evaluate_result (MCP roundtrip)', 
     }
   });
 
-  it('bounds id at MAX_LOOKUP_ID_LENGTH on both lookups: the bound passes, one over it is a schema rejection', async () => {
+  it('bounds id at MAX_LOOKUP_ID_LENGTH on all three tools (solution_evaluate included): the bound passes and round-trips, one over it is a schema rejection on every one', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-lifecycle-band.sh',
+      '#!/bin/sh\necho \'{"ready":true,"confidence":0.9,"blockers":[]}\'\n',
+    );
     const atBound = 'i'.repeat(MAX_LOOKUP_ID_LENGTH);
     const overBound = 'i'.repeat(MAX_LOOKUP_ID_LENGTH + 1);
+
+    // solution_evaluate: the bound passes and actually runs the attempt (this
+    // is the id the two lookups below then round-trip); one over it is a
+    // schema rejection, so the over-long id never reaches the registry.
+    const evaluated = parseToolResult(
+      await lifecycleClient.callTool({
+        name: 'solution_evaluate',
+        arguments: { id: atBound, repoPath: repo },
+      }),
+    ) as { status: string };
+    expect(evaluated.status).toBe('completed');
+    expectValidationError(
+      await lifecycleClient.callTool({
+        name: 'solution_evaluate',
+        arguments: { id: overBound, repoPath: repo },
+      }),
+      'solution_evaluate',
+      'id',
+    );
+
     for (const tool of ['solution_evaluate_status', 'solution_evaluate_result']) {
+      // The SAME atBound id, now round-tripped through the lookup that just
+      // ran it above: proof the bound is one shared number across all three
+      // tools, not merely three independent schema limits.
       const accepted = parseToolResult(
         await lifecycleClient.callTool({ name: tool, arguments: { id: atBound } }),
       ) as { status: string };
-      expect(accepted.status).toBe('unknown');
+      expect(accepted.status).toBe('completed');
 
       // One character over: rejected by the schema, so the handler never runs
       // and no ENAMETOOLONG from the filesystem can reach the caller.

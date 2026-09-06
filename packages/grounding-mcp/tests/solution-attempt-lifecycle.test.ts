@@ -17,7 +17,7 @@
 // and the preflight child in that test is the same executable stub as
 // everywhere else.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -36,6 +36,7 @@ import {
   readAttemptRecords,
   reconcileOrphanedAttempts,
   resolveAttempts,
+  MAX_LOOKUP_ID_LENGTH,
   MAX_RECORD_BYTES,
   RETENTION_POLL_MARGIN,
   type AttemptRecord,
@@ -1055,6 +1056,78 @@ describe('unusable ids on the lookups', () => {
   }, 20_000);
 });
 
+// ── lookup() catch: sanitizer error vs. genuine operational failure ──────
+//
+// The private lookup() catch stays broad (any thrown error still resolves to
+// {status:"unknown"}, never an isError envelope), but it is no longer a
+// single undiscriminated branch: the sanitizer's own error keeps today's
+// exact, informative message (pinned above, "unusable ids on the lookups"),
+// while any OTHER thrown error is routed through warnSwallowed (visible on
+// stderr) and answered with a fixed, path-free message instead of
+// interpolating the raw exception, which can carry verdictDir()'s own
+// filesystem path.
+
+describe('lookup() catch classification', () => {
+  it('a forced EACCES on the lock anchor (read-only verdict dir) resolves to unknown with a fixed, path-free message, reported via warnSwallowed', async () => {
+    fs.mkdirSync(verdictDir(), { recursive: true });
+    fs.chmodSync(verdictDir(), 0o555);
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const registry = new SolutionAttemptRegistry({ waitBoundMs: 100 });
+      const status = await registry.status('never-evaluated-eacces-id');
+      expect(status.status).toBe('unknown');
+      expect(status.error).toBe('this id cannot be looked up: the verdict store rejected the lookup');
+      expect(String(status.error)).not.toContain(verdictDir());
+      expect(String(status.error)).not.toMatch(/invalid verdict id/);
+
+      const result = await registry.result('never-evaluated-eacces-id');
+      expect(result.status).toBe('unknown');
+      expect(result.error).toBe('this id cannot be looked up: the verdict store rejected the lookup');
+
+      expect(stderrSpy).toHaveBeenCalled();
+      const logged = stderrSpy.mock.calls.map((call) => String(call[0])).join('\n');
+      expect(logged).toContain('grounding-mcp:');
+      expect(logged).toContain('lookup for id "never-evaluated-eacces-id" failed');
+    } finally {
+      fs.chmodSync(verdictDir(), 0o700);
+      stderrSpy.mockRestore();
+    }
+  }, 20_000);
+});
+
+// ── id length bound on solution_evaluate (registry entry point) ─────────
+
+describe('id length bound on solution_evaluate', () => {
+  it('rejects an id over MAX_LOOKUP_ID_LENGTH with the ordinary failed payload before any filesystem call, even called directly on the registry (bypassing the MCP schema)', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = readyStub('stub-should-never-run.sh');
+    const registry = new SolutionAttemptRegistry({ waitBoundMs: 5_000 });
+    const overBound = 'o'.repeat(MAX_LOOKUP_ID_LENGTH + 1);
+
+    const res = (await registry.evaluate(overBound, repo)) as Record<string, unknown>;
+    expect(res.status).toBe('failed');
+    expect(res.verdict).toBeNull();
+    expect(res.markerPath).toBeNull();
+    expect(String(res.error)).toContain(String(MAX_LOOKUP_ID_LENGTH));
+    expect(String(res.error)).toContain('too long');
+
+    // No preflight was ever started, and nothing was ever written under
+    // verdictDir(): the guard runs before the sanitizer, before the lock, and
+    // before the log.
+    expect(invocations()).toBe(0);
+    expect(fs.existsSync(verdictDir()) ? fs.readdirSync(verdictDir()) : []).toEqual([]);
+  }, 20_000);
+
+  it('accepts an id exactly at MAX_LOOKUP_ID_LENGTH and runs it normally', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = readyStub('stub-at-bound.sh');
+    const registry = new SolutionAttemptRegistry({ waitBoundMs: 20_000 });
+    const atBound = 'o'.repeat(MAX_LOOKUP_ID_LENGTH);
+
+    const res = (await registry.evaluate(atBound, repo)) as Record<string, unknown>;
+    expect(res.status).toBe('completed');
+    expect(invocations()).toBe(1);
+  }, 20_000);
+});
+
 // ── Two REAL server processes on one id (shape a) ────────────────────────
 
 describe('two grounding-mcp processes, one id', () => {
@@ -1064,9 +1137,51 @@ describe('two grounding-mcp processes, one id', () => {
     notify: (method: string, params: unknown) => void;
   }
 
+  const serverBin = path.resolve(__dirname, '..', 'dist', 'server.js');
+  const serverSrc = path.resolve(__dirname, '..', 'src', 'server.ts');
+  // Every child this describe block spawns, so a test that throws before its
+  // own `finally` runs (or a rejection from `send`'s new timeout) cannot
+  // leave an orphaned grounding-mcp process behind: the test's own `finally`
+  // still does the ordinary kill, this is the backstop.
+  const liveChildren: ReturnType<typeof spawn>[] = [];
+
+  beforeEach(() => {
+    liveChildren.length = 0;
+    // dist/ is a build artifact these two tests exec directly, not something
+    // vitest transforms from source: a stale dist/server.js from before the
+    // last source edit would silently test yesterday's server. Fail loudly
+    // with the fix, rather than let the suite pass against the wrong binary.
+    expect(
+      fs.existsSync(serverBin),
+      `${serverBin} does not exist; run "npm run build" in packages/grounding-mcp before this suite`,
+    ).toBe(true);
+    const distMtime = fs.statSync(serverBin).mtimeMs;
+    const srcMtime = fs.statSync(serverSrc).mtimeMs;
+    expect(
+      distMtime,
+      `${serverBin} (built ${new Date(distMtime).toISOString()}) is older than ${serverSrc} ` +
+        `(edited ${new Date(srcMtime).toISOString()}); run "npm run build" in packages/grounding-mcp`,
+    ).toBeGreaterThanOrEqual(srcMtime);
+  });
+
+  afterEach(() => {
+    for (const child of liveChildren) {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    }
+    liveChildren.length = 0;
+  });
+
   function startServer(env: NodeJS.ProcessEnv): StdioClient {
-    const serverBin = path.resolve(__dirname, '..', 'dist', 'server.js');
     const child = spawn(process.execPath, [serverBin], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+    liveChildren.push(child);
+    // Drained, not ignored: a piped stderr nobody reads can back up and stall
+    // the child, and a crash's own diagnostic message would otherwise vanish.
+    // Surfaced through a `send` timeout's rejection message, not printed
+    // eagerly, so a healthy run stays quiet.
+    let stderrBuf = '';
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderrBuf += chunk.toString('utf8');
+    });
     const pending = new Map<number, (msg: { result?: { content?: { text: string }[] } }) => void>();
     let buffered = '';
     child.stdout?.on('data', (chunk: Buffer) => {
@@ -1091,9 +1206,21 @@ describe('two grounding-mcp processes, one id', () => {
     });
     let nextId = 1;
     const send = (method: string, params: unknown): Promise<{ result?: { content?: { text: string }[] } }> =>
-      new Promise((resolve) => {
+      new Promise((resolve, reject) => {
         const id = nextId++;
-        pending.set(id, resolve);
+        const timer = setTimeout(() => {
+          pending.delete(id);
+          reject(
+            new Error(
+              `timed out waiting for a response to "${method}" (request id ${id}); child stderr so far:\n${stderrBuf}`,
+            ),
+          );
+        }, 20_000);
+        timer.unref?.();
+        pending.set(id, (msg) => {
+          clearTimeout(timer);
+          resolve(msg);
+        });
         child.stdin?.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
       });
     const notify = (method: string, params: unknown): void => {
