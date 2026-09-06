@@ -2,6 +2,67 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-06T21:11:51Z, review-round polish, round 2 (task `3846b4d5`):
+  fixes from the reviewer's first pass over the round-1 diff below,
+  packages/grounding-mcp only. Extracted `compactUnderLock`'s inline temp-file
+  template into an exported `compactionTempPathForKey(key, pid, nowMs)`, now
+  called by both `compactUnderLock` and the NAME_MAX basename test, so the
+  test's longest-candidate basename comes from the SAME production code
+  rather than a second, independently-maintained copy of the template (the
+  round-1 test had reimplemented it). Fixed the basename assertion from
+  `toBeLessThan(NAME_MAX)` to `toBeLessThanOrEqual(NAME_MAX)`: 255 bytes is
+  itself a legal basename length on this filesystem (measured: 255 succeeds,
+  256 raises ENAMETOOLONG), so `< NAME_MAX` was one byte stricter than the
+  real limit. Re-measured the constant's own failure boundary under the
+  corrected `<=` form with `agent-primitives probe`: `MAX_ID_FILENAME_LENGTH`
+  at 207 passes (248+7=255 bytes at the true worst-case digit counts is the
+  binding basename), at 208 fails (256 bytes); the round-1 entry below had
+  measured 206/207 under the stricter `<` form, one lower, which is exactly
+  the shift the `<=` fix produces. Added a comment above
+  `resolveForLookup`'s own `this.pruneOwned()` call explaining why running it
+  before `release()` is safe there (the release sits in that same try's own
+  `finally`, unlike the ordering hazard `execute()`'s own comment guards
+  against). Recorded the `MAX_LOOKUP_ID_LENGTH` rename and the
+  `InvalidVerdictIdError` sentinel export from round 1 in
+  `CHANGELOG.md`'s `[Unreleased]` section (neither had a changelog line yet).
+  Design doc section 6's write-side re-read sentence now names the specific
+  outside-the-ordinary-path case precisely: "(`compromised`, section 7,
+  including the starvation residual described later in the document, where
+  the lock is already gone before this process's own heartbeat reports it)",
+  replacing the bare "(`compromised`, section 7)" a reader could otherwise
+  read as the flag alone rather than the specific residual bullet under
+  "Concurrency" / "Residuals". Corrected this file's own round-1 entry below:
+  it claimed "two citations" into the pre-shift `solution-verdict.ts` range
+  where there is exactly one (the `2026-09-06T06:20:23Z` entry's own
+  `solution-verdict.ts:746-803#"const markerPath = writeVerdict(verdict);"`
+  citation); fixed the count and the surrounding singular/plural wording in
+  place, since that entry is this branch's own unmerged commit, not shared
+  history yet. Mutation probes (`agent-primitives probe`, worktree
+  isolation): inverting `execute()`'s finally release/prune order still
+  kills the release-before-prune ordering test (replay of round 1's probe);
+  raising `MAX_ID_FILENAME_LENGTH` to 208 (the new failure boundary under
+  `<=`) still kills the NAME_MAX test, and 207 (boundary minus one) passes
+  as expected (replay of round 1's probe, boundary shifted by one per the
+  `<=` fix above); appending 8 characters to `compactionTempPathForKey`'s
+  own `.compact-` suffix kills the NAME_MAX test (new probe: the coupling
+  the medium finding asked for). Appending exactly 1 character to that same
+  suffix does NOT kill it (249 of 255 bytes, still 6 bytes under the limit
+  at the production constant's own 7-byte headroom): reported honestly as a
+  discriminating-probe caveat rather than claimed as a kill, since the
+  brief's own "for example append one character" wording undersells how
+  much headroom `MAX_ID_FILENAME_LENGTH`'s docstring already reserves.
+  `solution-acceptance-verdict-contract.md` declares
+  `solution-attempt-log.ts` as a source with no line-anchored citation into
+  it (a bare `sources:` entry and one prose mention with no line number), so
+  the helper extraction needed only this doc's own `timestamp:` re-stamp,
+  not a citation re-pin; re-stamped to this commit's own real UTC instant.
+  No other doc in this bundle cites `solution-attempt-log.ts`. Package
+  checks in packages/grounding-mcp: `npm run build`, `typecheck`, `lint`,
+  `test` (465 passed), and `test:ci` (coverage gate) all green. Root checks:
+  `check:pins`, `check:deps`, `check:lockfile-integrity`, and
+  `check:okf-test-citation-shape` all green (`check:okf-kit-pin` out of
+  scope, unchanged by this round).
+
 - 2026-09-06T20:51:25Z, review-round polish (task `3846b4d5`): five
   independent low findings from PR #214's review rounds, packages/grounding-mcp
   only. Design doc section 6 corrected: the write-side re-read before a
@@ -46,10 +107,10 @@
   individually against the file at HEAD and re-pinned, from the sanitizer
   helpers' own citations through the whole `evaluateSolution`/
   `owBlockersFor` producer section down to the final marker write. This
-  file's own two citations into the same pre-shift range (the entry
-  documenting the original attempt-lifecycle PR, above) are left exactly as
+  file's own one citation into the same pre-shift range (the entry
+  documenting the original attempt-lifecycle PR, above) is left exactly as
   written, per this file's own established convention for historical
-  entries: they describe what was true at their own commit, not now.
+  entries: it describes what was true at its own commit, not now.
   `server.ts` itself gained no net line shift from the rename (a pure
   same-line identifier swap at each site), so neither
   `evidence-ledger-session-key-shapes.md` nor

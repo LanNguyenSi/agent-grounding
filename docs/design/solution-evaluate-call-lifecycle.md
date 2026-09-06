@@ -746,7 +746,9 @@ path in the first place: reconciliation can append one only after
 acquiring the id's lock with no retries (section 7), which is impossible
 while this process still holds it. The re-read is a genuine, non-atomic
 check only for the two paths that fall OUTSIDE the ordinary one: a holder
-that has already lost its lock (`compromised`, section 7) before this
+that has already lost its lock (`compromised`, section 7, including the
+starvation residual described later in the document, where the lock is
+already gone before this process's own heartbeat reports it) before this
 write runs, and any other process's terminal write for an attemptId a
 reconciler has meanwhile settled while that writer was itself outside the
 lock. Against those two, the read and the append are not atomic with each
