@@ -51,6 +51,7 @@ import {
 import { resetStores } from '../src/hypothesis-store.js';
 import { resetLedgerDb } from '../src/ledger-bridge.js';
 import { writeVerdict } from '../src/solution-verdict.js';
+import { MAX_LOOKUP_ID_LENGTH } from '../src/solution-attempt-log.js';
 import { expectValidationError } from './expect-validation-error.js';
 
 // ── Shared types ──────────────────────────────────────────────────────────────
@@ -1605,6 +1606,41 @@ describe('solution_evaluate_status / solution_evaluate_result (MCP roundtrip)', 
     expect(status.status).toBe('unknown');
     expect(existsSync(counter)).toBe(false);
   });
+
+  it('answers an unusable but schema-valid id with a clean unknown payload rather than an isError envelope', async () => {
+    // solution_evaluate already answers an unusable id with an ordinary
+    // {status:"failed", error} payload; these two lookups match that posture
+    // instead of surfacing the sanitizer's throw as an MCP error envelope.
+    for (const tool of ['solution_evaluate_status', 'solution_evaluate_result']) {
+      const raw = (await lifecycleClient.callTool({ name: tool, arguments: { id: '..' } })) as {
+        isError?: boolean;
+      };
+      expect(raw.isError).toBeFalsy();
+      const payload = parseToolResult(raw) as { status: string; id: string; error: string };
+      expect(payload.status).toBe('unknown');
+      expect(payload.id).toBe('..');
+      expect(payload.error).toContain('invalid verdict id');
+    }
+  });
+
+  it('bounds id at MAX_LOOKUP_ID_LENGTH on both lookups: the bound passes, one over it is a schema rejection', async () => {
+    const atBound = 'i'.repeat(MAX_LOOKUP_ID_LENGTH);
+    const overBound = 'i'.repeat(MAX_LOOKUP_ID_LENGTH + 1);
+    for (const tool of ['solution_evaluate_status', 'solution_evaluate_result']) {
+      const accepted = parseToolResult(
+        await lifecycleClient.callTool({ name: tool, arguments: { id: atBound } }),
+      ) as { status: string };
+      expect(accepted.status).toBe('unknown');
+
+      // One character over: rejected by the schema, so the handler never runs
+      // and no ENAMETOOLONG from the filesystem can reach the caller.
+      expectValidationError(
+        await lifecycleClient.callTool({ name: tool, arguments: { id: overBound } }),
+        tool,
+        'id',
+      );
+    }
+  }, 20_000);
 
   it('schema rejects id="" and attemptId="" on both lookups', async () => {
     expectValidationError(

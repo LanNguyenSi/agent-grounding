@@ -477,6 +477,118 @@ describe('retention and compaction', () => {
     expect(pruned.verdict).toBeUndefined();
   }, 40_000);
 
+  it('clamps retention up to RETENTION_POLL_MARGIN x the advertised pollAfterMs, and leaves a roomier one alone', () => {
+    // The clamp is the invariant, so it is asserted where it BINDS: a
+    // configured retention below the floor must come back AS the floor. The
+    // retention test above configures 5000 ms against a 20 ms poll hint, which
+    // is already above the floor and therefore holds with or without the
+    // clamp; this one does not.
+    const clamped = new SolutionAttemptRegistry({ pollAfterMs: 1_000, retentionMs: 10 });
+    expect(clamped.pollAfterMs).toBe(1_000);
+    expect(clamped.retentionMs).toBe(1_000 * RETENTION_POLL_MARGIN);
+
+    // Above the floor, the configured value is kept exactly.
+    const roomy = new SolutionAttemptRegistry({ pollAfterMs: 10, retentionMs: 500_000 });
+    expect(roomy.retentionMs).toBe(500_000);
+  });
+
+  it('ages a terminal attempt out of the in-memory registry on an ordinary evaluate, with nothing calling pruneOwned by hand', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = readyStub('stub-prune-evaluate.sh');
+    let clockValue = Date.now();
+    const registry = new SolutionAttemptRegistry({
+      waitBoundMs: 20_000,
+      pollAfterMs: 20,
+      retentionMs: 5_000,
+      now: () => clockValue,
+    });
+
+    const first = (await registry.evaluate('prune-evaluate', repo)) as Record<string, unknown>;
+    expect(first.status).toBe('completed');
+    const attemptId = first.attemptId as string;
+    expect(registry.ownsAttempt(attemptId)).toBe(true);
+
+    // Past the retention window on the injected clock. Nothing in this test
+    // calls pruneOwned(): a long-lived server never would either, which is
+    // exactly the reason the call has to live on a production path.
+    clockValue += 60_000;
+    expect(registry.ownsAttempt(attemptId)).toBe(true);
+
+    const second = (await registry.evaluate('prune-evaluate', repo)) as Record<string, unknown>;
+    expect(second.status).toBe('completed');
+    expect(registry.ownsAttempt(attemptId)).toBe(false);
+    // The attempt that just finished is inside the window and is kept.
+    expect(registry.ownsAttempt(second.attemptId as string)).toBe(true);
+  }, 40_000);
+
+  it('ages a terminal attempt out of the in-memory registry on an ordinary lookup that takes the lock', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = readyStub('stub-prune-lookup.sh');
+    let clockValue = Date.now();
+    const registry = new SolutionAttemptRegistry({
+      waitBoundMs: 20_000,
+      pollAfterMs: 20,
+      retentionMs: 5_000,
+      now: () => clockValue,
+    });
+
+    const own = (await registry.evaluate('prune-lookup', repo)) as Record<string, unknown>;
+    const attemptId = own.attemptId as string;
+    expect(registry.ownsAttempt(attemptId)).toBe(true);
+
+    // A newer, orphaned row for the same id: the lookup below therefore takes
+    // the read-path liveness acquisition, which is the second place the
+    // in-memory registry ages out.
+    appendStart('prune-lookup', 'orphan-attempt', new Date(clockValue + 1_000).toISOString());
+    clockValue += 60_000;
+
+    expect((await registry.status('prune-lookup')).status).toBe('unknown');
+    expect(registry.ownsAttempt(attemptId)).toBe(false);
+  }, 40_000);
+
+  it('does not let an EXPIRED prior attempt license a new one while the id lock is live', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = readyStub('stub-expired-locked.sh');
+    const key = sanitizeVerdictId('expired-locked');
+    const old = new Date(Date.now() - 3_600_000).toISOString();
+    appendStart('expired-locked', 'old-attempt', old);
+    appendAttemptRecord(key, {
+      kind: 'terminal',
+      attemptId: 'old-attempt',
+      id: 'expired-locked',
+      status: 'completed',
+      terminalAt: old,
+      outcomeClass: 'ready',
+      summary: 'ready=true confidence=0.9 blockers=0',
+    });
+    expect(compactUnderLock(key, Date.now(), 5_000)).toBe(true);
+
+    const reader = new SolutionAttemptRegistry({ waitBoundMs: 5_000, pollAfterMs: 20 });
+    expect((await reader.status('expired-locked', 'old-attempt')).status).toBe('expired');
+
+    // The other half of "only an acquisition licenses a new attempt": the
+    // completed/unknown halves are covered above, this is `expired`. A settled
+    // prior fate, however final it reads, never licenses one on its own.
+    const release = await takeForeignLock('expired-locked');
+    try {
+      const registry = new SolutionAttemptRegistry({ waitBoundMs: 5_000, pollAfterMs: 20 });
+      const res = (await registry.evaluate('expired-locked', repo)) as Record<string, unknown>;
+      expect(res.status).toBe('running-unconfirmed');
+      expect(invocations()).toBe(0);
+      expect(countKind('expired-locked', 'start')).toBe(0);
+
+      const forced = (await registry.evaluate('expired-locked', repo, { forceNewAttempt: true })) as Record<string, unknown>;
+      expect(forced.status).toBe('refused');
+      expect(invocations()).toBe(0);
+    } finally {
+      await release();
+    }
+
+    // The acquisition is what licenses it, and it does so only now.
+    const after = new SolutionAttemptRegistry({ waitBoundMs: 20_000 });
+    const started = (await after.evaluate('expired-locked', repo)) as Record<string, unknown>;
+    expect(started.status).toBe('completed');
+    expect(invocations()).toBe(1);
+    expect(countKind('expired-locked', 'start')).toBe(1);
+  }, 40_000);
+
   it('keeps a compacted reconciled-unknown attempt at unknown, never laundering it into expired', () => {
     const key = sanitizeVerdictId('compact-unknown');
     const old = new Date(Date.now() - 3_600_000).toISOString();
@@ -826,4 +938,234 @@ describe('attempt log helpers', () => {
     expect(readAttemptRecords(sanitizeVerdictId('no-log-id'))).toEqual([]);
     expect(latestAttemptId([])).toBeNull();
   });
+});
+
+// ── Terminal write order (write, then release) ───────────────────────────
+
+describe('terminal write order', () => {
+  it('appends the terminal record while this process still holds the id lock, and never leaves a started attempt uncovered', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = readyStub('stub-write-order.sh', 1);
+    const lockDir = `${attemptLockAnchorPath('write-order')}.lock`;
+    const logPath = attemptLogPath('write-order');
+
+    // The order, observed deterministically rather than raced for: sample
+    // whether this process's lock directory still exists at the instant the
+    // terminal line is handed to the kernel. That directory IS the lock under
+    // `proper-lockfile` (it creates it to acquire and removes it to release),
+    // and `stale` is 30 s here, so mid-attempt it cannot be a stale leftover:
+    // its presence is the readable form of "the writer still holds the lock".
+    // A release moved before the append inverts this sample; a poller cannot
+    // see that window reliably, because the release and the append that
+    // follows it are one microtask chain.
+    const lockHeldAtTerminalWrite: boolean[] = [];
+    const realWriteSync = fs.writeSync;
+    const patched = ((fd: number, data: unknown, ...rest: unknown[]): number => {
+      if (typeof data === 'string' && data.includes('"kind":"terminal"')) {
+        try {
+          const parsed = JSON.parse(data) as { kind?: string; id?: string };
+          if (parsed.kind === 'terminal' && parsed.id === 'write-order') {
+            lockHeldAtTerminalWrite.push(fs.existsSync(lockDir));
+          }
+        } catch {
+          // Not one of ours; every other writer on this fd is left alone.
+        }
+      }
+      return (realWriteSync as unknown as (...args: unknown[]) => number)(fd, data, ...rest);
+    }) as unknown as typeof fs.writeSync;
+
+    // The same invariant from the outside, sampled in lockstep with the run:
+    // an attempt that has a `start` record and no outcome record yet must
+    // never be observable while the id's lock is free, because that is exactly
+    // the state a reconciler would settle as `unknown`.
+    const violations: string[] = [];
+    const poll = setInterval(() => {
+      let raw: string;
+      try {
+        raw = fs.readFileSync(logPath, 'utf8');
+      } catch {
+        return;
+      }
+      if (!raw.includes('"kind":"start"')) return;
+      if (raw.includes('"kind":"terminal"')) return;
+      if (!fs.existsSync(lockDir)) violations.push(new Date().toISOString());
+    }, 1);
+
+    (fs as { writeSync: typeof fs.writeSync }).writeSync = patched;
+    try {
+      const registry = new SolutionAttemptRegistry({ waitBoundMs: 20_000 });
+      const res = (await registry.evaluate('write-order', repo)) as Record<string, unknown>;
+      expect(res.status).toBe('completed');
+    } finally {
+      (fs as { writeSync: typeof fs.writeSync }).writeSync = realWriteSync;
+      clearInterval(poll);
+    }
+
+    expect(lockHeldAtTerminalWrite).toEqual([true]);
+    expect(violations).toEqual([]);
+    expect(countKind('write-order', 'terminal')).toBe(1);
+    // The lock is free afterwards: the release still happens, just later.
+    expect(fs.existsSync(lockDir)).toBe(false);
+  }, 40_000);
+});
+
+// ── Unusable ids on the read-only lookups ────────────────────────────────
+
+describe('unusable ids on the lookups', () => {
+  it('answers with {status:"unknown", id, error} instead of throwing, and creates nothing anywhere', async () => {
+    const registry = new SolutionAttemptRegistry({ waitBoundMs: 100 });
+    for (const bad of ['..', '.', 'L'.repeat(5_000)]) {
+      const status = await registry.status(bad);
+      expect(status.status).toBe('unknown');
+      expect(status.id).toBe(bad);
+      expect(String(status.error)).toContain('this id cannot be looked up');
+      expect(status.attemptId).toBeUndefined();
+
+      const result = await registry.result(bad);
+      expect(result.status).toBe('unknown');
+      expect(result.id).toBe(bad);
+      expect(String(result.error)).toContain('this id cannot be looked up');
+    }
+
+    // The attemptId the caller passed is echoed back on the same shape.
+    const withAttempt = await registry.status('..', 'some-attempt');
+    expect(withAttempt).toMatchObject({ status: 'unknown', id: '..', attemptId: 'some-attempt' });
+    expect(String(withAttempt.error)).toContain('invalid verdict id');
+
+    // No log, no lock anchor, nothing inside verdictDir() and nothing outside
+    // it: `sanitizeVerdictId` is still the only path builder on this route.
+    expect(fs.existsSync(verdictDir()) ? fs.readdirSync(verdictDir()) : []).toEqual([]);
+  }, 20_000);
+
+  it('answers a traversal-shaped id the same way, and writes nothing outside the verdict dir', async () => {
+    const registry = new SolutionAttemptRegistry({ waitBoundMs: 100 });
+    const escape = path.join(tmpDir, 'escaped-by-lookup');
+    const status = await registry.status(`../../../../../..${escape}`);
+    // Collapsed to one safe segment by the sanitizer, so it is an ordinary
+    // never-seen id rather than an error, and it resolves inside the dir.
+    expect(status.status).toBe('unknown');
+    expect(fs.existsSync(escape)).toBe(false);
+    expect(fs.existsSync(`${escape}${'.attempts.jsonl'}`)).toBe(false);
+  }, 20_000);
+});
+
+// ── Two REAL server processes on one id (shape a) ────────────────────────
+
+describe('two grounding-mcp processes, one id', () => {
+  interface StdioClient {
+    child: ReturnType<typeof spawn>;
+    send: (method: string, params: unknown) => Promise<{ result?: { content?: { text: string }[] } }>;
+    notify: (method: string, params: unknown) => void;
+  }
+
+  function startServer(env: NodeJS.ProcessEnv): StdioClient {
+    const serverBin = path.resolve(__dirname, '..', 'dist', 'server.js');
+    const child = spawn(process.execPath, [serverBin], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+    const pending = new Map<number, (msg: { result?: { content?: { text: string }[] } }) => void>();
+    let buffered = '';
+    child.stdout?.on('data', (chunk: Buffer) => {
+      buffered += chunk.toString('utf8');
+      for (;;) {
+        const newline = buffered.indexOf('\n');
+        if (newline < 0) break;
+        const line = buffered.slice(0, newline);
+        buffered = buffered.slice(newline + 1);
+        if (line.trim().length === 0) continue;
+        let msg: { id?: number };
+        try {
+          msg = JSON.parse(line) as { id?: number };
+        } catch {
+          continue;
+        }
+        if (typeof msg.id === 'number' && pending.has(msg.id)) {
+          pending.get(msg.id)?.(msg as { result?: { content?: { text: string }[] } });
+          pending.delete(msg.id);
+        }
+      }
+    });
+    let nextId = 1;
+    const send = (method: string, params: unknown): Promise<{ result?: { content?: { text: string }[] } }> =>
+      new Promise((resolve) => {
+        const id = nextId++;
+        pending.set(id, resolve);
+        child.stdin?.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
+      });
+    const notify = (method: string, params: unknown): void => {
+      child.stdin?.write(`${JSON.stringify({ jsonrpc: '2.0', method, params })}\n`);
+    };
+    return { child, send, notify };
+  }
+
+  function payload(raw: { result?: { content?: { text: string }[] } }): Record<string, unknown> {
+    const text = raw.result?.content?.[0]?.text;
+    expect(typeof text).toBe('string');
+    return JSON.parse(text as string) as Record<string, unknown>;
+  }
+
+  it('starts exactly one preflight process for one id, and the loser joins instead of spawning', async () => {
+    // The counter file is the discriminator and the stub itself appends to it,
+    // so a second `preflight` started by the OTHER OS process is counted even
+    // though neither this test nor either server could observe it in memory.
+    process.env.SOLUTION_PREFLIGHT_BIN = readyStub('stub-two-proc.sh', 2);
+    const env = {
+      ...process.env,
+      SOLUTION_VERDICT_DIR: verdictDir(),
+      HARNESS_HOME: harnessHomeTmp,
+      SOLUTION_PREFLIGHT_BIN: process.env.SOLUTION_PREFLIGHT_BIN as string,
+    };
+    const a = startServer(env);
+    const b = startServer(env);
+    try {
+      for (const c of [a, b]) {
+        await c.send('initialize', {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          clientInfo: { name: 'two-proc-test', version: '0.0.0' },
+        });
+        c.notify('notifications/initialized', {});
+      }
+
+      // Fired without awaiting the first: whichever acquisition loses the
+      // atomic mkdir gets ELOCKED, and ELOCKED means join, never spawn.
+      const callA = a.send('tools/call', {
+        name: 'solution_evaluate',
+        arguments: { id: 'two-real-processes', repoPath: repo },
+      });
+      const callB = b.send('tools/call', {
+        name: 'solution_evaluate',
+        arguments: { id: 'two-real-processes', repoPath: repo },
+      });
+      const [rawA, rawB] = await Promise.all([callA, callB]);
+      const outA = payload(rawA);
+      const outB = payload(rawB);
+
+      expect(invocations()).toBe(1);
+      expect(countKind('two-real-processes', 'start')).toBe(1);
+
+      const statuses = [outA.status, outB.status].sort();
+      // One process ran it to completion; the other either joined it by
+      // attemptId or answered running-unconfirmed, if it got there before the
+      // winner had written its start record. Both are the join rule; neither
+      // is a second run.
+      expect(statuses).toContain('completed');
+      const loser = outA.status === 'completed' ? outB : outA;
+      const winner = outA.status === 'completed' ? outA : outB;
+      expect(['running', 'running-unconfirmed']).toContain(loser.status);
+      if (loser.status === 'running') expect(loser.attemptId).toBe(winner.attemptId);
+
+      // The loser can look the winner's FOREIGN attemptId up across the
+      // process boundary, out of the shared on-disk log.
+      const loserClient = outA.status === 'completed' ? b : a;
+      const lookedUp = payload(
+        await loserClient.send('tools/call', {
+          name: 'solution_evaluate_status',
+          arguments: { id: 'two-real-processes', attemptId: winner.attemptId as string },
+        }),
+      );
+      expect(lookedUp.status).toBe('completed');
+      expect(lookedUp.attemptId).toBe(winner.attemptId);
+    } finally {
+      a.child.kill('SIGKILL');
+      b.child.kill('SIGKILL');
+    }
+  }, 60_000);
 });
