@@ -97,6 +97,24 @@ export const DEFAULT_ATTEMPT_LOCK_STALE_MS = 30_000;
 /** Every log record is one line, one write, at most this many UTF-8 bytes. */
 export const MAX_RECORD_BYTES = 2_048;
 
+/**
+ * Upper bound, in characters, on the `id` the two read-only lookups accept.
+ * Neither `sanitizeVerdictId` nor `solution_evaluate`'s own schema states one,
+ * so it is derived here from what an id has to fit INTO: every id becomes a
+ * file NAME under `verdictDir()`, and the longest name this module derives
+ * from one is a compaction temp file, `<id>.attempts.jsonl.compact-<pid>-<ms>`,
+ * roughly 45 characters past the id itself. 200 keeps that inside the 255-byte
+ * `NAME_MAX` the filesystems this runs on enforce, with room to spare, and the
+ * count is in bytes as well as characters because `sanitizeVerdictId` collapses
+ * every non-`[A-Za-z0-9._-]` character to a single-byte `_` first.
+ *
+ * It bounds the LOOKUPS only. `solution_evaluate` keeps its own unbounded
+ * schema: an id too long for the filesystem already comes back from it as the
+ * ordinary `{status:"failed", error}` payload, and narrowing that schema now
+ * would turn today's clean answer into a validation envelope.
+ */
+export const MAX_LOOKUP_ID_LENGTH = 200;
+
 const TRUNCATION_MARKER = '... [truncated]';
 const MAX_SUMMARY_CHARS = 240;
 
@@ -612,6 +630,8 @@ export interface AttemptStatusResponse {
   lastUpdatedAt?: string;
   isLatestForId?: boolean;
   pollAfterMs?: number;
+  /** Present only on the `unknown` answer for an id the lookup cannot use. */
+  error?: string;
 }
 
 export interface AttemptResultResponse {
@@ -666,6 +686,11 @@ interface LiveAttempt {
   attemptId: string | null;
   outcome: Promise<AttemptOutcome>;
 }
+
+type LookupOutcome =
+  | { kind: 'attempt'; attempt: ResolvedAttempt; isLatestForId: boolean }
+  | { kind: 'running-unconfirmed' }
+  | { kind: 'unknown'; attemptId?: string; error?: string };
 
 export interface AttemptRegistryOptions {
   waitBoundMs?: number;
@@ -949,6 +974,11 @@ export class SolutionAttemptRegistry {
           // turn a finished attempt into a failed one, but it is reported.
           warnSwallowed(`compaction for "${id}" failed`, err);
         }
+        // Same window, same trigger: the in-memory half of retention ages out
+        // wherever the on-disk half does, so a long-lived server does not hold
+        // every `EvaluateResult` (diagnostics included) it ever produced. It
+        // needs no lock of its own, being purely process-local.
+        this.pruneOwned();
         await release().catch((err: unknown) => warnSwallowed(`releasing the attempt lock for "${id}" failed`, err));
       }
       // Compromised: the lock is already gone or is now someone else's. This
@@ -958,11 +988,18 @@ export class SolutionAttemptRegistry {
   }
 
   /**
-   * Write-order step 2. The re-read below is an OPTIMIZATION only: this
-   * process no longer holds the lock a reconciler would have needed, so the
-   * read and the append are not atomic with each other. The guarantee that a
-   * late terminal write cannot upgrade an already-reconciled attempt lives in
-   * `resolveAttempts`, on the READ side.
+   * Write-order step 2, and on the ORDINARY path it runs while this process
+   * still holds the id's lock: `execute` releases only in its `finally`, after
+   * this has returned. That is exactly why the re-read below is an
+   * OPTIMIZATION and not the guarantee. It closes the window only for the
+   * writer that is inside the lock, and the writers that can actually produce
+   * a late terminal record are the ones OUTSIDE it: a compromised holder,
+   * whose lock is already gone or already someone else's by the time it gets
+   * here, and any other process appending for an attemptId a reconciler has
+   * meanwhile settled. Against those, this read and the append that follows it
+   * are not atomic with each other. The guarantee that a late terminal write
+   * can never upgrade an already-reconciled attempt is the READER rule in
+   * `resolveAttempts`.
    */
   private appendTerminal(
     key: string,
@@ -987,7 +1024,18 @@ export class SolutionAttemptRegistry {
     });
   }
 
-  /** Exposed for the late-write test: the same terminal path, invoked directly. */
+  /**
+   * @internal Test seam, NOT part of the published tool surface or of any
+   * contract a consumer may rely on; it may change or disappear without a
+   * major bump. It exists so the late-terminal-write test (design criterion 8:
+   * a retry never upgrades an `unknown` attempt to a success) can drive the
+   * REAL terminal-write path, write-side re-read included. Driving that test
+   * through the module-level `appendAttemptRecord` instead would bypass the
+   * one guard the test is about, and re-implementing the re-read in the test
+   * would assert the test's copy rather than the production one. Kept a method
+   * rather than an exported function because the re-read and the record's
+   * `terminalAt` both come from this registry's own clock.
+   */
   appendTerminalRecordForTest(
     id: string,
     attemptId: string,
@@ -1006,14 +1054,7 @@ export class SolutionAttemptRegistry {
    * check (the SAME retry-free acquisition the startup pass runs) whenever the
    * row still reads `running`, and only then.
    */
-  private async resolveForLookup(
-    id: string,
-    attemptId?: string,
-  ): Promise<
-    | { kind: 'attempt'; attempt: ResolvedAttempt; isLatestForId: boolean }
-    | { kind: 'running-unconfirmed' }
-    | { kind: 'unknown'; attemptId?: string }
-  > {
+  private async resolveForLookup(id: string, attemptId?: string): Promise<LookupOutcome> {
     const key = sanitizeVerdictId(id);
     let records = readAttemptRecords(key);
     let resolved = resolveAttempts(records);
@@ -1028,6 +1069,7 @@ export class SolutionAttemptRegistry {
         try {
           reconcileUnderLock(key, this.nowIso());
           compactUnderLock(key, this.now(), this.retentionMs);
+          this.pruneOwned();
         } finally {
           await release().catch((err: unknown) =>
             warnSwallowed(`releasing the attempt lock for "${id}" failed`, err),
@@ -1058,14 +1100,45 @@ export class SolutionAttemptRegistry {
     return { kind: 'unknown' };
   }
 
+  /**
+   * `resolveForLookup`, with the unusable-id case turned into an ANSWER rather
+   * than a thrown error. Two ids get here: one `sanitizeVerdictId` rejects
+   * outright (`'.'`, `'..'`, a string of only separators), and one long enough
+   * that the first filesystem call under `verdictDir()` fails `ENAMETOOLONG`.
+   * Neither can escape `verdictDir()` (`sanitizeVerdictId` is still the only
+   * path builder, and it still runs first), so this is about the SHAPE of the
+   * answer, not about safety: `solution_evaluate` already answers an unusable
+   * id with a clean `{status:"failed", error}` payload, and these two
+   * read-only lookups now match that posture with `{status:"unknown", id,
+   * error}` instead of surfacing a raw `Error` as an MCP `isError` envelope.
+   * `unknown` is the honest status: no attempt could be identified, and none
+   * was appended.
+   */
+  private async lookup(id: string, attemptId?: string): Promise<LookupOutcome> {
+    try {
+      return await this.resolveForLookup(id, attemptId);
+    } catch (err) {
+      return {
+        kind: 'unknown',
+        ...(attemptId === undefined ? {} : { attemptId }),
+        error: `this id cannot be looked up: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+  }
+
   /** `solution_evaluate_status`: read-only, always fast, never blocks. */
   async status(id: string, attemptId?: string): Promise<AttemptStatusResponse> {
-    const found = await this.resolveForLookup(id, attemptId);
+    const found = await this.lookup(id, attemptId);
     if (found.kind === 'running-unconfirmed') {
       return { status: 'running-unconfirmed', id, pollAfterMs: this.pollAfterMs };
     }
     if (found.kind === 'unknown') {
-      return { status: 'unknown', id, ...(found.attemptId === undefined ? {} : { attemptId: found.attemptId }) };
+      return {
+        status: 'unknown',
+        id,
+        ...(found.attemptId === undefined ? {} : { attemptId: found.attemptId }),
+        ...(found.error === undefined ? {} : { error: found.error }),
+      };
     }
     const { attempt, isLatestForId } = found;
     return {
@@ -1088,12 +1161,17 @@ export class SolutionAttemptRegistry {
    * string are never persisted across a process boundary.
    */
   async result(id: string, attemptId?: string): Promise<AttemptResultResponse> {
-    const found = await this.resolveForLookup(id, attemptId);
+    const found = await this.lookup(id, attemptId);
     if (found.kind === 'running-unconfirmed') {
       return { status: 'running-unconfirmed', id, pollAfterMs: this.pollAfterMs };
     }
     if (found.kind === 'unknown') {
-      return { status: 'unknown', id, ...(found.attemptId === undefined ? {} : { attemptId: found.attemptId }) };
+      return {
+        status: 'unknown',
+        id,
+        ...(found.attemptId === undefined ? {} : { attemptId: found.attemptId }),
+        ...(found.error === undefined ? {} : { error: found.error }),
+      };
     }
     const { attempt, isLatestForId } = found;
     if (attempt.status === 'running') {

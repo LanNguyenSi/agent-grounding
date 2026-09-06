@@ -46,7 +46,7 @@ import { withProgressPings, DEFAULT_PROGRESS_INTERVAL_MS, DEFAULT_PROGRESS_MESSA
 import {
   SolutionAttemptRegistry,
   reconcileOrphanedAttempts,
-  type AttemptRegistryOptions,
+  MAX_LOOKUP_ID_LENGTH,
 } from './solution-attempt-log.js';
 
 // Single source of truth for the version string emitted by both the
@@ -154,20 +154,29 @@ export function resolveProgressIntervalMs(raw: unknown): number {
 // them: `attemptWaitBoundMs` is the value an operator lowers when the client
 // in use cuts calls earlier than this default assumes. Each is validated the
 // same way `progressIntervalMs` is, inside the registry.
+//
+// Spelled out field by field rather than intersected with the registry's own
+// `AttemptRegistryOptions`: intersecting it published a SECOND, undocumented
+// spelling of every knob (`waitBoundMs` beside `attemptWaitBoundMs`, and so
+// on) that nothing here documents and nothing forwards deliberately. This type
+// is the whole option surface of `createServer`, and the four `attempt*` names
+// plus `now` are all of it.
 export function createServer(
-  options: { progressIntervalMs?: number } & AttemptRegistryOptions & {
+  options: {
+    progressIntervalMs?: number;
     attemptWaitBoundMs?: number;
     attemptPollAfterMs?: number;
     attemptRetentionMs?: number;
     attemptLockStaleMs?: number;
+    now?: () => number;
   } = {},
 ): McpServer {
   const progressIntervalMs = resolveProgressIntervalMs(options.progressIntervalMs);
   const attempts = new SolutionAttemptRegistry({
-    waitBoundMs: options.attemptWaitBoundMs ?? options.waitBoundMs,
-    pollAfterMs: options.attemptPollAfterMs ?? options.pollAfterMs,
-    retentionMs: options.attemptRetentionMs ?? options.retentionMs,
-    lockStaleMs: options.attemptLockStaleMs ?? options.lockStaleMs,
+    waitBoundMs: options.attemptWaitBoundMs,
+    pollAfterMs: options.attemptPollAfterMs,
+    retentionMs: options.attemptRetentionMs,
+    lockStaleMs: options.attemptLockStaleMs,
     now: options.now,
   });
 
@@ -385,11 +394,21 @@ export function createServer(
   // marker. With `attemptId` omitted they answer for the latest attempt
   // recorded for the id, which is the recovery path for a caller whose own
   // request timed out before it ever learned an `attemptId`.
+  //
+  // Both bound `id` at MAX_LOOKUP_ID_LENGTH (see solution-attempt-log.ts for
+  // where the number comes from). An id that is short enough to pass this
+  // schema but still unusable (`'..'`, say) is answered by the registry with
+  // `{status:"unknown", id, error}`, the same posture `solution_evaluate`
+  // already has for an unusable id, not with an isError envelope.
   server.tool(
     'solution_evaluate_status',
     'Look up the status of a solution_evaluate attempt for <id> (running / completed / failed / unknown / expired / running-unconfirmed). Read-only and fast: never starts preflight, never blocks. Omit attemptId to ask about the latest attempt recorded for the id, which is the recovery path when your own solution_evaluate call timed out without returning a handle.',
     {
-      id: z.string().min(1).describe('The same identifier solution_evaluate was called with.'),
+      id: z
+        .string()
+        .min(1)
+        .max(MAX_LOOKUP_ID_LENGTH)
+        .describe('The same identifier solution_evaluate was called with.'),
       attemptId: z
         .string()
         .min(1)
@@ -403,7 +422,11 @@ export function createServer(
     'solution_evaluate_result',
     'Fetch the outcome of a solution_evaluate attempt for <id> once it is terminal; returns {status:"running"} rather than blocking while it is not. Read-only: never starts preflight. A lookup answered by a process that did not itself run the attempt (another session, or this one after a restart) returns the reduced payload (outcomeClass, summary, persisted error) with verdict/markerPath only when this attempt is still the latest for the id and its marker is present.',
     {
-      id: z.string().min(1).describe('The same identifier solution_evaluate was called with.'),
+      id: z
+        .string()
+        .min(1)
+        .max(MAX_LOOKUP_ID_LENGTH)
+        .describe('The same identifier solution_evaluate was called with.'),
       attemptId: z
         .string()
         .min(1)

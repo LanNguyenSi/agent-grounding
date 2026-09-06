@@ -51,6 +51,15 @@
   a holder that died after the last startup is not reported `running` until the
   next restart. Liveness is the lock and only the lock; no code path probes a
   PID.
+- `solution_evaluate_status` / `solution_evaluate_result` bound `id` at 200
+  characters (`MAX_LOOKUP_ID_LENGTH`, derived from what an id has to fit into:
+  every id becomes a file name inside the verdict dir, and the longest one this
+  package derives runs about 45 characters past the id). An id that passes the
+  bound but is still unusable (`..`, `.`) is answered with
+  `{status:"unknown", id, error}` rather than an MCP error envelope, which is
+  the posture `solution_evaluate` already had for the same id.
+  `solution_evaluate`'s own schema is unchanged, since an over-long id already
+  comes back from it as an ordinary `{status:"failed", error}` payload.
 
 - `solution_evaluate` sends standard MCP `notifications/progress` pings while its
   single preflight invocation (in-band with the request: awaited, not
