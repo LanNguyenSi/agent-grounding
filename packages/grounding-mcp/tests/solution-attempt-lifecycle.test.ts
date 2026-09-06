@@ -29,7 +29,9 @@ import {
   SolutionAttemptRegistry,
   appendAttemptRecord,
   attemptLockAnchorPath,
+  attemptLockAnchorPathForKey,
   attemptLogPath,
+  attemptLogPathForKey,
   compactUnderLock,
   encodeRecord,
   latestAttemptId,
@@ -1165,6 +1167,62 @@ describe('id length bound on solution_evaluate', () => {
     expect(res.status).toBe('completed');
     expect(invocations()).toBe(1);
   }, 20_000);
+});
+
+describe('MAX_LOOKUP_ID_LENGTH stays under NAME_MAX on every derived basename', () => {
+  it('keeps the longest real basename the module derives from a maximal-length id below the 255-byte NAME_MAX, including the compaction temp file', () => {
+    // NAME_MAX itself (255) is not exported anywhere in this module; it is
+    // the filesystem limit MAX_LOOKUP_ID_LENGTH's own docstring is measured
+    // against, so it is named here the same way that docstring names it.
+    const NAME_MAX = 255;
+    const maxId = 'a'.repeat(MAX_LOOKUP_ID_LENGTH);
+    const key = sanitizeVerdictId(maxId);
+    // A plain-letter id passes the sanitizer untouched; if that ever changed,
+    // the byte-length assertions below would silently stop matching what
+    // MAX_LOOKUP_ID_LENGTH's own docstring claims, so pin it explicitly.
+    expect(key).toBe(maxId);
+    expect(key.length).toBe(MAX_LOOKUP_ID_LENGTH);
+
+    const candidates: Array<{ label: string; basename: string }> = [
+      { label: 'attempt log', basename: path.basename(attemptLogPathForKey(key)) },
+      { label: 'lock anchor', basename: path.basename(attemptLockAnchorPathForKey(key)) },
+      {
+        // `proper-lockfile` manages `<anchor>.lock` as a directory beside the
+        // anchor file itself (see attemptLockAnchorPathForKey's own doc
+        // comment); that directory's name is still derived from the id and
+        // still has to fit under NAME_MAX.
+        label: "lock anchor's proper-lockfile directory",
+        basename: `${path.basename(attemptLockAnchorPathForKey(key))}.lock`,
+      },
+      { label: 'verdict marker', basename: path.basename(verdictPath(key)) },
+      {
+        // compactUnderLock's own temp file: `${attemptLogPathForKey(key)}.compact-${process.pid}-${Date.now()}`.
+        // Per MAX_LOOKUP_ID_LENGTH's docstring this is the BINDING case (48
+        // bytes past the key: 15 for the log suffix, 9 for ".compact-", 10
+        // worst-case pid digits, 1 for the separator, 13 worst-case
+        // Date.now() digits). Built from the worst-case digit counts the
+        // docstring itself names, not from this test process's own
+        // process.pid/Date.now() (which are shorter today and would
+        // under-test the real bound).
+        label: 'compaction temp file',
+        basename: `${path.basename(attemptLogPathForKey(key))}.compact-${'9'.repeat(10)}-${'9'.repeat(13)}`,
+      },
+    ];
+
+    for (const { label, basename } of candidates) {
+      const byteLength = Buffer.byteLength(basename, 'utf8');
+      expect(byteLength, `${label} basename is ${byteLength} bytes: ${basename}`).toBeLessThan(NAME_MAX);
+    }
+
+    const longest = candidates.reduce((a, b) =>
+      Buffer.byteLength(b.basename, 'utf8') > Buffer.byteLength(a.basename, 'utf8') ? b : a,
+    );
+    // Pins the docstring's own claim ("THIS is the longest name, and the one
+    // 200 is measured against") as a regression check: a future change that
+    // makes some OTHER derived name longer than the compaction temp file
+    // would need this test updated deliberately, not silently pass unnoticed.
+    expect(longest.label).toBe('compaction temp file');
+  });
 });
 
 // ── Two REAL server processes on one id (shape a) ────────────────────────
