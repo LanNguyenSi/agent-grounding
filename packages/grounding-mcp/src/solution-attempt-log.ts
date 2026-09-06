@@ -23,9 +23,15 @@
 //   3. Reader-side precedence over last-record-wins: if ANY
 //      `reconciled-unknown` record exists for an attemptId, that attempt is
 //      `unknown` regardless of any `terminal` record physically appended
-//      later for it. The write-side re-read below is an optimization only:
-//      the writer no longer holds the lock when it performs that re-read, so
-//      the read and the append are not atomic with each other.
+//      later for it. The write-side re-read below is an optimization only,
+//      but not because the writer has let go of the lock: on the ordinary
+//      path it still holds it there, and releases only afterwards. It is an
+//      optimization because it closes the window solely for a writer INSIDE
+//      the lock, while the writers that can actually produce a late terminal
+//      record are outside it (a compromised holder, whose lock is already
+//      gone or already someone else's, and any other process appending for an
+//      attemptId a reconciler has meanwhile settled). The reader rule is the
+//      guarantee.
 //   4. Compaction never acquires the id lock on its own account. It runs only
 //      as a tail step inside an acquisition made for another reason, and is
 //      skipped whenever that acquisition came back `ELOCKED`.

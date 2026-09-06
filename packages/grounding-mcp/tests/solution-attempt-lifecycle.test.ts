@@ -9,6 +9,13 @@
 // script, never a JS mock, and every "exactly one invocation" assertion reads a
 // COUNTER FILE the stub itself appends to: a counter the stub never touches
 // could not tell a real join apart from a race that started two children.
+//
+// One test does wrap a node builtin, and only to OBSERVE: the write-order test
+// swaps `fs.writeSync` for a wrapper that records whether the id's lock still
+// exists at the instant the terminal line is written, then delegates to the
+// real call and restores it. Nothing is stubbed out, no return value is faked,
+// and the preflight child in that test is the same executable stub as
+// everywhere else.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { execFileSync, spawn } from 'node:child_process';
