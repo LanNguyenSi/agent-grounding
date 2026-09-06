@@ -59,7 +59,7 @@ import {
   type EvaluateResult,
   type Verdict,
 } from './solution-verdict.js';
-import type { PreflightDiagnostics } from './preflight-diagnostics.js';
+import { unavailablePreflightDiagnostics, type PreflightDiagnostics } from './preflight-diagnostics.js';
 
 /**
  * How long ONE `solution_evaluate` request blocks before it falls back to a
@@ -104,20 +104,41 @@ export const DEFAULT_ATTEMPT_LOCK_STALE_MS = 30_000;
 export const MAX_RECORD_BYTES = 2_048;
 
 /**
- * Upper bound, in characters, on the `id` the two read-only lookups accept.
- * Neither `sanitizeVerdictId` nor `solution_evaluate`'s own schema states one,
- * so it is derived here from what an id has to fit INTO: every id becomes a
- * file NAME under `verdictDir()`, and the longest name this module derives
- * from one is a compaction temp file, `<id>.attempts.jsonl.compact-<pid>-<ms>`,
- * roughly 45 characters past the id itself. 200 keeps that inside the 255-byte
- * `NAME_MAX` the filesystems this runs on enforce, with room to spare, and the
- * count is in bytes as well as characters because `sanitizeVerdictId` collapses
- * every non-`[A-Za-z0-9._-]` character to a single-byte `_` first.
+ * Upper bound, in characters, on the `id` ALL THREE tools accept:
+ * `solution_evaluate` as well as both read-only lookups. Neither
+ * `sanitizeVerdictId` nor any tool's schema states one on its own, so it is
+ * derived here from what an id has to fit INTO: every id becomes a file NAME
+ * under `verdictDir()`, sized in bytes as well as characters because
+ * `sanitizeVerdictId` collapses every non-`[A-Za-z0-9._-]` character to a
+ * single-byte `_` first, so the sanitized key's byte length never exceeds its
+ * character length.
  *
- * It bounds the LOOKUPS only. `solution_evaluate` keeps its own unbounded
- * schema: an id too long for the filesystem already comes back from it as the
- * ordinary `{status:"failed", error}` payload, and narrowing that schema now
- * would turn today's clean answer into a validation envelope.
+ * The derivation, candidate by candidate, against the 255-byte `NAME_MAX`
+ * these filesystems enforce:
+ *   - the attempt log and the verdict marker: `<key>.attempts.jsonl` (15
+ *     bytes past the key) and `<key>.json` (5 bytes) — neither is close.
+ *   - the lock anchor's OWN name: `<key>.attempt-lock` (13 bytes); the
+ *     directory `proper-lockfile` creates BESIDE it to hold the lock,
+ *     `<key>.attempt-lock.lock` (18 bytes past the key), is longer but still
+ *     not the binding case.
+ *   - the compaction temp file, `compactUnderLock`'s
+ *     `<key>.attempts.jsonl.compact-<pid>-<ms>`: the key plus `.attempts.jsonl`
+ *     (15 bytes) plus `.compact-` (9 bytes) plus `process.pid` (10 digits,
+ *     generous headroom over the 7 digits Linux's own `pid_max` ceiling
+ *     produces) plus `-` (1 byte) plus `Date.now()` (13 digits, true until the
+ *     year 2286) = 48 bytes past the key. THIS is the longest name, and the
+ *     one 200 is measured against.
+ *
+ * 200 leaves `255 - 48 - 200 = 7` bytes of headroom under `NAME_MAX` on the
+ * binding (compaction) case, with more to spare on every shorter one.
+ *
+ * The bound is enforced on ALL THREE tools up front: `.max(MAX_LOOKUP_ID_LENGTH)`
+ * on every tool's `id` schema in `server.ts`, and again at this module's own
+ * entry point (`SolutionAttemptRegistry.evaluate()` rejects an over-long id
+ * with the ordinary `{status:"failed", error}` payload before any filesystem
+ * call), so a library caller that bypasses the MCP schema gets the identical
+ * refusal. Ids are never paths either way: `sanitizeVerdictId` still reduces
+ * every id to one safe segment before it is ever used to build a path.
  */
 export const MAX_LOOKUP_ID_LENGTH = 200;
 
@@ -758,6 +779,24 @@ export class SolutionAttemptRegistry {
     repoPath: string,
     options: { forceNewAttempt?: boolean } = {},
   ): Promise<EvaluateAttemptResponse> {
+    if (id.length > MAX_LOOKUP_ID_LENGTH) {
+      // Enforced here as well as by every tool's schema in server.ts (see
+      // MAX_LOOKUP_ID_LENGTH's docstring for the derivation), so a library
+      // caller that bypasses the MCP transport gets the identical refusal
+      // before any filesystem call: an id this long would overrun NAME_MAX
+      // once this module appends a suffix to it (the compaction temp file is
+      // the binding case).
+      return Promise.resolve({
+        status: 'failed' as const,
+        verdict: null,
+        markerPath: null,
+        error: `verdict id is too long: ${id.length} characters exceeds the ${MAX_LOOKUP_ID_LENGTH}-character limit`,
+        diagnostics: unavailablePreflightDiagnostics(
+          { exitCode: null, signal: null },
+          'preflight was not started because the verdict id is too long',
+        ),
+      });
+    }
     let key: string;
     try {
       key = sanitizeVerdictId(id);
@@ -980,12 +1019,19 @@ export class SolutionAttemptRegistry {
           // turn a finished attempt into a failed one, but it is reported.
           warnSwallowed(`compaction for "${id}" failed`, err);
         }
+        await release().catch((err: unknown) => warnSwallowed(`releasing the attempt lock for "${id}" failed`, err));
         // Same window, same trigger: the in-memory half of retention ages out
         // wherever the on-disk half does, so a long-lived server does not hold
         // every `EvaluateResult` (diagnostics included) it ever produced. It
-        // needs no lock of its own, being purely process-local.
+        // needs no lock of its own, being purely process-local. Placed AFTER
+        // the release rather than before it: `pruneOwned` only ever touches
+        // this process's own in-memory Map and is not expected to throw, but
+        // it used to run between the guarded `compactUnderLock` and the
+        // release, where an unforeseen throw here would have skipped the
+        // release call entirely and leaked the lock for up to the stale
+        // window. After the release, the lock is already gone either way, so
+        // the same failure here can cost only the retention convenience.
         this.pruneOwned();
-        await release().catch((err: unknown) => warnSwallowed(`releasing the attempt lock for "${id}" failed`, err));
       }
       // Compromised: the lock is already gone or is now someone else's. This
       // process never deletes a lock it does not hold, and never runs
@@ -1107,27 +1153,45 @@ export class SolutionAttemptRegistry {
   }
 
   /**
-   * `resolveForLookup`, with the unusable-id case turned into an ANSWER rather
-   * than a thrown error. Two ids get here: one `sanitizeVerdictId` rejects
-   * outright (`'.'`, `'..'`, a string of only separators), and one long enough
-   * that the first filesystem call under `verdictDir()` fails `ENAMETOOLONG`.
-   * Neither can escape `verdictDir()` (`sanitizeVerdictId` is still the only
-   * path builder, and it still runs first), so this is about the SHAPE of the
-   * answer, not about safety: `solution_evaluate` already answers an unusable
+   * `resolveForLookup`, with every thrown error turned into an ANSWER rather
+   * than an isError envelope: `solution_evaluate` already answers an unusable
    * id with a clean `{status:"failed", error}` payload, and these two
-   * read-only lookups now match that posture with `{status:"unknown", id,
-   * error}` instead of surfacing a raw `Error` as an MCP `isError` envelope.
-   * `unknown` is the honest status: no attempt could be identified, and none
-   * was appended.
+   * read-only lookups match that posture with `{status:"unknown", id, error}`
+   * instead. `unknown` is the honest status either way: no attempt could be
+   * identified, and none was appended.
+   *
+   * The catch stays broad (kept, not narrowed to only the sanitizer's own
+   * error) so an id this module cannot use for ANY reason still answers
+   * cleanly rather than throwing, but it is no longer a single undiscriminated
+   * branch: an id `sanitizeVerdictId` itself rejects outright (`'.'`, `'..'`,
+   * a string of only separators) keeps today's exact, informative message,
+   * while any OTHER thrown error — an id long enough that a filesystem call
+   * under `verdictDir()` fails `ENAMETOOLONG`, or a genuine operational
+   * failure there (`EACCES`, `ENOSPC`, `EMFILE`) — is reported through
+   * `warnSwallowed` (so a broken verdict store is visible on stderr instead of
+   * invisible behind a clean-looking payload) and answered with a fixed,
+   * path-free message: the raw exception can interpolate `verdictDir()`'s own
+   * filesystem path, which this module does not want to hand back to a
+   * caller. Neither branch can escape `verdictDir()` either way:
+   * `sanitizeVerdictId` is still the only path builder, and it still runs
+   * first.
    */
   private async lookup(id: string, attemptId?: string): Promise<LookupOutcome> {
     try {
       return await this.resolveForLookup(id, attemptId);
     } catch (err) {
+      if (err instanceof Error && err.message.startsWith('invalid verdict id:')) {
+        return {
+          kind: 'unknown',
+          ...(attemptId === undefined ? {} : { attemptId }),
+          error: `this id cannot be looked up: ${err.message}`,
+        };
+      }
+      warnSwallowed(`lookup for id ${JSON.stringify(id)} failed`, err);
       return {
         kind: 'unknown',
         ...(attemptId === undefined ? {} : { attemptId }),
-        error: `this id cannot be looked up: ${err instanceof Error ? err.message : String(err)}`,
+        error: 'this id cannot be looked up: the verdict store rejected the lookup',
       };
     }
   }
@@ -1161,10 +1225,16 @@ export class SolutionAttemptRegistry {
 
   /**
    * `solution_evaluate_result`. The full `EvaluateResult` shape is returned
-   * ONLY by the process whose own in-memory registry ran the attempt, and only
-   * while that attempt is still the latest for its id; every other answer uses
-   * the documented reduced shape, because `diagnostics` and the full `error`
-   * string are never persisted across a process boundary.
+   * ONLY by the process whose own in-memory registry ran the attempt, only
+   * while that attempt is still the latest for its id, AND only while that
+   * process's own in-memory record of the attempt has not yet aged out
+   * (`pruneOwned`, same retention window as the on-disk log): once pruned, the
+   * owning process answers with the reduced shape too, same as any other
+   * process, because `diagnostics` and the full `error` string were never
+   * persisted anywhere else. `pruneOwned` itself is a single process-wide
+   * sweep, unlike compaction, which is scoped to one id: a lookup for id A can
+   * therefore prune id A's owned record as a side effect of THIS process next
+   * touching id B, not only of touching A again.
    */
   async result(id: string, attemptId?: string): Promise<AttemptResultResponse> {
     const found = await this.lookup(id, attemptId);

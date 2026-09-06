@@ -363,12 +363,24 @@ export function createServer(
   // marker outside the agent-writable ledger; solution_gate passes only when a
   // ready verdict exists at the current HEAD. See solution-verdict.ts for the
   // anti-hacking contract and README for the marker contract harness consumes.
+  //
+  // ALL THREE tools below (solution_evaluate and both lookups) bound `id` at
+  // MAX_LOOKUP_ID_LENGTH (see solution-attempt-log.ts for the derivation): an
+  // id over the bound is refused by this schema before the handler ever runs,
+  // and SolutionAttemptRegistry.evaluate() enforces the identical bound again
+  // at the registry's own entry point, so a library caller that bypasses this
+  // MCP schema still gets the failed payload before any filesystem call. Ids
+  // are never paths.
 
   server.tool(
     'solution_evaluate',
     'Run preflight against a repo and record a HEAD-pinned solution-acceptance verdict for <id>, derived from preflight\'s real results (lint/typecheck/test/audit/secret), not from caller input, and with the check set taken from the repo\'s committed .preflight.json. Use this to earn "done" instead of claiming it. Requires the `preflight` binary (agent-preflight) on PATH or via SOLUTION_PREFLIGHT_BIN; fails closed (writes no verdict) when it is unavailable. If the request carries a progressToken, sends periodic notifications/progress pings ("still running", no percentage) while preflight runs; a client that also enables timeout reset on progress can then avoid its own client-side timeout on a slow preflight run — see README.',
     {
-      id: z.string().min(1).describe('Identifier the verdict is scoped to, e.g. a task id.'),
+      id: z
+        .string()
+        .min(1)
+        .max(MAX_LOOKUP_ID_LENGTH)
+        .describe('Identifier the verdict is scoped to, e.g. a task id.'),
       repoPath: z
         .string()
         .optional()
@@ -395,11 +407,10 @@ export function createServer(
   // recorded for the id, which is the recovery path for a caller whose own
   // request timed out before it ever learned an `attemptId`.
   //
-  // Both bound `id` at MAX_LOOKUP_ID_LENGTH (see solution-attempt-log.ts for
-  // where the number comes from). An id that is short enough to pass this
-  // schema but still unusable (`'..'`, say) is answered by the registry with
-  // `{status:"unknown", id, error}`, the same posture `solution_evaluate`
-  // already has for an unusable id, not with an isError envelope.
+  // An id that is short enough to pass this schema but still unusable
+  // (`'..'`, say) is answered by the registry with `{status:"unknown", id,
+  // error}`, the same posture `solution_evaluate` already has for an unusable
+  // id, not with an isError envelope.
   server.tool(
     'solution_evaluate_status',
     'Look up the status of a solution_evaluate attempt for <id> (running / completed / failed / unknown / expired / running-unconfirmed). Read-only and fast: never starts preflight, never blocks. Omit attemptId to ask about the latest attempt recorded for the id, which is the recovery path when your own solution_evaluate call timed out without returning a handle.',
