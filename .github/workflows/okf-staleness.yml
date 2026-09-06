@@ -54,7 +54,7 @@ jobs:
         # ci.yml's own pin (asserted by `npm run check:okf-kit-pin`);
         # 0.8.0 adds `--require-anchors`, which ci.yml's blocking
         # okf-anchor-guard job opts into, this warn-only job does not.
-        run: npm install -g okf-kit@0.9.0 --no-audit --no-fund
+        run: npm install -g okf-kit@0.10.0 --no-audit --no-fund
 
       - name: Assert CLI is alive (output, not exit code)
         shell: bash
@@ -100,20 +100,28 @@ jobs:
               jq -r '.findings[] | "\(.severity | ascii_upcase) \(.ruleId) \(.file): \(.message)"' okf-report.json
               echo '```'
               echo ""
-              echo "A \`sources-fresh\` STALE warning means a \`sources:\` path"
+              echo "A sources-fresh STALE warning means a \`sources:\` path"
               echo "changed after the doc's verification timestamp: re-verify"
               echo "the doc against the source, then update its timestamp."
-              echo ""
-              echo "A \`citations-resolve\` warning means a \`path:N[-M]\`"
-              echo "citation (including continuation-ref shorthands, a form"
-              echo "okf-kit supports) no longer points at real"
-              echo "content, including sub-rules like \`blank-start-line\`,"
-              echo "\`closing-brace-start-line\`, \`missing-file\`,"
-              echo "\`inverted-range\`, \`range-exceeds-file\`, and"
-              echo "\`path-traversal-rejected\`; a \`citations-resolve\` notice"
-              echo "(e.g. an ambiguous target with several same-named"
-              echo "candidates) is informational only, not a finding to fix."
-              echo "This job never blocks on either rule."
+              echo "A sources-fresh-future FUTURE-DATED warning means the doc's"
+              echo "\`timestamp\` is later than the doc file's own last commit,"
+              echo "past a small clock-skew allowance: almost always a local"
+              echo "wall-clock time hand-written with a Z/UTC suffix it does"
+              echo "not actually have; re-stamp with the real verification"
+              echo "instant instead. Findings are matched by rule id, whichever"
+              echo "the installed okf-kit emits, so a future pin bump needs no"
+              echo "edit here."
+              echo "A citations-resolve warning (including blank-start-line,"
+              echo "closing-brace-start-line, missing-file, inverted-range,"
+              echo "range-exceeds-file, path-traversal-rejected) means a"
+              echo "\`path:N\`/\`path:N-M\` citation"
+              echo "in the doc's prose no longer points at real content, even"
+              echo "though the source file itself is not stale: re-check the"
+              echo "citation against the file's current line numbers and"
+              echo "correct it (no timestamp bump needed for this rule alone)."
+              echo "A citations-resolve notice (ambiguous target,"
+              echo "unreadable-target) is informational only and never counts"
+              echo "toward --strict. This job never blocks either way."
             else
               echo "Clean, no findings."
             fi
@@ -125,7 +133,7 @@ jobs:
           jq -r '
             [.findings[] | select(.severity == "warning")]
             | group_by(.file)[]
-            | "\(.[0].file): \(length) warning(s) (stale sources and/or citation drift), full list in the job summary"
+            | "\(.[0].file): \(length) warning(s) (stale sources and/or unresolved citations), full list in the job summary"
           ' okf-report.json | while IFS= read -r line; do
             echo "::warning title=OKF bundle drift::${line}"
           done
