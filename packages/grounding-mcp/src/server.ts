@@ -52,7 +52,7 @@ import {
 // Single source of truth for the version string emitted by both the
 // MCP `name+version` handshake and the `--version` CLI short-circuit.
 // Bump alongside package.json on release.
-const PACKAGE_VERSION = '0.10.0';
+const PACKAGE_VERSION = '0.11.0';
 
 // Wrap a JSON payload as an MCP text-content response. The MCP SDK requires
 // content blocks; serializing the structured result as text keeps the agent
