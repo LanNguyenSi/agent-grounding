@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## 0.11.0, 2026-09-06
+
 ### Added
 
 - Attempt lifecycle for `solution_evaluate`, plus two new read-only tools,

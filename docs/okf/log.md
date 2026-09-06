@@ -2,6 +2,17 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-06T13:01:19Z, grounding-mcp 0.11.0 release preparation: moved the
+  unchanged grounding-mcp Unreleased notes (the attempt lifecycle plus
+  `solution_evaluate_status`/`solution_evaluate_result`, the per-id attempt
+  log, and the progress notifications from PR #212) into the dated 0.11.0
+  release block and updated the package manifest, lockfile, and server
+  `PACKAGE_VERSION`. Re-pointed the solution-acceptance consumer's version
+  anchor to 0.11.0 and the release-topology overview's package-version claim;
+  re-verified and re-stamped the two bundle docs that cite `server.ts` without
+  a version claim (their line citations were unaffected, the version bump is
+  a single-line, same-length edit).
+
 - 2026-09-06T09:15:00Z, `solution_evaluate` attempt lifecycle, review round 4 (task
   `431a8e27`): docs-only delta on the accept_with_notes findings from round 3, no
   change under `src/` or `tests/`. Two overstatements corrected: the round-3 entry
@@ -230,8 +241,9 @@
   `server.ts` edits (one import block, the registry construction inside
   `createServer`, the extended `solution_evaluate` handler, the two new
   registrations, and the reconciliation call in `main()`) shifted every citation
-  below them, by +5 at `PACKAGE_VERSION = '0.10.0'`
-  (`packages/grounding-mcp/src/server.ts:55#"PACKAGE_VERSION = '0.10.0'"`), by +26
+  below them, by +5 at `PACKAGE_VERSION` (the version literal was `'0.10.0'` at
+  the time of this entry, now `'0.11.0'`)
+  (`packages/grounding-mcp/src/server.ts:55#"PACKAGE_VERSION = '0.11.0'"`), by +26
   through the `ledger_add` handler
   (`packages/grounding-mcp/src/server.ts:241#"Session id"`,
   `packages/grounding-mcp/src/server.ts:248-254#"session: sessionId,"`), by +26 at
