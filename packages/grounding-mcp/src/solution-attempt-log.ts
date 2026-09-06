@@ -116,7 +116,7 @@ export const MAX_RECORD_BYTES = 2_048;
  * The derivation, candidate by candidate, against the 255-byte `NAME_MAX`
  * these filesystems enforce:
  *   - the attempt log and the verdict marker: `<key>.attempts.jsonl` (15
- *     bytes past the key) and `<key>.json` (5 bytes) — neither is close.
+ *     bytes past the key) and `<key>.json` (5 bytes): neither is close.
  *   - the lock anchor's OWN name: `<key>.attempt-lock` (13 bytes); the
  *     directory `proper-lockfile` creates BESIDE it to hold the lock,
  *     `<key>.attempt-lock.lock` (18 bytes past the key), is longer but still
@@ -1165,9 +1165,9 @@ export class SolutionAttemptRegistry {
    * cleanly rather than throwing, but it is no longer a single undiscriminated
    * branch: an id `sanitizeVerdictId` itself rejects outright (`'.'`, `'..'`,
    * a string of only separators) keeps today's exact, informative message,
-   * while any OTHER thrown error — an id long enough that a filesystem call
+   * while any OTHER thrown error, an id long enough that a filesystem call
    * under `verdictDir()` fails `ENAMETOOLONG`, or a genuine operational
-   * failure there (`EACCES`, `ENOSPC`, `EMFILE`) — is reported through
+   * failure there (`EACCES`, `ENOSPC`, `EMFILE`), is reported through
    * `warnSwallowed` (so a broken verdict store is visible on stderr instead of
    * invisible behind a clean-looking payload) and answered with a fixed,
    * path-free message: the raw exception can interpolate `verdictDir()`'s own

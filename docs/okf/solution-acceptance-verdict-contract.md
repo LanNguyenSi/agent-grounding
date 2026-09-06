@@ -3,7 +3,7 @@ type: invariant
 title: Solution-acceptance verdict contract — why the marker lives outside the ledger
 description: A "done" verdict is derived from a real preflight+OW run, HEAD-pinned, and written to an XDG state marker outside the agent-writable evidence-ledger because ledger rows are forgeable via ledger_add.
 tags: [solution-acceptance, verdicts, anti-hacking, trust-boundary]
-timestamp: 2026-09-06T08:37:00Z
+timestamp: 2026-09-06T09:37:12Z
 sources:
   - packages/grounding-mcp/src/solution-verdict.ts
   - packages/grounding-mcp/src/solution-attempt-log.ts
@@ -250,7 +250,7 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
 ### The four MCP tools (server.ts, `PACKAGE_VERSION = '0.10.0'` at `server.ts:55#"PACKAGE_VERSION = '0.10.0'"`)
 
 - **`solution_evaluate`** (registered `server.ts:376#"'solution_evaluate'"`) — the producer. Runs preflight against
-  the repo, records a HEAD-pinned verdict for `id`. Args: `id` (min 1, max 200 —
+  the repo, records a HEAD-pinned verdict for `id`. Args: `id` (min 1, max 200,
   `MAX_LOOKUP_ID_LENGTH`, the same bound the two lookups below enforce), optional
   `repoPath` (defaults to cwd), optional `forceNewAttempt`. It no longer calls
   `evaluateSolution` directly: the call goes through the attempt registry

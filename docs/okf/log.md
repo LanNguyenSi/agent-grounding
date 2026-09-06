@@ -64,13 +64,13 @@
   Tests: `grounding-gate-mcp-roundtrip.test.ts`'s id-band test now covers
   `solution_evaluate` itself (accepted at the bound and round-tripped through both
   lookups afterwards, schema-rejected one over it), not only the two lookups.
-  `solution-attempt-lifecycle.test.ts` gained two new describes — `id length bound on
+  `solution-attempt-lifecycle.test.ts` gained two new describes, `id length bound on
   solution_evaluate` (the registry's own `evaluate()` rejects one over the bound with
   no preflight invocation and nothing written under `verdictDir()`, accepts one exactly
   at the bound) and `lookup() catch classification` (a forced `EACCES` on the lock
   anchor, via a `chmod 0o555` verdict dir restored in a `finally`, same pattern already
   used in `solution-verdict.test.ts`, resolves to `unknown` with the fixed message and
-  is reported through `warnSwallowed`, asserted against a `console.error` spy) — and the
+  is reported through `warnSwallowed`, asserted against a `console.error` spy), and the
   two-process describe now drains child stderr into a buffer instead of leaving it
   unread on the pipe, gives `send()` a 20s timeout that rejects naming the method and
   including that buffered stderr instead of hanging forever on a wedged child, tracks
@@ -108,7 +108,7 @@
   source, and that file changed. Every quoted anchor text is unchanged and still
   resolves verbatim at its new line; none of the re-pointed docs' `sources:` lists
   changed. `solution-acceptance-verdict-contract.md`'s `solution_evaluate` args
-  sentence also gained the new bound (`max 200 — MAX_LOOKUP_ID_LENGTH, the same bound
+  sentence also gained the new bound (`max 200, MAX_LOOKUP_ID_LENGTH, the same bound
   the two lookups below enforce`), a prose correction tied to the fix, not a citation
   move. `log.md`'s own historical citations at these same pre-round-3 line numbers
   (this entry and the one below it) are left exactly as written: this file is
