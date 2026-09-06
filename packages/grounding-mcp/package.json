@@ -42,10 +42,12 @@
     "@lannguyensi/hypothesis-tracker": "0.6.0",
     "@lannguyensi/runtime-reality-checker": "^0.3.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "proper-lockfile": "^4.1.2",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",
+    "@types/proper-lockfile": "^4.1.4",
     "@vitest/coverage-v8": "4.1.9",
     "tsx": "^4.22.4",
     "typescript": "^5.3.3",

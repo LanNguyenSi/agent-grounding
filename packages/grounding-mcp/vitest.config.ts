@@ -91,6 +91,15 @@ export default defineConfig({
           functions: 92,
           lines: 88,
         },
+        'src/solution-attempt-log.ts': {
+          // measured (2026-09-06 run, the attempt-lifecycle addition):
+          // stmts 90.81, branches 82.11, funcs 94.54, lines 94.02. Set a few
+          // points below each, like the other per-file floors here.
+          statements: 84,
+          branches: 75,
+          functions: 88,
+          lines: 87,
+        },
         'src/progress.ts': {
           // measured (2026-09-05 run, after the review-round-2 additions):
           // stmts 100, branches 100, funcs 100, lines 100

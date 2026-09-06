@@ -1460,3 +1460,162 @@ describe('verify_memory_reference — MCP roundtrip', () => {
     expect(typeof result.exists).toBe('boolean');
   });
 });
+
+// ── solution_evaluate_status / solution_evaluate_result (MCP roundtrip) ─────
+//
+// Like the progress block above, this one connects its OWN client/server pair,
+// via createServer({ attemptWaitBoundMs, attemptPollAfterMs }), because the
+// outer server is built with createServer()'s production wait bound and a test
+// must not sit through it. It still relies on the outer beforeEach/afterEach
+// for env isolation (SOLUTION_VERDICT_DIR, which is also where the attempt log
+// and the lock anchor live, plus HARNESS_HOME). The attempt-lifecycle rules
+// themselves are covered in tests/solution-attempt-lifecycle.test.ts; what is
+// asserted here is the wire surface: the two registrations exist, their
+// schemas, and the shapes they return through a real transport.
+
+describe('solution_evaluate_status / solution_evaluate_result (MCP roundtrip)', () => {
+  let repo: string;
+  let prevPreflightBin: string | undefined;
+  let lifecycleClient: Client;
+  let lifecycleClose: () => Promise<void>;
+
+  function writeStub(name: string, body: string): string {
+    const p = join(tmpRoot, name);
+    writeFileSync(p, body, { mode: 0o755 });
+    chmodSync(p, 0o755);
+    return p;
+  }
+
+  beforeEach(async () => {
+    prevPreflightBin = process.env.SOLUTION_PREFLIGHT_BIN;
+    repo = mkdtempSync(join(tmpdir(), 'solution-repo-lifecycle-'));
+    execFileSync('git', ['init', '-q'], { cwd: repo });
+    execFileSync('git', ['config', 'user.email', 't@t.local'], { cwd: repo });
+    execFileSync('git', ['config', 'user.name', 'test'], { cwd: repo });
+    writeFileSync(join(repo, 'readme.txt'), 'hello', 'utf8');
+    execFileSync('git', ['add', '-A'], { cwd: repo });
+    execFileSync('git', ['commit', '-q', '-m', 'init'], { cwd: repo });
+
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const server = createServer({ attemptWaitBoundMs: 1_500, attemptPollAfterMs: 30 });
+    await server.connect(serverTransport);
+    lifecycleClient = new Client({ name: 'lifecycle-roundtrip-test', version: '0.0.0' });
+    await lifecycleClient.connect(clientTransport);
+    lifecycleClose = async () => {
+      await lifecycleClient.close();
+      await server.close();
+    };
+  });
+
+  afterEach(async () => {
+    await lifecycleClose();
+    if (prevPreflightBin === undefined) delete process.env.SOLUTION_PREFLIGHT_BIN;
+    else process.env.SOLUTION_PREFLIGHT_BIN = prevPreflightBin;
+    rmSync(repo, { recursive: true, force: true });
+  });
+
+  it('lists both new tools alongside solution_evaluate and solution_gate', async () => {
+    const listed = (await lifecycleClient.listTools()).tools.map((t) => t.name);
+    expect(listed).toContain('solution_evaluate_status');
+    expect(listed).toContain('solution_evaluate_result');
+    expect(listed).toContain('solution_evaluate');
+    expect(listed).toContain('solution_gate');
+  });
+
+  it('a completed attempt inside the bound carries status and attemptId, and both lookups resolve it by id alone', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-lifecycle-ready.sh',
+      '#!/bin/sh\necho \'{"ready":true,"confidence":0.9,"blockers":[]}\'\n',
+    );
+    const evaluated = parseToolResult(
+      await lifecycleClient.callTool({
+        name: 'solution_evaluate',
+        arguments: { id: 'mcp-lifecycle-ok', repoPath: repo },
+      }),
+    ) as { status: string; attemptId: string; verdict: { ready: boolean } | null };
+    expect(evaluated.status).toBe('completed');
+    expect(typeof evaluated.attemptId).toBe('string');
+    expect(evaluated.verdict?.ready).toBe(true);
+
+    const status = parseToolResult(
+      await lifecycleClient.callTool({
+        name: 'solution_evaluate_status',
+        arguments: { id: 'mcp-lifecycle-ok' },
+      }),
+    ) as { status: string; attemptId: string; isLatestForId: boolean };
+    expect(status.status).toBe('completed');
+    expect(status.attemptId).toBe(evaluated.attemptId);
+    expect(status.isLatestForId).toBe(true);
+
+    const result = parseToolResult(
+      await lifecycleClient.callTool({
+        name: 'solution_evaluate_result',
+        arguments: { id: 'mcp-lifecycle-ok', attemptId: evaluated.attemptId },
+      }),
+    ) as { status: string; markerPresent: boolean; verdict: { ready: boolean } | null };
+    expect(result.status).toBe('completed');
+    expect(result.markerPresent).toBe(true);
+    expect(result.verdict?.ready).toBe(true);
+  }, 20_000);
+
+  it('returns a running handle once the bound elapses, and the result lands on a later lookup', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-lifecycle-slow.sh',
+      '#!/bin/sh\nsleep 3\necho \'{"ready":true,"confidence":0.9,"blockers":[]}\'\n',
+    );
+    const running = parseToolResult(
+      await lifecycleClient.callTool({
+        name: 'solution_evaluate',
+        arguments: { id: 'mcp-lifecycle-slow', repoPath: repo },
+      }),
+    ) as { status: string; attemptId: string; id: string; pollAfterMs: number };
+    expect(running.status).toBe('running');
+    expect(running.id).toBe('mcp-lifecycle-slow');
+    expect(running.pollAfterMs).toBe(30);
+
+    const deadline = Date.now() + 15_000;
+    let result: { status: string; attemptId: string };
+    for (;;) {
+      result = parseToolResult(
+        await lifecycleClient.callTool({
+          name: 'solution_evaluate_result',
+          arguments: { id: 'mcp-lifecycle-slow', attemptId: running.attemptId },
+        }),
+      ) as { status: string; attemptId: string };
+      if (result.status !== 'running') break;
+      if (Date.now() > deadline) throw new Error('attempt never reached a terminal state');
+      await new Promise((r) => setTimeout(r, 30));
+    }
+    expect(result.status).toBe('completed');
+    expect(result.attemptId).toBe(running.attemptId);
+  }, 30_000);
+
+  it('resolves an id that was never evaluated to unknown without starting anything', async () => {
+    const counter = join(tmpRoot, 'lifecycle-never-count');
+    process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
+      'stub-lifecycle-never.sh',
+      `#!/bin/sh\nprintf x >> '${counter}'\necho '{"ready":true,"confidence":0.9,"blockers":[]}'\n`,
+    );
+    const status = parseToolResult(
+      await lifecycleClient.callTool({
+        name: 'solution_evaluate_status',
+        arguments: { id: 'mcp-lifecycle-never' },
+      }),
+    ) as { status: string };
+    expect(status.status).toBe('unknown');
+    expect(existsSync(counter)).toBe(false);
+  });
+
+  it('schema rejects id="" and attemptId="" on both lookups', async () => {
+    expectValidationError(
+      await lifecycleClient.callTool({ name: 'solution_evaluate_status', arguments: { id: '' } }),
+      'solution_evaluate_status',
+      'id',
+    );
+    expectValidationError(
+      await lifecycleClient.callTool({ name: 'solution_evaluate_result', arguments: { id: 'x', attemptId: '' } }),
+      'solution_evaluate_result',
+      'attemptId',
+    );
+  });
+});

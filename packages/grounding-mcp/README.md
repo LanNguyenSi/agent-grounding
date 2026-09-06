@@ -18,8 +18,10 @@ The other packages in this repo are CLI-first. That works fine for scripted invo
 | `ledger_status` | `ledger-bridge.ledgerStatus` | No-arg ledger reachability + stats probe (entry count, db path, last-write timestamp) for harness MCP health checks; no session required. |
 | `claim_evaluate` | `claim-gate.evaluateClaim` | Run a claim through the gate with caller-supplied context. |
 | `claim_evaluate_from_session` | claim-gate + grounding-wrapper + evidence-ledger | Same, but auto-derive the context from the session's phase status + ledger entries. The default path. |
-| `solution_evaluate` | `solution-verdict` + `preflight` CLI | Run preflight against a repo and record a HEAD-pinned solution-acceptance verdict for an id, derived from preflight's real results. Earn "done" instead of claiming it. Sends `notifications/progress` pings while it runs, if the request carries a progressToken. See below. |
+| `solution_evaluate` | `solution-verdict` + `solution-attempt-log` + `preflight` CLI | Run preflight against a repo and record a HEAD-pinned solution-acceptance verdict for an id, derived from preflight's real results. Earn "done" instead of claiming it. Sends `notifications/progress` pings while it runs, if the request carries a progressToken. Waits up to an internal bound and then hands back `{status:"running", attemptId, pollAfterMs}` instead of blocking further. See below. |
 | `solution_gate` | `solution-verdict.evaluateGate` | Allowed only if a ready verdict exists at the current git HEAD; else a precise deny reason (no verdict / not ready / HEAD drift). |
+| `solution_evaluate_status` | `solution-attempt-log` | Read-only status of a `solution_evaluate` attempt for an id: `running`, `completed`, `failed`, `unknown`, `expired`, or `running-unconfirmed`. Never starts preflight, never blocks. Omit `attemptId` to ask about the latest attempt for that id. |
+| `solution_evaluate_result` | `solution-attempt-log` | Read-only outcome of an attempt once it is terminal, `{status:"running"}` while it is not. The process that ran the attempt answers with the full `solution_evaluate` payload; any other process answers with the reduced, persisted payload. Not gate authority: `solution_gate` still reads only the signed marker. |
 | `verify_memory_reference` | `runtime-reality-checker.verifyMemoryReference` | Check whether a memory-referenced path / symbol / flag still exists in the repo. Call before recommending anything from a memory that cites a concrete file, function, or flag. |
 | `hypothesis_record` | `hypothesis-tracker.addHypothesis` | Add a competing hypothesis with required checks. Use when you can name more than one possible cause. |
 | `hypothesis_list` | `hypothesis-tracker.getSummary` | List all hypotheses for a session plus summary counts. Use before claiming a root cause. |
@@ -36,6 +38,8 @@ The other packages in this repo are CLI-first. That works fine for scripted invo
 | Session JSON | `~/.grounding-mcp/sessions/<id>.json` | `GROUNDING_MCP_SESSIONS_DIR` |
 | Evidence ledger | `~/.evidence-ledger/ledger.db` (owned by `evidence-ledger`) | `EVIDENCE_LEDGER_DB` |
 | Solution verdicts | `~/.local/state/agent-grounding/solution-verdicts/<id>.json` (`$XDG_STATE_HOME` honored) | `SOLUTION_VERDICT_DIR` |
+| Attempt log | `<verdict dir>/<id>.attempts.jsonl`, one append-only JSONL file per sanitized id, mode `0600` | `SOLUTION_VERDICT_DIR` |
+| Attempt lock anchor | `<verdict dir>/<id>.attempt-lock`, mode `0600`; the lock itself is the `<id>.attempt-lock.lock` directory `proper-lockfile` manages beside it | `SOLUTION_VERDICT_DIR` |
 | Verdict signing key | `$SOLUTION_VERDICT_SIGNING_KEY` (absolute key-file path, projected by harness at apply time) when set; else `<harness-home>/harness.generated/.approval-signing.key` (`<harness-home>` resolves like the harness consumer: `~/.harness` if it exists, else `~/.claude` if it already carries harness state, else `~/.harness` created on first use) | `SOLUTION_VERDICT_SIGNING_KEY`, `HARNESS_HOME` |
 
 A phase that ends up with `'skipped'` status (because no steps mapped to it for the chosen keyword, e.g. a non-service domain skips runtime-inspection) counts as satisfied for `claim_evaluate_from_session`. Otherwise the gate would block forever on prerequisites the agent can't actually complete.
@@ -89,6 +93,34 @@ What this heartbeat does **not** fix, and does not claim to fix:
 - A client that drops the connection, or otherwise never sees the ping, gets no benefit; a disconnect mid-run is not repaired by this feature.
 - Some clients treat their tool timeout as a hard limit that progress does not extend, regardless of `resetTimeoutOnProgress` on the underlying MCP request. This heartbeat cannot repair that: it is scoped to the MCP request/response layer this server controls, not every host's own tool-call timeout policy layered on top of it.
 - None of this changes what "done" means: a slow but eventually-`ready` verdict is exactly as durable, and exactly as re-runnable after HEAD moves, as a fast one. The heartbeat only helps a well-behaved, progress-aware client avoid abandoning the call before that verdict comes back — it does not make a timed-out call's result durable, and it does not retry or resume one on your behalf.
+
+### Attempt lifecycle: when to poll, and when to retry
+
+A `preflight` run can outlive the deadline of the call that started it. Since the attempt lifecycle landed, `solution_evaluate` waits only up to an internal bound and then hands back a handle instead of blocking further:
+
+```json
+{ "status": "running", "attemptId": "<server-generated uuid>", "id": "task-42", "pollAfterMs": 5000 }
+```
+
+The `preflight` process keeps running to completion in the background; only that one request stopped waiting. When the run finishes inside the bound, the response is exactly today's `solution_evaluate` payload plus `status` (`completed` or `failed`) and `attemptId`, which an existing caller can ignore.
+
+**The bound is 45 seconds by default and it is configurable.** The governing deadline is your CLIENT's own per-call wall-clock limit, not a constant this server can know: the MCP SDK's 60s default request timeout is one such limit, but a host may enforce a shorter one that progress notifications do not extend. 45s keeps a deliberate margin under that SDK default while leaving room for a slower client wall; lower it (`createServer({ attemptWaitBoundMs })`) if the client in use cuts calls earlier.
+
+**Polling.** Ask `solution_evaluate_status` or `solution_evaluate_result` with the SAME `id` you evaluated. Pass the `attemptId` you were given, or omit it to resolve the latest attempt for that id, which is the recovery path when your own call timed out before it ever returned a handle. Wait `pollAfterMs` between polls. Both tools are read-only: neither ever starts a `preflight` process.
+
+**Never re-call `solution_evaluate` as a stall workaround.** A second call for an id whose attempt is still live joins that attempt and returns its `attemptId`; it does not start a second `preflight` run, in this process or in another one. `forceNewAttempt: true` is refused while an attempt is live (`{status:"refused", error}`) rather than honored, because honoring it would put two runs on the same marker. A genuinely new attempt becomes possible only once the previous one is terminal and the id's lock is free again, at which point an ordinary `solution_evaluate` call starts one with a new `attemptId`.
+
+| Status | Meaning | What to do |
+| --- | --- | --- |
+| `running` | An attempt is live and named by `attemptId`. | Keep polling after `pollAfterMs`. |
+| `running-unconfirmed` | The id's lock is held but no attempt row names it yet (a holder that has not written its start record, a reconciliation pass, or a lock left behind by a killed process). | Keep polling. It resolves by itself, either into `running` or once the lock library reclaims the lock as stale. It is neither an error nor a licence to retry. |
+| `completed` / `failed` | Terminal. `failed` covers every error path `solution_evaluate` already had, plus an attempt whose holder lost its lock (`outcomeClass: "compromised"`, no marker written). | Read the result; re-run only after fixing something. |
+| `unknown` | The attempt's fate was never established: its row still read `running` when a liveness check found the id's lock free. Never upgraded to a success afterwards. | Start a fresh attempt. The `unknown` status alone does not license one; the lock does. |
+| `expired` | The attempt finished, and its detail has since been pruned by the retention window. | Start a fresh attempt if you still need a verdict. |
+
+**What the lock does and does not buy.** Mutual exclusion is delegated to `proper-lockfile`, acquired with no retries against a per-id anchor file next to the marker. Acquired means this process runs the attempt; `ELOCKED` means a holder is alive, so the caller joins instead of spawning. The invariant is scoped: at most one live `preflight` process per sanitized id per HOST while each holder's heartbeat keeps its lock fresh. It buys avoided waste and one in-flight handle to join. It does NOT buy gate safety, and it is not needed for it: `solution_gate` fails closed on a missing, unparseable, not-ready, or HEAD-mismatched marker, which is where every duplicate-run outcome lands.
+
+**Retention.** An attempt's records are compacted into a small tombstone once they are older than the retention window (24h by default, and always at least 100x the advertised `pollAfterMs`, so a caller polling at the advertised cadence can never have its target pruned between two polls). A pruned terminal attempt reads `expired`; a pruned `unknown` attempt keeps reading `unknown`, because pruning must never launder an unestablished fate into an established one.
 
 ### Orchestrator-workflow (OW) process-completeness arm
 

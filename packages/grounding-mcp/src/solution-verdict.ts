@@ -648,7 +648,7 @@ async function oldestChangeAuthorDate(repoPath: string): Promise<string | null> 
 export async function evaluateSolution(
   id: string,
   repoPath: string,
-  opts: { timestamp?: string } = {},
+  opts: { timestamp?: string; preWriteGuard?: () => string | null } = {},
 ): Promise<EvaluateResult> {
   const unavailable = (execution: PreflightExecution, issue: string): PreflightDiagnostics =>
     unavailablePreflightDiagnostics(execution, issue);
@@ -786,6 +786,19 @@ export async function evaluateSolution(
     timestamp: opts.timestamp ?? new Date().toISOString(),
     source: 'preflight',
   };
+  // Optional pre-write guard, read immediately BEFORE the marker write and
+  // never after it (attempt lifecycle write order, `solution-attempt-log.ts`).
+  // Its only current caller is the attempt lifecycle's compromised-holder
+  // path: a holder whose lock the lock library reported compromised has lost
+  // the right to act for this id, so `writeVerdict` is not called on its
+  // behalf. Absent a guard this is a no-op, which is the case for every
+  // existing caller. The prior marker has already been invalidated above, so
+  // refusing the write here fails closed rather than leaving a stale green.
+  const guardError = opts.preWriteGuard?.() ?? null;
+  if (guardError !== null) {
+    return { verdict: null, markerPath: null, error: guardError, diagnostics };
+  }
+
   try {
     const markerPath = writeVerdict(verdict);
     return { verdict, markerPath, diagnostics };

@@ -4,6 +4,54 @@
 
 ### Added
 
+- Attempt lifecycle for `solution_evaluate`, plus two new read-only tools,
+  `solution_evaluate_status` and `solution_evaluate_result`. `solution_evaluate`
+  now waits only up to an internal bound (45s by default, configurable via
+  `createServer({ attemptWaitBoundMs })`) and then returns
+  `{status:"running", attemptId, id, pollAfterMs}` instead of blocking further;
+  the `preflight` process keeps running to completion in the background and the
+  two lookups resolve it afterwards, by `attemptId` or, with `attemptId`
+  omitted, as the latest attempt for that id. A run that finishes inside the
+  bound returns exactly the previous payload plus `status` and `attemptId`. Why
+  45s and not a derived number: the governing deadline is the calling client's
+  own per-call wall-clock limit, which this server cannot know, so the bound is
+  a configurable value that keeps a deliberate margin under the MCP SDK's 60s
+  default request timeout without assuming that default governs every client.
+- Per-sanitized-id append-only attempt log
+  (`<verdict dir>/<id>.attempts.jsonl`, mode `0600`): four record kinds
+  (`start`, `terminal`, `reconciled-unknown`, `tombstone`), one `O_APPEND`
+  write per record capped at 2 KiB of UTF-8 with the persisted error string
+  truncated first and marked, and a reader that skips an unparseable line
+  instead of aborting or rewriting the file. Terminal attempts are compacted
+  into a tombstone carrying their own outcome class after a retention window
+  (24h by default, always at least 100x the advertised `pollAfterMs` so a
+  caller polling at the advertised cadence cannot have its target pruned
+  between two polls): a pruned terminal attempt reads `expired`, a pruned
+  `unknown` attempt keeps reading `unknown`.
+- Cross-process mutual exclusion for one id, delegated to `proper-lockfile`
+  (new runtime dependency; the same library the harness already wraps) against
+  a per-id anchor file `<verdict dir>/<id>.attempt-lock` (mode `0600`), with
+  `retries: 0` on every acquisition, `stale: 30000`, `realpath: false`, and an
+  `onCompromised` callback. Acquired means this process runs the attempt;
+  `ELOCKED` means a holder is alive, so the caller joins it by `attemptId` and
+  never spawns a second `preflight` process. `forceNewAttempt: true` is refused
+  while an attempt is live. A holder whose lock is reported compromised writes
+  NO marker for its attempt, records a `terminal` record with `outcomeClass:
+  "compromised"`, returns an explicit error, and never deletes a lock.
+  Staleness, reclamation and compromise detection belong to the library; this
+  package implements none of them. The invariant is scoped to one host and to
+  holders whose heartbeat keeps their lock fresh, and it buys avoided waste
+  plus one in-flight handle to join, never gate safety: `solution_gate` already
+  fails closed on every outcome a duplicate run can produce.
+- `reconcileOrphanedAttempts()` runs once at process startup, before the
+  transport connects: for every log row still reading `running` under a lock the
+  pass itself can acquire, it appends one `reconciled-unknown` record inside
+  that acquisition. An id whose acquisition returns `ELOCKED` is skipped, since
+  that is the liveness check. The identical check also runs on the read path, so
+  a holder that died after the last startup is not reported `running` until the
+  next restart. Liveness is the lock and only the lock; no code path probes a
+  PID.
+
 - `solution_evaluate` sends standard MCP `notifications/progress` pings while its
   single preflight invocation (in-band with the request: awaited, not
   backgrounded) is running, mirroring agent-preflight's
@@ -27,6 +75,13 @@
   shape completeness, and issues without becoming signed or gate authority.
 
 ### Changed
+
+- `evaluateSolution` accepts an optional `preWriteGuard` callback, read
+  immediately before the marker write and never after it. Its only caller is the
+  attempt lifecycle's compromised-holder path; absent a guard the behavior is
+  unchanged, which is the case for every existing caller. `Verdict`,
+  `writeVerdict`'s signed shape, `verdictPath`, `evaluateGate` and
+  `solution_gate` are untouched.
 
 - `solution_evaluate` accepts a preflight verdict only for exit `0` plus
   `ready:true`, or exit `1` plus `ready:false`, with no signal or invocation

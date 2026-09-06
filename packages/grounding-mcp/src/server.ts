@@ -41,8 +41,13 @@ import { saveSession, loadSession } from './session-store.js';
 import { ledgerDb, ledgerStatus } from './ledger-bridge.js';
 import { deriveContext } from './derive-context.js';
 import { getOrCreateStore, getStore, resetStore, saveStore } from './hypothesis-store.js';
-import { evaluateSolution, evaluateGate, getHeadSha } from './solution-verdict.js';
+import { evaluateGate, getHeadSha } from './solution-verdict.js';
 import { withProgressPings, DEFAULT_PROGRESS_INTERVAL_MS, DEFAULT_PROGRESS_MESSAGE } from './progress.js';
+import {
+  SolutionAttemptRegistry,
+  reconcileOrphanedAttempts,
+  type AttemptRegistryOptions,
+} from './solution-attempt-log.js';
 
 // Single source of truth for the version string emitted by both the
 // MCP `name+version` handshake and the `--version` CLI short-circuit.
@@ -142,8 +147,29 @@ export function resolveProgressIntervalMs(raw: unknown): number {
 // progress tests can use a short real interval (e.g. 20ms) instead of
 // waiting out the ~10s production default. Production callers should not
 // set it.
-export function createServer(options: { progressIntervalMs?: number } = {}): McpServer {
+//
+// The `attempt*` options are test-oriented for the same reason (a short wait
+// bound instead of the ~45s production default, a short retention window plus
+// an injectable clock instead of a day), and operator-oriented for one of
+// them: `attemptWaitBoundMs` is the value an operator lowers when the client
+// in use cuts calls earlier than this default assumes. Each is validated the
+// same way `progressIntervalMs` is, inside the registry.
+export function createServer(
+  options: { progressIntervalMs?: number } & AttemptRegistryOptions & {
+    attemptWaitBoundMs?: number;
+    attemptPollAfterMs?: number;
+    attemptRetentionMs?: number;
+    attemptLockStaleMs?: number;
+  } = {},
+): McpServer {
   const progressIntervalMs = resolveProgressIntervalMs(options.progressIntervalMs);
+  const attempts = new SolutionAttemptRegistry({
+    waitBoundMs: options.attemptWaitBoundMs ?? options.waitBoundMs,
+    pollAfterMs: options.attemptPollAfterMs ?? options.pollAfterMs,
+    retentionMs: options.attemptRetentionMs ?? options.retentionMs,
+    lockStaleMs: options.attemptLockStaleMs ?? options.lockStaleMs,
+    now: options.now,
+  });
 
   const server = new McpServer({
     name: 'grounding-mcp',
@@ -338,16 +364,53 @@ export function createServer(options: { progressIntervalMs?: number } = {}): Mcp
         .string()
         .optional()
         .describe('Repository to evaluate. Defaults to the current working directory.'),
+      forceNewAttempt: z
+        .boolean()
+        .optional()
+        .describe('Start a genuinely new attempt instead of joining. Refused while an attempt for this id is still running.'),
     },
-    async ({ id, repoPath }, extra) => {
+    async ({ id, repoPath, forceNewAttempt }, extra) => {
       const result = await withProgressPings(
         extra,
-        () => evaluateSolution(id, repoPath ?? process.cwd()),
+        () => attempts.evaluate(id, repoPath ?? process.cwd(), { forceNewAttempt }),
         progressIntervalMs,
         DEFAULT_PROGRESS_MESSAGE,
       );
       return jsonResponse(result);
     },
+  );
+
+  // Read-only attempt lookups. Neither ever starts a `preflight` process, and
+  // neither is gate authority: `solution_gate` still reads only the signed
+  // marker. With `attemptId` omitted they answer for the latest attempt
+  // recorded for the id, which is the recovery path for a caller whose own
+  // request timed out before it ever learned an `attemptId`.
+  server.tool(
+    'solution_evaluate_status',
+    'Look up the status of a solution_evaluate attempt for <id> (running / completed / failed / unknown / expired / running-unconfirmed). Read-only and fast: never starts preflight, never blocks. Omit attemptId to ask about the latest attempt recorded for the id, which is the recovery path when your own solution_evaluate call timed out without returning a handle.',
+    {
+      id: z.string().min(1).describe('The same identifier solution_evaluate was called with.'),
+      attemptId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe('Server-generated attempt handle. Omit to resolve the latest attempt for the id.'),
+    },
+    async ({ id, attemptId }) => jsonResponse(await attempts.status(id, attemptId)),
+  );
+
+  server.tool(
+    'solution_evaluate_result',
+    'Fetch the outcome of a solution_evaluate attempt for <id> once it is terminal; returns {status:"running"} rather than blocking while it is not. Read-only: never starts preflight. A lookup answered by a process that did not itself run the attempt (another session, or this one after a restart) returns the reduced payload (outcomeClass, summary, persisted error) with verdict/markerPath only when this attempt is still the latest for the id and its marker is present.',
+    {
+      id: z.string().min(1).describe('The same identifier solution_evaluate was called with.'),
+      attemptId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe('Server-generated attempt handle. Omit to resolve the latest attempt for the id.'),
+    },
+    async ({ id, attemptId }) => jsonResponse(await attempts.result(id, attemptId)),
   );
 
   server.tool(
@@ -575,6 +638,18 @@ async function main(): Promise<void> {
   if (process.argv.includes('--version') || process.argv.includes('-v')) {
     process.stdout.write(`${PACKAGE_VERSION}\n`);
     return;
+  }
+  // Reconcile before serving, never after: an attempt log row left `running`
+  // by a process that died must resolve to `unknown` before this process
+  // answers any lookup about it. The pass takes each id's lock with no
+  // retries, so an id whose holder is still alive is skipped, not reconciled.
+  // A failure here is reported and then tolerated: a reconciliation problem
+  // must not stop the server from serving.
+  try {
+    await reconcileOrphanedAttempts();
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('grounding-mcp: attempt reconciliation failed:', err);
   }
   const server = createServer();
   const transport = new StdioServerTransport();

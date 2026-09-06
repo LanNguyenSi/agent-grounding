@@ -2,6 +2,68 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-06T05:39:55Z, `solution_evaluate` attempt lifecycle (task `431a8e27`): added
+  `src/solution-attempt-log.ts` (bounded wait plus running handle, per-sanitized-id
+  append-only attempt log, `proper-lockfile` mutual exclusion, startup and read-path
+  reconciliation), registered `solution_evaluate_status` and
+  `solution_evaluate_result` in `server.ts`, and extended `evaluateSolution` in
+  `solution-verdict.ts` with one optional `preWriteGuard` read immediately before
+  `writeVerdict`. `Verdict`, `writeVerdict`'s signed shape, `verdictPath`,
+  `evaluateGate` and `solution_gate` are unchanged, and every pre-existing test in
+  `tests/solution-verdict.test.ts` and `tests/grounding-gate-mcp-roundtrip.test.ts`
+  passes unmodified.
+
+  Citation impact, re-verified individually rather than by a blanket offset: the
+  `server.ts` edits (one import block, the registry construction inside
+  `createServer`, the extended `solution_evaluate` handler, the two new
+  registrations, and the reconciliation call in `main()`) shifted every citation
+  below them, by +5 at `PACKAGE_VERSION = '0.10.0'`
+  (`packages/grounding-mcp/src/server.ts:55#"PACKAGE_VERSION = '0.10.0'"`), by +26
+  through the `ledger_add` handler
+  (`packages/grounding-mcp/src/server.ts:232#"Session id"`,
+  `packages/grounding-mcp/src/server.ts:239-245#"session: sessionId,"`), by +26 at
+  the `solution_evaluate` registration
+  (`packages/grounding-mcp/src/server.ts:359#"'solution_evaluate'"`), and by +63
+  from `solution_gate` (`packages/grounding-mcp/src/server.ts:417#"'solution_gate'"`)
+  through every `hypothesis_*` tool below it
+  (`packages/grounding-mcp/src/server.ts:462#"'hypothesis_record',"`,
+  `packages/grounding-mcp/src/server.ts:476#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:482#"'hypothesis_list',"`,
+  `packages/grounding-mcp/src/server.ts:505#"'hypothesis_evidence',"`,
+  `packages/grounding-mcp/src/server.ts:528#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:560#"'hypothesis_reject',"`,
+  `packages/grounding-mcp/src/server.ts:582#"'hypothesis_support',"`,
+  `packages/grounding-mcp/src/server.ts:598#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
+  `packages/grounding-mcp/src/server.ts:609#"'hypothesis_reset',"`), since the two
+  new tool registrations sit between those two anchors. The `preWriteGuard` block
+  moved the marker-write anchor's range end only
+  (`packages/grounding-mcp/src/solution-verdict.ts:746-803#"const markerPath = writeVerdict(verdict);"`),
+  and the README additions (two catalog rows, two storage rows, the new
+  "Attempt lifecycle: when to poll, and when to retry" section) shifted the
+  collateral OPENAI_API_KEY citation
+  (`packages/grounding-mcp/README.md:212#"the root cause is the backend container's missing OPENAI_API_KEY env var"`).
+  Every quoted anchor text is unchanged and still resolves verbatim at its new
+  pinned line.
+
+  Prose corrected where a claim changed, not only line numbers:
+  `solution-acceptance-verdict-contract.md`'s tool-surface section named two MCP
+  tools and said `solution_evaluate` calls `evaluateSolution` directly; it now names
+  four, records that the call goes through the attempt registry into the same
+  unchanged `evaluateSolution`, states that `solution_gate` never consults the
+  attempt log or the lock, and records that reaching `writeVerdict` now also
+  requires the optional `preWriteGuard` not to veto. That doc's `sources:` gained
+  `packages/grounding-mcp/src/solution-attempt-log.ts`. The other two affected docs
+  (`evidence-ledger-session-key-shapes.md`,
+  `hypothesis-tracker-persistence-split.md`) needed line numbers only: their claims
+  about ledger session keys and hypothesis persistence are untouched by this change.
+
+  Verification: `npx okf-kit@0.9.0 check docs/okf --require-anchors` run from the
+  repository root against the committed tree; the same command run against a
+  `git archive` export of the pre-change commit `536559e` (re-initialized as a git
+  work tree, since staleness and citation resolution are skipped outside one)
+  reported "clean, no findings", establishing that every finding this edit
+  introduced was repaired rather than inherited.
+
 - 2026-09-05T19:03:38Z, `solution_evaluate` progress notifications (task
   `8c9a99fc`): added `src/progress.ts` (`withProgressPings`) and wrapped
   `solution_evaluate`'s single preflight invocation in `server.ts` with it;
