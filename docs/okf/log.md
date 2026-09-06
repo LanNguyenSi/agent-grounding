@@ -2,6 +2,74 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-06T20:51:25Z, review-round polish (task `3846b4d5`): five
+  independent low findings from PR #214's review rounds, packages/grounding-mcp
+  only. Design doc section 6 corrected: the write-side re-read before a
+  `terminal` record write runs while the ORDINARY path still holds the id's
+  lock (`execute`'s own release happens later, in its `finally`), never after
+  release as the doc previously claimed; both mentions in that section fixed
+  to name the real ordering, verified against `solution-attempt-log.ts` at
+  HEAD. Added a deterministic test for the release-before-prune ordering in
+  that same `finally` (spies on `pruneOwned` to sample whether the lock is
+  already free at the instant it runs) and a test computing every basename
+  the module derives from a maximal-length id (attempt log, lock anchor,
+  proper-lockfile's own lock directory, verdict marker, compaction temp
+  file) against NAME_MAX, pinning the compaction temp file as the longest
+  one per the bound constant's own docstring; both verified with
+  `agent-primitives probe` against a real mutant (inverted release/prune
+  order; the constant raised to the exact byte where the computed basename
+  reaches NAME_MAX), each killing its test, then restored and byte-verified.
+  Renamed `MAX_LOOKUP_ID_LENGTH` to `MAX_ID_FILENAME_LENGTH` (it bounds an id
+  as it becomes a file name, not a lookup key): `server.ts`'s three `.max()`
+  schema sites and the comment above them, `solution-attempt-log.ts`'s
+  definition and docblock, every referencing test, and this doc's sibling
+  `solution-acceptance-verdict-contract.md`'s own args-sentence mention.
+  CHANGELOG.md's 0.11.0 entry and this file's own 2026-09-06T09:15:00Z entry
+  above keep the old name on purpose: they describe what shipped under that
+  name at the time, not the current source. `agent-primitives drift` over
+  the rename reported the one removed declaration and every prose mention of
+  it in this file as allowlisted (CHANGELOG's released section automatically,
+  this file's own mentions via an explicit `--allow` glob matching this
+  file's own established convention above of leaving historical citations
+  exactly as written): clean otherwise. Exported `InvalidVerdictIdError` from
+  `solution-verdict.ts` as a sentinel for `sanitizeVerdictId`'s rejection,
+  scoped to that sanitizer alone, not its mirrors `sanitizeSessionId`
+  (session-store.ts) or `sanitizeHypothesisSessionId` (hypothesis-store.ts),
+  each of which throws its own distinct message naming its own kind of id;
+  `SolutionAttemptRegistry.lookup`'s own catch classification now matches
+  `instanceof InvalidVerdictIdError` instead of the message string, and one
+  `solution-verdict.test.ts` case now asserts `toThrow(InvalidVerdictIdError)`
+  instead of a bare `toThrow()`. That same change inserted the new class and
+  its docblock ahead of `sanitizeVerdictId`, shifting every later line in
+  `solution-verdict.ts` uniformly for the rest of the file; every citation
+  into that file in `solution-acceptance-verdict-contract.md` was re-derived
+  individually against the file at HEAD and re-pinned, from the sanitizer
+  helpers' own citations through the whole `evaluateSolution`/
+  `owBlockersFor` producer section down to the final marker write. This
+  file's own two citations into the same pre-shift range (the entry
+  documenting the original attempt-lifecycle PR, above) are left exactly as
+  written, per this file's own established convention for historical
+  entries: they describe what was true at their own commit, not now.
+  `server.ts` itself gained no net line shift from the rename (a pure
+  same-line identifier swap at each site), so neither
+  `evidence-ledger-session-key-shapes.md` nor
+  `hypothesis-tracker-persistence-split.md` needed any citation re-pin, only
+  the re-stamp below, since both declare `server.ts` as a source and it
+  changed. Package checks in packages/grounding-mcp: `npm run build`,
+  `typecheck`, `lint`, `test`, and `test:ci` (coverage gate) all green.
+  Root checks: `check:pins`, `check:deps`, `check:lockfile-integrity`, and
+  `check:okf-test-citation-shape` all green (`check:okf-kit-pin` out of
+  scope, untouched by this round). Bundle check with the source-built
+  okf-kit CLI, `check --require-anchors --json docs/okf` (this repo's own
+  `ci.yml` invocation, repo root): clean on citations-resolve and errors
+  (the anchor-guard job's own blocking selectors); this file's one
+  citations-resolve finding above stays non-blocking there, matching its
+  carve-out. The two pre-existing `sources-fresh` warnings on
+  `claim-gate-vs-review-claim-gate.md` and `merge-approval-gate-mechanics.md`
+  are another branch's concern and untouched here; `sources-fresh` itself
+  stays out of scope for the anchor-guard job by design (see that job's own
+  header comment) and is watched instead, warn-only, by `okf-staleness.yml`.
+
 - 2026-09-06T20:26:39Z, sources-fresh re-verification (task 7c21ca25):
   `claim-gate-vs-review-claim-gate.md` was flagged STALE against
   `packages/review-claim-gate/package.json:3#"version": "0.1.6"` (bumped
