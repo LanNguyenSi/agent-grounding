@@ -65,7 +65,7 @@
   same id.
 - The owning process's in-memory record of an attempt ages out on the same
   retention window as the on-disk log (`pruneOwned`, triggered at the tail of
-  every `solution_evaluate` call's own acquisition, and again whenever a
+  every uncompromised acquisition, and again whenever a
   lookup finds and reconciles a `running` row for any id): once pruned, even
   the process that originally ran the attempt answers `solution_evaluate_result`
   with the reduced, persisted payload, same as any other process. The sweep is

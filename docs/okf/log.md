@@ -2,6 +2,35 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-06T09:15:00Z, `solution_evaluate` attempt lifecycle, review round 4 (task
+  `431a8e27`): docs-only delta on the accept_with_notes findings from round 3, no
+  change under `src/` or `tests/`. Two overstatements corrected: the round-3 entry
+  below said "both tests in that describe exec that build artifact" for a describe
+  holding one `it`, now "the test in that describe"; `packages/grounding-mcp/CHANGELOG.md`'s
+  `pruneOwned` bullet said the sweep runs "at the tail of every `solution_evaluate`
+  call's own acquisition", now "at the tail of every uncompromised acquisition", since
+  `execute()` only calls it inside `if (compromise.error === null)`.
+
+  This log's own historical entries had drifted into a form the bundle's own
+  convention forbids: a bare `path:N-M#"anchor"` token stands for the anchor's
+  location NOW, never for a past line number, and a citation that does not resolve
+  against the current file is not an allowed way to record history. The round-1 entry
+  below (11 citations) and the round-2 entry below (2 citations) had 13 such tokens
+  whose `server.ts` line numbers were left at their round-2-era values after round 3's
+  own +11 shift moved every citation at and after the `solution_evaluate` registration;
+  all 13 are re-pointed here to the lines that registration and the tools below it sit
+  at now, each checked to still resolve verbatim. The one token this same round-3 entry
+  introduced for a line it explicitly called "round 2's line" (server.ts line 368,
+  where `solution_evaluate` was registered as of round 2, no longer that tool's line
+  today) is reworded to prose naming the round instead of carrying an anchor token.
+
+  Verification: a script walked every `path:N(-M)?#"anchor"` token in this file and
+  confirmed the anchor text is present verbatim in the addressed line range of the
+  file at HEAD; zero mismatches across every token in this file, server.ts-addressed
+  or not. `npx okf-kit@0.9.0 check docs/okf --require-anchors`, run from the
+  repository root against the committed tree, is clean (0 errors, 0 warnings, 0
+  notices).
+
 - 2026-09-06T08:37:00Z, `solution_evaluate` attempt lifecycle, review round 3 (task
   `431a8e27`): bounded-delta fix round on accept_with_notes findings from round 2 (one
   medium, four low). `MAX_LOOKUP_ID_LENGTH` now bounds `solution_evaluate`'s own `id`
@@ -48,14 +77,15 @@
   and kills every spawned child in an `afterEach` backstop in addition to the test's own
   `finally`, and asserts in a describe-level `beforeEach` that `dist/server.js` exists
   and is not older than `src/server.ts`, naming `npm run build` in the failure message,
-  since both tests in that describe exec that build artifact directly.
+  since the test in that describe execs that build artifact directly.
 
   Citation impact, re-verified individually against the actual diff rather than by a
   blanket offset: the `server.ts` edit (a new comment block before the
   `solution_evaluate` registration, plus widening its `id` schema to four lines, minus
   one line off the now-redundant sentence in the lookups' own comment) shifted every
-  citation at or after `packages/grounding-mcp/src/server.ts:368#"'solution_evaluate'"`
-  (round 2's line) by +11, uniformly, all the way to the end of the file: re-pointed to
+  citation at or after line 368 as the file stood after round 2 (the
+  `solution_evaluate` registration's line at that point) by +11, uniformly, all the
+  way to the end of the file: re-pointed to
   `packages/grounding-mcp/src/server.ts:376#"'solution_evaluate'"` and
   `packages/grounding-mcp/src/server.ts:451#"'solution_gate'"` in
   `solution-acceptance-verdict-contract.md`, and to
@@ -133,8 +163,8 @@
   `server.ts` edits (the import swap, the spelled-out `createServer` option
   type, the comment above the two lookup registrations, and the two widened `id`
   schemas) shifted the citations below them by +9 as far as
-  `packages/grounding-mcp/src/server.ts:368#"'solution_evaluate'"`, and by +23
-  from `packages/grounding-mcp/src/server.ts:440#"'solution_gate'"` onward. The
+  `packages/grounding-mcp/src/server.ts:376#"'solution_evaluate'"`, and by +23
+  from `packages/grounding-mcp/src/server.ts:451#"'solution_gate'"` onward. The
   new README paragraph shifted
   `packages/grounding-mcp/README.md:214#"the root cause is the backend container's missing OPENAI_API_KEY env var"`
   by +2, and the one new import in the roundtrip test shifted
@@ -206,18 +236,18 @@
   (`packages/grounding-mcp/src/server.ts:241#"Session id"`,
   `packages/grounding-mcp/src/server.ts:248-254#"session: sessionId,"`), by +26 at
   the `solution_evaluate` registration
-  (`packages/grounding-mcp/src/server.ts:368#"'solution_evaluate'"`), and by +63
-  from `solution_gate` (`packages/grounding-mcp/src/server.ts:440#"'solution_gate'"`)
+  (`packages/grounding-mcp/src/server.ts:376#"'solution_evaluate'"`), and by +63
+  from `solution_gate` (`packages/grounding-mcp/src/server.ts:451#"'solution_gate'"`)
   through every `hypothesis_*` tool below it
-  (`packages/grounding-mcp/src/server.ts:485#"'hypothesis_record',"`,
-  `packages/grounding-mcp/src/server.ts:499#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:505#"'hypothesis_list',"`,
-  `packages/grounding-mcp/src/server.ts:528#"'hypothesis_evidence',"`,
-  `packages/grounding-mcp/src/server.ts:551#"'hypothesis_check_done',"`,
-  `packages/grounding-mcp/src/server.ts:583#"'hypothesis_reject',"`,
-  `packages/grounding-mcp/src/server.ts:605#"'hypothesis_support',"`,
-  `packages/grounding-mcp/src/server.ts:621#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
-  `packages/grounding-mcp/src/server.ts:632#"'hypothesis_reset',"`), since the two
+  (`packages/grounding-mcp/src/server.ts:496#"'hypothesis_record',"`,
+  `packages/grounding-mcp/src/server.ts:510#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:516#"'hypothesis_list',"`,
+  `packages/grounding-mcp/src/server.ts:539#"'hypothesis_evidence',"`,
+  `packages/grounding-mcp/src/server.ts:562#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:594#"'hypothesis_reject',"`,
+  `packages/grounding-mcp/src/server.ts:616#"'hypothesis_support',"`,
+  `packages/grounding-mcp/src/server.ts:632#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
+  `packages/grounding-mcp/src/server.ts:643#"'hypothesis_reset',"`), since the two
   new tool registrations sit between those two anchors. The `preWriteGuard` block
   moved the marker-write anchor's range end only
   (`packages/grounding-mcp/src/solution-verdict.ts:746-803#"const markerPath = writeVerdict(verdict);"`),
