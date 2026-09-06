@@ -2,6 +2,81 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-06T07:35:00Z, `solution_evaluate` attempt lifecycle, review round 2 (task
+  `431a8e27`): fix round on the entry below. `pruneOwned()` gained the two
+  production call sites it never had, beside the `compactUnderLock` it shares a
+  retention window with (the tail of `execute`'s successful acquisition, and
+  `resolveForLookup`'s acquisition branch). The two read-only lookups now bound
+  `id` at `MAX_LOOKUP_ID_LENGTH` and answer a still-unusable id with
+  `{status:"unknown", id, error}` instead of letting the sanitizer's throw or an
+  `ENAMETOOLONG` reach the caller as an MCP error envelope. `createServer`'s
+  option type stopped intersecting `AttemptRegistryOptions`, which had published
+  a second, undocumented spelling of every attempt knob. Tests were added for
+  the terminal write order, the retention clamp at the point where it binds, the
+  two prune call sites, a real two-process race, and the `expired` half of "only
+  an acquisition licenses a new attempt". Two doc comments were corrected: the
+  module header's rule 3 and `appendTerminal` both claimed the writer no longer
+  holds the id's lock when it performs the write-side re-read, which on the
+  ordinary path is false (`execute` releases in its `finally`, after the
+  append). `Verdict`, `writeVerdict`'s signed shape, `verdictPath`,
+  `evaluateGate` and `solution_gate` are unchanged again this round.
+
+  Citation impact, re-verified individually rather than by a blanket offset: the
+  `server.ts` edits (the import swap, the spelled-out `createServer` option
+  type, the comment above the two lookup registrations, and the two widened `id`
+  schemas) shifted the citations below them by +9 as far as
+  `packages/grounding-mcp/src/server.ts:368#"'solution_evaluate'"`, and by +23
+  from `packages/grounding-mcp/src/server.ts:440#"'solution_gate'"` onward. The
+  new README paragraph shifted
+  `packages/grounding-mcp/README.md:214#"the root cause is the backend container's missing OPENAI_API_KEY env var"`
+  by +2, and the one new import in the roundtrip test shifted
+  `packages/grounding-mcp/tests/grounding-gate-mcp-roundtrip.test.ts:671-685#"blockers).toContain('test: 2 failing')"`
+  by +1. 31 citations were re-pointed across
+  `evidence-ledger-session-key-shapes.md`,
+  `hypothesis-tracker-persistence-split.md`,
+  `solution-acceptance-verdict-contract.md` and this log, each cited line mapped
+  through that file's own diff individually rather than by adding one offset,
+  and every quoted anchor text is unchanged and still resolves verbatim at its
+  new line.
+
+  Bare continuation tokens were re-pointed AND lifted into the anchored form,
+  not merely re-pointed. The `saveStore` sentence in
+  `hypothesis-tracker-persistence-split.md` carried one anchored citation
+  followed by four bare `:N` continuations, all four still pointing at
+  pre-change lines; they are now five separately anchored citations, one per
+  call site. The `loadStoreFromDisk at :132` back-reference later in the same
+  doc was lifted as well, although its target file did not shift this round, so
+  the doc now follows one convention throughout. A grep of the bundle for bare
+  `:N` and `,N-M` continuation tokens found no others outside this log; the one
+  unanchored reference that remained, a frozen line range into
+  `grounding-gate-mcp-roundtrip.test.ts` inside an earlier entry below, was
+  reworded to name that span's current anchored citation instead of numbers that
+  had stopped resolving to the block the sentence describes (they are written
+  out here without their line numbers on purpose, so this entry does not
+  reintroduce the same unanchored citation it is describing).
+
+  Re-stamp ancestry, which the entry below got wrong: the three docs are
+  re-stamped in a FINAL, docs-only commit made after every source-touching
+  commit of this round, and their `timestamp:` values are later than the
+  committer time of the last of those (`76a82f2e`, 2026-09-06T07:34:38Z). Each
+  doc's own last commit is therefore later than the last commit of every source
+  it declares, and that same commit is the one that changed its stamp value. The
+  round-1 entry below claimed the docs had been "re-stamped past it in that same
+  commit" while the stamp they carried, 2026-09-06T06:20:23Z, was four seconds
+  EARLIER than `aa3239c6`, the last commit touching the declared source
+  `packages/grounding-mcp/src/solution-attempt-log.ts`.
+
+  Verification, on the committed tree: `npx okf-kit@0.9.0 check docs/okf
+  --require-anchors` clean, 0 findings; `npm run check:okf-test-citation-shape`,
+  `npm run check:okf-selectors`, `npm run check:okf-kit-pin`, `npm run
+  check:pins`, `npm run check:deps` and `npm run check:lockfile-integrity` all
+  pass. In `packages/grounding-mcp`, `agent-primitives verify -c
+  build,typecheck,lint,test -x 'test=npm run test:ci'` passes with 460 tests and
+  the configured coverage thresholds met, and the lifecycle test file passes
+  five consecutive runs with no flake. Root `npm run build`, `npm run typecheck
+  --workspaces --if-present` and `npm run test --workspaces --if-present` all
+  pass.
+
 - 2026-09-06T06:20:23Z, `solution_evaluate` attempt lifecycle (task `431a8e27`): added
   `src/solution-attempt-log.ts` (bounded wait plus running handle, per-sanitized-id
   append-only attempt log, `proper-lockfile` mutual exclusion, startup and read-path
@@ -20,28 +95,28 @@
   below them, by +5 at `PACKAGE_VERSION = '0.10.0'`
   (`packages/grounding-mcp/src/server.ts:55#"PACKAGE_VERSION = '0.10.0'"`), by +26
   through the `ledger_add` handler
-  (`packages/grounding-mcp/src/server.ts:232#"Session id"`,
-  `packages/grounding-mcp/src/server.ts:239-245#"session: sessionId,"`), by +26 at
+  (`packages/grounding-mcp/src/server.ts:241#"Session id"`,
+  `packages/grounding-mcp/src/server.ts:248-254#"session: sessionId,"`), by +26 at
   the `solution_evaluate` registration
-  (`packages/grounding-mcp/src/server.ts:359#"'solution_evaluate'"`), and by +63
-  from `solution_gate` (`packages/grounding-mcp/src/server.ts:417#"'solution_gate'"`)
+  (`packages/grounding-mcp/src/server.ts:368#"'solution_evaluate'"`), and by +63
+  from `solution_gate` (`packages/grounding-mcp/src/server.ts:440#"'solution_gate'"`)
   through every `hypothesis_*` tool below it
-  (`packages/grounding-mcp/src/server.ts:462#"'hypothesis_record',"`,
-  `packages/grounding-mcp/src/server.ts:476#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:482#"'hypothesis_list',"`,
-  `packages/grounding-mcp/src/server.ts:505#"'hypothesis_evidence',"`,
-  `packages/grounding-mcp/src/server.ts:528#"'hypothesis_check_done',"`,
-  `packages/grounding-mcp/src/server.ts:560#"'hypothesis_reject',"`,
-  `packages/grounding-mcp/src/server.ts:582#"'hypothesis_support',"`,
-  `packages/grounding-mcp/src/server.ts:598#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
-  `packages/grounding-mcp/src/server.ts:609#"'hypothesis_reset',"`), since the two
+  (`packages/grounding-mcp/src/server.ts:485#"'hypothesis_record',"`,
+  `packages/grounding-mcp/src/server.ts:499#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:505#"'hypothesis_list',"`,
+  `packages/grounding-mcp/src/server.ts:528#"'hypothesis_evidence',"`,
+  `packages/grounding-mcp/src/server.ts:551#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:583#"'hypothesis_reject',"`,
+  `packages/grounding-mcp/src/server.ts:605#"'hypothesis_support',"`,
+  `packages/grounding-mcp/src/server.ts:621#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
+  `packages/grounding-mcp/src/server.ts:632#"'hypothesis_reset',"`), since the two
   new tool registrations sit between those two anchors. The `preWriteGuard` block
   moved the marker-write anchor's range end only
   (`packages/grounding-mcp/src/solution-verdict.ts:746-803#"const markerPath = writeVerdict(verdict);"`),
   and the README additions (two catalog rows, two storage rows, the new
   "Attempt lifecycle: when to poll, and when to retry" section) shifted the
   collateral OPENAI_API_KEY citation
-  (`packages/grounding-mcp/README.md:212#"the root cause is the backend container's missing OPENAI_API_KEY env var"`).
+  (`packages/grounding-mcp/README.md:214#"the root cause is the backend container's missing OPENAI_API_KEY env var"`).
   Every quoted anchor text is unchanged and still resolves verbatim at its new
   pinned line.
 
@@ -665,9 +740,12 @@
   landed one line short of the range's real last line (`*/`, the JSDoc
   close, at 36; the content itself is at 35) -- narrowed to 31 through 35;
   and the addendum's new *.test.ts shape rule (below) reshaped
-  `evidence-ledger-session-key-shapes.md`:51's citation into
-  `grounding-gate-mcp-roundtrip.test.ts:648-662`, spanning the whole
-  `it(...)` block it names instead of a single line.
+  `evidence-ledger-session-key-shapes.md`:51's citation to span the whole
+  `it(...)` block it names instead of a single line. That span moves with the
+  file and is re-pointed with it rather than frozen at the numbers it had when
+  this entry was written; it stands at
+  `packages/grounding-mcp/tests/grounding-gate-mcp-roundtrip.test.ts:671-685#"blockers).toContain('test: 2 failing')"`
+  on this commit.
 
   CI guard was green on a structurally broken bundle (review MEDIUM):
   `okf-anchor-guard` treated any okf-kit exit 1 as "findings, keep going"
