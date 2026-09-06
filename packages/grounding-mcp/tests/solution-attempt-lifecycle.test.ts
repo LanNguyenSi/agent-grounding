@@ -1016,6 +1016,45 @@ describe('terminal write order', () => {
   }, 40_000);
 });
 
+describe('release before prune ordering', () => {
+  it('has released the id lock by the time pruneOwned runs, on an ordinary evaluate', async () => {
+    // execute()'s finally releases the lock first, then runs pruneOwned as a
+    // pure, process-local convenience the release itself does not depend on
+    // (see the comment above `this.pruneOwned()` in solution-attempt-log.ts).
+    // Observed by instrumenting pruneOwned itself, not by racing a poller
+    // against a microtask chain: pruneOwned is called exactly once by
+    // execute()'s finally, synchronously, so sampling the lock's presence
+    // at that call site is deterministic rather than timing-dependent. An
+    // implementation that flipped the order (prune before release, as the
+    // code used to do before the comment's own fix) would make this sample
+    // observe the lock still held and fail here.
+    process.env.SOLUTION_PREFLIGHT_BIN = readyStub('stub-release-before-prune.sh');
+    const lockDir = `${attemptLockAnchorPath('release-before-prune')}.lock`;
+
+    const registry = new SolutionAttemptRegistry({ waitBoundMs: 20_000 });
+    const lockHeldAtPrune: boolean[] = [];
+    const realPruneOwned = registry.pruneOwned.bind(registry);
+    const pruneSpy = vi.spyOn(registry, 'pruneOwned').mockImplementation(() => {
+      lockHeldAtPrune.push(fs.existsSync(lockDir));
+      return realPruneOwned();
+    });
+
+    let res: Record<string, unknown>;
+    try {
+      res = (await registry.evaluate('release-before-prune', repo)) as Record<string, unknown>;
+      // Read the call count before restoring: mockRestore() also clears the
+      // spy's recorded call history, so this assertion must run first.
+      expect(pruneSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      pruneSpy.mockRestore();
+    }
+
+    expect(res.status).toBe('completed');
+    expect(lockHeldAtPrune).toEqual([false]);
+    expect(fs.existsSync(lockDir)).toBe(false);
+  }, 40_000);
+});
+
 // ── Unusable ids on the read-only lookups ────────────────────────────────
 
 describe('unusable ids on the lookups', () => {
