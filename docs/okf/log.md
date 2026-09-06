@@ -2,6 +2,285 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-06T09:15:00Z, `solution_evaluate` attempt lifecycle, review round 4 (task
+  `431a8e27`): docs-only delta on the accept_with_notes findings from round 3, no
+  change under `src/` or `tests/`. Two overstatements corrected: the round-3 entry
+  below said "both tests in that describe exec that build artifact" for a describe
+  holding one `it`, now "the test in that describe"; `packages/grounding-mcp/CHANGELOG.md`'s
+  `pruneOwned` bullet said the sweep runs "at the tail of every `solution_evaluate`
+  call's own acquisition", now "at the tail of every uncompromised acquisition", since
+  `execute()` only calls it inside `if (compromise.error === null)`.
+
+  This log's own historical entries had drifted into a form the bundle's own
+  convention forbids: a bare `path:N-M#"anchor"` token stands for the anchor's
+  location NOW, never for a past line number, and a citation that does not resolve
+  against the current file is not an allowed way to record history. The round-1 entry
+  below (11 citations) and the round-2 entry below (2 citations) had 13 such tokens
+  whose `server.ts` line numbers were left at their round-2-era values after round 3's
+  own +11 shift moved every citation at and after the `solution_evaluate` registration;
+  all 13 are re-pointed here to the lines that registration and the tools below it sit
+  at now, each checked to still resolve verbatim. The one token this same round-3 entry
+  introduced for a line it explicitly called "round 2's line" (server.ts line 368,
+  where `solution_evaluate` was registered as of round 2, no longer that tool's line
+  today) is reworded to prose naming the round instead of carrying an anchor token.
+
+  Verification: a script walked every `path:N(-M)?#"anchor"` token in this file and
+  confirmed the anchor text is present verbatim in the addressed line range of the
+  file at HEAD; zero mismatches across every token in this file, server.ts-addressed
+  or not. `npx okf-kit@0.9.0 check docs/okf --require-anchors`, run from the
+  repository root against the committed tree, is clean (0 errors, 0 warnings, 0
+  notices).
+
+- 2026-09-06T08:37:00Z, `solution_evaluate` attempt lifecycle, review round 3 (task
+  `431a8e27`): bounded-delta fix round on accept_with_notes findings from round 2 (one
+  medium, four low). `MAX_LOOKUP_ID_LENGTH` now bounds `solution_evaluate`'s own `id`
+  schema too, not only the two lookups' (`server.ts`, `.max(MAX_LOOKUP_ID_LENGTH)` added
+  next to the existing `.min(1)`), and `SolutionAttemptRegistry.evaluate()` enforces the
+  identical bound again at the registry's own entry point, returning the ordinary
+  `{status:"failed", error}` payload before any filesystem call, so a library caller
+  that bypasses the MCP schema cannot reach the sanitizer, the lock, or the log with an
+  id that would overrun the filesystem name limit. The constant's own docstring is
+  re-derived candidate by candidate against `NAME_MAX` (255 bytes) rather than restating
+  the earlier approximate number: the binding case is the compaction temp file, 48 bytes
+  past the key (generous 10-digit `pid` headroom over Linux's own 7-digit `pid_max`
+  ceiling, plus a 13-digit `Date.now()`, true until the year 2286), not the lock
+  directory `proper-lockfile` creates beside the anchor (18 bytes past the key). README
+  and CHANGELOG corrected the same false claim ("`solution_evaluate` keeps its unbounded
+  schema... an over-long id already comes back from it as failed"), which was never true
+  once an id passed the lookups' bound but exceeded the filesystem's.
+
+  Two smaller risk points, same module: `execute()`'s `finally` used to run the
+  process-local `pruneOwned()` BEFORE releasing the id lock, so an unexpected throw
+  there would have skipped the release entirely and leaked the lock for up to the stale
+  window; `pruneOwned()` now runs after the release, so the same failure can cost only
+  the retention convenience. `lookup()`'s catch was a single undiscriminated branch
+  (any thrown error, `EACCES`/`ENOSPC`/`EMFILE` against `verdictDir()` included, became
+  `{status:"unknown"}` with the raw exception message, which can interpolate
+  `verdictDir()`'s own filesystem path); it is now split, keeping the broad catch (every
+  thrown error still resolves to `unknown`, never an isError envelope) but classifying
+  by the error itself: the sanitizer's own error keeps today's exact message, any other
+  error is routed through `warnSwallowed` and answered with a fixed, path-free message.
+
+  Tests: `grounding-gate-mcp-roundtrip.test.ts`'s id-band test now covers
+  `solution_evaluate` itself (accepted at the bound and round-tripped through both
+  lookups afterwards, schema-rejected one over it), not only the two lookups.
+  `solution-attempt-lifecycle.test.ts` gained two new describes, `id length bound on
+  solution_evaluate` (the registry's own `evaluate()` rejects one over the bound with
+  no preflight invocation and nothing written under `verdictDir()`, accepts one exactly
+  at the bound) and `lookup() catch classification` (a forced `EACCES` on the lock
+  anchor, via a `chmod 0o555` verdict dir restored in a `finally`, same pattern already
+  used in `solution-verdict.test.ts`, resolves to `unknown` with the fixed message and
+  is reported through `warnSwallowed`, asserted against a `console.error` spy), and the
+  two-process describe now drains child stderr into a buffer instead of leaving it
+  unread on the pipe, gives `send()` a 20s timeout that rejects naming the method and
+  including that buffered stderr instead of hanging forever on a wedged child, tracks
+  and kills every spawned child in an `afterEach` backstop in addition to the test's own
+  `finally`, and asserts in a describe-level `beforeEach` that `dist/server.js` exists
+  and is not older than `src/server.ts`, naming `npm run build` in the failure message,
+  since the test in that describe execs that build artifact directly.
+
+  Citation impact, re-verified individually against the actual diff rather than by a
+  blanket offset: the `server.ts` edit (a new comment block before the
+  `solution_evaluate` registration, plus widening its `id` schema to four lines, minus
+  one line off the now-redundant sentence in the lookups' own comment) shifted every
+  citation at or after line 368 as the file stood after round 2 (the
+  `solution_evaluate` registration's line at that point) by +11, uniformly, all the
+  way to the end of the file: re-pointed to
+  `packages/grounding-mcp/src/server.ts:376#"'solution_evaluate'"` and
+  `packages/grounding-mcp/src/server.ts:451#"'solution_gate'"` in
+  `solution-acceptance-verdict-contract.md`, and to
+  `packages/grounding-mcp/src/server.ts:496#"'hypothesis_record',"`,
+  `packages/grounding-mcp/src/server.ts:510#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:516#"'hypothesis_list',"`,
+  `packages/grounding-mcp/src/server.ts:539#"'hypothesis_evidence',"`,
+  `packages/grounding-mcp/src/server.ts:556#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:562#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:588#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:594#"'hypothesis_reject',"`,
+  `packages/grounding-mcp/src/server.ts:610#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:616#"'hypothesis_support',"`,
+  `packages/grounding-mcp/src/server.ts:632#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
+  `packages/grounding-mcp/src/server.ts:637#"saveStore(sessionId, store);"` and
+  `packages/grounding-mcp/src/server.ts:643#"'hypothesis_reset',"` in
+  `hypothesis-tracker-persistence-split.md`. `evidence-ledger-session-key-shapes.md`'s
+  own citations sit entirely before line 368 (`server.ts:241`, `server.ts:248-253/254`)
+  and did not move, but the file is re-stamped anyway: it declares `server.ts` as a
+  source, and that file changed. Every quoted anchor text is unchanged and still
+  resolves verbatim at its new line; none of the re-pointed docs' `sources:` lists
+  changed. `solution-acceptance-verdict-contract.md`'s `solution_evaluate` args
+  sentence also gained the new bound (`max 200, MAX_LOOKUP_ID_LENGTH, the same bound
+  the two lookups below enforce`), a prose correction tied to the fix, not a citation
+  move. `log.md`'s own historical citations at these same pre-round-3 line numbers
+  (this entry and the one below it) are left exactly as written: this file is
+  reserved/append-only history, excluded from citations-resolve's blocking selectors by
+  the CI job's own carve-out, and describes what was true at ITS commit, not now.
+
+  Re-stamp ancestry: the three docs above are re-stamped in this FINAL, docs-only
+  commit, made after every source-touching commit of this round. The last such commit
+  is `5cf48929d77f196f8a79ea312fa4fde669a7de86` (test commit, committer time
+  2026-09-06T08:33:13Z); the preceding fix commit is
+  `2da953dc121be3f5c55c867aa798eac8c17dc0c3` (2026-09-06T08:33:02Z). The three docs'
+  `timestamp:` values are set to 2026-09-06T08:37:00Z, later than both, and this same
+  commit is the one that changes each doc's stamp value.
+
+  Verification, on the committed tree: `npx okf-kit@0.9.0 check docs/okf
+  --require-anchors` clean on the three re-stamped docs (only `log.md`'s own reserved,
+  non-blocking historical citations warn, per the carve-out above); a build of
+  okf-kit from `agent-dx` master (commit `08cfc07`, `packages/okf-kit`, `npm ci && npm
+  run build`) run as `node <build>/dist/cli.js check docs/okf --strict --json` reports
+  no `sources-fresh` or `sources-fresh-future` finding on the three re-stamped docs (the
+  pre-existing warnings on the two untouched docs from round 2 are unchanged, and remain
+  follow-ups, not this round's responsibility). In `packages/grounding-mcp`,
+  `agent-primitives verify -c build,typecheck,lint,test -x 'test=npm run test:ci'`
+  passes with 463 tests (was 460) and the configured coverage thresholds met, and the
+  lifecycle test file passes three consecutive runs with no flake and no orphaned
+  `server.js` process left behind afterward. Root `npm run build`, `npm run typecheck
+  --workspaces --if-present`, `npm run test --workspaces --if-present` and `npm run
+  test:ci --workspaces --if-present` all pass, with the same per-workspace test counts
+  as round 2 except grounding-mcp's own (463, was 460). All six `check:*` scripts at
+  the repo root pass.
+
+- 2026-09-06T07:35:00Z, `solution_evaluate` attempt lifecycle, review round 2 (task
+  `431a8e27`): fix round on the entry below. `pruneOwned()` gained the two
+  production call sites it never had, beside the `compactUnderLock` it shares a
+  retention window with (the tail of `execute`'s successful acquisition, and
+  `resolveForLookup`'s acquisition branch). The two read-only lookups now bound
+  `id` at `MAX_LOOKUP_ID_LENGTH` and answer a still-unusable id with
+  `{status:"unknown", id, error}` instead of letting the sanitizer's throw or an
+  `ENAMETOOLONG` reach the caller as an MCP error envelope. `createServer`'s
+  option type stopped intersecting `AttemptRegistryOptions`, which had published
+  a second, undocumented spelling of every attempt knob. Tests were added for
+  the terminal write order, the retention clamp at the point where it binds, the
+  two prune call sites, a real two-process race, and the `expired` half of "only
+  an acquisition licenses a new attempt". Two doc comments were corrected: the
+  module header's rule 3 and `appendTerminal` both claimed the writer no longer
+  holds the id's lock when it performs the write-side re-read, which on the
+  ordinary path is false (`execute` releases in its `finally`, after the
+  append). `Verdict`, `writeVerdict`'s signed shape, `verdictPath`,
+  `evaluateGate` and `solution_gate` are unchanged again this round.
+
+  Citation impact, re-verified individually rather than by a blanket offset: the
+  `server.ts` edits (the import swap, the spelled-out `createServer` option
+  type, the comment above the two lookup registrations, and the two widened `id`
+  schemas) shifted the citations below them by +9 as far as
+  `packages/grounding-mcp/src/server.ts:376#"'solution_evaluate'"`, and by +23
+  from `packages/grounding-mcp/src/server.ts:451#"'solution_gate'"` onward. The
+  new README paragraph shifted
+  `packages/grounding-mcp/README.md:214#"the root cause is the backend container's missing OPENAI_API_KEY env var"`
+  by +2, and the one new import in the roundtrip test shifted
+  `packages/grounding-mcp/tests/grounding-gate-mcp-roundtrip.test.ts:671-685#"blockers).toContain('test: 2 failing')"`
+  by +1. 31 citations were re-pointed across
+  `evidence-ledger-session-key-shapes.md`,
+  `hypothesis-tracker-persistence-split.md`,
+  `solution-acceptance-verdict-contract.md` and this log, each cited line mapped
+  through that file's own diff individually rather than by adding one offset,
+  and every quoted anchor text is unchanged and still resolves verbatim at its
+  new line.
+
+  Bare continuation tokens were re-pointed AND lifted into the anchored form,
+  not merely re-pointed. The `saveStore` sentence in
+  `hypothesis-tracker-persistence-split.md` carried one anchored citation
+  followed by four bare `:N` continuations, all four still pointing at
+  pre-change lines; they are now five separately anchored citations, one per
+  call site. The `loadStoreFromDisk at :132` back-reference later in the same
+  doc was lifted as well, although its target file did not shift this round, so
+  the doc now follows one convention throughout. A grep of the bundle for bare
+  `:N` and `,N-M` continuation tokens found no others outside this log; the one
+  unanchored reference that remained, a frozen line range into
+  `grounding-gate-mcp-roundtrip.test.ts` inside an earlier entry below, was
+  reworded to name that span's current anchored citation instead of numbers that
+  had stopped resolving to the block the sentence describes (they are written
+  out here without their line numbers on purpose, so this entry does not
+  reintroduce the same unanchored citation it is describing).
+
+  Re-stamp ancestry, which the entry below got wrong: the three docs are
+  re-stamped in a FINAL, docs-only commit made after every source-touching
+  commit of this round, and their `timestamp:` values are later than the
+  committer time of the last of those (`76a82f2e`, 2026-09-06T07:34:38Z). Each
+  doc's own last commit is therefore later than the last commit of every source
+  it declares, and that same commit is the one that changed its stamp value. The
+  round-1 entry below claimed the docs had been "re-stamped past it in that same
+  commit" while the stamp they carried, 2026-09-06T06:20:23Z, was four seconds
+  EARLIER than `aa3239c6`, the last commit touching the declared source
+  `packages/grounding-mcp/src/solution-attempt-log.ts`.
+
+  Verification, on the committed tree: `npx okf-kit@0.9.0 check docs/okf
+  --require-anchors` clean, 0 findings; `npm run check:okf-test-citation-shape`,
+  `npm run check:okf-selectors`, `npm run check:okf-kit-pin`, `npm run
+  check:pins`, `npm run check:deps` and `npm run check:lockfile-integrity` all
+  pass. In `packages/grounding-mcp`, `agent-primitives verify -c
+  build,typecheck,lint,test -x 'test=npm run test:ci'` passes with 460 tests and
+  the configured coverage thresholds met, and the lifecycle test file passes
+  five consecutive runs with no flake. Root `npm run build`, `npm run typecheck
+  --workspaces --if-present` and `npm run test --workspaces --if-present` all
+  pass.
+
+- 2026-09-06T06:20:23Z, `solution_evaluate` attempt lifecycle (task `431a8e27`): added
+  `src/solution-attempt-log.ts` (bounded wait plus running handle, per-sanitized-id
+  append-only attempt log, `proper-lockfile` mutual exclusion, startup and read-path
+  reconciliation), registered `solution_evaluate_status` and
+  `solution_evaluate_result` in `server.ts`, and extended `evaluateSolution` in
+  `solution-verdict.ts` with one optional `preWriteGuard` read immediately before
+  `writeVerdict`. `Verdict`, `writeVerdict`'s signed shape, `verdictPath`,
+  `evaluateGate` and `solution_gate` are unchanged, and every pre-existing test in
+  `tests/solution-verdict.test.ts` and `tests/grounding-gate-mcp-roundtrip.test.ts`
+  passes unmodified.
+
+  Citation impact, re-verified individually rather than by a blanket offset: the
+  `server.ts` edits (one import block, the registry construction inside
+  `createServer`, the extended `solution_evaluate` handler, the two new
+  registrations, and the reconciliation call in `main()`) shifted every citation
+  below them, by +5 at `PACKAGE_VERSION = '0.10.0'`
+  (`packages/grounding-mcp/src/server.ts:55#"PACKAGE_VERSION = '0.10.0'"`), by +26
+  through the `ledger_add` handler
+  (`packages/grounding-mcp/src/server.ts:241#"Session id"`,
+  `packages/grounding-mcp/src/server.ts:248-254#"session: sessionId,"`), by +26 at
+  the `solution_evaluate` registration
+  (`packages/grounding-mcp/src/server.ts:376#"'solution_evaluate'"`), and by +63
+  from `solution_gate` (`packages/grounding-mcp/src/server.ts:451#"'solution_gate'"`)
+  through every `hypothesis_*` tool below it
+  (`packages/grounding-mcp/src/server.ts:496#"'hypothesis_record',"`,
+  `packages/grounding-mcp/src/server.ts:510#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:516#"'hypothesis_list',"`,
+  `packages/grounding-mcp/src/server.ts:539#"'hypothesis_evidence',"`,
+  `packages/grounding-mcp/src/server.ts:562#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:594#"'hypothesis_reject',"`,
+  `packages/grounding-mcp/src/server.ts:616#"'hypothesis_support',"`,
+  `packages/grounding-mcp/src/server.ts:632#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
+  `packages/grounding-mcp/src/server.ts:643#"'hypothesis_reset',"`), since the two
+  new tool registrations sit between those two anchors. The `preWriteGuard` block
+  moved the marker-write anchor's range end only
+  (`packages/grounding-mcp/src/solution-verdict.ts:746-803#"const markerPath = writeVerdict(verdict);"`),
+  and the README additions (two catalog rows, two storage rows, the new
+  "Attempt lifecycle: when to poll, and when to retry" section) shifted the
+  collateral OPENAI_API_KEY citation
+  (`packages/grounding-mcp/README.md:214#"the root cause is the backend container's missing OPENAI_API_KEY env var"`).
+  Every quoted anchor text is unchanged and still resolves verbatim at its new
+  pinned line.
+
+  Prose corrected where a claim changed, not only line numbers:
+  `solution-acceptance-verdict-contract.md`'s tool-surface section named two MCP
+  tools and said `solution_evaluate` calls `evaluateSolution` directly; it now names
+  four, records that the call goes through the attempt registry into the same
+  unchanged `evaluateSolution`, states that `solution_gate` never consults the
+  attempt log or the lock, and records that reaching `writeVerdict` now also
+  requires the optional `preWriteGuard` not to veto. That doc's `sources:` gained
+  `packages/grounding-mcp/src/solution-attempt-log.ts`. The other two affected docs
+  (`evidence-ledger-session-key-shapes.md`,
+  `hypothesis-tracker-persistence-split.md`) needed line numbers only: their claims
+  about ledger session keys and hypothesis persistence are untouched by this change.
+
+  Verification: `npx okf-kit@0.9.0 check docs/okf --require-anchors` run from the
+  repository root against the committed tree; the same command run against a
+  `git archive` export of the pre-change commit `536559e` (re-initialized as a git
+  work tree, since staleness and citation resolution are skipped outside one)
+  reported "clean, no findings", establishing that every finding this edit
+  introduced was repaired rather than inherited. A second commit in the same
+  task made the module report its two swallowed failure paths (a failed
+  compaction, a failed lock release) on stderr instead of dropping them; it
+  touched no citation target and no claim in any bundle doc, and the three docs
+  above carry a timestamp re-stamped past it in that same commit.
+
 - 2026-09-05T19:03:38Z, `solution_evaluate` progress notifications (task
   `8c9a99fc`): added `src/progress.ts` (`withProgressPings`) and wrapped
   `solution_evaluate`'s single preflight invocation in `server.ts` with it;
@@ -599,9 +878,12 @@
   landed one line short of the range's real last line (`*/`, the JSDoc
   close, at 36; the content itself is at 35) -- narrowed to 31 through 35;
   and the addendum's new *.test.ts shape rule (below) reshaped
-  `evidence-ledger-session-key-shapes.md`:51's citation into
-  `grounding-gate-mcp-roundtrip.test.ts:648-662`, spanning the whole
-  `it(...)` block it names instead of a single line.
+  `evidence-ledger-session-key-shapes.md`:51's citation to span the whole
+  `it(...)` block it names instead of a single line. That span moves with the
+  file and is re-pointed with it rather than frozen at the numbers it had when
+  this entry was written; it stands at
+  `packages/grounding-mcp/tests/grounding-gate-mcp-roundtrip.test.ts:671-685#"blockers).toContain('test: 2 failing')"`
+  on this commit.
 
   CI guard was green on a structurally broken bundle (review MEDIUM):
   `okf-anchor-guard` treated any okf-kit exit 1 as "findings, keep going"

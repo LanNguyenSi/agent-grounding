@@ -3,7 +3,7 @@ type: invariant
 title: Hypothesis state — one library, two consumers, two persistence shapes
 description: hypothesis-tracker is a pure in-memory library; grounding-mcp keeps a disk-backed LRU cache under ~/.grounding-mcp/hypotheses/ (since PR #139) while understanding-gate persists to hypotheses.json, and inside the library addEvidence and supportHypothesis disagree on whether required_checks gate promotion.
 tags: [hypothesis-tracker, persistence, grounding-mcp, understanding-gate]
-timestamp: 2026-09-05T19:03:38Z
+timestamp: 2026-09-06T08:37:00Z
 sources:
   - packages/hypothesis-tracker/src/lib.ts
   - packages/grounding-mcp/src/hypothesis-store.ts
@@ -81,10 +81,12 @@ form of support; see the doc-comment at `lib.ts:115-123#"or already-rejected hyp
 volatile design (PR #139, 2026-07-13): the Map stays the hot path, but a cache miss (e.g.
 right after a restart) hydrates from disk via `loadStoreFromDisk` (`hypothesis-store.ts:132#"function loadStoreFromDisk"`);
 writers save via `saveStore` (atomic tmp+rename, `hypothesis-store.ts:165-171#"renameSync(tmp, final);"`), which
-server.ts's `hypothesis_*` verbs call after every successful mutation (`server.ts:413#"saveStore(sessionId, store);"`, :459,
-:491, :513, :540). **A grounding-mcp process restart no longer loses hypothesis state** — it
+server.ts's `hypothesis_*` verbs call after every successful mutation (`server.ts:510#"saveStore(sessionId, store);"`,
+`server.ts:556#"saveStore(sessionId, store);"`, `server.ts:588#"saveStore(sessionId, store);"`,
+`server.ts:610#"saveStore(sessionId, store);"`, `server.ts:637#"saveStore(sessionId, store);"`).
+**A grounding-mcp process restart no longer loses hypothesis state** — it
 now has disk backing at parity with the session store and the evidence ledger
-(`packages/grounding-mcp/README.md:180#"the root cause is the backend container's missing OPENAI_API_KEY env var"`).
+(`packages/grounding-mcp/README.md:214#"the root cause is the backend container's missing OPENAI_API_KEY env var"`).
 
 The in-process Map is LRU-bounded. `getMaxSessions()` (`hypothesis-store.ts:190-195#"return parsed;"`)
 reads `GROUNDING_HYPOTHESIS_MAX_SESSIONS` lazily per call. **Default is `200`**; unset, empty,
@@ -94,21 +96,21 @@ is `1`. On insert past the cap the least-recently-used key is evicted from the M
 touch-reorder the key for true LRU recency. Because the disk file persists, **eviction is no
 longer data loss**: the on-disk file for an evicted session is untouched and is re-hydrated on
 the next `getStore`/`getOrCreateStore` call (`hypothesis-store.ts:42-48#"eviction is not data loss, only a future disk read."` comment;
-`loadStoreFromDisk` at :132), at the cost of one extra disk read, not the hypotheses
+`loadStoreFromDisk` at `hypothesis-store.ts:132#"function loadStoreFromDisk"`), at the cost of one extra disk read, not the hypotheses
 themselves.
 
 ### Hypothesis MCP tools (grounding-mcp `server.ts`)
 
 Seven verbs, registered by name:
 
-- `hypothesis_record` (`server.ts:399#"'hypothesis_record',"`) — add a competing hypothesis with required checks
-- `hypothesis_list` (`server.ts:419#"'hypothesis_list',"`) — all hypotheses for a session + status summary
-- `hypothesis_evidence` (`server.ts:442#"'hypothesis_evidence',"`) — attach evidence; **auto-promotes** (the `addEvidence` path above)
-- `hypothesis_check_done` (`server.ts:465#"'hypothesis_check_done',"`) — mark a `required_checks[i]` done; drains `pending_checks`
-- `hypothesis_reject` (`server.ts:497#"'hypothesis_reject',"`) — reject with reason (appended as `[rejected]` evidence)
-- `hypothesis_support` (`server.ts:519#"'hypothesis_support',"`) — explicit support; the checks-gated path; error
-  `hypothesis_not_found_rejected_or_checks_pending` when it returns null (`server.ts:535#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`)
-- `hypothesis_reset` (`server.ts:546#"'hypothesis_reset',"`) — purge a session's hypotheses (MCP counterpart of `resetStore`), also deletes the on-disk file (`hypothesis-store.ts:257-261#"return existedInMemory || existedOnDisk;"`)
+- `hypothesis_record` (`server.ts:496#"'hypothesis_record',"`) — add a competing hypothesis with required checks
+- `hypothesis_list` (`server.ts:516#"'hypothesis_list',"`) — all hypotheses for a session + status summary
+- `hypothesis_evidence` (`server.ts:539#"'hypothesis_evidence',"`) — attach evidence; **auto-promotes** (the `addEvidence` path above)
+- `hypothesis_check_done` (`server.ts:562#"'hypothesis_check_done',"`) — mark a `required_checks[i]` done; drains `pending_checks`
+- `hypothesis_reject` (`server.ts:594#"'hypothesis_reject',"`) — reject with reason (appended as `[rejected]` evidence)
+- `hypothesis_support` (`server.ts:616#"'hypothesis_support',"`) — explicit support; the checks-gated path; error
+  `hypothesis_not_found_rejected_or_checks_pending` when it returns null (`server.ts:632#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`)
+- `hypothesis_reset` (`server.ts:643#"'hypothesis_reset',"`) — purge a session's hypotheses (MCP counterpart of `resetStore`), also deletes the on-disk file (`hypothesis-store.ts:257-261#"return existedInMemory || existedOnDisk;"`)
 
 Writers use `getOrCreateStore`; mutating verbs other than record require an existing store and
 return `{ error: 'no_store_for_session' }` rather than creating one.

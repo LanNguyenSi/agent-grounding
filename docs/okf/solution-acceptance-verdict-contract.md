@@ -3,9 +3,10 @@ type: invariant
 title: Solution-acceptance verdict contract — why the marker lives outside the ledger
 description: A "done" verdict is derived from a real preflight+OW run, HEAD-pinned, and written to an XDG state marker outside the agent-writable evidence-ledger because ledger rows are forgeable via ledger_add.
 tags: [solution-acceptance, verdicts, anti-hacking, trust-boundary]
-timestamp: 2026-09-05T19:25:07Z
+timestamp: 2026-09-06T09:37:12Z
 sources:
   - packages/grounding-mcp/src/solution-verdict.ts
+  - packages/grounding-mcp/src/solution-attempt-log.ts
   - packages/grounding-mcp/src/preflight-diagnostics.ts
   - packages/grounding-mcp/src/verdict-signing.ts
   - packages/grounding-mcp/src/ow-run-completeness.ts
@@ -246,17 +247,33 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
   this producer and the harness consumer that would silently break verification is
   meant to surface here first.
 
-### The two MCP tools (server.ts, `PACKAGE_VERSION = '0.10.0'` at `server.ts:50#"PACKAGE_VERSION = '0.10.0'"`)
+### The four MCP tools (server.ts, `PACKAGE_VERSION = '0.10.0'` at `server.ts:55#"PACKAGE_VERSION = '0.10.0'"`)
 
-- **`solution_evaluate`** (registered `server.ts:333#"'solution_evaluate'"`) — the producer. Runs preflight against
-  the repo, records a HEAD-pinned verdict for `id`. Args: `id` (min 1), optional
-  `repoPath` (defaults to cwd). Calls `evaluateSolution(id, repoPath ?? process.cwd())`,
-  wrapped in `withProgressPings` (`packages/grounding-mcp/src/progress.ts`) when the
-  request carries a `progressToken`; this only sends `notifications/progress` pings
-  while preflight runs and has no effect on the verdict.
-- **`solution_gate`** (registered `server.ts:354#"'solution_gate'"`) — read-only checker. Resolves current HEAD
+- **`solution_evaluate`** (registered `server.ts:376#"'solution_evaluate'"`) — the producer. Runs preflight against
+  the repo, records a HEAD-pinned verdict for `id`. Args: `id` (min 1, max 200,
+  `MAX_LOOKUP_ID_LENGTH`, the same bound the two lookups below enforce), optional
+  `repoPath` (defaults to cwd), optional `forceNewAttempt`. It no longer calls
+  `evaluateSolution` directly: the call goes through the attempt registry
+  (`packages/grounding-mcp/src/solution-attempt-log.ts`), which owns the bounded wait,
+  the per-id lock and the attempt log, and which invokes the SAME unchanged
+  `evaluateSolution` underneath. Still wrapped in `withProgressPings`
+  (`packages/grounding-mcp/src/progress.ts`) when the request carries a `progressToken`;
+  that only sends `notifications/progress` pings and has no effect on the verdict.
+- **`solution_gate`** (registered `server.ts:451#"'solution_gate'"`) — read-only checker. Resolves current HEAD
   via `getHeadSha`, then `evaluateGate(id, head)`. Deny reasons are precise: no verdict /
-  not ready + blockers / HEAD drift / unresolvable HEAD.
+  not ready + blockers / HEAD drift / unresolvable HEAD. Unchanged by the attempt
+  lifecycle: it reads the signed marker and nothing else, and never consults the
+  attempt log or the lock.
+- **`solution_evaluate_status`** and **`solution_evaluate_result`** (registered right
+  after `solution_evaluate` in the same block) are read-only attempt lookups. Neither
+  starts a preflight process, and neither is gate authority: an attempt reported
+  `completed` grants nothing on its own, exactly as a diagnostics payload does not.
+  What they add over the marker is attempt HISTORY (one append-only JSONL file per
+  sanitized id under the same `verdictDir()`), which is audit material, never the
+  thing `solution_gate` reads. The per-id lock they consult for liveness bounds
+  duplicate preflight RUNS, not marker validity: the gate already fails closed on every
+  outcome a duplicate run can produce. The package README is authoritative for the
+  poll-versus-retry rules and the state list.
 
 `evaluateSolution` returns an `error` for an invalid `id`, an unresolvable git HEAD, a
 missing `preflight` binary (ENOENT), malformed JSON/core, or a process outcome outside
@@ -265,8 +282,12 @@ error (`packages/grounding-mcp/src/solution-verdict.ts:648-743#"invalid executio
 evaluation invalidates its earlier same-id marker before any such error return; deletion
 failure is explicit and the old marker may remain. The binary is
 `SOLUTION_PREFLIGHT_BIN ?? 'preflight'` (`packages/grounding-mcp/src/solution-verdict.ts:690#"SOLUTION_PREFLIGHT_BIN ?? 'preflight'"`); `writeVerdict`, and therefore signing,
-is reached only after a valid core and accepted execution outcome
-(`packages/grounding-mcp/src/solution-verdict.ts:746-790#"const markerPath = writeVerdict(verdict);"`).
+is reached only after a valid core and accepted execution outcome, and, since the
+attempt lifecycle, only when the optional `preWriteGuard` passed by the attempt
+registry does not veto the write. The one caller that vetoes is a holder whose lock the
+lock library reported compromised: it writes no marker for its attempt and returns an
+explicit error
+(`packages/grounding-mcp/src/solution-verdict.ts:746-803#"const markerPath = writeVerdict(verdict);"`).
 
 ### The OW process-completeness arm (cross-repo coupling)
 
