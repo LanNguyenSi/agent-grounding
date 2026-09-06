@@ -541,6 +541,20 @@ function settledAt(records: AttemptRecord[]): number | null {
  * compaction-only holder would make a joiner join an attempt that does not
  * exist.
  */
+/**
+ * `compactUnderLock`'s own temp-file path for one compaction pass: the
+ * attempt log's own path, plus `.compact-<pid>-<nowMs>`. Exported so the
+ * NAME_MAX basename test in `tests/solution-attempt-lifecycle.test.ts`
+ * derives its longest-candidate name from the SAME production code
+ * `compactUnderLock` itself runs, rather than re-implementing the template
+ * as a second, independently-maintained copy that could silently drift from
+ * it (see `MAX_ID_FILENAME_LENGTH`'s own docstring, which measures against
+ * this exact basename).
+ */
+export function compactionTempPathForKey(key: string, pid: number, nowMs: number): string {
+  return `${attemptLogPathForKey(key)}.compact-${pid}-${nowMs}`;
+}
+
 export function compactUnderLock(key: string, now: number, retentionMs: number): boolean {
   const records = readAttemptRecords(key);
   if (records.length === 0) return false;
@@ -583,7 +597,7 @@ export function compactUnderLock(key: string, now: number, retentionMs: number):
   }
 
   const target = attemptLogPathForKey(key);
-  const temp = `${target}.compact-${process.pid}-${Date.now()}`;
+  const temp = compactionTempPathForKey(key, process.pid, Date.now());
   fs.writeFileSync(temp, kept.map((r) => encodeRecord(r)).join(''), { mode: 0o600 });
   fs.renameSync(temp, target);
   return true;
@@ -1122,6 +1136,13 @@ export class SolutionAttemptRegistry {
         try {
           reconcileUnderLock(key, this.nowIso());
           compactUnderLock(key, this.now(), this.retentionMs);
+          // Prune-before-release here is fine, unlike the ordering
+          // `execute()`'s own finally guards against (see the comment
+          // there): the release call below sits in THIS try's own
+          // `finally`, so an unforeseen throw out of `pruneOwned` still
+          // reaches it and the lock still gets released. There is no path
+          // through this method that runs `pruneOwned` and skips the
+          // release the way there used to be in `execute()`.
           this.pruneOwned();
         } finally {
           await release().catch((err: unknown) =>

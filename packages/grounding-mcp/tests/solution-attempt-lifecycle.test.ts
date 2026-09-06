@@ -32,6 +32,7 @@ import {
   attemptLockAnchorPathForKey,
   attemptLogPath,
   attemptLogPathForKey,
+  compactionTempPathForKey,
   compactUnderLock,
   encodeRecord,
   latestAttemptId,
@@ -1196,22 +1197,32 @@ describe('MAX_ID_FILENAME_LENGTH stays under NAME_MAX on every derived basename'
       },
       { label: 'verdict marker', basename: path.basename(verdictPath(key)) },
       {
-        // compactUnderLock's own temp file: `${attemptLogPathForKey(key)}.compact-${process.pid}-${Date.now()}`.
-        // Per MAX_ID_FILENAME_LENGTH's docstring this is the BINDING case (48
-        // bytes past the key: 15 for the log suffix, 9 for ".compact-", 10
-        // worst-case pid digits, 1 for the separator, 13 worst-case
-        // Date.now() digits). Built from the worst-case digit counts the
-        // docstring itself names, not from this test process's own
-        // process.pid/Date.now() (which are shorter today and would
-        // under-test the real bound).
+        // compactUnderLock's own temp file, built through the SAME exported
+        // helper compactUnderLock itself calls (`compactionTempPathForKey`),
+        // not a second, independently-maintained template of the string:
+        // that coupling is what makes a drift in the real template fail
+        // this test. Per MAX_ID_FILENAME_LENGTH's docstring this is the
+        // BINDING case (48 bytes past the key: 15 for the log suffix, 9 for
+        // ".compact-", 10 worst-case pid digits, 1 for the separator, 13
+        // worst-case Date.now() digits). Built from the worst-case digit
+        // counts the docstring itself names, not from this test process's
+        // own process.pid/Date.now() (which are shorter today and would
+        // under-test the real bound); the pid/nowMs args are passed as
+        // numbers, not the already-repeated strings, so a real caller's
+        // types still line up.
         label: 'compaction temp file',
-        basename: `${path.basename(attemptLogPathForKey(key))}.compact-${'9'.repeat(10)}-${'9'.repeat(13)}`,
+        basename: path.basename(
+          compactionTempPathForKey(key, Number('9'.repeat(10)), Number('9'.repeat(13))),
+        ),
       },
     ];
 
     for (const { label, basename } of candidates) {
       const byteLength = Buffer.byteLength(basename, 'utf8');
-      expect(byteLength, `${label} basename is ${byteLength} bytes: ${basename}`).toBeLessThan(NAME_MAX);
+      // NAME_MAX (255 bytes) itself is a legal basename length on this
+      // filesystem (measured: 255 succeeds, 256 raises ENAMETOOLONG), so the
+      // bound here is <=, not <.
+      expect(byteLength, `${label} basename is ${byteLength} bytes: ${basename}`).toBeLessThanOrEqual(NAME_MAX);
     }
 
     const longest = candidates.reduce((a, b) =>
