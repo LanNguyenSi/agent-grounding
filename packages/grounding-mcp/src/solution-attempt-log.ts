@@ -56,6 +56,7 @@ import {
   sanitizeVerdictId,
   verdictDir,
   verdictPath,
+  InvalidVerdictIdError,
   type EvaluateResult,
   type Verdict,
 } from './solution-verdict.js';
@@ -1164,23 +1165,23 @@ export class SolutionAttemptRegistry {
    * error) so an id this module cannot use for ANY reason still answers
    * cleanly rather than throwing, but it is no longer a single undiscriminated
    * branch: an id `sanitizeVerdictId` itself rejects outright (`'.'`, `'..'`,
-   * a string of only separators) keeps today's exact, informative message,
-   * while any OTHER thrown error, an id long enough that a filesystem call
-   * under `verdictDir()` fails `ENAMETOOLONG`, or a genuine operational
-   * failure there (`EACCES`, `ENOSPC`, `EMFILE`), is reported through
-   * `warnSwallowed` (so a broken verdict store is visible on stderr instead of
-   * invisible behind a clean-looking payload) and answered with a fixed,
-   * path-free message: the raw exception can interpolate `verdictDir()`'s own
-   * filesystem path, which this module does not want to hand back to a
-   * caller. Neither branch can escape `verdictDir()` either way:
-   * `sanitizeVerdictId` is still the only path builder, and it still runs
-   * first.
+   * a string of only separators, an `InvalidVerdictIdError`) keeps today's
+   * exact, informative message, while any OTHER thrown error, an id long
+   * enough that a filesystem call under `verdictDir()` fails `ENAMETOOLONG`,
+   * or a genuine operational failure there (`EACCES`, `ENOSPC`, `EMFILE`), is
+   * reported through `warnSwallowed` (so a broken verdict store is visible on
+   * stderr instead of invisible behind a clean-looking payload) and answered
+   * with a fixed, path-free message: the raw exception can interpolate
+   * `verdictDir()`'s own filesystem path, which this module does not want to
+   * hand back to a caller. Neither branch can escape `verdictDir()` either
+   * way: `sanitizeVerdictId` is still the only path builder, and it still
+   * runs first.
    */
   private async lookup(id: string, attemptId?: string): Promise<LookupOutcome> {
     try {
       return await this.resolveForLookup(id, attemptId);
     } catch (err) {
-      if (err instanceof Error && err.message.startsWith('invalid verdict id:')) {
+      if (err instanceof InvalidVerdictIdError) {
         return {
           kind: 'unknown',
           ...(attemptId === undefined ? {} : { attemptId }),

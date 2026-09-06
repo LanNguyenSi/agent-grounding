@@ -26,6 +26,7 @@ import {
   verdictDir,
   verdictPath,
   writeVerdict,
+  InvalidVerdictIdError,
   type Verdict,
 } from '../src/solution-verdict.js';
 
@@ -82,10 +83,10 @@ describe('sanitizeVerdictId', () => {
     expect(path.dirname(verdictPath(id))).toBe(verdictDir());
   });
 
-  it('rejects empty / dot-only ids', () => {
-    expect(() => sanitizeVerdictId('')).toThrow();
-    expect(() => sanitizeVerdictId('.')).toThrow();
-    expect(() => sanitizeVerdictId('..')).toThrow();
+  it('rejects empty / dot-only ids with InvalidVerdictIdError, matched by the sentinel class rather than by re-typing its message', () => {
+    expect(() => sanitizeVerdictId('')).toThrow(InvalidVerdictIdError);
+    expect(() => sanitizeVerdictId('.')).toThrow(InvalidVerdictIdError);
+    expect(() => sanitizeVerdictId('..')).toThrow(InvalidVerdictIdError);
   });
 });
 
