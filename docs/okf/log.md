@@ -2,7 +2,7 @@
 
 <!-- Add new entries at the top, newest first. -->
 
-- 2026-09-06T05:39:55Z, `solution_evaluate` attempt lifecycle (task `431a8e27`): added
+- 2026-09-06T06:20:23Z, `solution_evaluate` attempt lifecycle (task `431a8e27`): added
   `src/solution-attempt-log.ts` (bounded wait plus running handle, per-sanitized-id
   append-only attempt log, `proper-lockfile` mutual exclusion, startup and read-path
   reconciliation), registered `solution_evaluate_status` and
@@ -62,7 +62,11 @@
   `git archive` export of the pre-change commit `536559e` (re-initialized as a git
   work tree, since staleness and citation resolution are skipped outside one)
   reported "clean, no findings", establishing that every finding this edit
-  introduced was repaired rather than inherited.
+  introduced was repaired rather than inherited. A second commit in the same
+  task made the module report its two swallowed failure paths (a failed
+  compaction, a failed lock release) on stderr instead of dropping them; it
+  touched no citation target and no claim in any bundle doc, and the three docs
+  above carry a timestamp re-stamped past it in that same commit.
 
 - 2026-09-05T19:03:38Z, `solution_evaluate` progress notifications (task
   `8c9a99fc`): added `src/progress.ts` (`withProgressPings`) and wrapped

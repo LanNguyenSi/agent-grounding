@@ -437,6 +437,19 @@ export async function acquireAttemptLock(
   }
 }
 
+/**
+ * Report a swallowed, non-actionable failure on stderr (stdout is the MCP
+ * transport). These are the paths where an error must NOT change an attempt's
+ * outcome: a retention convenience that failed, or a lock release that the
+ * library already considers done. They are reported rather than silently
+ * dropped, so a broken `verdictDir()` is visible instead of invisible.
+ */
+function warnSwallowed(context: string, err: unknown): void {
+  const message = err instanceof Error ? err.message : String(err);
+  // eslint-disable-next-line no-console
+  console.error(`grounding-mcp: ${context}: ${message}`);
+}
+
 // ── Reconciliation and compaction (both run INSIDE an acquisition) ───────
 
 /**
@@ -931,11 +944,12 @@ export class SolutionAttemptRegistry {
         // Tail step of an acquisition made for another reason, never its own.
         try {
           compactUnderLock(key, this.now(), this.retentionMs);
-        } catch {
+        } catch (err) {
           // Compaction is a retention convenience; a failure here must never
-          // turn a finished attempt into a failed one.
+          // turn a finished attempt into a failed one, but it is reported.
+          warnSwallowed(`compaction for "${id}" failed`, err);
         }
-        await release().catch(() => {});
+        await release().catch((err: unknown) => warnSwallowed(`releasing the attempt lock for "${id}" failed`, err));
       }
       // Compromised: the lock is already gone or is now someone else's. This
       // process never deletes a lock it does not hold, and never runs
@@ -1015,7 +1029,9 @@ export class SolutionAttemptRegistry {
           reconcileUnderLock(key, this.nowIso());
           compactUnderLock(key, this.now(), this.retentionMs);
         } finally {
-          await release().catch(() => {});
+          await release().catch((err: unknown) =>
+            warnSwallowed(`releasing the attempt lock for "${id}" failed`, err),
+          );
         }
         records = readAttemptRecords(key);
         resolved = resolveAttempts(records);
@@ -1036,7 +1052,9 @@ export class SolutionAttemptRegistry {
     // "nothing ever ran".
     const release = await acquireAttemptLock(key, { staleMs: this.lockStaleMs });
     if (release === null) return { kind: 'running-unconfirmed' };
-    await release().catch(() => {});
+    await release().catch((err: unknown) =>
+      warnSwallowed(`releasing the attempt lock for "${id}" failed`, err),
+    );
     return { kind: 'unknown' };
   }
 
