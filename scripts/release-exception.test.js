@@ -4,8 +4,15 @@
  * Beyond the per-file checks, these also cover the PR-level rule that at
  * least one allowed version path must actually change before a PR can be
  * pure (a CHANGELOG-only PR and a formatting-only `package.json` are both
- * NOT pure, reason `no-version-bump`) and the `CONTENT_TOO_LARGE` reader
- * sentinel.
+ * NOT pure, reason `no-version-bump`) and the `CONTENT_TOO_LARGE` and
+ * `NOT_A_FILE` reader sentinels.
+ *
+ * `makeGetContentReader({ getContent, owner, repo })` is covered
+ * separately against a stubbed `getContent` returning the real GitHub
+ * Contents API response shapes (a file, an oversized file, a symlink, a
+ * submodule, a directory array, a lone `type: 'dir'` object, a 404, and a
+ * malformed response), pinning the entry-type handling the workflow's
+ * `github-script` step wires up via this factory.
  *
  * `classify(paths)` (path-shape only) is covered against the exact
  * changed-file lists of PR #190 (understanding-gate 0.5.0, pure) and PR
@@ -50,6 +57,8 @@ const {
   isUnsafePath,
   isAllowedReleasePath,
   CONTENT_TOO_LARGE,
+  NOT_A_FILE,
+  makeGetContentReader,
 } = require('./release-exception');
 
 const SCRIPT_PATH = path.join(__dirname, 'release-exception.js');
@@ -598,6 +607,184 @@ test('classifyPullFiles(): a reader signalling CONTENT_TOO_LARGE is NOT pure, wi
   );
   assert.equal(headVerdict.pure_release, false);
   assert.equal(headVerdict.rejected[0].reason, 'content-too-large-head');
+});
+
+test('classifyPullFiles(): a reader signalling NOT_A_FILE (symlink/submodule) is NOT pure, with its own named reason', async () => {
+  // GitHub's Contents API returns a symlink or submodule entry without
+  // base64 content, same as an oversized file; the reader has to tell
+  // those two shapes apart so the step summary names the real cause
+  // instead of reporting "too large" for a path that is not a file at
+  // all.
+  const baseNotAFile = async (ref) =>
+    (ref === 'base' ? NOT_A_FILE : JSON.stringify({ version: '1.0.1' }));
+  const baseVerdict = await classifyPullFiles(
+    [{ filename: 'package-lock.json', status: 'modified' }],
+    { readFile: baseNotAFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(baseVerdict.pure_release, false);
+  assert.equal(baseVerdict.rejected[0].reason, 'not-a-file-base');
+
+  const headNotAFile = async (ref) =>
+    (ref === 'head' ? NOT_A_FILE : JSON.stringify({ version: '1.0.0' }));
+  const headVerdict = await classifyPullFiles(
+    [{ filename: 'package-lock.json', status: 'modified' }],
+    { readFile: headNotAFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(headVerdict.pure_release, false);
+  assert.equal(headVerdict.rejected[0].reason, 'not-a-file-head');
+});
+
+// `makeGetContentReader` against stubbed real Contents API response
+// shapes (github.rest.repos.getContent's actual return shape, per
+// https://docs.github.com/en/rest/repos/contents): the reader extracted
+// out of the workflow's `github-script` step so these entry-type
+// distinctions are unit-testable, not only reachable through a bare
+// sentinel handed straight to the classifier.
+
+function readerWith(getContent) {
+  return makeGetContentReader({ getContent, owner: 'o', repo: 'r' });
+}
+
+test('makeGetContentReader(): a type:"file" response with base64 content reads as the file text', async () => {
+  const getContent = async ({ path: filePath, ref }) => ({
+    data: {
+      type: 'file',
+      encoding: 'base64',
+      content: Buffer.from(`content of ${filePath}@${ref}`, 'utf8').toString('base64'),
+    },
+  });
+  const readFile = readerWith(getContent);
+  assert.equal(await readFile('sha1', 'package.json'), 'content of package.json@sha1');
+});
+
+test('makeGetContentReader(): a type:"file" response with encoding:"none" (over the 1 MB inline ceiling) is CONTENT_TOO_LARGE', async () => {
+  const getContent = async () => ({ data: { type: 'file', encoding: 'none', content: '' } });
+  const readFile = readerWith(getContent);
+  assert.equal(await readFile('sha1', 'package-lock.json'), CONTENT_TOO_LARGE);
+});
+
+test('makeGetContentReader(): a type:"file" response with base64 encoding but non-string content is null (malformed, fail-closed)', async () => {
+  const getContent = async () => ({ data: { type: 'file', encoding: 'base64', content: 123 } });
+  const readFile = readerWith(getContent);
+  assert.equal(await readFile('sha1', 'package.json'), null);
+});
+
+test('makeGetContentReader(): a type:"symlink" response (with a target field) is NOT_A_FILE', async () => {
+  // Shape GitHub answers with when the symlink's target is NOT a normal
+  // file in this repository (an external or dangling target); see the
+  // resolved-in-repo-symlink test below for the other shape.
+  const getContent = async () => ({
+    data: { type: 'symlink', target: '../outside-repo/version.json' },
+  });
+  const readFile = readerWith(getContent);
+  assert.equal(await readFile('sha1', 'package.json'), NOT_A_FILE);
+});
+
+test('makeGetContentReader(): a symlink the API resolved to a normal in-repo file reads as that file (type:"file", not NOT_A_FILE)', async () => {
+  // Per GitHub's Contents API docs, a symlink whose target is a normal
+  // file in the same repository comes back with the TARGET file's own
+  // content and type:'file', not a symlink-shaped object. Pinning this
+  // documents that the reader deliberately does not special-case it.
+  const getContent = async () => ({
+    data: {
+      type: 'file',
+      encoding: 'base64',
+      content: Buffer.from('{"version":"1.0.1"}', 'utf8').toString('base64'),
+    },
+  });
+  const readFile = readerWith(getContent);
+  assert.equal(await readFile('sha1', 'package.json'), '{"version":"1.0.1"}');
+});
+
+test('makeGetContentReader(): a type:"submodule" response (with a submodule_git_url field) is NOT_A_FILE', async () => {
+  const getContent = async () => ({
+    data: { type: 'submodule', submodule_git_url: 'https://example.com/other.git' },
+  });
+  const readFile = readerWith(getContent);
+  assert.equal(await readFile('sha1', 'packages/x/package.json'), NOT_A_FILE);
+});
+
+test('makeGetContentReader(): a directory (array) response is null', async () => {
+  const getContent = async () => ({ data: [{ type: 'file', name: 'a' }, { type: 'dir', name: 'b' }] });
+  const readFile = readerWith(getContent);
+  assert.equal(await readFile('sha1', 'packages'), null);
+});
+
+test('makeGetContentReader(): a lone type:"dir" single-object response is NOT_A_FILE (pinned, fail-closed)', async () => {
+  // Not an observed real shape for a single-path getContent call (a
+  // directory normally comes back as an array, see the test above), but
+  // the `type !== 'file'` check covers it the same as a symlink or a
+  // submodule if it ever occurs, and this pins that choice deliberately
+  // rather than leaving it as an untested fall-through.
+  const getContent = async () => ({ data: { type: 'dir', name: 'packages' } });
+  const readFile = readerWith(getContent);
+  assert.equal(await readFile('sha1', 'packages'), NOT_A_FILE);
+});
+
+test('makeGetContentReader(): a 404 from getContent is null', async () => {
+  const getContent = async () => {
+    const err = new Error('Not Found');
+    err.status = 404;
+    throw err;
+  };
+  const readFile = readerWith(getContent);
+  assert.equal(await readFile('sha1', 'package.json'), null);
+});
+
+test('makeGetContentReader(): a non-404 getContent error propagates (fail-closed via the caller, not swallowed here)', async () => {
+  const getContent = async () => {
+    const err = new Error('rate limited');
+    err.status = 403;
+    throw err;
+  };
+  const readFile = readerWith(getContent);
+  await assert.rejects(() => readFile('sha1', 'package.json'), /rate limited/);
+});
+
+test('makeGetContentReader(): a malformed response (res.data missing) throws rather than reading as absent (fail-closed via the caller)', async () => {
+  const getContent = async () => ({});
+  const readFile = readerWith(getContent);
+  await assert.rejects(() => readFile('sha1', 'package.json'));
+});
+
+test('classifyPullFiles(): the extracted reader\'s NOT_A_FILE for a symlink flows through to the same named reason as the sentinel-level test', async () => {
+  const symlinkThenFile = async ({ path: filePath, ref }) => {
+    if (ref === 'base') return { data: { type: 'symlink', target: 'elsewhere' } };
+    return {
+      data: {
+        type: 'file',
+        encoding: 'base64',
+        content: Buffer.from(JSON.stringify({ version: '1.0.1' }), 'utf8').toString('base64'),
+      },
+    };
+  };
+  const readFile = readerWith(symlinkThenFile);
+  const verdict = await classifyPullFiles(
+    [{ filename: 'package.json', status: 'modified' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(verdict.pure_release, false);
+  assert.equal(verdict.rejected[0].reason, 'not-a-file-base');
+});
+
+test('classifyPullFiles(): the extracted reader\'s NOT_A_FILE for a submodule flows through to the same named reason as the sentinel-level test', async () => {
+  const fileTheSubmodule = async ({ path: filePath, ref }) => {
+    if (ref === 'head') return { data: { type: 'submodule', submodule_git_url: 'https://example.com/x.git' } };
+    return {
+      data: {
+        type: 'file',
+        encoding: 'base64',
+        content: Buffer.from(JSON.stringify({ version: '1.0.0' }), 'utf8').toString('base64'),
+      },
+    };
+  };
+  const readFile = readerWith(fileTheSubmodule);
+  const verdict = await classifyPullFiles(
+    [{ filename: 'package.json', status: 'modified' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(verdict.pure_release, false);
+  assert.equal(verdict.rejected[0].reason, 'not-a-file-head');
 });
 
 test('classifyPullFiles(): a rename into an allowlisted CHANGELOG.md path is NOT pure', async () => {

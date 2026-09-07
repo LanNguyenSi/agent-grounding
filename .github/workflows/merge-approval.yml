@@ -76,7 +76,7 @@ jobs:
         with:
           script: |
             const path = require('node:path');
-            const { classifyPullFiles, CONTENT_TOO_LARGE } = require(
+            const { classifyPullFiles, makeGetContentReader } = require(
               path.join(process.env.GITHUB_WORKSPACE, 'scripts', 'release-exception.js'),
             );
 
@@ -129,32 +129,18 @@ jobs:
                 const headRef = context.payload.pull_request.head.sha;
 
                 // Reads filePath's content at git ref `ref` via the
-                // Contents API; `null` when absent (404) at that ref, so
-                // an added file (no base content) reads as `null` rather
-                // than throwing. The API only inlines blobs up to 1 MB;
-                // a larger file comes back with empty content and
-                // `encoding: "none"`, reported as the classifier's
-                // CONTENT_TOO_LARGE sentinel so the step summary names
-                // that case instead of calling the file absent. Either
-                // way the file is not pure.
-                const readFile = async (ref, filePath) => {
-                  let res;
-                  try {
-                    res = await github.rest.repos.getContent({
-                      owner: context.repo.owner,
-                      repo: context.repo.repo,
-                      path: filePath,
-                      ref,
-                    });
-                  } catch (err) {
-                    if (err.status === 404) return null;
-                    throw err;
-                  }
-                  if (Array.isArray(res.data)) return null;
-                  if (res.data.encoding !== 'base64') return CONTENT_TOO_LARGE;
-                  if (typeof res.data.content !== 'string') return null;
-                  return Buffer.from(res.data.content, 'base64').toString('utf8');
-                };
+                // Contents API, `null`/`CONTENT_TOO_LARGE`/`NOT_A_FILE`
+                // for the non-file shapes the API can answer with; see
+                // `makeGetContentReader`'s own doc comment in
+                // scripts/release-exception.js for the full shape-by-
+                // shape rationale (this is only the wiring, the reader
+                // itself is unit-tested there against the real API
+                // shapes).
+                const readFile = makeGetContentReader({
+                  getContent: github.rest.repos.getContent,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                });
 
                 const verdict = await classifyPullFiles(
                   files.map((f) => ({ filename: f.filename, status: f.status })),

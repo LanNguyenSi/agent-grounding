@@ -3,7 +3,7 @@ type: runbook
 title: Merge-approval gate — labels, keys, and when it actually blocks
 description: How the merge-approval Check-Run maps five review:* PR labels (OR'd with a data-driven pure-release exception) to merge_approval booleans, keys evidence by the PR HEAD BRANCH NAME, and blocks only when required by an applicable branch-protection rule or ruleset.
 tags: [merge-approval, review-claim-gate, ci, runbook, labels]
-timestamp: 2026-09-07T09:13:49Z
+timestamp: 2026-09-07T09:30:09Z
 sources:
   - .github/workflows/merge-approval.yml
   - scripts/release-exception.js
@@ -30,7 +30,7 @@ The action is pinned by SHA, not a floating tag:
 uses: LanNguyenSi/agent-grounding/packages/review-claim-gate/action@cd3971866e48050514bfa5056bcb7e1d79615bd7 # review-claim-gate-v0.1.6
 ```
 
-(`merge-approval.yml:209#"review-claim-gate-v0.1.6"`; the referenced `packages/review-claim-gate/action/`
+(`merge-approval.yml:195#"review-claim-gate-v0.1.6"`; the referenced `packages/review-claim-gate/action/`
 directory exists and contains `action.yml`.)
 
 ## What it reads: the five labels → booleans
@@ -38,7 +38,7 @@ directory exists and contains `action.yml`.)
 The `Extract prereq flags from PR labels` step (`actions/github-script@v8`,
 `merge-approval.yml:31-44#"core.setOutput('evidence_logged',"`) maps each label name to a `"true"|"false"` output,
 which is passed into the action inputs, each OR'd with the release-exception
-verdict below (`merge-approval.yml:213-217#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`). Exact
+verdict below (`merge-approval.yml:199-203#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`). Exact
 mapping:
 
 | PR label (apply on the PR)     | github-script output   | action input               | `merge_approval` prereq             |
@@ -67,10 +67,10 @@ defeats the whole gate.
 
 Between the label-extraction step and the gate action, a `Determine release
 exception from the PR's real changed files` step
-(`merge-approval.yml:46-206#"core.setOutput('pure_release', pure_release.toString());"`)
+(`merge-approval.yml:46-192#"core.setOutput('pure_release', pure_release.toString());"`)
 computes a `pure_release` boolean and OR's it into every one of the five
 action inputs above
-(`merge-approval.yml:213-217#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`).
+(`merge-approval.yml:199-203#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`).
 When `pure_release` is `true`, all five prereqs are satisfied regardless of
 which `review:*` labels are on the PR: no label round needed.
 
@@ -162,7 +162,24 @@ up to 1 MB and answers a larger one with empty content and
 classifier's `CONTENT_TOO_LARGE` sentinel (per-file reasons
 `content-too-large-base`/`content-too-large-head`). Such a file is never
 pure, so a lockfile that grows past 1 MB does not weaken the gate, it
-takes that release PR back to the label path. See
+takes that release PR back to the label path. An allowlisted path can
+also name something that is not a file at all: a submodule entry, or a
+symlink the API cannot resolve to a normal file in the same repository,
+both of which come back without base64 content, the same shape as the
+1 MB case, but `readFile` tells the two apart by `res.data.type`
+and reports the non-file shape as the classifier's `NOT_A_FILE` sentinel
+(per-file reasons `not-a-file-base`/`not-a-file-head`) instead of
+`content-too-large-*`. The verdict is the same either way (not pure,
+fail-closed); only the reported reason differs, so the step summary names
+the real cause instead of mislabeling a submoduled or unresolved-symlink
+release-shaped path as oversized. Per GitHub's Contents API docs, a
+symlink whose target IS a normal file in the same repository instead
+comes back as `type: 'file'` with that target's own base64 content: a
+`package.json` replaced by such an in-repo symlink still classifies
+purely on the target's content, since `readFile` does not special-case
+it (narrow: the target must already exist in-repo, and any edit to the
+target itself still shows up in `listFiles` and is checked on its own
+path). See
 `CONTRIBUTING.md`'s "Cutting a release" section for what this looks like in
 practice, including the two path-level disqualifiers that come up most
 often (a `docs/okf/*.md` re-stamp riding along with the bump, and a source
@@ -189,7 +206,7 @@ below must always run and always post a verdict, never be skipped by an
 upstream exception.
 
 When the exception applies, the step writes a step-summary note naming the
-files it matched (`merge-approval.yml:166-173#"addList(verdict.allowed)"`); when it does
+files it matched (`merge-approval.yml:153-159#"addList(verdict.allowed)"`); when it does
 not, the summary instead names the PR-level `reason` and lists each
 rejected file with its status and the specific reason it was rejected (a
 disallowed path, status, JSON path, non-semver value, or a content read
@@ -213,7 +230,7 @@ Load-bearing correction. The action's `task-id` input is:
 task-id: ${{ github.event.pull_request.head.ref }}
 ```
 
-(`merge-approval.yml:211#"task-id: ${{ github.event.pull_request.head.ref }}"`.) That is the **PR head branch name** (e.g. `feat/foo`),
+(`merge-approval.yml:197#"task-id: ${{ github.event.pull_request.head.ref }}"`.) That is the **PR head branch name** (e.g. `feat/foo`),
 **not** an agent-tasks task UUID. The rollout doc confirms: "`task-id` is the
 PR's head branch name — stable across commits on the branch"
 (`merge-approval-rollout.md:31-32#"branch and visible in both the PR UI and the Check-Run summary."`). Everywhere the gate says "task id" for

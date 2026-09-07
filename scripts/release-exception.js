@@ -95,19 +95,41 @@
  * prints it in the step summary, so a "not pure" verdict with an empty
  * `rejected` list is never reported as an unexplained no-op.
  *
- * ── `CONTENT_TOO_LARGE`: the reader's 1 MB signal ───────────────────────
+ * ── `CONTENT_TOO_LARGE` and `NOT_A_FILE`: naming the reader's non-file
+ *    shapes ─────────────────────────────────────────────────────────────
  *
- * The workflow's `readFile` is GitHub's Contents API, which only inlines a
- * blob up to 1 MB; above that it answers with empty `content` and
- * `encoding: "none"` instead of the file. A reader that cannot deliver
- * content for that reason returns the exported `CONTENT_TOO_LARGE`
- * sentinel (a `Symbol.for` value, so a second copy of this module agrees
- * on it), which this classifier maps to the per-file reasons
- * `content-too-large-base` / `content-too-large-head`. The file is NOT
- * pure either way: the sentinel is not a string, so a reader that does not
- * use it still fails closed through `missing-base`/`missing-head`. The
- * sentinel only buys an accurate reason in the step summary instead of
- * "the file was not there at that ref".
+ * The workflow's `readFile` is GitHub's Contents API, and a `getContent`
+ * response can come back in shapes other than "a file's base64 content":
+ *
+ *   - An array (the path is a directory): mapped to `null` (the missing-
+ *     base/missing-head path), same as a 404.
+ *   - A single object with `type !== 'file'` (a submodule entry, or a
+ *     symlink the API cannot resolve to a normal file in the same
+ *     repository): GitHub answers these without base64 content, same
+ *     shape as an oversized file, but they are not a size problem, so the
+ *     reader checks `type` first and returns the exported `NOT_A_FILE`
+ *     sentinel, which this classifier maps to `not-a-file-base` /
+ *     `not-a-file-head`. Per GitHub's Contents API docs, a symlink whose
+ *     target is a normal file in the same repository instead comes back
+ *     as `type: 'file'` with that target's own base64 content, and reads
+ *     as a normal file here: a `package.json` replaced by such an
+ *     in-repo symlink still classifies purely on the target's content
+ *     (narrow: the target must already exist in-repo, and any edit to
+ *     the target itself still shows up in `listFiles` and is checked on
+ *     its own path).
+ *   - A `type: 'file'` object whose blob exceeds the API's 1 MB inline
+ *     limit: `encoding` comes back `"none"` instead of `"base64"` and
+ *     `content` empty. A reader that cannot deliver content for that
+ *     reason returns the exported `CONTENT_TOO_LARGE` sentinel, mapped to
+ *     `content-too-large-base` / `content-too-large-head`.
+ *
+ * Both sentinels are `Symbol.for` values, so a second copy of this module
+ * still agrees on them. The file is NOT pure through any of these paths
+ * either way: neither sentinel is a string, so a reader that does not use
+ * them still fails closed through `missing-base`/`missing-head`. The
+ * sentinels only buy an accurate reason in the step summary instead of
+ * conflating "not a file at all" with "too large to read" or "not there at
+ * that ref".
  *
  * A read, parse, or shape failure at any point (the reader throws, returns
  * a value that is not a string when content was expected, the text does not
@@ -249,6 +271,77 @@ const SEMVER_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
 // this module still compare equal. See the file header.
 const CONTENT_TOO_LARGE = Symbol.for('release-exception.content-too-large');
 
+// Sentinel a `readFile` returns instead of content when the path exists at
+// the ref but names something the classifier cannot read as file text: a
+// submodule entry, or a symlink the API cannot resolve to a normal file in
+// the same repository (`res.data.type !== 'file'`). GitHub's Contents API
+// answers both without base64 content, the same shape as the
+// 1 MB oversized-file case, so the reader tells them apart by `type` before
+// falling back to `CONTENT_TOO_LARGE`. `Symbol.for` so two copies of this
+// module still compare equal. See the file header.
+const NOT_A_FILE = Symbol.for('release-exception.not-a-file');
+
+/**
+ * Builds a `classifyPullFiles`-shaped `readFile(ref, filePath)` against
+ * GitHub's real Contents API, extracted out of the workflow's inline
+ * `github-script` step so this entry-type handling is unit-testable
+ * against the API's actual response shapes rather than only against a
+ * bare sentinel value.
+ *
+ * Response-shape handling (see the file header for the full rationale):
+ *
+ *   - A 404 from `getContent` -> `null` (file absent at this ref).
+ *   - An array response (the path is a directory) -> `null`.
+ *   - A single object with `type !== 'file'` (a submodule entry, a
+ *     symlink the API cannot resolve to a normal file in this
+ *     repository, or any other non-file single-object shape such as
+ *     `type: 'dir'`) -> the `NOT_A_FILE` sentinel. This one `type` check
+ *     covers every such shape; there is deliberately no separate branch
+ *     per `type` value.
+ *   - A `type: 'file'` object whose target the API DID resolve (an
+ *     in-repo symlink pointing at a real file) reads as that file's own
+ *     content, same as a direct file path: nothing here special-cases
+ *     it, which is itself the pinned behaviour (see the file header and
+ *     the module's test suite).
+ *   - A `type: 'file'` object with `encoding !== 'base64'` (the API's
+ *     1 MB inline ceiling) -> the `CONTENT_TOO_LARGE` sentinel.
+ *   - A `type: 'file'` object whose `content` is not a string (a
+ *     malformed response this reader has otherwise not seen in
+ *     practice) -> `null`, fail-closed rather than throwing.
+ *   - Any other error from `getContent` (not a plain 404) propagates as a
+ *     thrown error. A response with a missing or `null`/`undefined`
+ *     `res.data` also throws (reading `.type` off it fails); a response
+ *     whose `data` is a non-array object with no readable `type` at all
+ *     does NOT throw -- `type !== 'file'` is true the same as for any
+ *     other non-`'file'` value, so it returns `NOT_A_FILE` like a
+ *     symlink or a submodule. Either way, the caller (`classifyPullFiles`)
+ *     treats a thrown/rejected `readFile` as a read failure, fail-closed,
+ *     same as a non-string return.
+ *
+ * @param {object} options
+ * @param {(params: { owner: string, repo: string, path: string, ref: string }) => Promise<{ data: unknown }>} options.getContent -
+ *   normally `github.rest.repos.getContent` from `actions/github-script`.
+ * @param {string} options.owner
+ * @param {string} options.repo
+ * @returns {(ref: string, filePath: string) => Promise<string|null|symbol>}
+ */
+function makeGetContentReader({ getContent, owner, repo }) {
+  return async function readFile(ref, filePath) {
+    let res;
+    try {
+      res = await getContent({ owner, repo, path: filePath, ref });
+    } catch (err) {
+      if (err.status === 404) return null;
+      throw err;
+    }
+    if (Array.isArray(res.data)) return null;
+    if (res.data.type !== 'file') return NOT_A_FILE;
+    if (res.data.encoding !== 'base64') return CONTENT_TOO_LARGE;
+    if (typeof res.data.content !== 'string') return null;
+    return Buffer.from(res.data.content, 'base64').toString('utf8');
+  };
+}
+
 function basenameOf(file) {
   const idx = file.lastIndexOf('/');
   return idx === -1 ? file : file.slice(idx + 1);
@@ -331,6 +424,8 @@ function isAllowedContentPath(basename, jsonPath) {
  * @returns {{ ok: boolean, reason?: string, diffPaths?: string[], bumpCount?: number }}
  */
 function checkVersionOnlyContent(basename, baseText, headText) {
+  if (baseText === NOT_A_FILE) return { ok: false, reason: 'not-a-file-base' };
+  if (headText === NOT_A_FILE) return { ok: false, reason: 'not-a-file-head' };
   if (baseText === CONTENT_TOO_LARGE) return { ok: false, reason: 'content-too-large-base' };
   if (headText === CONTENT_TOO_LARGE) return { ok: false, reason: 'content-too-large-head' };
   if (typeof baseText !== 'string') return { ok: false, reason: 'missing-base' };
@@ -388,10 +483,14 @@ function checkVersionOnlyContent(basename, baseText, headText) {
  * @param {object} options
  * @param {(ref: string, filePath: string) => Promise<string|null|symbol>} options.readFile -
  *   resolves the text content of `filePath` at git ref `ref`, `null` when
- *   the file does not exist at that ref, or the `CONTENT_TOO_LARGE`
- *   sentinel when it exists but its text cannot be delivered (see the file
- *   header). May reject; a rejection is treated as a read failure
- *   (fail-closed), same as returning something that is not a string.
+ *   the file does not exist at that ref, the `CONTENT_TOO_LARGE` sentinel
+ *   when it exists but its text cannot be delivered because it is too
+ *   large, or the `NOT_A_FILE` sentinel when it exists but names a
+ *   submodule entry or an unresolved symlink rather than file text (see
+ *   the file header). May reject; a rejection is treated as a read
+ *   failure (fail-closed), same as returning something that is not a
+ *   string. `makeGetContentReader` below builds one of these against the
+ *   real Contents API.
  * @param {string} options.baseRef - the ref to read base content at: the
  *   PR's MERGE BASE, not its base branch tip (GitHub's `listFiles` diff is
  *   merge-base relative; see the file header).
@@ -537,4 +636,6 @@ module.exports = {
   SEMVER_PATTERN,
   CONTENT_CHECKED_BASENAMES,
   CONTENT_TOO_LARGE,
+  NOT_A_FILE,
+  makeGetContentReader,
 };
