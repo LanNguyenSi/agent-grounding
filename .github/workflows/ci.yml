@@ -369,15 +369,19 @@ jobs:
         run: npm run test:check-deps
 
       - name: Release-exception classifier smoke check
-        # scripts/release-exception.js backs the merge-approval.yml
-        # "Determine release exception" step. Classifying the empty list
-        # (invoked bare, no argv/stdin) can never discriminate a broken
-        # classifier from a working one: `pure_release: false` is also
-        # what a `classify` that always returns `false` would print. This
-        # instead pipes a known-pure file list through the CLI and asserts
-        # `pure_release` reads back `true`, so the step actually fails if
-        # the module stops loading, stops running cleanly, or regresses to
-        # never-pure.
+        # scripts/release-exception.js's CLI only exercises `classify(paths)`
+        # (path shape only): it has no PR base/head git ref to read file
+        # content from, so it cannot exercise `classifyPullFiles` (the
+        # status + parsed-content aware checker `merge-approval.yml`'s
+        # "Determine release exception" step actually calls); the unit-test
+        # step below is the coverage for that function. Classifying the
+        # empty list (invoked bare, no argv/stdin) can never discriminate a
+        # broken `classify` from a working one: `pure_release: false` is
+        # also what a `classify` that always returns `false` would print.
+        # This instead pipes a known-pure file list through the CLI and
+        # asserts `pure_release` reads back `true`, so the step actually
+        # fails if the module stops loading, stops running cleanly, or
+        # `classify` regresses to never-pure.
         shell: bash
         run: |
           verdict="$(echo '["package.json","package-lock.json","CHANGELOG.md"]' | npm run --silent check:release-exception)"
@@ -391,10 +395,16 @@ jobs:
           ' "$verdict"
 
       - name: Release-exception classifier unit tests
-        # Fixture-based unit tests for classify(), including the real
-        # changed-file lists of PR #190 (pure) and PR #215 (not pure, source
-        # + docs rejected by name), the negative-control shape (an otherwise
-        # -pure list plus one source file), and the CLI's stdin/argv paths.
+        # Fixture-based unit tests for both `classify(paths)` (path shape
+        # only, including the real changed-file lists of PR #190 (pure) and
+        # PR #215 (not pure, source + docs rejected by name), and the CLI's
+        # stdin/argv paths) and `classifyPullFiles(files, { readFile })`
+        # (status + parsed-content aware, the function the workflow step
+        # actually calls), including PR #190's real base/head file content
+        # under scripts/fixtures/release-exception/ and synthetic
+        # not-pure cases (a scripts.version/dependency-named-version
+        # smuggle, a postinstall addition, a lockfile resolved/integrity
+        # repoint, a non-semver value, an unparsable or missing file).
         run: npm run test:check-release-exception
 
       - name: Build

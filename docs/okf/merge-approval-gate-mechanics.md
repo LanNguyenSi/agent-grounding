@@ -3,13 +3,13 @@ type: runbook
 title: Merge-approval gate — labels, keys, and when it actually blocks
 description: How the merge-approval Check-Run maps five review:* PR labels (OR'd with a data-driven pure-release exception) to merge_approval booleans, keys evidence by the PR HEAD BRANCH NAME, and blocks only when required by an applicable branch-protection rule or ruleset.
 tags: [merge-approval, review-claim-gate, ci, runbook, labels]
-timestamp: 2026-09-07T06:10:00Z
+timestamp: 2026-09-07T08:45:00Z
 sources:
   - .github/workflows/merge-approval.yml
   - scripts/release-exception.js
+  - docs/testing/merge-approval-rollout.md
   - packages/review-claim-gate/README.md
   - packages/review-claim-gate/action/action.yml
-  - docs/testing/merge-approval-rollout.md
   - CONTRIBUTING.md
 ---
 
@@ -30,7 +30,7 @@ The action is pinned by SHA, not a floating tag:
 uses: LanNguyenSi/agent-grounding/packages/review-claim-gate/action@cd3971866e48050514bfa5056bcb7e1d79615bd7 # review-claim-gate-v0.1.6
 ```
 
-(`merge-approval.yml:115#"review-claim-gate-v0.1.6"`; the referenced `packages/review-claim-gate/action/`
+(`merge-approval.yml:172#"review-claim-gate-v0.1.6"`; the referenced `packages/review-claim-gate/action/`
 directory exists and contains `action.yml`.)
 
 ## What it reads: the five labels → booleans
@@ -38,7 +38,7 @@ directory exists and contains `action.yml`.)
 The `Extract prereq flags from PR labels` step (`actions/github-script@v8`,
 `merge-approval.yml:31-44#"core.setOutput('evidence_logged',"`) maps each label name to a `"true"|"false"` output,
 which is passed into the action inputs, each OR'd with the release-exception
-verdict below (`merge-approval.yml:119-123#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`). Exact
+verdict below (`merge-approval.yml:176-180#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`). Exact
 mapping:
 
 | PR label (apply on the PR)     | github-script output   | action input               | `merge_approval` prereq             |
@@ -60,25 +60,26 @@ nothing in CI cross-checks. `review:evidence-logged` is different: as covered
 above, a committed evidence file already satisfies `evidence_logged` in CI
 without the label, so that prereq is only honour-system when the reviewer
 uses the label's force-override instead of committing evidence
-(`merge-approval-rollout.md:68-75#"for tracking history."`). Ticking a label you did not earn
+(`merge-approval-rollout.md:79-86#"for tracking history."`). Ticking a label you did not earn
 defeats the whole gate.
 
 ## The pure-release exception: a sixth, data-driven path to all five `true`s
 
 Between the label-extraction step and the gate action, a `Determine release
 exception from the PR's real changed files` step
-(`merge-approval.yml:46-91#"core.setOutput('pure_release', pure_release.toString());"`)
+(`merge-approval.yml:46-169#"core.setOutput('pure_release', pure_release.toString());"`)
 computes a `pure_release` boolean and OR's it into every one of the five
 action inputs above
-(`merge-approval.yml:119-123#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`).
+(`merge-approval.yml:176-180#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`).
 When `pure_release` is `true`, all five prereqs are satisfied regardless of
 which `review:*` labels are on the PR: no label round needed.
 
 `pure_release` comes from `scripts/release-exception.js`'s
-`classifyPullFiles(files)`, called on the PR's actual `listFiles` API objects
-obtained via `github.paginate(github.rest.pulls.listFiles, ...)` (paginated,
-so a PR with more than one API page of files is read correctly). A file
-entry is pure only when **all three** hold:
+`classifyPullFiles(files, { readFile, baseRef, headRef })`, called on the
+PR's actual `listFiles` API objects (just `filename`/`status`) obtained via
+`github.paginate(github.rest.pulls.listFiles, ...)` (paginated, so a PR with
+more than one API page of files is read correctly). A file entry is pure
+only when **all three** hold:
 
 1. **Path shape.** The `filename` matches one of these exact shapes, and the
    file list is non-empty:
@@ -91,31 +92,54 @@ entry is pure only when **all three** hold:
    (`PACKAGE.JSON` does not count). Any number of packages may appear in one
    pure PR; the allowlist has no per-PR cap on package count.
 2. **File status.** `status` is `added` or `modified`. A `renamed` or
-   `removed` entry is never pure, regardless of the shape of its `filename`,
-   and a rename's old `previous_filename` is never itself checked against
-   the allowlist, so a rename cannot qualify by virtue of what it used to be
-   named either.
-3. **Content, for `package.json`/`package-lock.json` only.** The file's
-   unified diff `patch` text changes nothing but `"version": "…"` value
-   lines: every added/removed line must match that shape once the leading
-   `+`/`-` marker is stripped (trailing comma optional, any amount of
-   leading indentation). This is what stops a root-`package.json`-only PR
-   from smuggling in a `postinstall` script, a new `bin`/dependency entry,
-   or a lockfile `resolved`/`integrity` repoint under a release-shaped path.
-   A file entry with **no `patch` field at all** (GitHub omits it for a very
-   large diff) is treated as NOT pure, fail-closed: there is nothing to
-   verify, so nothing has been verified. `CHANGELOG.md` carries no content
-   constraint: prose is expected to change.
+   `removed` entry is never pure, regardless of the shape of its `filename`.
+3. **Content, for `package.json`/`package-lock.json` only: a PARSED
+   comparison, not a diff-text match.** The classifier reads the file's
+   actual text at both `baseRef` (the PR's base commit sha) and `headRef`
+   (its head commit sha) via a caller-supplied `readFile(ref, path)`,
+   `JSON.parse`s both, and deep-compares the two documents, collecting every
+   JSON path where they differ. The file is pure only when:
+   - every differing path is one of the version fields this file is allowed
+     to change at: `$.version` for `package.json`; for `package-lock.json`,
+     `$.version`, `$.packages[""].version`, or
+     `$.packages["packages/<one segment>"].version` (its workspace
+     entries), and
+   - at every such path, **both** the old and the new value are strings
+     matching a strict semver shape (`\d+\.\d+\.\d+` with optional
+     `-prerelease`/`+build`).
 
-**Residual:** this is a check on the PR's diff text as GitHub reports it,
-not a semantic package/lockfile verification; it cannot tell a legitimate
-version bump from a change that happens to land entirely on lines shaped
-like a JSON `"version"` key. See `scripts/release-exception.js`'s own header
-comment for the full rationale and `CONTRIBUTING.md`'s "Cutting a release"
-section for what this looks like in practice, including the two path-level
-disqualifiers that come up most often (a source version constant such as
-`packages/grounding-mcp/src/server.ts`, and a `docs/okf/*.md` re-stamp
-riding along with the bump).
+   Any other differing path (an added or removed key such as a `postinstall`
+   script, a new dependency, a dropped field; a changed `resolved`/
+   `integrity`; an array change; a version bump at a `node_modules/*`
+   lockfile entry) disqualifies the file, and so does a non-semver value at
+   an otherwise-allowed path (a `^`-ranged string, a shell command). This
+   replaced an earlier revision's diff-text regex over `"version": "…"`
+   lines, which a line like `"version": "curl … | sh"` inside a `scripts`
+   block (or a dependency literally named `version`) could satisfy while
+   being nothing like a version bump; see `scripts/release-exception.js`'s
+   own header comment for the full before/after rationale.
+   `CHANGELOG.md` carries no content constraint: prose is expected to
+   change, so it is never read for content, only checked for path and
+   status.
+
+   **Fail-closed.** A read that throws, returns something that is not a
+   string when content was expected (including `null`, since an `added` file has
+   no base content to compare against, so it can never be pure), text that
+   does not parse as JSON, or a parsed document whose root is not a plain
+   object all make the file NOT pure: there is nothing to verify, so nothing
+   has been verified.
+
+**Residual:** this reads the PR's actual file content at both refs, so a
+diff-text framing trick no longer works, but it is still a syntactic
+(parsed-JSON) check, not a semantic package/lockfile verification: a
+version string that looks legitimate is still trusted as one. See
+`CONTRIBUTING.md`'s "Cutting a release" section for what this looks like in
+practice, including the two path-level disqualifiers that come up most
+often (a source version constant such as `packages/grounding-mcp/
+src/server.ts`, and a `docs/okf/*.md` re-stamp riding along with the bump),
+its residual on the one-package-per-release checklist rule (not enforced by
+this classifier), and the cross-pin case (only a dependent's own changed
+file is checked, not which packages a release *should* have touched).
 
 **Pagination safety net.** The step also compares the number of files
 `github.paginate` actually returned against the PR's own
@@ -123,8 +147,19 @@ riding along with the bump).
 writes a step-summary note, rather than silently classifying a possibly
 partial file list as pure.
 
+**Error safety net.** The entire step body (pagination, content reads,
+classification) runs inside one `try`/`catch`. Any error (a paginate or
+`getContent` failure that is not a plain 404, a classifier bug) is caught,
+forces `pure_release: false`, and is recorded in the step summary by
+message, rather than letting the step itself fail: the pinned gate action
+below must always run and always post a verdict, never be skipped by an
+upstream exception.
+
 When the exception applies, the step writes a step-summary note naming the
-files it matched (`merge-approval.yml:102-111#".write();"`).
+files it matched (`merge-approval.yml:134-142#".write();"`); when it does
+not, the summary instead lists each rejected file with its status and the
+specific reason it was rejected (a disallowed path, status, JSON path, or
+non-semver value).
 
 **Trust boundary.** The classifier and the workflow that `require()`s it
 both come from the PR ref on `pull_request` events, so the exception is a
@@ -144,7 +179,7 @@ Load-bearing correction. The action's `task-id` input is:
 task-id: ${{ github.event.pull_request.head.ref }}
 ```
 
-(`merge-approval.yml:117#"task-id: ${{ github.event.pull_request.head.ref }}"`.) That is the **PR head branch name** (e.g. `feat/foo`),
+(`merge-approval.yml:174#"task-id: ${{ github.event.pull_request.head.ref }}"`.) That is the **PR head branch name** (e.g. `feat/foo`),
 **not** an agent-tasks task UUID. The rollout doc confirms: "`task-id` is the
 PR's head branch name — stable across commits on the branch"
 (`merge-approval-rollout.md:31-32#"branch and visible in both the PR UI and the Check-Run summary."`). Everywhere the gate says "task id" for
@@ -171,7 +206,7 @@ label to the `evidence-logged` input, but that label is optional: absent it,
 the action falls through to the committed-file auto-detect above, so a
 committed `.agent-grounding/evidence/<task-id>.jsonl` in the PR branch,
 with at least one valid JSONL entry, already satisfies `evidence_logged`
-in CI today, no label required (`merge-approval-rollout.md:60-66#"for the task id."`,
+in CI today, no label required (`merge-approval-rollout.md:71-77#"for the task id."`,
 follow-up task `5ea6d7cf` tracks history).
 
 ## When it actually blocks (two states — know which is live)
@@ -183,7 +218,7 @@ an applicable branch-protection rule or ruleset's **required status checks**
 - **Hard gate (end state the rollout doc describes).** `merge-approval` is a
   required check on `master`; a red / `allowed: false` verdict blocks the Merge
   button until all five prereqs are satisfied and the check flips to ALLOWED
-  (`merge-approval-rollout.md:6-8#"until the gate returns"`, 99-100).
+  (`merge-approval-rollout.md:6-8#"until the gate returns"`, 110-111).
 - **Advisory state.** When neither an applicable ruleset nor branch protection
   requires `merge-approval`, the Check-Run still posts and can go red, but **a
   red merge-approval does not block a merge**. The rollout doc correctly
@@ -207,12 +242,12 @@ otherwise incomplete query does not establish absence; a legacy-protection 404
 only means legacy branch protection is unavailable and must be evaluated with
 the ruleset result. To promote it to a hard gate, add `merge-approval` (alongside
 the existing `ci`) to the required checks per
-`merge-approval-rollout.md:77-105#"alongside it.)"` (requires Admin).
+`merge-approval-rollout.md:88-116#"alongside it.)"` (requires Admin).
 
 ## How to make it pass legitimately
 
 Do the review, then add each label only when its dimension is genuinely met
-(reviewer cheat sheet, `merge-approval-rollout.md:107-119#"evidence-ledger entry under"`):
+(reviewer cheat sheet, `merge-approval-rollout.md:118-130#"evidence-ledger entry under"`):
 
 1. CI green → `review:tests-pass`.
 2. Walk the full checklist (correctness, security/scope, permissions, minimal

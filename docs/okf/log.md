@@ -19,12 +19,12 @@
   helper. `.github/workflows/merge-approval.yml`'s release-exception step
   now calls `classifyPullFiles` with each file's `filename`/`status`/
   `patch`
-  (`merge-approval.yml:46-91#"core.setOutput('pure_release', pure_release.toString());"`)
+  (`merge-approval.yml:46-169#"core.setOutput('pure_release', pure_release.toString());"`)
   and also compares the paginated file count against the PR's own
   `changed_files`, forcing `pure_release: false` on a mismatch rather than
   risking a partial page reading as pure. The five action inputs
   themselves are unchanged
-  (`merge-approval.yml:119-123#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`).
+  (`merge-approval.yml:176-180#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`).
   New unit tests cover: the real package.json/package-lock.json
   version-bump patches of PR #190 (captured read-only via `gh api
   repos/LanNguyenSi/agent-grounding/pulls/190/files`), a postinstall
@@ -68,13 +68,24 @@
   citations in `evidence-ledger-session-key-shapes.md` moved 89→117 and
   87→115). This entry's own predecessor's "15 cases"/"15/15 green" wording
   was replaced with delta language, since totals rot as more tests are
-  added; this entry states deltas only. `okf-kit check --require-anchors`
-  against this bundle: unchanged from the round-1 measurement, 2 warnings,
-  both pre-existing `citations-resolve` findings against `log.md` (a
-  reserved, append-only doc excluded from the anchor-guard job's blocking
-  selectors), 0 `sources-fresh`. No package version was bumped and no live
-  release PR was opened by this task; that remains open (see this task's
-  own tracking).
+  added; this entry states deltas only. **Correction (made in round 3,
+  below): the following sentence originally claimed `okf-kit check
+  --require-anchors` against this bundle was "unchanged from the round-1
+  measurement, 2 warnings ... 0 sources-fresh". That was never actually
+  re-run at this point and was false: a real run against this commit shows
+  6 warnings, 0 errors, 0 `sources-fresh` — the round-1 baseline's 2
+  pre-existing `citations-resolve` findings against `log.md`'s own
+  `solution-verdict.ts` citations (unrelated to this task), plus 2 more
+  because round 1's own entry citations above were not actually re-pointed
+  to this round's line shift (fixed in round 3, see that entry's own
+  citations), plus 2 more because this round's edits broke the two
+  citations documented in the already-merged 2026-09-06 `7c21ca25` entry
+  below (its cited merge-approval.yml line 47 and merge-approval-gate
+  -mechanics.md line 28) as a side effect, left as historical rather than
+  rewritten (see the round-3 entry for why).** No package version was
+  bumped and no live release PR
+  was opened by this task; that remains open (see this task's own
+  tracking).
 
 - 2026-09-07T05:45:00Z, merge-approval pure-release exception (task
   `4493b316`): added `scripts/release-exception.js`, a dependency-free
@@ -82,10 +93,10 @@
   `{ pure_release, allowed, rejected }` verdict, and wired it into
   `.github/workflows/merge-approval.yml` as a new `Determine release
   exception from the PR's real changed files` step
-  (`merge-approval.yml:46-73#"core.setOutput('pure_release', verdict.pure_release.toString());"`)
+  (`merge-approval.yml:46-169#"core.setOutput('pure_release', pure_release.toString());"`)
   between the label-extraction step and the pinned gate action. Each of
   the five action inputs is now `<label == 'true'> || <pure_release ==
-  'true'>` (`merge-approval.yml:91-95#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`),
+  'true'>` (`merge-approval.yml:176-180#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`),
   so a pure version-bump PR (root `package.json` / `package-lock.json` /
   `CHANGELOG.md`, or a single package's `packages/<name>/package.json` /
   `CHANGELOG.md`) satisfies the gate without a `review:*` label round; the

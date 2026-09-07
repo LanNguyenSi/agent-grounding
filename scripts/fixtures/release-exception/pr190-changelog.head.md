@@ -1,0 +1,679 @@
+# Changelog
+
+## [Unreleased]
+
+## [0.5.0] - 2026-08-25
+
+### Fixed
+
+- **Claude Code adapter: the `UserPromptSubmit` hook no longer injects on a
+  task-notification wrapper prompt, and now honors an external pause
+  sentinel.** Two symptoms observed live (agent-tasks `63fefe3a`): (1)
+  Claude Code delivers a task-notification wrapper as the `prompt` field on
+  subagent-completion turns, not just genuine operator input; `isTaskLike()`
+  matched the wrapper's contents and injected anyway. Fixed with a prefix
+  guard (`isTaskNotificationHull`) that skips injection only when the
+  prompt actually BEGINS with the `<task-notification` tag (after leading
+  whitespace), so an operator who merely types the words
+  "task-notification" mid-message still gets gated. This guard is
+  unconditional (no env var gates it), so it changes the published
+  `UserPromptSubmit` behavior for every consumer of the next release, not
+  just those who opt in. (2) The adapter had no pause-awareness at all: an
+  external pause of this shape had no effect on this hook. Fixed with a
+  read-only, best-effort check (`isPaused`) of a sentinel file at the new,
+  optional `UNDERSTANDING_GATE_PAUSE_FILE` env var (unset means no pause
+  check at all, so the package stays standalone-runnable). The sentinel is
+  a JSON object `{pausedAt, expiresAt, reason, pausedBy}`: a present,
+  non-empty `pausedAt` plus a missing or `null` `expiresAt` means paused
+  indefinitely; a non-empty `expiresAt` that fails to parse as a date also
+  means paused indefinitely (a malformed-but-present expiry does not get
+  to silently unblock things); a parsable `expiresAt` means paused only
+  while it is strictly in the future. Anything else -- missing/empty
+  `pausedAt`, a non-string/malformed `expiresAt`, an unreadable or
+  non-regular (e.g. a named pipe) file, or malformed/non-object JSON --
+  degrades to "not paused" rather than throwing or blocking. This package
+  never writes or deletes the sentinel; expiry cleanup is not this hook's
+  job.
+- **opencode adapter: deduped the double `message.updated` fire so a
+  finished assistant message persists exactly one Understanding Report,
+  not two.** Confirmed in the 0.4.10 npm-published-package dogfood
+  (`docs/testing/opencode-npm-dogfood.md`, Finding 3, agent-tasks
+  `f097e38e`): opencode fires `message.updated` twice for the same
+  finished message (a delta update then a final update, both with
+  `info.finish` set), ~85-105ms apart, and the plugin's handler ran the
+  full fetch/parse/save path both times, landing two near-identical
+  report files (byte-identical except `createdAt`) under
+  `.understanding-gate/reports/`. The same double-fire also duplicated
+  `transport_error` breadcrumbs under `.understanding-gate/parse-errors/`
+  on the error path.
+
+  Fixed in the opencode adapter (`persist-report-plugin.ts`) by tracking
+  each finished message's `(sessionID, id)` in an in-process `Set` and
+  skipping the fetch/parse/save work entirely on a repeat fire, rather
+  than by excluding `createdAt` from `saveReport`'s content-hash-keyed
+  idempotency check (`core/persistence.ts`). The hash-based alternative
+  was considered and rejected: `core/approval.ts`'s `withApprovalStatus`
+  deliberately bumps `createdAt` on every approve/revoke specifically so
+  `saveReport` produces a new content-hash-keyed file, and a revoke that
+  restores a report to a state byte-identical to an earlier pending
+  snapshot would, with `createdAt` excluded from the hash, collide with
+  that earlier file's hash and silently no-op instead of persisting the
+  revoked snapshot, breaking the audit-trail guarantee locked in by
+  `cli-approve.test.ts` ("approve → revoke → findLatestForTask returns
+  the revoked snapshot"). The adapter-local dedupe touches nothing shared
+  with the claude-code adapter or the CLI approve/revoke flow.
+
+  Refinement (Fix-Runde 2, agent-grounding `973281e1`): the dedupe key is
+  claimed only after a fetch has returned usable text, not before the
+  fetch is attempted. Claiming it eagerly, before the fetch, was found to
+  lose reports permanently on a transient failure -- if the first of
+  opencode's two same-message fires hit a failing fetch, the key was
+  already marked processed and the second, often-successful fire was
+  skipped too, silently dropping the report. With the key claimed only
+  after success, a failed fire leaves the key unclaimed so the next fire
+  for the same message gets a genuine retry. Accepted consequence: if
+  BOTH fires fail, both attempt the fetch and both log a
+  `transport_error` breadcrumb, so the `transport_error` path is *not*
+  deduped for free the way the report-save path is -- a duplicate (loud)
+  breadcrumb is preferable to a silently missing report that stalls the
+  harness at the Layer 2 gate.
+- **Stale header comment in the opencode plugin source.**
+  `persist-report-plugin.ts` said the `init`-generated shim lands at
+  `.opencode/plugin/` (singular) and that the user must add an
+  `opencode.json` entry. Both were stale as of the same dogfood: `init`
+  writes to the plural `.opencode/plugins/` directory, which opencode
+  auto-loads with no `opencode.json` edit needed. Comment-only fix, no
+  behavior change (the README's own opencode section already had this
+  right).
+
+### Docs
+
+- README's opencode section now documents the deterministic path for
+  exercising the `transport_error` breadcrumb: the existing unit hooks in
+  `tests/opencode-plugin-integration.test.ts` (two cases, search for
+  "transport_error") plus a pointer to the live-session ctx-wrapping
+  recipe in the opencode npm dogfood doc (Scenario 2/Attempt C), so a
+  future dogfood doesn't have to rediscover it.
+
+## 0.4.11, 2026-08-17
+
+### Added
+
+- **`ApprovalStatus` gains `"expired"`; `UnderstandingReport` gains an
+  optional `expiredAt` field.** The harness's
+  `understanding-before-execution` runtime pack (`expirePersistedReport()`,
+  `approval_lifecycle` policy) already rewrites a persisted report's
+  `approvalStatus` to `"expired"` and stamps `expiredAt` in place when a
+  previously-approved report ages out or a matching tool/bash pattern
+  fires post-approval. Before this change, that real, already-shipping
+  runtime state was not representable in this package's own
+  `ApprovalStatus` union or `UNDERSTANDING_REPORT_SCHEMA`
+  (`additionalProperties: false`, enum of four values): a package consumer
+  that validated a flat, package-shaped persisted report (this package's
+  own `UnderstandingReport` JSON, on disk as written by `saveReport`)
+  against the exported schema, or that switched exhaustively over
+  `ApprovalStatus`, had no way to recognize an expired report as a known,
+  valid state. This validation claim is scoped to that shape only: the
+  harness's `codex-stop` hook writes a separate, differently-shaped
+  envelope that this package never validated and still does not,
+  independent of this change. `expired` is now a fifth `ApprovalStatus`
+  member, `expiredAt` is declared as an optional `date-time` schema
+  property (parallel to `approvedAt`), and both schema variants (default
+  and `fast_confirm`) accept them.
+- This package's own parser (`parseReport`), CLI (`approve` / `revoke` /
+  `status`), and guards (`isApproved`, `findLatestForTask`) never produce
+  or require `"expired"` themselves; they only need to not reject it.
+  `isApproved` correctly reads an `"expired"` entry as not approved, same
+  as any other non-`"approved"` status. Setting `"expired"` /
+  `expiredAt` end-to-end (e.g. via `withApprovalStatus` or a CLI verb)
+  remains out of scope here; that lifecycle is owned by the harness.
+
+### Notes for consumers
+
+- Additive and optional, same shape of change as `sessionId` in 0.4.6 and
+  `ParseDefaults.boundTaskId` in 0.4.9: nothing that validated under
+  0.4.10 stops validating, and no previously-required field changed.
+  Ships as a patch so callers pinned `^0.4.x` pick it up automatically,
+  which a `0.5.0` would not satisfy under npm's zero-major caret range
+  semantics.
+- A consumer with its own hand-maintained copy of `ApprovalStatus` or the
+  JSON Schema (rather than importing this package's) will not see
+  `"expired"` until it updates that copy; this package's own exports are
+  the fix.
+- A consumer that imports `ApprovalStatus` and switches over it
+  exhaustively (e.g. a `switch` with no `default`, relying on TypeScript
+  to flag an unhandled member) gets a `tsc` error on updating to this
+  version until it adds a branch for `"expired"`. That is the intended
+  forcing function, not a regression to work around: silently falling
+  through to a `default` for an expired report is exactly the unmodeled-
+  status gap this release closes.
+
+## 0.4.10, 2026-07-27
+
+### Fixed
+
+- **A required list section written as prose (no bullet items) was
+  diagnosed as "missing" instead of "present but wrongly formed".**
+  `parseReport()`'s list-kind branch previously could not tell apart three
+  distinct ways a section key ends up in `missing`: the heading not found
+  at all, the heading found with a genuinely empty/whitespace-only body,
+  and the heading found with a non-blank body that yields zero parseable
+  bullet items (e.g. an agent wrote prose instead of a markdown list). All
+  three collapsed into the same "Missing required sections" verdict. This
+  is the live incident that motivated the fix: a report carried German
+  prose under Verification Plan / Prior Art, no bullets, and was rejected
+  with a message that read as "you forgot these sections" when the
+  sections were in fact present but wrongly formed. `reason` stays
+  `"missing_sections"` (never branched on in-repo; pass-through consumers
+  unchanged). Fixed in commit `6647c50` (PR #154, agent-tasks `be98cd96`).
+
+### Added
+
+- **`ParseError.malformedSections`**: a new, optional, additive field,
+  always a subset of `missing`, populated only for the third case above
+  (heading found, non-blank body, zero bullet items). `reason` and
+  `missing` keep their exact existing shape and meaning, so a consumer
+  that reads only those two fields sees no behaviour change. The
+  rejection `message` now names the malformed keys explicitly ("... key
+  (present but not a markdown list -- use '- ' or '1.' items)") instead of
+  folding them into an undifferentiated "missing" list. Both log writers
+  -- the Claude Code adapter's `handle-stop.ts` and the opencode adapter's
+  `persist-report.ts` -- now include the field in the parse-error log
+  payload, defaulting to `[]` when a `ParseError` producer does not set
+  it (`parseReport()` itself always sets it).
+
+### Notes for consumers
+
+- `malformedSections` is additive and optional; nothing that reads only
+  `reason` / `missing` / `message` breaks. As with `sessionId` in 0.4.6
+  and `ParseDefaults.boundTaskId` in 0.4.9, this is new API surface
+  introduced to fix a diagnostic-accuracy bug, not a new capability a
+  consumer must opt into -- so, consistent with how those two shipped,
+  this stays a patch: callers pinned `^0.4.9` pick it up automatically,
+  which a `0.5.0` would not satisfy under npm's zero-major caret range
+  semantics (`^0.4.9` means `>=0.4.9 <0.5.0`).
+- If you parse the rejection `message` string instead of reading
+  `malformedSections` directly, note the new parenthetical qualifier on
+  malformed keys; exact string matching against the old
+  `"Missing required sections: a, b, c"` format will see that format grow
+  by the qualifier for any key that is present-but-malformed.
+
+## 0.4.9, 2026-07-22
+
+### Fixed
+
+- **`defaults.taskId` gap-fill semantics restored; caller-supplied `taskId`
+  no longer always beats an agent-authored Metadata `taskid`.** 0.4.7
+  (commit `06b577f`, PR #143) made a caller-supplied `defaults.taskId`
+  always win over the markdown's `## Metadata` `taskid` key, to close a
+  block-direction integrity bug (an agent-forged `taskid` could park a
+  forced-pending report under another task's id and downgrade its already-
+  approved entry back to pending, via `findLatestForTask`). That fix was
+  broader than the documented contract ("metadata overrides defaults if
+  present"): legitimate callers that pass `taskId` purely as a gap-filler
+  when the report itself carries no explicit task id -- e.g. the harness's
+  `stdin-report.ts`, which passes `taskId: sessionId` as a filler -- had
+  the real task id silently stamped over by the session id
+  (`persisted.taskId === sessionId`). `defaults.taskId` is gap-fill again,
+  exactly like every other Metadata field: the markdown's `taskid`
+  overrides it when present.
+
+### Added
+
+- **`ParseDefaults.boundTaskId`**: a new, separate field that carries
+  forward the #143 security property. When supplied, it wins over both the
+  markdown's `taskid` key and `defaults.taskId`, and is never leaked onto
+  the persisted report (it is not a schema property). Both adapters
+  (`handle-stop.ts`, `persist-report.ts`) now pass
+  `boundTaskId: env.UNDERSTANDING_GATE_TASK_ID || sessionId` instead of
+  `taskId`; their observable behavior is unchanged from 0.4.7/0.4.8.
+
+### Notes for consumers
+
+- If you call `parseReport` directly (not through the Claude Code or
+  opencode adapters) and need the persisted `taskId` to be bound
+  regardless of what the markdown's Metadata block says -- e.g. to
+  attribute a report to a caller-known task/session and prevent an
+  agent-authored `taskid` from redirecting it -- pass `boundTaskId`, not
+  `taskId`. If you only want `taskId` as a fallback for when the markdown
+  has none, nothing changes: that is `defaults.taskId`'s restored,
+  documented behavior.
+- **Correction to the 0.4.7 and 0.4.8 changelog entries**: both say "No
+  behavior changes in the gate itself." That was inaccurate for 0.4.7:
+  commit `06b577f` (the taskId-precedence change fixed above) landed
+  between the `understanding-gate-v0.4.6` and `understanding-gate-v0.4.7`
+  tags and shipped in 0.4.7, alongside the `hypothesis-tracker` re-pin the
+  entry describes. 0.4.8 itself carried no further parser changes. Those
+  entries are left as originally published; this note documents the
+  discrepancy rather than rewriting history.
+
+## 0.4.8, 2026-07-18
+
+### Changed
+
+- Re-pin `hypothesis-tracker` to 0.6.0 (version-locked train v0.6.0; the
+  substantive changes in that train are evidence-ledger's `getDb` guard fix
+  and the uniform `engines >=20` baseline). No behavior changes in the gate
+  itself.
+
+## 0.4.7, 2026-07-17
+
+### Changed
+
+- Re-pin `hypothesis-tracker` to 0.5.1 (version-locked train v0.5.1; the
+  substantive change in that train is evidence-ledger's `better-sqlite3`
+  `^12.9.0` Node 26 install fix). No behavior changes in the gate itself.
+
+## 0.4.6, 2026-07-10
+
+### Fixed
+
+- **The Claude Code Stop hook can finally see a report written mid-turn.**
+  `stop.ts` preferred the payload's `last_assistant_message` whenever it was
+  non-empty (the 0.2.1 race fix). That field carries only the FINAL assistant
+  message, so in the normal agent flow (report, then tool calls, then a
+  closing sentence) the hook always looked at the closing sentence, and the
+  transcript walk that would have found the report was unreachable. Source
+  selection is now marker-aware (`selectReportText`): the payload wins only
+  when it actually looks like a report, otherwise the transcript is walked.
+  The race fix is preserved for the case it was written for, a report
+  delivered as the final message, and the transcript is read lazily so that
+  fast path still does no file IO. Root-caused via harness task `61fd36db`.
+- **Persisted reports now carry the session that produced them.**
+  `saveReport`'s canonical serializer only emits keys declared in
+  `UNDERSTANDING_REPORT_SCHEMA.properties`, so the session binding was
+  silently stripped on write. `sessionId` is now an optional schema property,
+  stamped by both adapters from the runtime's session id and never from
+  agent-authored markdown (the parser's metadata whitelist has no `sessionid`
+  key, so a report cannot claim a session it did not come from). Without this
+  a consumer's strict sessionId match, e.g. the one in
+  `harness approve understanding`, could never fire for package-produced
+  reports, and its freshest-pending-report fallback was structurally dead.
+  `listReports` surfaces the field; reports written before 0.4.6 carry no
+  `sessionId` and remain valid.
+
+### Notes for consumers
+
+- `sessionId` is additive and optional; nothing that read 0.4.5 reports breaks.
+  Consumers that want the strict binding should treat a missing `sessionId` as
+  "unattributed" rather than as a match.
+- The report schema gained one optional property. It still declares
+  `additionalProperties: false`, so downstream schema consumers that pin an
+  older copy of the schema will reject 0.4.6-produced reports until they
+  update. This is why the field is optional and why the bump stays a patch:
+  the intent is a bug fix that `^0.4.5` consumers pick up automatically.
+- One-time duplicate after upgrade: the content hash in a report's filename
+  now covers `sessionId`, so a report that already sat on disk unstamped is
+  written once more in its session-bound form rather than being recognised as
+  identical. Nothing is overwritten, and the newer bound copy supersedes the
+  old one for consumers that sort by recency.
+- Two sessions that emit byte-identical report text now produce two files
+  instead of deduplicating into one. That is the point of the binding.
+
+## 0.4.5, 2026-07-02
+
+### Changed
+
+- Re-pinned `@lannguyensi/hypothesis-tracker` to `0.5.0` to track the
+  coordinated 0.5.0 release (M7: `supportHypothesis` refuses to confirm
+  while declared `required_checks` are pending).
+- Note: 0.4.4 below was prepared on 2026-06-17 but its tag was never pushed;
+  0.4.5 is the first published version carrying both changes.
+
+## 0.4.4, 2026-06-17
+
+### Fixed: hypothesis-tracker dependency un-pinned from the stale 0.1.0 floor
+
+- **The problem.** `package.json` declared `@lannguyensi/hypothesis-tracker: "^0.1.0"`,
+  which does not satisfy the workspace/published 0.4.0, so the workspace link never
+  engaged and npm consumers resolved the unmaintained 0.1.0 — four minors behind the
+  rest of the lockstep family (grounding-sdk / grounding-mcp pin 0.4.0 exactly).
+- **The fix.** Pin `@lannguyensi/hypothesis-tracker` to `0.4.0` (exact, matching the
+  sibling lockstep convention). The consumed surface (`createStore`, `Hypothesis`,
+  `HypothesisStore`, and the `"unverified" | "supported" | "rejected"` status union)
+  is unchanged between 0.1.0 and 0.4.0, so there is no behaviour change; typecheck
+  clean and 485/485 vitest pass against the reconciled 0.4.0 link.
+
+agent-grounding task `677a4bf2`. No happy-path behaviour change.
+
+## 0.4.3, 2026-06-16
+
+### Fixed: degraded-allow path in handlePreToolUse is now loud and audited
+
+- **The problem.** `handlePreToolUse` in the standalone claude-code adapter failed
+  open on a malformed or empty payload (and on a missing `tool_name`) but silently:
+  no stderr output, no audit entry, returning before the audit path. A
+  governance gate that allows silently manufactures false confidence, which is the
+  worst failure direction. The harness-side pack hook was already hardened to fail
+  open loudly (PR #112 closes the gap in the standalone package).
+- **The fix.** Both degraded paths (malformed payload, missing tool name) now emit a
+  stderr diagnostic AND write a `degraded_allow` audit entry via a new `AuditEvent`
+  kind. `cwd` for the audit write is resolved through a non-throwing `safeCwd()` so
+  the never-crash contract holds even on the degraded path.
+- **Tests.** Degraded-path tests updated to assert "not silent": a stderr diagnostic
+  is present and a `degraded_allow` line lands on disk. The malformed binary test now
+  spawns with `cwd=tmp` so the real audit write lands in a throwaway dir, not the
+  package root. Added `.gitignore` entry for `.understanding-gate/` as a backstop
+  against runtime-state leakage. 485/485 vitest pass; build clean.
+
+agent-grounding task `558635ca`, PR #112. No behaviour change on the happy path.
+
+## 0.4.2, 2026-06-14
+
+### Fixed: the parser accepts bold-label section headers, and the Stop hook is never silent
+
+- **The problem (discovery finding C1, live repro in session 2a7a60b1).** An agent ended a turn with a complete Understanding Report whose top heading was `## Understanding Report` (so `REPORT_MARKER_RE` matched) but whose sections were written as bold labels, e.g. `**Derived Todos:**` followed by a markdown list, instead of `##` headings. `splitIntoSections` only promoted `#`-style headings to sections, so every section read as missing, `parseReport` returned `missing_sections`, and the report was dropped. Only a parse-error log was written; the real report was never saved. This was the producer half of the C1 stale-report-adoption bug (the consumer half, the harness tolerant fallback, was fixed in harness 0.34.0).
+- **The fix.** `src/core/parser.ts` now recognizes a bare bold-label line (`**Title:**`, `**Title**:`, `**Title**`) as a section header equivalent to a `##` heading, but ONLY when the line is the whole line (no trailing content) AND its normalized title is a known section alias (`KNOWN_ALIASES`, built from `SECTIONS` aliases plus the metadata alias). The known-alias allowlist plus the `\s*$` anchor stop inline bold prose such as `**Note:** ...` from splitting a section body. Bold labels inside fenced code blocks are still treated as verbatim content. `SECTIONS`, `REPORT_MARKER_RE` and `normalizeTitle` are unchanged, so the harness `check:ug-schema-drift` mirror stays green.
+- **Never silent.** `src/adapters/claude-code/handle-stop.ts`: when even the parse-error log write fails, a guarded `console.error` breadcrumb is emitted (wrapped so it can never throw, e.g. on an EPIPE stderr). A message that carries the report marker now always yields a saved report or a parse-error, never zero artifacts.
+- **Behavior note.** A `fast_confirm` reply that contains a bare known-alias bold label now produces a section and skips the five-bullet fallback (gated on `sections.length === 0`). Low probability (the `fast_confirm` prompt emits bullets, not bold labels) and never silent.
+- **Tests.** `tests/parser.test.ts` adds bold-label accept, mixed `##`-and-bold, inline-bold-with-trailing-content (known and unknown alias) not-promoted, and fenced-bold not-promoted cases. `tests/claude-code-handle-stop.test.ts` adds an incident-shape case that parses and saves through the REAL parser end to end, a marker-plus-garbage case that yields `parse_error` (never `no_report`), and a breadcrumb-on-log-write-failure case. 484/484 vitest pass, tsc + build clean.
+
+agent-grounding task `f994e25b`, PR #108. No behaviour change for reports that already parsed.
+
+## 0.4.1, 2026-05-24
+
+### Fixed: parse-error log raw payload now capped at 64 KiB across both adapters
+
+- A runaway agent emitting megabytes of assistant text on parse failure used to write the whole text into `<reportDir>/../parse-errors/<stamp>.log`. The atomic-write half (tmp+rename via `writeAtomicText`) was already in place since 0.3.x (see PR #86 lifting the helpers to `adapters/error-log.ts`); the size cap was the missing half.
+- `adapters/error-log.ts` now exports `PARSE_ERROR_RAW_MAX_BYTES` (64 KiB) and `truncateForLog(text, maxBytes)`. The cap is applied in both the claude-code Stop hook (`adapters/claude-code/handle-stop.ts`) and the opencode persist-report adapter (`adapters/opencode/persist-report.ts`), so a 1 MB parse failure now lands ~64 KiB of raw text plus a byte-accurate `[truncated N more bytes]` marker. Byte-bounded, not character-bounded; partial trailing UTF-8 sequences become U+FFFD per `Buffer.toString("utf8")` semantics with the overflow count measured against the original `byteLength`.
+- **Tests.** New 1 MB integration tests for both adapters (`tests/claude-code-handle-stop.test.ts`, `tests/opencode-handle-persist-report.test.ts`) plus unit coverage of `truncateForLog` at the boundary. 469/469 vitest pass.
+
+agent-tasks task `2c56bc1f`, PR #88. No behaviour change for parse-success or no-report paths.
+
+## 0.4.0, 2026-05-23
+
+### Feature: Prior Art is now a required 10th section of the Understanding Report (BREAKING)
+
+- **Motivation.** The existing nine sections (Current Understanding, Intended Outcome, Derived Todos, Acceptance Criteria, Assumptions, Open Questions, Out Of Scope, Risks, Verification Plan) all frame the task *as given*. None forces the agent to ask whether the task should be built at all. Concrete failure 2026-05-22: `pattern-scout`, a ~5000-line agent-dx package, was designed across several turns, built, reviewed, merged, and then found redundant with an existing external tool (`opensrc-mcp`) that already solved the problem better. The Understanding Report for that build was complete and would have passed any review; its frame was correct, the task as given was the wrong task.
+- **What this release adds.** A 10th required section, "Prior art", with stricter content rules: the agent must list the channels it checked for an existing solution (web, package registries, MCP directories, the org's own repos, the project's existing modules), the closest existing tool or pattern found, and an explicit "adopt" / "extend" / "build new" judgment with a reason. The section may not be blank; `- None` is explicitly disallowed by the prompt. The parser deliberately does NOT string-match `- None` itself — the prompt is the contract, the parser is structural. A literal `- None` bullet parses as `priorArt: ["None"]` and validates; the deterrent lives in the agent-facing prompt template.
+- **Parser change.** `priorArt: string[]` is a required field on `UnderstandingReport` with `minItems: 1`. `src/core/parser.ts#SECTIONS` adds `{ key: "priorArt", kind: "list", aliases: ["prior art"] }`. `UNDERSTANDING_REPORT_SCHEMA` adds `priorArt` to `required` and `properties`.
+- **`fast_confirm` mode is unchanged.** The five-bullet shape (currentUnderstanding, intendedOutcome, outOfScope, verificationPlan, assumptions) does not carry Prior Art and the relaxed schema (`UNDERSTANDING_REPORT_SCHEMA_FAST_CONFIRM`) excludes `priorArt` from `required` alongside `derivedTodos`, `acceptanceCriteria`, `openQuestions`, `risks`. Rationale: the failure class this section guards against (multi-turn build of an unnecessary tool) is intrinsically a `grill_me` / full situation; `fast_confirm` is for low-stakes prompts where the gate barely fires.
+- **Migration.** Operators who land 0.4.0 should expect their agents' Reports to fail the parse until the prompt change propagates. The companion harness change (PR in `LanNguyenSi/harness`, follow-up task) bumps the `min_version` floor on the `understanding-before-execution` policy pack to 0.4.0 so `harness doctor` flags installs that haven't upgraded.
+- **Tests.** `tests/parser.test.ts` adds a missing-Prior-Art reject case, an empty-Prior-Art reject case, and an explicit-fast_confirm accept case. `tests/schema.test.ts` extends `ALL_LIST_FIELDS` and `NON_EMPTY_REQUIRED` to include `priorArt`. `tests/prompts.test.ts` asserts both `FULL_PROMPT` and `GRILL_ME_PROMPT` mention Prior Art. Roundtrip fillTemplate exemplar covers the new section.
+
+Filed from harness `798d7173`, agent-grounding task `924b01ee`. Verified: 464/464 vitest, tsc + npm build clean.
+
+## 0.3.2, 2026-05-20
+
+### Fixed: `full` + `grill_me` prompts now instruct sections 3-9 as markdown lists
+
+- **The injected Understanding Report prompt and the Stop-hook parser disagreed on the shape of report sections 3-9.** The parser (`src/core/parser.ts`) types sections 3-9 (Derived todos, Acceptance criteria, Assumptions, Open questions, Out of scope, Risks, Verification plan) as `kind: "list"`: a prose-paragraph body parses to an empty list, so the section reads as absent and the whole report is rejected with `missing_sections`. The `full` and `grill_me` templates used mixed verbs ("Define", "State", "Mention", "Explain") for those sections and never told the agent they must be markdown lists, so an agent following the prompt literally wrote sections 4/7/8/9 as prose and its report was dropped.
+- **The failure was silent.** `harness approve understanding` still writes the gate marker from the staged `.pending-approval`, so the gate opens and nobody notices, but no JSON report is persisted. Observed 2026-05-20 (session 0a248d9e): 31 `missing_sections` parse-error logs under `.understanding-gate/parse-errors/` while the report text plainly carried the `### ` headings, just as prose.
+- **Fix.** Both `FULL_PROMPT` and `GRILL_ME_PROMPT` now state, before the section list, that sections 3-9 must each be a markdown list (one item per line, starting with `- `) and that a list section with nothing to report must be written as a single `- None` item. The per-section verbs are normalized to "List ...". The parser is unchanged: the prompt-side fix is lower-risk than relaxing the parser, and a prompt-conformant report parses cleanly (proven by the existing roundtrip test). `grill_me` carried the identical defect and is fixed in the same change.
+- **Regression test.** `tests/prompts.test.ts` asserts both templates carry the markdown-list instruction and the `- None` empty form.
+
+agent-tasks `111fc7d9`. Verified: 457/457 vitest, tsc + npm build clean.
+
+## 0.3.1, 2026-05-17
+
+### Fixed: `understanding-gate --version` reads from package.json
+
+- **`src/cli.ts` now sources `.version()` from `package.json` at runtime via `createRequire`.** Previously hardcoded `.version("0.2.3")` literal drifted past the 0.3.0 release because the bump touched `package.json` but not the CLI source, so installs on `@lannguyensi/understanding-gate@0.3.0` still reported `0.2.3` from `understanding-gate --version`. The functional 0.3.0 changes were always present in the installed dist; only the `--version` output was stale.
+- **Why it matters.** `harness doctor` enforces `min_version` floors declared in hook manifests via `<bin> --version`. Without this fix, any harness floor at `>= 0.3.0` on the understanding-gate hooks false-positives on every install. The harness-side floor work (LanNguyenSi/harness task `6af1727f`) is queued blocked-by this release shipping.
+- **Regression test.** `tests/cli-version.test.ts` spawns `dist/cli.js --version` and asserts the output matches `package.json`. Prevents the literal from ever drifting again.
+
+PR #80 (agent-tasks `73092e5e`). Verified: 456/456 vitest, tsc + npm build clean, `node dist/cli.js --version` prints the bumped version.
+
+## 0.3.0, 2026-05-16
+
+### Feature: fast_confirm reports now persist end-to-end
+
+- **Parser-side bullet-to-section mapping for fast_confirm mode.** The
+  `fast_confirm` prompt emits five plain bullets with no
+  `# Understanding Report` heading or 9-section structure that the
+  parser required. PR #74 (0.2.3) made the silent failure observable
+  via a `no_marker_fast_confirm_attempt` breadcrumb. This release
+  closes the gap: `parseReport` now matches the five bullet prefixes
+  (`I understood the task as:`, `I will do:`, `I will not touch:`,
+  `I will verify by:`, `Assumptions:`) against the canonical section
+  keys when `defaults.mode === "fast_confirm"` AND the section split
+  returned zero headings. The existing 9-section walk still wins when
+  canonical sections are present, so a fast_confirm agent that emits
+  a full Report parses cleanly.
+- **`UNDERSTANDING_REPORT_SCHEMA_FAST_CONFIRM` variant.** New export
+  alongside the strict `UNDERSTANDING_REPORT_SCHEMA`. Same properties
+  block (so `minLength` / `minItems` still apply when an agent
+  volunteers any dropped field), but drops `derivedTodos`,
+  `acceptanceCriteria`, `openQuestions`, `risks` from `required`.
+  Those four are the sections the fast_confirm prompt does not ask for.
+  The validator is mode-aware: picks the relaxed schema when resolved
+  `merged.mode === "fast_confirm"` (post-metadata-override).
+- **Stop hook breadcrumb removed.** Both `REPORT_MARKER_RE` matches AND
+  fast_confirm-bullet matches now route through `parseReport`. The
+  existing `parse_error` log surface preserves observability for the
+  subset where bullets reach the parser but still fail (e.g., wrong
+  mode in env). Dead `PREVIEW_CHARS` constant removed.
+- **Acceptance:** a fresh fast_confirm turn writes a saved report at
+  `UNDERSTANDING_GATE_REPORT_DIR/<timestamp>-<taskId>-<hash>.json`
+  with `mode: fast_confirm`, all five mapped sections populated, the
+  four dropped sections absent (schema accepts).
+- **Backwards compatibility.** A `mode: grill_me` parse of a strict
+  9-section report is unchanged. A `mode: fast_confirm` parse of a
+  strict 9-section report also succeeds (uses relaxed schema but
+  properties match). A `mode: undefined` parse of five bullets still
+  fails (no fast_confirm pre-seed since `isFastConfirm` is false).
+
+PR #78 (agent-tasks `eaac8fe5-bab8-4053-b7bc-0f63d277aeb5`). Verified
+end-to-end against the compiled Stop bin: 455/455 vitest, tsc + npm
+build clean, all 3 CI gates green.
+
+## 0.2.3, 2026-05-15
+
+### Fixed: Observable breadcrumb for fast_confirm bullet-attempts
+
+- **Stop hook now writes a `parse-errors/<stamp>-*.log` when the assistant
+  emits a recognizable `fast_confirm` response without the `# Understanding
+  Report` heading.** Before 0.2.3 the marker-mismatch path in
+  `handle-stop.ts` short-circuited to `kind: "no_report"` silently, no
+  `mkdir`, no log; operators were left with an empty `reports/` dir and
+  no breadcrumb to trace back to the prompt/parser shape mismatch (the
+  `fast_confirm` prompt template emits bullets only, the parser requires
+  the `# Understanding Report` heading + 9 named sections).
+- **Detection is heuristic + tight.** A new `looksLikeFastConfirmAttempt`
+  helper counts matches against the five distinct bullet prefixes that
+  `src/prompts/fast-confirm.ts` emits (`I understood the task as`,
+  `I will do`, `I will not touch`, `I will verify by`, `Assumptions`).
+  Threshold is 4-of-5: a natural-English reply like "I will do X / I will
+  not touch Y / I will verify by Z" only hits 3 and stays silent, so the
+  breadcrumb path doesn't flood `parse-errors/` on every casual turn.
+- **`StopHookOutcome.no_report` gains an optional `logPath?: string`.**
+  Backward-compatible: `stop.ts` only branches on `outcome.kind === "saved"`.
+- **Tests:** +6 cases in `tests/claude-code-handle-stop.test.ts`
+  (bullet-match breadcrumb, below-threshold non-match, mode forwarding,
+  log-writer-throws degrade-to-silent, marker-match-wins-over-bullet-match,
+  indented + mixed `-` / `*` / `+` marker variants). 450/450 vitest green.
+- **Out of scope:** the underlying prompt/parser reconciliation that would
+  let `fast_confirm` produce a saved report end-to-end is tracked as a
+  separate follow-up (agent-tasks `eaac8fe5`); this release ships the
+  observability fix only.
+
+Refs PR #74.
+
+## 0.2.2, 2026-05-03
+
+### Fixed: Trim tool name before deny-list lookup
+
+- **`decideEnforcement` now `.trim()`s the incoming `tool_name` before
+  the write-tool deny-list lookup.** Previously the match was a
+  strict `Set.has` against `CLAUDE_CODE_WRITE_TOOLS` /
+  `OPENCODE_WRITE_TOOLS`, so a harness payload like `"Edit "` (trailing
+  space) or `"Edit\n"` (trailing newline) silently fell through to the
+  read-only allow path, bypassing the gate entirely. With the trim,
+  every whitespace variant of a write tool now hits the same block
+  decision as the canonical form.
+- **Case-folding is intentionally NOT applied.** Claude Code uses
+  PascalCase (`Edit`, `Write`), opencode uses lowercase (`edit`,
+  `write`), and the per-adapter sets enforce that distinction on
+  purpose. Folding cross-harness would mask a version/harness mismatch
+  by treating `"edit"` against the Claude Code set as a write tool.
+  The trim fix is whitespace-only.
+- **Tests:** +5 cases covering whitespace variants for `Edit` plus
+  explicit cross-adapter no-folding asserts in both directions
+  (`tests/core/enforcement.test.ts`). 444/444 vitest green at release
+  time (438 + 6 since v0.2.1).
+- **Dogfood:** verified end-to-end against the published
+  `understanding-gate-claude-pre-tool-use` hook binary with
+  `tool_name` payloads `Edit`, `Edit `, `Edit\n`, `  Edit`, and `Read`
+  (read-only control). All four `Edit` whitespace variants block with
+  exit 2 and a `permissionDecision: deny` envelope; `Read` falls
+  through silently with exit 0.
+
+Refs PR #55.
+
+## 0.2.1, 2026-05-02
+
+### Fixed: Phase 2 dogfood polish
+
+- **`grill_me` and `full` prompt templates now prescribe the parser's 9
+  section headings AND the top-level `# Understanding Report` marker.**
+  0.2.0's `grill_me` was prose-only and let the agent improvise
+  subheadings (`**Task:**`, `**Assumptions I'm making:**`, …); the
+  Stop-hook parser rejected the report with `missing_sections`, no
+  file landed in `.understanding-gate/reports/`, and
+  `understanding-gate approve` had nothing to flip, so the Phase-2
+  approve flow couldn't close end-to-end. The new templates list
+  `### 1. My current understanding` through `### 9. Verification plan`
+  verbatim and tell the agent to begin with `# Understanding Report`
+  on its own line so the marker regex matches reliably.
+- **Stop hook prefers `payload.last_assistant_message` over the
+  transcript file.** Newer Claude Code releases ship the final
+  assistant text in the Stop payload directly. Reading it dodges a
+  race where Stop fires before the transcript JSONL has been flushed
+  (observed live under `claude -p`: persistence silently failed
+  because the trailing-walk saw an empty file). Falls back to
+  `extractLastAssistantText(transcript_path)` for older harnesses.
+- **Roundtrip regression tests** (`tests/prompts.test.ts`): for both
+  `FULL_PROMPT` and `GRILL_ME_PROMPT`, fill the template with
+  placeholder bodies, run `parseReport`, assert success. Plus an
+  explicit assertion that both templates instruct the agent to begin
+  with the `# Understanding Report` marker.
+- **Transcript test for the claude-`-p` preamble pattern**
+  (`tests/claude-code-transcript.test.ts`): synthetic transcript with
+  the report in turn 1 followed by tool_use boundaries before the
+  final assistant text; `parseTrailingAssistantText` collects both.
+  Documents that the trailing-walk itself was always correct; the
+  0.2.0 symptom was upstream in the template plus the harness flush race.
+- **Stop binary test for the new `last_assistant_message` preference**
+  (`tests/claude-code-stop-binary.test.ts`): payload-text wins even
+  when the transcript file is empty; falls back cleanly when the
+  field is omitted.
+
+Dogfood evidence: clean approve → Edit succeeds → revoke → Edit blocks
+cycle observed end-to-end against `claude -p` after the fix; audit
+log captures `approve`, `revoke`, and `block` events with full
+metadata.
+
+## 0.2.0 — 2026-05-02
+
+### Added — Phase 2 (enforcement)
+
+- **`PreToolUse` hook for Claude Code** (`understanding-gate-claude-pre-tool-use`
+  bin) blocks `Write`, `Edit`, `MultiEdit`, `NotebookEdit`, and `Bash` tool
+  calls when the latest persisted Understanding Report for the active
+  session is missing or has `approvalStatus !== "approved"`. Read-only
+  tools (`Read`, `Grep`, `Glob`, `LS`, …) always pass.
+- **opencode `tool.execute.before` hook** in the same plugin enforces the
+  same rule for the lowercase `write` / `edit` / `bash` tools by throwing
+  the deny reason back to the model.
+- **`understanding-gate approve | revoke | status` CLI subcommands**.
+  Approval is the persisted report file's `approvalStatus` field; the CLI
+  loads the latest report (filtered by `--task-id`), flips the field, and
+  saves a new snapshot. The original pending draft remains in the dir as
+  audit trail.
+- **`UNDERSTANDING_GATE_FORCE=1` + `UNDERSTANDING_GATE_FORCE_REASON`** for
+  one-shot bypass. The reason must be ≥ 10 characters; otherwise the gate
+  still blocks. Both bypass and block events land in
+  `.understanding-gate/audit.log` (JSONL).
+- **`UNDERSTANDING_GATE_DISABLE=1`** kill-switch (already supported by the
+  earlier hooks) now also short-circuits enforcement.
+- **`init` registers the new hook** alongside `UserPromptSubmit` and
+  `Stop`; existing 0.1.x installs upgrade by re-running
+  `understanding-gate init`.
+
+### Changed
+
+- `withApprovalStatus` (and therefore `approve` / `revoke`) refreshes
+  `createdAt` on every state flip so the latest snapshot wins
+  `findLatestForTask`'s sort. The previous snapshot is kept in the dir;
+  the authoritative timeline of state changes is the JSONL audit log.
+
+### Failure-mode posture
+
+The gate still degrades to "allow + silent" on malformed hook input,
+listReports failures, audit-log write failures, or any other unexpected
+runtime error. Enforcement is enforced on the happy path and never
+turns into a tarpit on the sad path.
+
+## 0.1.1 — 2026-05-01
+
+### Fixed
+
+- **`bin` targets now ship executable**. 0.1.0 packed `dist/cli.js`,
+  `dist/adapters/claude-code/user-prompt-submit.js`, and
+  `dist/adapters/claude-code/stop.js` without the `+x` bit because
+  `tsc` doesn't preserve executable mode on output. Result: a fresh
+  `npm i -g @lannguyensi/understanding-gate` produced bin symlinks
+  pointing to non-executable files, and Claude Code's `UserPromptSubmit`
+  hook fired
+  `/bin/sh: 1: understanding-gate-claude-hook: Permission denied`
+  on every prompt. The shebangs were always there; the modes weren't.
+- `build` now `chmod +x`'s the three bin targets so the pack tarball
+  carries the correct mode and `npm i` lands them executable. Added
+  `prepublishOnly: npm run build` so a publish without a fresh build
+  still gets the chmod.
+
+Reported via the agent-tasks board (`754798c6`); reproduced live during
+a Claude Code session against `0.1.0`.
+
+## 0.1.0 — 2026-05-01
+
+First public release. Implements Phases -1 through 1 of the
+[ROADMAP](./ROADMAP.md), plus the Phase 1 robustness, observability,
+and ergonomics follow-ups.
+
+### Highlights
+
+- **Claude Code MVP (Phase 0)**: keyword-based prompt classifier,
+  `UserPromptSubmit` hook that prepends a fast-confirm or grill-me
+  prompt before the agent acts, ENV/marker mode resolution.
+- **opencode adapter (Phase 0.5)**: rules + `/grill-me` custom command,
+  `init --target opencode` writes a project- or user-scope shim.
+- **Structured output (Phase 1)**: Markdown → validated
+  `UnderstandingReport` parser, atomic local persistence with
+  content-hash-keyed idempotency, claude-code `Stop` hook and opencode
+  `message.updated` plugin that auto-persist the report,
+  hypothesis-tracker bridge that registers assumptions / open questions.
+
+### Robustness + observability
+
+- Shared `writeAtomic` helper covers every fs-writing site in the
+  package; cross-process concurrency test pins the no-torn-files
+  invariant.
+- Per-entry validation in `loadOrCreateStore` drops corrupt hypothesis
+  rows silently and counts them; the cleaned store is rewritten on the
+  next sync so bad rows do not linger.
+- `UNDERSTANDING_REPORT_SCHEMA` rejects empty-string array items
+  everywhere and empty arrays for the three list fields the gate's
+  value depends on.
+- Hypothesis-sync errors land in `<reportRoot>/sync-errors/` instead
+  of being silently discarded.
+- opencode transport failures (rejected promise OR resolved-with-error
+  envelope) drop a `transport_error` JSON breadcrumb under
+  `parse-errors/` so dogfood can see what went wrong.
+- Marker regex tightened: bare `grill me` only fires at strong
+  boundaries so prompts that mention the marker in passing no longer
+  escalate; slash form `/grill` stays loose.
+
+### Internals
+
+- `KEY_ORDER` derived from the schema's `properties` order so a future
+  field cannot be silently stripped from persisted reports.
+- Saved-report filenames carry an 8-char sha256 prefix
+  (`<iso>-<slug>-<hash>.json`); idempotency check is filename-only.
+- runInit / runUninstall lost the `commandName` override (was UPS-only,
+  asymmetric, unused).
+
+### Tests
+
+328 vitest cases including end-to-end binary tests for both the
+claude-code Stop hook and the opencode plugin.

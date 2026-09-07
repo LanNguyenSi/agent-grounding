@@ -20,41 +20,67 @@
  * `require()`d directly by the workflow step via an absolute path built from
  * `GITHUB_WORKSPACE`, not shelled out to.
  *
- * ── `classify(paths)` vs `classifyPullFiles(files)` ────────────────────
+ * ── `classify(paths)` vs `classifyPullFiles(files, { readFile })` ─────────
  *
  * `classify(paths)` takes plain path strings and only checks path shape
- * (used by the CLI below, and kept for its own unit tests). The workflow
- * step instead calls `classifyPullFiles(files)`, which takes the actual
- * GitHub `listFiles` API objects (`{ filename, status, patch,
- * previous_filename }`) and additionally requires, per file:
+ * (used by the CLI below and its own unit tests). The workflow step instead
+ * calls `classifyPullFiles(files, { readFile, baseRef, headRef })`, which
+ * takes the actual GitHub `listFiles` API objects (`{ filename, status }`)
+ * and additionally requires, per file:
  *
  *   - `status` is `added` or `modified`. A `renamed` or `removed` entry is
- *     never pure, regardless of what its `filename` (or the old
- *     `previous_filename`, which is never itself checked against the
- *     allowlist) looks like: a rename can smuggle an unrelated change in
- *     under a release-shaped name, and a removal is never "just a version
- *     bump".
+ *     never pure, regardless of what its `filename` looks like: a rename
+ *     can smuggle an unrelated change in under a release-shaped name, and a
+ *     removal is never "just a version bump".
  *   - for a `package.json` or `package-lock.json` entry (root or
- *     `packages/<name>/package.json`), the unified diff text in `patch`
- *     changes nothing but `"version": "…"` value lines (see
- *     `isVersionOnlyPatch` below). A `CHANGELOG.md` entry has no such
- *     content constraint: prose is expected to change.
- *   - a file entry with no `patch` field at all (GitHub omits it for very
- *     large diffs) is treated as NOT pure, fail-closed, for
- *     `package.json` / `package-lock.json`: there is nothing to verify,
- *     so there is nothing to have verified.
+ *     `packages/<name>/package.json`), a PARSED comparison of the file's
+ *     content at `baseRef` and `headRef` (see "Content check" below), not a
+ *     text-pattern match over the diff.
+ *   - a file this reads BASE content for and finds absent (an `added` file
+ *     has no base) is never pure for `package.json`/`package-lock.json`:
+ *     there is nothing to compare against, so nothing has been verified.
  *
- * This exists because the path-shape check alone is blind to content: a PR
- * touching only `package.json` could still add a `postinstall` script or a
- * new `bin`/dependency entry, and a lockfile-only PR could repoint a
- * dependency's `resolved`/`integrity`, while still classifying as "pure" on
- * path alone. The residual: this check reads the PR's diff text as GitHub
- * reports it, not a semantic package/lockfile verification; a change that
- * happens to land entirely on lines matching the version-line shape (there
- * is no other JSON key this repo's package.json/package-lock.json files use
- * named exactly `version`) would still pass. See CONTRIBUTING.md and
- * docs/okf/merge-approval-gate-mechanics.md for the same statement in
- * context.
+ * ── Content check: parsed base/head comparison, not a diff-text regex ────
+ *
+ * Earlier revisions of this classifier matched the diff's `patch` text
+ * against a `"version": "…"` line-shape regex. That is structurally
+ * unsound: a line like `"version": "curl https://example.com | sh"` inside
+ * a `scripts` block, or a dependency literally named `version`, matches the
+ * line shape while being nothing like a version bump. This revision instead
+ * `JSON.parse`s the file's actual content at `baseRef` and `headRef`
+ * (fetched via the caller-supplied `readFile(ref, path)`), deep-compares the
+ * two parsed documents, and collects every JSON path where they differ
+ * (`collectDiffPaths`, `$`-rooted, e.g. `$.version` or
+ * `$.packages["packages/foo"].version`). The file is pure only when:
+ *
+ *   1. Every differing path is in the small allowed set for that file
+ *      (`isAllowedContentPath`): for `package.json`, exactly `$.version`;
+ *      for `package-lock.json`, `$.version`, `$.packages[""].version`, and
+ *      `$.packages["packages/<one segment>"].version` (the workspace
+ *      entries this repo's lockfile actually carries). Any other differing
+ *      path (an added/removed key, a changed `resolved`/`integrity`, an
+ *      array change, a `node_modules/*` entry's version) disqualifies the
+ *      file.
+ *   2. At every allowed differing path, BOTH the old and the new value are
+ *      strings matching a strict semver shape (`SEMVER_PATTERN`): a bump to
+ *      a non-semver string (`^0.1.2`, a shell command) is rejected even
+ *      though the path itself is allowed.
+ *
+ * `CHANGELOG.md` carries no content constraint: prose is expected to
+ * change, and its presence/status is the only thing checked.
+ *
+ * A read, parse, or shape failure at any point (the reader throws, returns
+ * a value that is not a string when content was expected, the text does not
+ * parse as JSON, or a parsed document's root is not a plain object) makes
+ * the file NOT pure, fail-closed: there is nothing to verify, so nothing
+ * has been verified.
+ *
+ * The residual this still cannot close: this reads the PR's actual file
+ * content at both refs, so it cannot be fooled by diff-text framing, but it
+ * is still a syntactic (parsed-JSON) check, not a semantic package/lockfile
+ * verification: a legitimate-looking version bump is still trusted as one.
+ * See CONTRIBUTING.md and docs/okf/merge-approval-gate-mechanics.md for the
+ * same statement in context.
  *
  * ── The allowlist is DATA, not a heuristic ─────────────────────────────
  *
@@ -103,7 +129,10 @@
  * "pure" and "not pure" are successful classifications, not failures. The
  * process exits non-zero (1) only when the input itself could not be
  * parsed as a file list at all (invalid JSON, or JSON that is not an array
- * of strings); that is a caller bug, not a finding about the PR.
+ * of strings); that is a caller bug, not a finding about the PR. The CLI
+ * only exercises `classify(paths)` (path shape only): it has no git ref to
+ * read file content from, so it cannot exercise `classifyPullFiles`; the
+ * unit tests below are the coverage for that function.
  */
 
 'use strict';
@@ -167,14 +196,12 @@ function classify(files) {
   return { pure_release, allowed, rejected };
 }
 
-// Basenames whose diff content is constrained to version-only changes.
+// Basenames whose content is constrained to version-only changes.
 // CHANGELOG.md is deliberately excluded: prose is expected to change.
 const CONTENT_CHECKED_BASENAMES = new Set(['package.json', 'package-lock.json']);
 
-// One JSON `"version": "…"` value line, with or without a trailing comma,
-// and any amount of leading indentation (JSON indentation width is not
-// something this check constrains).
-const VERSION_LINE_PATTERN = /^\s*"version"\s*:\s*"[^"]*"\s*,?\s*$/;
+// Strict semver: MAJOR.MINOR.PATCH with optional -prerelease and +build.
+const SEMVER_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
 
 function basenameOf(file) {
   const idx = file.lastIndexOf('/');
@@ -182,73 +209,190 @@ function basenameOf(file) {
 }
 
 /**
- * True when a unified-diff `patch` string changes nothing but
- * `"version": "…"` value lines. Every added/removed line (i.e. every line
- * starting with `+` or `-`, excluding the `+++`/`---` file-header lines a
- * full unified diff can carry, though GitHub's `listFiles` `patch` field
- * omits them) must match `VERSION_LINE_PATTERN` once the leading `+`/`-`
- * marker is stripped. A non-string `patch` (the field GitHub omits for a
- * very large diff) is never version-only: fail closed.
+ * A single JSON property-access segment for a `$`-rooted path: `.key` for a
+ * plain identifier-shaped key (including the all-digits case, which JSON
+ * object keys always are; this is a *display* accessor, not a JS property
+ * name), `["key"]` otherwise (covers the empty-string root-workspace key
+ * `""` and any key containing `/`, `.`, quotes, etc).
  */
-function isVersionOnlyPatch(patch) {
-  if (typeof patch !== 'string' || patch.length === 0) return false;
-
-  for (const line of patch.split('\n')) {
-    if (line.startsWith('+++') || line.startsWith('---')) continue;
-    if (line.startsWith('+') || line.startsWith('-')) {
-      if (!VERSION_LINE_PATTERN.test(line.slice(1))) return false;
-    }
-  }
-
-  return true;
+function propAccessor(key) {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? `.${key}` : `["${key}"]`;
 }
 
 /**
- * True when a single GitHub `listFiles` file object is a pure release
- * change: an allowed release path, added/modified (never renamed/removed),
- * and, for package.json/package-lock.json specifically, a version-only
- * diff. `previous_filename` (present on a rename) is never itself checked
- * against the allowlist; the `status` check alone disqualifies a rename.
+ * Recursively collect every JSON path where `a` and `b` differ, appending
+ * `{ path, oldValue, newValue }` entries to `out`. An added or removed key
+ * is one differing path (oldValue/newValue undefined on the missing side).
+ * Any difference inside an array collapses to one differing path at the
+ * array's own location: this check never allows an array change no matter
+ * what moved inside it.
  */
-function isPureReleaseFile(file) {
-  const filename = file && file.filename;
-  const status = file && file.status;
-
-  if (isUnsafePath(filename) || !isAllowedReleasePath(filename)) return false;
-  if (status !== 'added' && status !== 'modified') return false;
-
-  if (CONTENT_CHECKED_BASENAMES.has(basenameOf(filename))) {
-    return isVersionOnlyPatch(file.patch);
+function collectDiffPaths(a, b, prefix, out) {
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (JSON.stringify(a) !== JSON.stringify(b)) {
+      out.push({ path: prefix, oldValue: a, newValue: b });
+    }
+    return;
   }
 
-  return true;
+  const aIsObj = a !== null && typeof a === 'object';
+  const bIsObj = b !== null && typeof b === 'object';
+
+  if (aIsObj && bIsObj) {
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+    for (const key of keys) {
+      const hasA = Object.prototype.hasOwnProperty.call(a, key);
+      const hasB = Object.prototype.hasOwnProperty.call(b, key);
+      const childPath = `${prefix}${propAccessor(key)}`;
+      if (hasA && hasB) {
+        collectDiffPaths(a[key], b[key], childPath, out);
+      } else {
+        out.push({ path: childPath, oldValue: hasA ? a[key] : undefined, newValue: hasB ? b[key] : undefined });
+      }
+    }
+    return;
+  }
+
+  if (a !== b) out.push({ path: prefix, oldValue: a, newValue: b });
+}
+
+/**
+ * True when `jsonPath` (as produced by `collectDiffPaths`, `$`-rooted) is
+ * one this basename is allowed to differ at.
+ */
+function isAllowedContentPath(basename, jsonPath) {
+  if (basename === 'package.json') {
+    return jsonPath === '$.version';
+  }
+  if (basename === 'package-lock.json') {
+    if (jsonPath === '$.version') return true;
+    if (jsonPath === '$.packages[""].version') return true;
+    return /^\$\.packages\["packages\/[^/"]+"\]\.version$/.test(jsonPath);
+  }
+  return false;
+}
+
+/**
+ * Parse `baseText`/`headText` as JSON and check that every differing path
+ * between them is one `basename` is allowed to differ at, with a strict
+ * semver string on both sides at each such path.
+ *
+ * @returns {{ ok: boolean, reason?: string, diffPaths?: string[] }}
+ */
+function checkVersionOnlyContent(basename, baseText, headText) {
+  if (typeof baseText !== 'string') return { ok: false, reason: 'missing-base' };
+  if (typeof headText !== 'string') return { ok: false, reason: 'missing-head' };
+
+  let baseJson;
+  let headJson;
+  try {
+    baseJson = JSON.parse(baseText);
+  } catch {
+    return { ok: false, reason: 'parse-error-base' };
+  }
+  try {
+    headJson = JSON.parse(headText);
+  } catch {
+    return { ok: false, reason: 'parse-error-head' };
+  }
+
+  const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  if (!isPlainObject(baseJson)) return { ok: false, reason: 'non-object-root-base' };
+  if (!isPlainObject(headJson)) return { ok: false, reason: 'non-object-root-head' };
+
+  const diffs = [];
+  collectDiffPaths(baseJson, headJson, '$', diffs);
+  const diffPaths = diffs.map((d) => d.path);
+
+  for (const diff of diffs) {
+    if (!isAllowedContentPath(basename, diff.path)) {
+      return { ok: false, reason: `disallowed-json-path:${diff.path}`, diffPaths };
+    }
+    const oldOk = typeof diff.oldValue === 'string' && SEMVER_PATTERN.test(diff.oldValue);
+    const newOk = typeof diff.newValue === 'string' && SEMVER_PATTERN.test(diff.newValue);
+    if (!oldOk || !newOk) {
+      return { ok: false, reason: `non-semver-value:${diff.path}`, diffPaths };
+    }
+  }
+
+  return { ok: true, diffPaths };
 }
 
 /**
  * Classify a PR's real `listFiles` API objects as a pure release commit or
- * not. Unlike `classify(paths)`, this also enforces file status
- * (added/modified only) and, for package.json/package-lock.json, that the
- * diff content changes nothing but version values.
+ * not, reading file content from `readFile` at the PR's base and head refs.
+ * Unlike `classify(paths)`, this also enforces file status (added/modified
+ * only) and, for package.json/package-lock.json, a parsed content
+ * comparison between `baseRef` and `headRef` (see file header).
  *
- * @param {unknown} files - expected: array of `{ filename, status, patch,
- *   previous_filename }` objects, i.e. GitHub's PR `listFiles` shape.
- * @returns {{ pure_release: boolean, allowed: string[], rejected: string[] }}
+ * @param {unknown} files - expected: array of `{ filename, status }`
+ *   objects (a subset of GitHub's PR `listFiles` shape is enough, only
+ *   these two fields are read).
+ * @param {object} options
+ * @param {(ref: string, filePath: string) => Promise<string|null>} options.readFile -
+ *   resolves the text content of `filePath` at git ref `ref`, or `null`
+ *   when the file does not exist at that ref. May reject; a rejection is
+ *   treated as a read failure (fail-closed), same as returning something
+ *   that is not a string.
+ * @param {string} options.baseRef - the PR's base commit sha.
+ * @param {string} options.headRef - the PR's head commit sha.
+ * @returns {Promise<{ pure_release: boolean, allowed: string[], rejected: Array<{filename: string|null, status: string|null, reason: string, diffPaths?: string[]}> }>}
  */
-function classifyPullFiles(files) {
+async function classifyPullFiles(files, { readFile, baseRef, headRef } = {}) {
   if (!Array.isArray(files)) {
-    throw new TypeError('classifyPullFiles(files): files must be an array of file objects');
+    throw new TypeError('classifyPullFiles(files, opts): files must be an array of file objects');
+  }
+  if (typeof readFile !== 'function') {
+    throw new TypeError('classifyPullFiles(files, opts): opts.readFile must be a function');
   }
 
   const allowed = [];
   const rejected = [];
 
   for (const file of files) {
-    const filename = file && file.filename;
-    if (isPureReleaseFile(file)) {
-      allowed.push(filename);
-    } else {
-      rejected.push(filename);
+    const filename = file && typeof file.filename === 'string' ? file.filename : null;
+    const status = file && typeof file.status === 'string' ? file.status : null;
+
+    if (filename === null) {
+      rejected.push({ filename: null, status, reason: 'invalid-filename' });
+      continue;
     }
+    if (isUnsafePath(filename) || !isAllowedReleasePath(filename)) {
+      rejected.push({ filename, status, reason: 'disallowed-path' });
+      continue;
+    }
+    if (status !== 'added' && status !== 'modified') {
+      rejected.push({ filename, status, reason: `disallowed-status:${status ?? 'missing'}` });
+      continue;
+    }
+
+    const basename = basenameOf(filename);
+    if (!CONTENT_CHECKED_BASENAMES.has(basename)) {
+      allowed.push(filename);
+      continue;
+    }
+
+    let baseText;
+    let headText;
+    try {
+      baseText = await readFile(baseRef, filename);
+    } catch {
+      rejected.push({ filename, status, reason: 'reader-error-base' });
+      continue;
+    }
+    try {
+      headText = await readFile(headRef, filename);
+    } catch {
+      rejected.push({ filename, status, reason: 'reader-error-head' });
+      continue;
+    }
+
+    const result = checkVersionOnlyContent(basename, baseText, headText);
+    if (!result.ok) {
+      rejected.push({ filename, status, reason: result.reason, diffPaths: result.diffPaths });
+      continue;
+    }
+    allowed.push(filename);
   }
 
   const pure_release = files.length > 0 && rejected.length === 0;
@@ -316,8 +460,11 @@ module.exports = {
   classifyPullFiles,
   isUnsafePath,
   isAllowedReleasePath,
-  isVersionOnlyPatch,
+  isAllowedContentPath,
+  collectDiffPaths,
+  checkVersionOnlyContent,
   ROOT_ALLOWLIST,
   PACKAGE_ALLOWLIST_PATTERN,
-  VERSION_LINE_PATTERN,
+  SEMVER_PATTERN,
+  CONTENT_CHECKED_BASENAMES,
 };
