@@ -9,7 +9,7 @@
  * no source file. That "works from the published tarball" behavior was
  * verified twice by hand (`npm pack`, extract, `npm install --omit=dev`,
  * `node dist/server.js --version` from a scratch directory outside the
- * repo) but nothing in CI repeated it — a future change to `files`, `bin`,
+ * repo) but nothing in CI repeated it, a future change to `files`, `bin`,
  * the build layout, or a bundler step could silently break the relative
  * `../package.json` resolution and nothing would notice until a release
  * (task d341afd5).
@@ -29,7 +29,7 @@
  *      check with an ETARGET resolving them off the public registry.
  *   2. Read the grounding-mcp tarball's OWN `package.json` `version` field
  *      (`tar -xOf`), not this repo's in-tree
- *      `packages/grounding-mcp/package.json` — the whole point is asserting
+ *      `packages/grounding-mcp/package.json`, the whole point is asserting
  *      against what actually shipped in the artifact, not the source tree
  *      it was built from.
  *   3. Install every tarball from step 1 together, in ONE `npm install
@@ -47,7 +47,7 @@
  *      grounding-mcp tarball's own version.
  *
  * One pack per package, one combined install, one process spawn for the
- * version check — matches the manual check's own footprint, no extra
+ * version check, matches the manual check's own footprint, no extra
  * passes (this whole `run()` still does exactly one pack+install round;
  * see scripts/check-grounding-mcp-pack.test.js's own header, and
  * docs/okf/log.md, for why the CI job as a whole does two such rounds, not
@@ -61,7 +61,7 @@
  *     `package.json` (`node_modules/@lannguyensi/grounding-mcp/package.json`).
  *     `server.ts`'s own `readPackageVersion()` catches the resulting ENOENT
  *     and falls back to `'0.0.0'` (see `src/server.ts`), so the served
- *     `--version` output itself does not crash — this check's own
+ *     `--version` output itself does not crash, this check's own
  *     `evaluateVersionMatch` comparison is what discriminates the corrupted
  *     tree from a healthy one, by finding `'0.0.0'` does not equal the
  *     tarball's real version.
@@ -145,7 +145,7 @@ function loadWorkspacePackageDirsByName(rootDir) {
  * lockstep release PRs re-pin grounding-mcp's `claim-gate`/
  * `evidence-ledger`/`grounding-wrapper`/`hypothesis-tracker` dependencies to
  * the SAME PR's new version in the SAME commit that bumps those four
- * packages themselves (see e.g. commits 97dfa51, 20cf37f, 1433173) — so on
+ * packages themselves (see e.g. commits 97dfa51, 20cf37f, 1433173), so on
  * exactly those PRs, that new version does not exist on the public
  * registry yet. A scratch install of the grounding-mcp tarball ALONE would
  * resolve those pins from the registry (the only place it can look) and
@@ -153,7 +153,7 @@ function loadWorkspacePackageDirsByName(rootDir) {
  * (reproduced by hand with the siblings bumped to an unpublished 0.7.0).
  * Packing every version-locked sibling too and installing all of them
  * together as local tarballs (see `run()`) makes npm satisfy those exact
- * pins from disk instead, independent of registry state — and because the
+ * pins from disk instead, independent of registry state, and because the
  * walk is BFS over each package's own dependency map (not copied out or
  * limited to one hop), a future version-locked sibling -- including one
  * pinned by another sibling rather than directly by grounding-mcp -- is
@@ -164,7 +164,7 @@ function loadWorkspacePackageDirsByName(rootDir) {
  * tests for the depth-2 (sibling-of-a-sibling) and optionalDependencies
  * cases this function actually implements.
  *
- * `runtime-reality-checker` (`"^0.3.0"` — a RANGE, not an exact pin) is
+ * `runtime-reality-checker` (`"^0.3.0"`, a RANGE, not an exact pin) is
  * correctly excluded by the exact-pin check: its version is not re-pinned
  * in lockstep with grounding-mcp's own release. That assumption -- the
  * registry always has a version satisfying the range -- does not hold in
@@ -327,7 +327,7 @@ function runVersionCommand(consumerDir, execFn = execFileSync) {
 
 /** Pure comparison: does the version the binary reported match the
  * tarball's own declared version? Returns `{ ok, message }`; `message`
- * names both values, but deliberately not the scratch consumer directory —
+ * names both values, but deliberately not the scratch consumer directory , 
  * by the time anything reads this message the caller's `finally` has
  * already removed that tree (see `run()`), so a path in the message would
  * be a dead pointer, not a live one. */
