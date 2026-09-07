@@ -1,18 +1,22 @@
 ---
 type: invariant
-title: Grounding receipt codec contract
-description: Portable documentary assessment bytes, frozen policy identity, and the boundary between signature verification and issuer or task authority.
+title: Grounding receipt and assessment contract
+description: Portable documentary assessments, authoritative producer snapshots, immutable attempts, and the boundary between signature verification and issuer or task authority.
 tags: [grounding-mcp, receipt, contract, trust-boundary]
-timestamp: 2026-09-07T05:36:12Z
+timestamp: 2026-09-07T06:44:27Z
 sources:
   - packages/grounding-mcp/src/grounding-receipt.ts
   - packages/grounding-mcp/contracts/grounding-receipt-v1/README.md
   - packages/grounding-mcp/contracts/grounding-receipt-v1/policy.json
   - packages/grounding-mcp/contracts/grounding-receipt-v1/schema.json
   - packages/grounding-mcp/tests/grounding-receipt.test.ts
+  - packages/grounding-mcp/src/grounding-assessment-policy.ts
+  - packages/grounding-mcp/src/grounding-assessment-store.ts
+  - packages/grounding-mcp/tests/grounding-assessment-policy.test.ts
+  - packages/grounding-mcp/tests/grounding-assessment-store.test.ts
 ---
 
-# Grounding receipt codec contract
+# Grounding receipt and assessment contract
 
 ## Invariant
 
@@ -40,8 +44,31 @@ live wrapper or claim-gate behavior never silently changes the pinned digest.
 
 The producer codec is intentionally not an assessment evaluator. It checks the
 internal consistency of declared assessment fields, including a `pass` that
-requires an asserted fact and an allowed claim. Evaluation of a dossier,
-authoritative session state, and receipt issuance are separate work.
+requires an asserted fact and an allowed claim. The separate assessment store
+owns sessions bound at creation to audience, project, task, and subject. It
+computes phases, claim type, prerequisites, and a digest covering the complete
+documentary snapshot plus computed claim evaluation from frozen policy rules.
+Caller metadata, phase arrays, imported sessions, and free allowed/type/origin
+overrides cannot replace those records.
+
+Every mutation uses revision CAS within the same cross-process lock as reads
+and export. Session state, terminal snapshot, and exact signed receipt bytes
+share one atomic JSON commit. A terminal attempt's canonical fingerprint
+covers session ID, expected revision, and every challenge field. An exact
+retry returns stored bytes before checking the live clock or reevaluating the
+session, including after later mutations or restart. A changed request on an
+existing attempt conflicts. A fresh attempt requires the bound subject and
+current session revision; the consumer authenticates its workflow target and
+context against its own attempt record.
+
+The stable lock has no time-based takeover. Unclean exit recovery requires
+operator-confirmed quiescence of all writers before removing the lock. File
+fsync, atomic rename, and directory fsync define the commit boundary; an error
+after rename requires retry/read reconciliation. Corrupt state and exhausted
+capacity fail explicitly. The [package documentation](../../packages/grounding-mcp/README.md#authoritative-assessment-store)
+specifies configuration, limits, retry behavior, and recovery. Filesystem and
+OS isolation qualification, production key lifecycle, restricted transport
+registration, and consumer enforcement remain separate responsibilities.
 
 ## Source anchors
 
@@ -56,5 +83,19 @@ has no npm entrypoint or registered MCP endpoint.
   `packages/grounding-mcp/src/grounding-receipt.ts:124#"export function validatePayload"`.
 - Frozen documentary requirements:
   `packages/grounding-mcp/contracts/grounding-receipt-v1/policy.json:287#"minimumPredicates"`.
-- The distinction between fixed receipt checks and future dossier evaluation:
+- The distinction between byte-format checks and documentary meaning:
   `packages/grounding-mcp/contracts/grounding-receipt-v1/README.md:100-103#"proves neither diagnostic truth"`.
+- Authoritative creation and immutable binding:
+  `packages/grounding-mcp/src/grounding-assessment-store.ts:209#"async createSession"`.
+- Serialized atomic persistence and lock ownership:
+  `packages/grounding-mcp/src/grounding-assessment-store.ts:166#"async #transaction"`.
+- Terminal retry fingerprint and stored receipt bytes:
+  `packages/grounding-mcp/src/grounding-assessment-store.ts:262#"async exportReceipt"`.
+- Fixed snapshot assessment and documentary provenance:
+  `packages/grounding-mcp/src/grounding-assessment-policy.ts:115#"export function assessSnapshot"`.
+- Explicit dossier hash projection:
+  `packages/grounding-mcp/src/grounding-assessment-policy.ts:103#"export function dossierProjection"`.
+- Process concurrency and quiescent crash recovery tests:
+  `packages/grounding-mcp/tests/grounding-assessment-store.test.ts:248-266#"serializes child-process"`.
+- Independent frozen claim detector vector tests:
+  `packages/grounding-mcp/tests/grounding-assessment-policy.test.ts:45-47#"detects $claim as $expectedType"`.

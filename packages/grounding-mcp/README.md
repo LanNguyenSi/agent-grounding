@@ -282,7 +282,84 @@ fail, negative and boundary bytes plus declarative policy vectors. The public
 `00..1f` test seed is deliberately unsafe. The corpus and codec add no npm
 exports or runtime endpoint. Verifying a correctly signed fail receipt succeeds;
 context binding, clocks, issuer admission and task decisions require a separate
-consumer, and dossier assessment requires a separate producer evaluator.
+consumer.
+
+### Authoritative assessment store
+
+`grounding-assessment-store.ts` implements the separate producer evaluator as
+an unregistered library. Construction requires an absolute producer directory,
+explicit issuer and key identifiers, an Ed25519 private `KeyObject`, and bounded
+producer metadata. It does not discover keys, import legacy sessions, or read
+the solver's default ledger or session home. The static policy module uses
+frozen rules coupled to the codec's policy identity; it does not read contract
+files or live wrapper/claim-gate rules at runtime.
+
+`createSession({challenge, keyword, problem})` validates the challenge before
+the first step and permanently binds the session to its audience, project,
+task, and subject. Changes to that binding need a new session. Challenges also
+carry attempt ID, nonce, context revision, workflow target, pinned policy, and
+safe epoch-second creation/expiry times. Their lifetime is at most 24 hours;
+fresh operations allow at most 60 seconds of creation-time clock skew and no
+expiry grace. The consumer must authenticate those fields against its own
+attempt record. Another attempt for an unchanged subject may use the session
+with a different workflow edge.
+
+`getSession({sessionId})` returns a detached snapshot including dossier entries,
+claim, completion events, and derived current phase. `advance` requires
+`sessionId`, `expectedRevision`, and `expectedPhase`; `addDossierEntry` requires
+the first two plus `kind`, `content`, and `source`; `setClaim` requires the first
+two plus `text`. Unknown fields, caller phase arrays, skipped flags, origins,
+claim types, and supplied assessment decisions are rejected. A real mutation
+increments the revision once. Advancing `complete` and setting the identical
+claim are revision-preserving no-ops after CAS succeeds. Only the producer's
+empty runtime phase can be skipped. Completion events are documentary agent
+confirmations made through this API, not observed tool execution.
+
+Entries can be `fact`, `hypothesis`, `rejected`, or `unknown`, always with
+`agent_asserted` provenance. Source is inert text. At least one nonblank fact
+and a nonblank claim are necessary, alongside mandatory completion events and
+the prerequisites selected from the claim's text. Rejected alternatives supply
+the alternatives prerequisite. Even invented but structurally valid statements
+can satisfy this documentary policy. The digest's fixed projection includes
+session identity/revision, binding, keyword/problem, events, concrete entries
+and provenance, claim, and computed claim evaluation.
+
+`exportReceipt({sessionId, expectedRevision, challenge})` evaluates the owned
+snapshot and signs either a pass or a regular policy failure. It does not
+advance the session. It stores the assessed snapshot and exact wire bytes in
+one terminal attempt record. Exact retries return those bytes even after later
+session mutations, receipt expiry, or restart, without consulting the clock.
+A changed session, revision, or challenge field on that attempt conflicts;
+unsupported policy or malformed input is rejected before lookup. A fresh
+attempt evaluates the current matching revision. Receipt expiry never exceeds
+challenge expiry or 900 seconds from evaluation. Validation, signing, locking,
+and storage failures return errors, not another attempt's receipt.
+
+All reads and mutations use a global cross-process `proper-lockfile` lock and
+one versioned JSON state file. Writes use an exclusive same-directory temporary
+file, file fsync, atomic rename, and directory fsync. A failure after rename
+can mean the commit occurred: retry the exact export to recover its stored
+bytes; for ordinary mutations, read the current revision before deciding what
+to do next. Malformed or unknown-version state is never reset automatically.
+Lock ownership loss and cleanup failures are errors.
+
+The lock has no time-based takeover. A suspended writer retains exclusion;
+an unclean exit leaves the store busy. Recovery requires the operator to stop
+and confirm every potential writer is dead before removing the producer
+directory's `store.lock` directory. There is no force-unlock API. Restart after
+this quiescent recovery retains committed terminals and removes abandoned
+temporary state files. These guarantees require a local filesystem with the
+documented atomic rename/fsync and locking behavior; host power-loss and OS
+isolation qualification remain deployment responsibilities. File modes are
+defense in depth, not isolation from another process running as the same user.
+
+Bounds are 64 raw UTF-16 units for keyword, 8,192 each for problem, entry content
+and claim, and 1,024 for source; text rejects unpaired surrogates. A store holds
+at most 128 sessions, 256 entries per session, 256 terminal attempts, and 8 MiB
+of encoded state. Capacity and safe-integer revision exhaustion fail explicitly;
+there is no automatic terminal pruning or lifecycle migration. This library
+adds no registered MCP tool, production key loader, consumer enforcement, or
+deployment approval.
 
 ## Development
 
