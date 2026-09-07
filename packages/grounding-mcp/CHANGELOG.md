@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-09-07
+
 ### Changed
 
 - `server.ts` no longer hardcodes a `PACKAGE_VERSION` literal; the version
