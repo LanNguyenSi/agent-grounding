@@ -134,12 +134,11 @@
  *
  * Nothing else. In particular this deliberately does NOT allow `src/**`,
  * `docs/okf/**`, `README.md`, or any workflow file: a release PR that also
- * touches a version constant in source (e.g. `packages/grounding-mcp/
- * src/server.ts`, see PR #215) or re-stamps an OKF doc's `timestamp:`
- * front-matter is disqualified on purpose and falls back to the normal
- * label path; see CONTRIBUTING.md's "Cutting a release" section for why
- * those two cases in particular are common and are NOT bugs in this
- * allowlist.
+ * touches a version constant in a package that still hand-maintains one, or
+ * re-stamps an OKF doc's `timestamp:` front-matter, is disqualified on
+ * purpose and falls back to the normal label path; see CONTRIBUTING.md's
+ * "Cutting a release" section for why those two cases in particular are
+ * common and are NOT bugs in this allowlist.
  *
  * A nested package path (`packages/a/b/package.json`) does not match: only
  * exactly one path segment is allowed between `packages/` and the file

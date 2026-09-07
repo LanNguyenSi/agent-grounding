@@ -3,7 +3,7 @@
 // sessions. See README.md for the full tool catalog and the Claude Code
 // settings.json registration block.
 
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -50,9 +50,24 @@ import {
 } from './solution-attempt-log.js';
 
 // Single source of truth for the version string emitted by both the
-// MCP `name+version` handshake and the `--version` CLI short-circuit.
-// Bump alongside package.json on release.
-const PACKAGE_VERSION = '0.11.0';
+// MCP `name+version` handshake and the `--version` CLI short-circuit is
+// package.json itself, read at runtime so a release bump never needs a
+// matching edit here. Resolved relative to this module so it works both
+// from src/ (dev, via tsx) and from the built dist/ layout (dist/server.js
+// sits one level below the package root, same as src/server.ts). npm always
+// includes package.json in the published tarball, independent of `files`.
+function readPackageVersion(): string {
+  try {
+    const url = new URL('../package.json', import.meta.url);
+    const text = readFileSync(url, 'utf8');
+    const pkg = JSON.parse(text) as { version?: string };
+    return pkg.version ?? '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
+
+const PACKAGE_VERSION = readPackageVersion();
 
 // Wrap a JSON payload as an MCP text-content response. The MCP SDK requires
 // content blocks; serializing the structured result as text keeps the agent

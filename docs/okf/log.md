@@ -2,6 +2,39 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-07T09:08:37Z, task ed06b4c8 (implementer): grounding-mcp served
+  its version from a hand-maintained `PACKAGE_VERSION` literal in
+  `packages/grounding-mcp/src/server.ts`, so every grounding-mcp release PR
+  touched a source file and took the label path (`CONTRIBUTING.md`'s
+  disqualifier list named it by path). `server.ts` now resolves the version
+  at runtime from the package's own `package.json` (`new URL('../package.json',
+  import.meta.url)`, matching the existing `claim-gate`/`evidence-ledger`
+  CLI pattern), used at both the MCP `name+version` handshake and the
+  `--version` CLI short-circuit. A new
+  `packages/grounding-mcp/tests/server-version.test.ts` asserts the MCP
+  handshake version equals `package.json#version`; the existing
+  `tests/cli-version.test.ts` already covered the built-`dist/` `--version`
+  path. `CONTRIBUTING.md` and `docs/okf/merge-approval-gate-mechanics.md`
+  no longer name `server.ts` as a common disqualifier example and record
+  that a grounding-mcp release now qualifies for the label-free path.
+  `docs/okf/evidence-ledger-session-key-shapes.md`,
+  `docs/okf/solution-acceptance-verdict-contract.md` and
+  `docs/okf/hypothesis-tracker-persistence-split.md` re-pointed every
+  `server.ts:<line>` citation shifted by the edit. criterion 4 probe (orchestrator): PR #225, a
+  release-shaped commit (grounding-mcp package.json, its CHANGELOG, the
+  root lockfile, version-only) against this branch, carried zero labels
+  and the merge-approval check run 101687922653 (workflow run
+  34104945295) returned ALLOWED with every prerequisite satisfied via
+  the release exception; the PR was closed unmerged and its branch
+  deleted. Review round 1 delta: generalized
+  the release-only-source example off `server.ts` in
+  `scripts/release-exception.js`, dropped the task-id parenthetical from
+  the `CONTRIBUTING.md`/mechanics prose, reworded the tarball-`files` and
+  in-sync-constant comments, made the historical
+  `server.ts:241`/`:248-253/254` citations' point-in-time status explicit,
+  and added a semver-shape assertion to `server-version.test.ts`.
+  The comment rewrites of that delta touched three source files (server.ts, CONTRIBUTING.md, release-exception.js); the four bundle docs that list them were re-stamped in a follow-up commit after checking that every citation into those files still resolves.
+
 - 2026-09-07T07:36:11Z, task 4493b316 (orchestrator), live probes for criterion 3 and the
   round-4 review notes. Two probe PRs against this branch as base:
   PR #221 (`probe/4493b316-pure`, head `0e4aef1d792fe44aa443154daab31e7f541c2a5b`:
@@ -35,7 +68,7 @@
   being a release at all. `classifyPullFiles` now counts the allowed
   version paths that actually changed value across the whole PR and
   requires at least one
-  (`release-exception.js:459-466#"else if (versionBumps === 0) reason = 'no-version-bump';"`).
+  (`release-exception.js:458-465#"else if (versionBumps === 0) reason = 'no-version-bump';"`).
   The verdict gained a PR-level `reason` beside the per-file ones (`null`
   when pure, else `empty-file-list`, `rejected-files` or
   `no-version-bump`), which the step summary now always prints
@@ -62,14 +95,14 @@
   for a lockfile bump at a nested `$.packages["packages/a/b"].version`
   path now pins that the allowed lockfile path regex takes exactly one
   segment (`release-exception.test.js:553#"NESTED packages path"`,
-  against `release-exception.js:317#".test(jsonPath)"`); the workflow's
+  against `release-exception.js:316#".test(jsonPath)"`); the workflow's
   `readFile` now treats a response whose `encoding` is not `base64` (the
   Contents API's over-1-MB shape: empty content, `encoding: "none"`) as a
   distinct signal (`merge-approval.yml:153-157#"res.data.encoding !== 'base64'"`)
   rather than as an absent file, carried as an exported sentinel
-  (`release-exception.js:251#"Symbol.for('release-exception.content-too-large')"`)
+  (`release-exception.js:250#"Symbol.for('release-exception.content-too-large')"`)
   that the classifier maps to the reasons `content-too-large-base`/
-  `-head` (`release-exception.js:335#"content-too-large-base"`), with a
+  `-head` (`release-exception.js:334#"content-too-large-base"`), with a
   unit case for each side; the 1 MB limit is now stated in the module
   header and in `merge-approval-gate-mechanics.md`'s residuals. Note that
   the sentinel is not a string, so a reader that never sends it still
@@ -698,25 +731,25 @@
   citation at or after line 368 as the file stood after round 2 (the
   `solution_evaluate` registration's line at that point) by +11, uniformly, all the
   way to the end of the file: re-pointed to
-  `packages/grounding-mcp/src/server.ts:376#"'solution_evaluate'"` and
-  `packages/grounding-mcp/src/server.ts:451#"'solution_gate'"` in
+  `packages/grounding-mcp/src/server.ts:391#"'solution_evaluate'"` and
+  `packages/grounding-mcp/src/server.ts:466#"'solution_gate'"` in
   `solution-acceptance-verdict-contract.md`, and to
-  `packages/grounding-mcp/src/server.ts:496#"'hypothesis_record',"`,
-  `packages/grounding-mcp/src/server.ts:510#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:516#"'hypothesis_list',"`,
-  `packages/grounding-mcp/src/server.ts:539#"'hypothesis_evidence',"`,
-  `packages/grounding-mcp/src/server.ts:556#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:562#"'hypothesis_check_done',"`,
-  `packages/grounding-mcp/src/server.ts:588#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:594#"'hypothesis_reject',"`,
-  `packages/grounding-mcp/src/server.ts:610#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:616#"'hypothesis_support',"`,
-  `packages/grounding-mcp/src/server.ts:632#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
-  `packages/grounding-mcp/src/server.ts:637#"saveStore(sessionId, store);"` and
-  `packages/grounding-mcp/src/server.ts:643#"'hypothesis_reset',"` in
+  `packages/grounding-mcp/src/server.ts:511#"'hypothesis_record',"`,
+  `packages/grounding-mcp/src/server.ts:525#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:531#"'hypothesis_list',"`,
+  `packages/grounding-mcp/src/server.ts:554#"'hypothesis_evidence',"`,
+  `packages/grounding-mcp/src/server.ts:571#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:577#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:603#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:609#"'hypothesis_reject',"`,
+  `packages/grounding-mcp/src/server.ts:625#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:631#"'hypothesis_support',"`,
+  `packages/grounding-mcp/src/server.ts:647#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
+  `packages/grounding-mcp/src/server.ts:652#"saveStore(sessionId, store);"` and
+  `packages/grounding-mcp/src/server.ts:658#"'hypothesis_reset',"` in
   `hypothesis-tracker-persistence-split.md`. `evidence-ledger-session-key-shapes.md`'s
-  own citations sit entirely before line 368 (`server.ts:241`, `server.ts:248-253/254`)
-  and did not move, but the file is re-stamped anyway: it declares `server.ts` as a
+  own citations sit entirely before line 368 (`server.ts:241`, `server.ts:248-253/254`,
+  as the file stood then) and did not move, but the file is re-stamped anyway: it declares `server.ts` as a
   source, and that file changed. Every quoted anchor text is unchanged and still
   resolves verbatim at its new line; none of the re-pointed docs' `sources:` lists
   changed. `solution-acceptance-verdict-contract.md`'s `solution_evaluate` args
@@ -775,8 +808,8 @@
   `server.ts` edits (the import swap, the spelled-out `createServer` option
   type, the comment above the two lookup registrations, and the two widened `id`
   schemas) shifted the citations below them by +9 as far as
-  `packages/grounding-mcp/src/server.ts:376#"'solution_evaluate'"`, and by +23
-  from `packages/grounding-mcp/src/server.ts:451#"'solution_gate'"` onward. The
+  `packages/grounding-mcp/src/server.ts:391#"'solution_evaluate'"`, and by +23
+  from `packages/grounding-mcp/src/server.ts:466#"'solution_gate'"` onward. The
   new README paragraph shifted
   `packages/grounding-mcp/README.md:214#"the root cause is the backend container's missing OPENAI_API_KEY env var"`
   by +2, and the one new import in the roundtrip test shifted
@@ -843,24 +876,25 @@
   `createServer`, the extended `solution_evaluate` handler, the two new
   registrations, and the reconciliation call in `main()`) shifted every citation
   below them, by +5 at `PACKAGE_VERSION` (the version literal was `'0.10.0'` at
-  the time of this entry, now `'0.11.0'`)
-  (`packages/grounding-mcp/src/server.ts:55#"PACKAGE_VERSION = '0.11.0'"`), by +26
+  the time of this entry, now read from `package.json` at runtime, task
+  ed06b4c8)
+  (`packages/grounding-mcp/src/server.ts:70#"const PACKAGE_VERSION = readPackageVersion();"`), by +26
   through the `ledger_add` handler
-  (`packages/grounding-mcp/src/server.ts:241#"Session id"`,
-  `packages/grounding-mcp/src/server.ts:248-254#"session: sessionId,"`), by +26 at
+  (`packages/grounding-mcp/src/server.ts:256#"Session id"`,
+  `packages/grounding-mcp/src/server.ts:263-269#"session: sessionId,"`), by +26 at
   the `solution_evaluate` registration
-  (`packages/grounding-mcp/src/server.ts:376#"'solution_evaluate'"`), and by +63
-  from `solution_gate` (`packages/grounding-mcp/src/server.ts:451#"'solution_gate'"`)
+  (`packages/grounding-mcp/src/server.ts:391#"'solution_evaluate'"`), and by +63
+  from `solution_gate` (`packages/grounding-mcp/src/server.ts:466#"'solution_gate'"`)
   through every `hypothesis_*` tool below it
-  (`packages/grounding-mcp/src/server.ts:496#"'hypothesis_record',"`,
-  `packages/grounding-mcp/src/server.ts:510#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:516#"'hypothesis_list',"`,
-  `packages/grounding-mcp/src/server.ts:539#"'hypothesis_evidence',"`,
-  `packages/grounding-mcp/src/server.ts:562#"'hypothesis_check_done',"`,
-  `packages/grounding-mcp/src/server.ts:594#"'hypothesis_reject',"`,
-  `packages/grounding-mcp/src/server.ts:616#"'hypothesis_support',"`,
-  `packages/grounding-mcp/src/server.ts:632#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
-  `packages/grounding-mcp/src/server.ts:643#"'hypothesis_reset',"`), since the two
+  (`packages/grounding-mcp/src/server.ts:511#"'hypothesis_record',"`,
+  `packages/grounding-mcp/src/server.ts:525#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:531#"'hypothesis_list',"`,
+  `packages/grounding-mcp/src/server.ts:554#"'hypothesis_evidence',"`,
+  `packages/grounding-mcp/src/server.ts:577#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:609#"'hypothesis_reject',"`,
+  `packages/grounding-mcp/src/server.ts:631#"'hypothesis_support',"`,
+  `packages/grounding-mcp/src/server.ts:647#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
+  `packages/grounding-mcp/src/server.ts:658#"'hypothesis_reset',"`), since the two
   new tool registrations sit between those two anchors. The `preWriteGuard` block
   moved the marker-write anchor's range end only
   (`packages/grounding-mcp/src/solution-verdict.ts:746-803#"const markerPath = writeVerdict(verdict);"`),
