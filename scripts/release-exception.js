@@ -35,7 +35,13 @@
  *   - for a `package.json` or `package-lock.json` entry (root or
  *     `packages/<name>/package.json`), a PARSED comparison of the file's
  *     content at `baseRef` and `headRef` (see "Content check" below), not a
- *     text-pattern match over the diff.
+ *     text-pattern match over the diff. `baseRef` is the PR's MERGE BASE,
+ *     not its base branch tip: GitHub's `listFiles` diff is merge-base
+ *     relative, so on a base branch that moved on after the PR branched,
+ *     reading base content at the branch tip would compare files this PR
+ *     never touched. The workflow resolves the merge base via
+ *     `repos.compareCommits(...).data.merge_base_commit.sha` and passes
+ *     that in.
  *   - a file this reads BASE content for and finds absent (an `added` file
  *     has no base) is never pure for `package.json`/`package-lock.json`:
  *     there is nothing to compare against, so nothing has been verified.
@@ -68,6 +74,40 @@
  *
  * `CHANGELOG.md` carries no content constraint: prose is expected to
  * change, and its presence/status is the only thing checked.
+ *
+ * On top of those per-file checks, the PR AS A WHOLE must carry at least
+ * one allowed version difference (`oldValue !== newValue`) before
+ * `pure_release` can be true. Without that rule a PR with no JSON
+ * difference at all passes by emptiness: a CHANGELOG-only PR (nothing in
+ * it is content-checked), or a `package.json` whose only change is
+ * whitespace or key order (it parses to an identical document, so there
+ * are no differing paths to reject). Neither is a release, and neither is
+ * something the five `review:*` labels should be waived for, so both are
+ * NOT pure, with the verdict-level reason `no-version-bump`.
+ *
+ * ── The verdict's `reason` field ────────────────────────────────────────
+ *
+ * `classifyPullFiles` returns a verdict-level `reason` beside
+ * `pure_release`/`allowed`/`rejected`: `null` when the PR is pure, and
+ * otherwise the one thing that disqualified the PR as a whole:
+ * `empty-file-list`, `rejected-files` (at least one `rejected` entry, each
+ * carrying its own per-file reason), or `no-version-bump`. The workflow
+ * prints it in the step summary, so a "not pure" verdict with an empty
+ * `rejected` list is never reported as an unexplained no-op.
+ *
+ * ── `CONTENT_TOO_LARGE`: the reader's 1 MB signal ───────────────────────
+ *
+ * The workflow's `readFile` is GitHub's Contents API, which only inlines a
+ * blob up to 1 MB; above that it answers with empty `content` and
+ * `encoding: "none"` instead of the file. A reader that cannot deliver
+ * content for that reason returns the exported `CONTENT_TOO_LARGE`
+ * sentinel (a `Symbol.for` value, so a second copy of this module agrees
+ * on it), which this classifier maps to the per-file reasons
+ * `content-too-large-base` / `content-too-large-head`. The file is NOT
+ * pure either way: the sentinel is not a string, so a reader that does not
+ * use it still fails closed through `missing-base`/`missing-head`. The
+ * sentinel only buys an accurate reason in the step summary instead of
+ * "the file was not there at that ref".
  *
  * A read, parse, or shape failure at any point (the reader throws, returns
  * a value that is not a string when content was expected, the text does not
@@ -203,6 +243,13 @@ const CONTENT_CHECKED_BASENAMES = new Set(['package.json', 'package-lock.json'])
 // Strict semver: MAJOR.MINOR.PATCH with optional -prerelease and +build.
 const SEMVER_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
 
+// Sentinel a `readFile` returns instead of content when the file exists at
+// the ref but the reader cannot deliver its text because it is too large
+// (GitHub's Contents API inlines at most 1 MB; above that it answers with
+// empty content and `encoding: "none"`). `Symbol.for` so two copies of
+// this module still compare equal. See the file header.
+const CONTENT_TOO_LARGE = Symbol.for('release-exception.content-too-large');
+
 function basenameOf(file) {
   const idx = file.lastIndexOf('/');
   return idx === -1 ? file : file.slice(idx + 1);
@@ -277,9 +324,16 @@ function isAllowedContentPath(basename, jsonPath) {
  * between them is one `basename` is allowed to differ at, with a strict
  * semver string on both sides at each such path.
  *
- * @returns {{ ok: boolean, reason?: string, diffPaths?: string[] }}
+ * `bumpCount` (only on an `ok` result) is how many of those allowed paths
+ * actually changed value; the caller sums it across the PR and requires at
+ * least one (see the file header, "at least one allowed version
+ * difference").
+ *
+ * @returns {{ ok: boolean, reason?: string, diffPaths?: string[], bumpCount?: number }}
  */
 function checkVersionOnlyContent(basename, baseText, headText) {
+  if (baseText === CONTENT_TOO_LARGE) return { ok: false, reason: 'content-too-large-base' };
+  if (headText === CONTENT_TOO_LARGE) return { ok: false, reason: 'content-too-large-head' };
   if (typeof baseText !== 'string') return { ok: false, reason: 'missing-base' };
   if (typeof headText !== 'string') return { ok: false, reason: 'missing-head' };
 
@@ -304,6 +358,7 @@ function checkVersionOnlyContent(basename, baseText, headText) {
   collectDiffPaths(baseJson, headJson, '$', diffs);
   const diffPaths = diffs.map((d) => d.path);
 
+  let bumpCount = 0;
   for (const diff of diffs) {
     if (!isAllowedContentPath(basename, diff.path)) {
       return { ok: false, reason: `disallowed-json-path:${diff.path}`, diffPaths };
@@ -313,9 +368,10 @@ function checkVersionOnlyContent(basename, baseText, headText) {
     if (!oldOk || !newOk) {
       return { ok: false, reason: `non-semver-value:${diff.path}`, diffPaths };
     }
+    if (diff.oldValue !== diff.newValue) bumpCount += 1;
   }
 
-  return { ok: true, diffPaths };
+  return { ok: true, diffPaths, bumpCount };
 }
 
 /**
@@ -329,14 +385,17 @@ function checkVersionOnlyContent(basename, baseText, headText) {
  *   objects (a subset of GitHub's PR `listFiles` shape is enough, only
  *   these two fields are read).
  * @param {object} options
- * @param {(ref: string, filePath: string) => Promise<string|null>} options.readFile -
- *   resolves the text content of `filePath` at git ref `ref`, or `null`
- *   when the file does not exist at that ref. May reject; a rejection is
- *   treated as a read failure (fail-closed), same as returning something
- *   that is not a string.
- * @param {string} options.baseRef - the PR's base commit sha.
+ * @param {(ref: string, filePath: string) => Promise<string|null|symbol>} options.readFile -
+ *   resolves the text content of `filePath` at git ref `ref`, `null` when
+ *   the file does not exist at that ref, or the `CONTENT_TOO_LARGE`
+ *   sentinel when it exists but its text cannot be delivered (see the file
+ *   header). May reject; a rejection is treated as a read failure
+ *   (fail-closed), same as returning something that is not a string.
+ * @param {string} options.baseRef - the ref to read base content at: the
+ *   PR's MERGE BASE, not its base branch tip (GitHub's `listFiles` diff is
+ *   merge-base relative; see the file header).
  * @param {string} options.headRef - the PR's head commit sha.
- * @returns {Promise<{ pure_release: boolean, allowed: string[], rejected: Array<{filename: string|null, status: string|null, reason: string, diffPaths?: string[]}> }>}
+ * @returns {Promise<{ pure_release: boolean, allowed: string[], rejected: Array<{filename: string|null, status: string|null, reason: string, diffPaths?: string[]}>, reason: string|null }>}
  */
 async function classifyPullFiles(files, { readFile, baseRef, headRef } = {}) {
   if (!Array.isArray(files)) {
@@ -348,6 +407,9 @@ async function classifyPullFiles(files, { readFile, baseRef, headRef } = {}) {
 
   const allowed = [];
   const rejected = [];
+  // How many allowed version paths actually changed value across the whole
+  // PR. Zero means nothing was bumped, which is never a release.
+  let versionBumps = 0;
 
   for (const file of files) {
     const filename = file && typeof file.filename === 'string' ? file.filename : null;
@@ -392,12 +454,18 @@ async function classifyPullFiles(files, { readFile, baseRef, headRef } = {}) {
       rejected.push({ filename, status, reason: result.reason, diffPaths: result.diffPaths });
       continue;
     }
+    versionBumps += result.bumpCount;
     allowed.push(filename);
   }
 
-  const pure_release = files.length > 0 && rejected.length === 0;
+  let reason = null;
+  if (files.length === 0) reason = 'empty-file-list';
+  else if (rejected.length > 0) reason = 'rejected-files';
+  else if (versionBumps === 0) reason = 'no-version-bump';
 
-  return { pure_release, allowed, rejected };
+  const pure_release = reason === null;
+
+  return { pure_release, allowed, rejected, reason };
 }
 
 function readStdin() {
@@ -467,4 +535,5 @@ module.exports = {
   PACKAGE_ALLOWLIST_PATTERN,
   SEMVER_PATTERN,
   CONTENT_CHECKED_BASENAMES,
+  CONTENT_TOO_LARGE,
 };

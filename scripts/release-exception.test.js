@@ -1,6 +1,12 @@
 /**
  * Unit tests for the release-exception checkers in release-exception.js.
  *
+ * Beyond the per-file checks, these also cover the PR-level rule that at
+ * least one allowed version path must actually change before a PR can be
+ * pure (a CHANGELOG-only PR and a formatting-only `package.json` are both
+ * NOT pure, reason `no-version-bump`) and the `CONTENT_TOO_LARGE` reader
+ * sentinel.
+ *
  * `classify(paths)` (path-shape only) is covered against the exact
  * changed-file lists of PR #190 (understanding-gate 0.5.0, pure) and PR
  * #215 (grounding-mcp 0.11.0, NOT pure), captured via `gh pr view <n>
@@ -43,6 +49,7 @@ const {
   classifyPullFiles,
   isUnsafePath,
   isAllowedReleasePath,
+  CONTENT_TOO_LARGE,
 } = require('./release-exception');
 
 const SCRIPT_PATH = path.join(__dirname, 'release-exception.js');
@@ -243,6 +250,7 @@ test('classifyPullFiles(): PR #190 real base/head content, all three files pure'
     headRef: PR_190_HEAD_REF,
   });
   assert.equal(verdict.pure_release, true);
+  assert.equal(verdict.reason, null);
   assert.deepEqual(verdict.allowed.sort(), [
     'package-lock.json',
     'packages/understanding-gate/CHANGELOG.md',
@@ -506,7 +514,7 @@ test('classifyPullFiles(): a readFile that throws is NOT pure (fail-closed, not 
   assert.equal(verdict.rejected[0].reason, 'reader-error-base');
 });
 
-test('classifyPullFiles(): a CHANGELOG.md entry has no content constraint and never calls readFile', async () => {
+test('classifyPullFiles(): a CHANGELOG-only PR passes path/status without reading content, but is NOT pure: nothing was bumped', async () => {
   const readFile = async () => {
     throw new Error('readFile must not be called for a CHANGELOG.md entry');
   };
@@ -514,8 +522,82 @@ test('classifyPullFiles(): a CHANGELOG.md entry has no content constraint and ne
     [{ filename: 'CHANGELOG.md', status: 'modified' }],
     { readFile, baseRef: 'base', headRef: 'head' },
   );
-  assert.equal(verdict.pure_release, true);
+  // Path and status pass (the entry lands in `allowed`, and the throwing
+  // reader was never called: CHANGELOG.md carries no content constraint),
+  // but no allowed version path changed anywhere in the PR, so the PR as a
+  // whole is not a release and the five labels are not waived.
   assert.deepEqual(verdict.allowed, ['CHANGELOG.md']);
+  assert.deepEqual(verdict.rejected, []);
+  assert.equal(verdict.pure_release, false);
+  assert.equal(verdict.reason, 'no-version-bump');
+});
+
+test('classifyPullFiles(): a package.json whose parsed content is identical (whitespace/key order only) is NOT pure', async () => {
+  // Same document, different formatting and key order: `JSON.parse` makes
+  // the two sides equal, so there are no differing paths to reject, and
+  // without the "at least one real bump" rule this would pass by emptiness.
+  const readFile = fakeReaderFrom({
+    base: { 'package.json': '{"name":"x","version":"1.0.0"}' },
+    head: { 'package.json': '{\n  "version": "1.0.0",\n  "name": "x"\n}\n' },
+  });
+  const verdict = await classifyPullFiles(
+    [{ filename: 'package.json', status: 'modified' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.deepEqual(verdict.allowed, ['package.json']);
+  assert.deepEqual(verdict.rejected, []);
+  assert.equal(verdict.pure_release, false);
+  assert.equal(verdict.reason, 'no-version-bump');
+});
+
+test('classifyPullFiles(): a lockfile bump at a NESTED packages path is NOT pure (one segment only)', async () => {
+  // `packages/a/b` is not a workspace shape this repo has; the allowed
+  // lockfile path regex permits exactly one segment under `packages/`.
+  const base = {
+    version: '0.1.0',
+    packages: { '': { version: '0.1.0' }, 'packages/a/b': { version: '1.0.0' } },
+  };
+  const head = {
+    version: '0.1.0',
+    packages: { '': { version: '0.1.0' }, 'packages/a/b': { version: '1.0.1' } },
+  };
+  const readFile = fakeReaderFrom({
+    base: { 'package-lock.json': JSON.stringify(base) },
+    head: { 'package-lock.json': JSON.stringify(head) },
+  });
+  const verdict = await classifyPullFiles(
+    [{ filename: 'package-lock.json', status: 'modified' }],
+    { readFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(verdict.pure_release, false);
+  assert.equal(verdict.reason, 'rejected-files');
+  assert.equal(
+    verdict.rejected[0].reason,
+    'disallowed-json-path:$.packages["packages/a/b"].version',
+  );
+});
+
+test('classifyPullFiles(): a reader signalling CONTENT_TOO_LARGE is NOT pure, with its own named reason', async () => {
+  // The Contents API inlines at most 1 MB; above that it answers with
+  // empty content and `encoding: "none"`, which the workflow's reader
+  // reports as this sentinel rather than as an absent file.
+  const baseTooLarge = async (ref) =>
+    (ref === 'base' ? CONTENT_TOO_LARGE : JSON.stringify({ version: '1.0.1' }));
+  const baseVerdict = await classifyPullFiles(
+    [{ filename: 'package-lock.json', status: 'modified' }],
+    { readFile: baseTooLarge, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(baseVerdict.pure_release, false);
+  assert.equal(baseVerdict.rejected[0].reason, 'content-too-large-base');
+
+  const headTooLarge = async (ref) =>
+    (ref === 'head' ? CONTENT_TOO_LARGE : JSON.stringify({ version: '1.0.0' }));
+  const headVerdict = await classifyPullFiles(
+    [{ filename: 'package-lock.json', status: 'modified' }],
+    { readFile: headTooLarge, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(headVerdict.pure_release, false);
+  assert.equal(headVerdict.rejected[0].reason, 'content-too-large-head');
 });
 
 test('classifyPullFiles(): a rename into an allowlisted CHANGELOG.md path is NOT pure', async () => {
@@ -584,6 +666,7 @@ test('classifyPullFiles(): empty file list is NOT pure', async () => {
     headRef: 'head',
   });
   assert.equal(verdict.pure_release, false);
+  assert.equal(verdict.reason, 'empty-file-list');
 });
 
 test('classifyPullFiles(): throws TypeError on a non-array input (caller bug, not a verdict)', async () => {

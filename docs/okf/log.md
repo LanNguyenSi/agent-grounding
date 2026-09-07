@@ -2,6 +2,140 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-07T07:20:00Z, merge-approval pure-release exception, round 4
+  (task `4493b316`): bounded delta on the round-3 review's
+  accept_with_notes findings, two of them correctness.
+
+  (1) A PR with no JSON difference at all classified pure by emptiness:
+  every per-file check passed vacuously, so a CHANGELOG-only PR (nothing
+  in it is content-checked) or a `package.json` whose only change is
+  whitespace or key order (it parses to an identical document, so there is
+  no differing path to reject) waived all five `review:*` prereqs without
+  being a release at all. `classifyPullFiles` now counts the allowed
+  version paths that actually changed value across the whole PR and
+  requires at least one
+  (`release-exception.js:461-468#"else if (versionBumps === 0) reason = 'no-version-bump';"`).
+  The verdict gained a PR-level `reason` beside the per-file ones (`null`
+  when pure, else `empty-file-list`, `rejected-files` or
+  `no-version-bump`), which the step summary now always prints
+  (`merge-approval.yml:191#"verdict.reason ?? 'unknown'"`), so a not-pure
+  verdict with an empty rejected list is no longer an unexplained no-op.
+  Two new tests pin it: the CHANGELOG-only case (which still asserts the
+  entry lands in `allowed` and that the throwing reader is never called)
+  and a formatting-only `package.json`
+  (`release-exception.test.js:535#"whitespace/key order only"`).
+
+  (2) The step passed `pull_request.base.sha`, the base BRANCH TIP, as the
+  ref to read base content at, while `listFiles` diffs the PR against its
+  MERGE BASE. On a base branch that moved on after the PR branched, that
+  mismatch compares files the PR never touched (most visibly other
+  releases' lockfile entries) and reports them as disallowed paths: a
+  false not-pure. The step now resolves the merge base with
+  `repos.compareCommits` and passes `data.merge_base_commit.sha`
+  (`merge-approval.yml:116-127#"comparison.data.merge_base_commit?.sha"`),
+  inside the same `try`/`catch`, and throws with a named message when the
+  response carries no merge base, so either failure forces
+  `pure_release: false` rather than skipping the pinned gate action.
+
+  Three smaller findings from the same review: a `classifyPullFiles` case
+  for a lockfile bump at a nested `$.packages["packages/a/b"].version`
+  path now pins that the allowed lockfile path regex takes exactly one
+  segment (`release-exception.test.js:553#"NESTED packages path"`,
+  against `release-exception.js:317#".test(jsonPath)"`); the workflow's
+  `readFile` now treats a response whose `encoding` is not `base64` (the
+  Contents API's over-1-MB shape: empty content, `encoding: "none"`) as a
+  distinct signal (`merge-approval.yml:153-157#"res.data.encoding !== 'base64'"`)
+  rather than as an absent file, carried as an exported sentinel
+  (`release-exception.js:251#"Symbol.for('release-exception.content-too-large')"`)
+  that the classifier maps to the reasons `content-too-large-base`/
+  `-head` (`release-exception.js:335#"content-too-large-base"`), with a
+  unit case for each side; the 1 MB limit is now stated in the module
+  header and in `merge-approval-gate-mechanics.md`'s residuals. Note that
+  the sentinel is not a string, so a reader that never sends it still
+  fails closed through `missing-base`/`missing-head`: it buys an accurate
+  reason, not a new guarantee. `CONTRIBUTING.md`,
+  `merge-approval-gate-mechanics.md` and
+  `docs/testing/merge-approval-rollout.md` state the required real bump
+  and the merge-base comparison.
+
+  Log corrections in this round: the round-3 entry's "44 cases total, up
+  from round 2's count" is replaced by the actual per-case delta (totals
+  rot, and that one was already stale by the tests added here); the
+  round-2 entry's `patch`-text design paragraph is marked superseded by
+  the round-3 redesign, since its present-tense prose describes a scan
+  that no longer exists. `grounding-stack-overview.md`'s round-2 re-stamp
+  is reverted to its base value `2026-09-06T13:01:19Z`: the file cites
+  nothing this task touches (its sources are `README.md`, `CHANGELOG.md`
+  and `package.json`, none of which this task changed), so round 2's
+  re-stamp was content-free and the round-2 entry's claim that it was
+  "re-verified ... and re-stamped" holds only for the re-verification.
+  `merge-approval-gate-mechanics.md`'s step-summary citation was
+  re-anchored off the non-unique `".write();"` onto the applied branch's
+  `addList(verdict.allowed)` line, which occurs exactly once in the
+  workflow; the heading literal one line further up would have been unique
+  too, but okf-kit wants the anchor on the cited range's last content
+  line, and this range ends where the matched files are listed, which is
+  what the sentence claims. Every citation this round's line shifts moved
+  is re-pointed (`merge-approval-gate-mechanics.md` into
+  `merge-approval.yml` and `merge-approval-rollout.md`,
+  `evidence-ledger-session-key-shapes.md` into `merge-approval.yml`, and
+  this task's own round-2/round-3 entries into `merge-approval.yml`);
+  those two docs are re-stamped, and `merge-approval-rollout.md` carries
+  no frontmatter timestamp of its own.
+
+  Verification. `node --test scripts/release-exception.test.js` passes,
+  every case, including the four added here (CHANGELOG-only,
+  formatting-only `package.json`, nested lockfile path, and the
+  too-large sentinel on each side). The workflow step body was extracted
+  and executed locally against stubbed `github`/`core`/`context` objects,
+  which is what establishes the merge-base claim rather than reading the
+  diff: a pure PR reads base content at the merge-base sha and never at
+  the base branch tip; a CHANGELOG-only PR and a formatting-only
+  `package.json` both report `Reason: no-version-bump`; a throwing
+  `compareCommits` and a response carrying no merge base both land in the
+  catch with `pure_release: false`; a `getContent` answer with
+  `encoding: "none"` reports `content-too-large-base`; the
+  pagination-mismatch guard still fires. `.github/workflows/ci.yml` is
+  untouched this round (its smoke step exercises `classify(paths)`, which
+  this round does not change), so its step text was not replayed.
+
+  Mutation probes via `agent-primitives probe --plan` (worktree
+  isolation, one shared baseline against `node --test
+  scripts/release-exception.test.js`, baseline exit 0), each mutant
+  killed and restored, verified by hash. Replayed from earlier rounds:
+  disabling the allowed-path filter (`if (false)` at the
+  `isAllowedContentPath` call site, killed by the `node_modules/x`
+  disallowed-path case), disabling the semver check (`if (false)` at the
+  `!oldOk || !newOk` site, killed by the `^0.1.2` and shell-command
+  cases), treating a missing base as non-fatal (killed by the added-file
+  case), and accepting any file status (`if (false)` at the
+  added/modified check, killed by the rename and removed-`package.json`
+  cases). New this round: dropping the at-least-one-bump requirement
+  (`else if (false)` at the `no-version-bump` site), killed by the
+  CHANGELOG-only and formatting-only cases; widening the lockfile path
+  regex from `[^/"]+` to `[^"]+`, killed by the nested-path case added
+  here and by nothing in the round-3 suite, which is why the reviewer
+  could land that widening unnoticed; and mapping the too-large sentinel
+  to an `ok` result with a bump, killed by the `content-too-large-base`
+  case.
+
+  `npx okf-kit@0.10.0 check --require-anchors --json docs/okf` after this
+  round's commit: 0 errors, 4 warnings, all `citations-resolve` against
+  `log.md`, and 0 `sources-fresh`/`sources-fresh-future`. Those four are
+  the same four round 3 reported: the 2 pre-existing `solution-verdict.ts`
+  findings, unrelated to this task and present in the base measurement of
+  `3947993` (0 errors, 2 warnings, 0 sources-fresh, measured here against
+  a clean checkout of that commit), plus the 2 citations in the
+  already-merged 2026-09-06 `7c21ca25` entry below that this task's line
+  shifts broke and that stay as history rather than chasing a moving
+  target. This task's net contribution against its own base is therefore
+  unchanged at +2 warnings, both non-blocking (`log.md` is outside the
+  anchor-guard job's blocking selectors). The reverted
+  `grounding-stack-overview.md` stamp raises no `sources-fresh` finding,
+  which is the check that its sources really are untouched by this task.
+  No package version was bumped and no live release PR was opened by this
+  task; that remains open (see this task's own tracking).
+
 - 2026-09-07T06:50:00Z, merge-approval pure-release exception, round 3
   (task `4493b316`): orchestrator decision D-014 (binding), from round-2
   review: the diff-text regex over `"version": "…"` value lines is
@@ -29,9 +163,20 @@
   the NOT-applied step-summary branch now also lists each rejected file
   with its status and specific reason.
 
-  New unit tests (`scripts/release-exception.test.js`, `node --test`, 44
-  cases total, up from round 2's count) replay PR #190's real base/head
-  file content for the PURE assertions: fetched read-only via `gh api
+  Unit-test delta this round (`scripts/release-exception.test.js`, `node
+  --test`): round 2's six patch-text cases are gone with the patch scan
+  they covered (its two PR #190 patch cases, a missing `patch` field, a
+  version line with and one without a trailing comma, a nested unrelated
+  `"version"` key), and round 3 adds three PR #190 real base/head content
+  cases (all three files together, `package.json` alone, the trimmed
+  lockfile alone) plus a `scripts.version` smuggle, a dependency literally
+  named `version`, an added dependency key, a removed key, an array
+  change, two non-semver values (`^0.1.2` and a shell command), a
+  `node_modules/x` lockfile path, an unparsable base, an unparsable head,
+  a non-object JSON root, an added file with no base content, a throwing
+  reader, a missing/non-string `filename`, and a missing-`readFile`
+  TypeError. The PURE assertions replay PR #190's real base/head
+  file content: fetched read-only via `gh api
   repos/LanNguyenSi/agent-grounding/contents/<path>?ref=<sha>` (base
   `5dc0cbc0…`, head `663a19b4…`, both from `gh pr view 190 --json
   baseRefOid,headRefOid`) and checked in under
@@ -154,16 +299,18 @@
   checked against the allowlist); (2) for `package.json`/
   `package-lock.json` only, the `patch` diff text changes nothing but
   `"version": "…"` value lines, and a missing `patch` field is NOT pure,
-  fail-closed. `classify(paths)` is kept unchanged as the path-only CLI
+  fail-closed. **Superseded by the round-3 redesign above: this
+  `patch`-text scan no longer exists, so read this paragraph as the
+  history of round 2, not as the current check.** `classify(paths)` is kept unchanged as the path-only CLI
   helper. `.github/workflows/merge-approval.yml`'s release-exception step
   now calls `classifyPullFiles` with each file's `filename`/`status`/
   `patch`
-  (`merge-approval.yml:46-169#"core.setOutput('pure_release', pure_release.toString());"`)
+  (`merge-approval.yml:46-206#"core.setOutput('pure_release', pure_release.toString());"`)
   and also compares the paginated file count against the PR's own
   `changed_files`, forcing `pure_release: false` on a mismatch rather than
   risking a partial page reading as pure. The five action inputs
   themselves are unchanged
-  (`merge-approval.yml:176-180#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`).
+  (`merge-approval.yml:213-217#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`).
   New unit tests cover: the real package.json/package-lock.json
   version-bump patches of PR #190 (captured read-only via `gh api
   repos/LanNguyenSi/agent-grounding/pulls/190/files`), a postinstall
@@ -232,10 +379,10 @@
   `{ pure_release, allowed, rejected }` verdict, and wired it into
   `.github/workflows/merge-approval.yml` as a new `Determine release
   exception from the PR's real changed files` step
-  (`merge-approval.yml:46-169#"core.setOutput('pure_release', pure_release.toString());"`)
+  (`merge-approval.yml:46-206#"core.setOutput('pure_release', pure_release.toString());"`)
   between the label-extraction step and the pinned gate action. Each of
   the five action inputs is now `<label == 'true'> || <pure_release ==
-  'true'>` (`merge-approval.yml:176-180#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`),
+  'true'>` (`merge-approval.yml:213-217#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`),
   so a pure version-bump PR (root `package.json` / `package-lock.json` /
   `CHANGELOG.md`, or a single package's `packages/<name>/package.json` /
   `CHANGELOG.md`) satisfies the gate without a `review:*` label round; the

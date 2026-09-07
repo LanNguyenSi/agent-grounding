@@ -39,22 +39,30 @@ actual changed files classify as a "pure release": each file must be
 number of packages' `packages/<name>/package.json` /
 `packages/<name>/CHANGELOG.md`, added or modified (never renamed or
 removed), and, for `package.json`/`package-lock.json` specifically, a
-PARSED comparison of the file's content at the PR's base and head commits
-must show every differing JSON path is a version field the bump is
+PARSED comparison of the file's content at the PR's merge base and head
+commits must show every differing JSON path is a version field the bump is
 allowed to touch (`$.version`, plus the lockfile's own workspace entries),
 with a real semver string on both sides, so a version bump that also
 slips in a `postinstall` script, a new or renamed dependency key, a
 lockfile `resolved`/`integrity` repoint, or a non-semver value does not
 qualify, and a file this cannot parse or read (including an `added` file
-with no base content) fails closed. A `Determine release exception from
+with no base content, or one over the Contents API's 1 MB inline limit)
+fails closed. The base side is read at the **merge base**, not at the base
+branch tip, because the PR's changed-file list is merge-base relative: on
+a base branch that moved on, the tip would drag in files this PR never
+touched. At least one of those allowed version paths must also really
+change: a CHANGELOG-only PR, or a `package.json` whose only change is
+formatting or key order, carries no bump at all and is NOT pure (reason
+`no-version-bump`). A `Determine release exception from
 the PR's real changed files` step computes this from the real PR content
 (`scripts/release-exception.js`'s `classifyPullFiles`,
-`github.paginate(github.rest.pulls.listFiles, ...)` plus a
+`github.paginate(github.rest.pulls.listFiles, ...)`, a
+`github.rest.repos.compareCommits` call for the merge base, plus a
 `github.rest.repos.getContent` read at each ref) and OR's the result into
 every one of the five action inputs, so this is additive, not a change to
 what the labels themselves mean; the whole step is wrapped so any error in
-it (a paginate/getContent failure, a classifier bug) falls back to
-`pure_release: false` rather than skipping the gate action. Both the
+it (a paginate/compareCommits/getContent failure, a classifier bug) falls
+back to `pure_release: false` rather than skipping the gate action. Both the
 classifier and the workflow come from the PR ref on `pull_request` events,
 so this is a discipline mechanism, not an integrity boundary. See
 `docs/okf/merge-approval-gate-mechanics.md`'s "The pure-release exception"
