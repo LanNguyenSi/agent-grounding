@@ -95,7 +95,7 @@ has no npm entrypoint or registered MCP endpoint.
   `packages/grounding-mcp/src/grounding-assessment-policy.ts:115#"export function assessSnapshot"`.
 - Explicit dossier hash projection:
   `packages/grounding-mcp/src/grounding-assessment-policy.ts:103#"export function dossierProjection"`.
-- Process concurrency and quiescent crash recovery tests:
-  `packages/grounding-mcp/tests/grounding-assessment-store.test.ts:248-266#"serializes child-process"`.
+- Process concurrency around one consistent snapshot:
+  `packages/grounding-mcp/tests/grounding-assessment-store.test.ts:248-266#"await stop(child.child);"`.
 - Independent frozen claim detector vector tests:
-  `packages/grounding-mcp/tests/grounding-assessment-policy.test.ts:45-47#"detects $claim as $expectedType"`.
+  `packages/grounding-mcp/tests/grounding-assessment-policy.test.ts:45-47#"expect(detectClaimType(claim)).toBe(expectedType);"`.
