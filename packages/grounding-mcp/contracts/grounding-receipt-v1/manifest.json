@@ -1,0 +1,92 @@
+{
+  "format": "grounding-receipt/v1",
+  "schemaVersion": 1,
+  "schema": "schema.json",
+  "policy": {
+    "id": "debug-evidence-assessment/v1",
+    "revision": "1",
+    "sha256": "50c68e4070b5c36c2bd166f61f83377df717253f30933fe05825386d605325a4"
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 7898,
+      "sha256": "5838d079c00c4464e0031837f309e28281748b75062bd2c8dd2fc3a98e448b2e"
+    },
+    {
+      "path": "context-vectors.json",
+      "bytes": 32853,
+      "sha256": "38fb6d455cd1b8b25dba4ecc966990c26de9a6894f91b618b3e25a3a894ee554"
+    },
+    {
+      "path": "golden-fail.payload.json",
+      "bytes": 1180,
+      "sha256": "51ddf9663cb1faaf54051cff8b82ac7ac4dbc7444ea716eacf87720d42740561"
+    },
+    {
+      "path": "golden-fail.receipt",
+      "bytes": 1777,
+      "sha256": "edd1114b97f397f4ccd2f819abdb6ca9d9af1591e785727edbb7b45e99c66994"
+    },
+    {
+      "path": "golden-fail.signature-input.bin",
+      "bytes": 1624,
+      "sha256": "3c0d9b858f38a9d1f876808c395afe4476037c08d81ecbc3c3d65850d08d6918"
+    },
+    {
+      "path": "golden-fail.signature.hex",
+      "bytes": 129,
+      "sha256": "5333d44c7b99bada54ba4fc08ff7800d97bc78ee6409c4da3b106e3f9563c58c"
+    },
+    {
+      "path": "golden-pass.payload.json",
+      "bytes": 1037,
+      "sha256": "a7e1c228418ec8c330a29e3b5199a658afc09f7ad555da9a9873757867578b1d"
+    },
+    {
+      "path": "golden-pass.receipt",
+      "bytes": 1586,
+      "sha256": "f9cef33bad91226f2feb2b32664ca72092b0151bb5338ef516a77e9877c4a0d3"
+    },
+    {
+      "path": "golden-pass.signature-input.bin",
+      "bytes": 1433,
+      "sha256": "f33efaf55fccce447ec4d9164b268d69b886e0b6d283c9e90e1021a09534c1c1"
+    },
+    {
+      "path": "golden-pass.signature.hex",
+      "bytes": 129,
+      "sha256": "02232b0aacb06d5aa0bc4efc5364e4a86b98e5a83e968e3c691913f7eb218773"
+    },
+    {
+      "path": "negative-vectors.json",
+      "bytes": 901021,
+      "sha256": "ebdc92f0e74a124a4e488db533a195e0bdb85a2b1720d2b83a6c568eff35aca4"
+    },
+    {
+      "path": "policy-vectors.json",
+      "bytes": 127382,
+      "sha256": "2fe0e8651c8a5c39724aabd68664147395249f995ad28d562af10005a556d87a"
+    },
+    {
+      "path": "policy.json",
+      "bytes": 10607,
+      "sha256": "50c68e4070b5c36c2bd166f61f83377df717253f30933fe05825386d605325a4"
+    },
+    {
+      "path": "positive-vectors.json",
+      "bytes": 82399,
+      "sha256": "59d6422b87d1e27b4ee3720975045269cb3c1803a1afc130b88de6c1490bb9a0"
+    },
+    {
+      "path": "schema.json",
+      "bytes": 10590,
+      "sha256": "d5c448308c184a3fcb72b18c7202568f1d41e5d488f538c0e7dee33d82b155fa"
+    },
+    {
+      "path": "test-keys.json",
+      "bytes": 521,
+      "sha256": "659e1c41e0e716a4d08c4d8de589ba2e2ec5a16aa70814bf796d4b08bffab233"
+    }
+  ]
+}

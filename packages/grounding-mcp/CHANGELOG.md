@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- Pure `grounding-receipt/v1` codec and Ed25519 verification primitive with a
+  frozen `debug-evidence-assessment/v1` policy snapshot and versioned golden
+  conformance corpus. The module is not registered as an MCP tool and makes no
+  issuer, session, or task authorization decision.
+
 ### Changed
 
 - `MAX_LOOKUP_ID_LENGTH` renamed to `MAX_ID_FILENAME_LENGTH` (same value, same

@@ -264,6 +264,26 @@ The store has no automatic claim-gate hook, the workflow is "use this before rea
 
 This server is meant to run on the agent's local machine via stdio. There's no auth, no rate limiting, no input sanitization beyond what zod's schema validation gives. The evidence-ledger is shared with any other tool that opens `~/.evidence-ledger/ledger.db`, be aware that other CLIs (`ledger`, etc.) can read and write the same data.
 
+## Grounding receipt codec
+
+The package also contains an unregistered `grounding-receipt/v1` library
+primitive and a versioned conformance corpus. It serializes a strict,
+Ed25519-signed documentary assessment and accepts only explicit key objects;
+it does not load keys, inspect sessions, or grant any task or claim action.
+Its assessment provenance is always `agent_asserted`. See the [receipt contract
+document](../../docs/okf/grounding-receipt-contract.md) for the signature,
+policy-digest, and consumer-boundary details.
+
+The [vendored repository contract](contracts/grounding-receipt-v1/README.md)
+defines every field and nested schema, canonical payload order, exact Ed25519
+signature input, inclusive 32 KiB wire / 16 KiB payload limits, and stable
+`invalid`, `unsupported`, `untrusted` errors. Its manifest pins immutable pass,
+fail, negative and boundary bytes plus declarative policy vectors. The public
+`00..1f` test seed is deliberately unsafe. The corpus and codec add no npm
+exports or runtime endpoint. Verifying a correctly signed fail receipt succeeds;
+context binding, clocks, issuer admission and task decisions require a separate
+consumer, and dossier assessment requires a separate producer evaluator.
+
 ## Development
 
 ```bash
