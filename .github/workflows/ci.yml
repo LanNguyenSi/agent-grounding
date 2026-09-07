@@ -94,7 +94,7 @@ jobs:
         # scripts/fixtures/okf-selectors/ against the new version (see
         # that directory's README.md) or the "okf-kit selector-coupling
         # check" step below fails loud on a version mismatch.
-        run: npm install -g okf-kit@0.9.0 --no-audit --no-fund
+        run: npm install -g okf-kit@0.10.0 --no-audit --no-fund
 
       - name: Assert CLI is alive (output, not exit code)
         shell: bash
@@ -284,7 +284,7 @@ jobs:
       - name: okf-kit selector-coupling check
         # Couples this job's own jq selectors (above) to okf-kit's JSON
         # finding shape: replays the extracted selectors against three
-        # canonical okf-kit@0.9.0 reports (scripts/fixtures/okf-selectors/)
+        # canonical okf-kit@0.10.0 reports (scripts/fixtures/okf-selectors/)
         # and asserts each blocking selector still selects exactly what it
         # is supposed to. See scripts/check-okf-selectors.js for why (this
         # repeats the pin-coupling check's rationale for a different kind
