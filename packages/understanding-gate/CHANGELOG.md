@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-09-07
+
+### Changed
+
+- Probe release shape for the label-free merge-approval path (task 4493b316); this PR is closed unmerged.
+
 ## [0.7.0] - 2026-08-26
 
 ### Fixed
