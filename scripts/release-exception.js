@@ -308,11 +308,15 @@ const NOT_A_FILE = Symbol.for('release-exception.not-a-file');
  *   - A `type: 'file'` object whose `content` is not a string (a
  *     malformed response this reader has otherwise not seen in
  *     practice) -> `null`, fail-closed rather than throwing.
- *   - Any other error from `getContent` (not a plain 404), or a response
- *     whose `data` is not array-shaped and has no readable `type` (for
- *     example `res.data` itself missing) -> the call throws; the caller
- *     (`classifyPullFiles`) treats a thrown/rejected `readFile` as a read
- *     failure, fail-closed, same as a non-string return.
+ *   - Any other error from `getContent` (not a plain 404) propagates as a
+ *     thrown error. A response with a missing or `null`/`undefined`
+ *     `res.data` also throws (reading `.type` off it fails); a response
+ *     whose `data` is a non-array object with no readable `type` at all
+ *     does NOT throw -- `type !== 'file'` is true the same as for any
+ *     other non-`'file'` value, so it returns `NOT_A_FILE` like a
+ *     symlink or a submodule. Either way, the caller (`classifyPullFiles`)
+ *     treats a thrown/rejected `readFile` as a read failure, fail-closed,
+ *     same as a non-string return.
  *
  * @param {object} options
  * @param {(params: { owner: string, repo: string, path: string, ref: string }) => Promise<{ data: unknown }>} options.getContent -

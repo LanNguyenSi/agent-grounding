@@ -407,6 +407,15 @@ jobs:
         # repoint, a non-semver value, an unparsable or missing file).
         run: npm run test:check-release-exception
 
+      - name: Merge-approval release-exception step wiring replay
+        # Replays `.github/workflows/merge-approval.yml`'s
+        # `id: release_exception` github-script step body (line-range
+        # extracted, no YAML dependency) against stubbed
+        # github/context/core objects, so a wiring mistake in that inline
+        # block (an argument mixed up, a call dropped) fails here instead
+        # of only being caught by a real PR run.
+        run: npm run test:check-merge-approval-step
+
       - name: Build
         # Uses the root `build` script (which topo-orders the wrapped libs
         # before everything else). A bare `npm run build --workspaces`

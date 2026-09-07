@@ -663,6 +663,12 @@ test('makeGetContentReader(): a type:"file" response with encoding:"none" (over 
   assert.equal(await readFile('sha1', 'package-lock.json'), CONTENT_TOO_LARGE);
 });
 
+test('makeGetContentReader(): a type:"file" response with base64 encoding but non-string content is null (malformed, fail-closed)', async () => {
+  const getContent = async () => ({ data: { type: 'file', encoding: 'base64', content: 123 } });
+  const readFile = readerWith(getContent);
+  assert.equal(await readFile('sha1', 'package.json'), null);
+});
+
 test('makeGetContentReader(): a type:"symlink" response (with a target field) is NOT_A_FILE', async () => {
   // Shape GitHub answers with when the symlink's target is NOT a normal
   // file in this repository (an external or dangling target); see the

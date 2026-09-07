@@ -3,7 +3,7 @@ type: runbook
 title: Merge-approval gate — labels, keys, and when it actually blocks
 description: How the merge-approval Check-Run maps five review:* PR labels (OR'd with a data-driven pure-release exception) to merge_approval booleans, keys evidence by the PR HEAD BRANCH NAME, and blocks only when required by an applicable branch-protection rule or ruleset.
 tags: [merge-approval, review-claim-gate, ci, runbook, labels]
-timestamp: 2026-09-07T09:13:49Z
+timestamp: 2026-09-07T09:30:09Z
 sources:
   - .github/workflows/merge-approval.yml
   - scripts/release-exception.js
@@ -162,11 +162,11 @@ up to 1 MB and answers a larger one with empty content and
 classifier's `CONTENT_TOO_LARGE` sentinel (per-file reasons
 `content-too-large-base`/`content-too-large-head`). Such a file is never
 pure, so a lockfile that grows past 1 MB does not weaken the gate, it
-takes that release PR back to the label path. A `getContent` response can
+takes that release PR back to the label path. An allowlisted path can
 also name something that is not a file at all: a submodule entry, or a
 symlink the API cannot resolve to a normal file in the same repository,
-at an allowlisted path comes back without base64 content, the same shape
-as the 1 MB case, but `readFile` tells the two apart by `res.data.type`
+both of which come back without base64 content, the same shape as the
+1 MB case, but `readFile` tells the two apart by `res.data.type`
 and reports the non-file shape as the classifier's `NOT_A_FILE` sentinel
 (per-file reasons `not-a-file-base`/`not-a-file-head`) instead of
 `content-too-large-*`. The verdict is the same either way (not pure,
