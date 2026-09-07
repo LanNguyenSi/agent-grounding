@@ -89,12 +89,7 @@ async function waitFor<T>(fn: () => Promise<T> | T, predicate: (v: T) => boolean
   }
 }
 
-/**
- * Wait until an id's lock is free again. The lock is held for the attempt's
- * WHOLE lifetime, so its release is the observable end of an attempt: a call
- * arriving before that still joins the in-flight attempt (and receives its
- * result), which is the join rule working, not a retry.
- */
+/** Wait until the real proper-lockfile directory for an id has disappeared. */
 async function waitForLockFree(id: string): Promise<void> {
   await waitFor(
     () => fs.existsSync(`${attemptLockAnchorPath(id)}.lock`),
@@ -447,25 +442,26 @@ describe('restart simulation and reconciliation', () => {
 
 describe('retention and compaction', () => {
   it('compacts a terminal attempt to a tombstone that resolves to expired, and prunes it from the in-memory registry', async () => {
-    process.env.SOLUTION_PREFLIGHT_BIN = readyStub('stub-retention.sh', 1);
+    process.env.SOLUTION_PREFLIGHT_BIN = readyStub('stub-retention.sh');
     let clockValue = Date.now();
     const registry = new SolutionAttemptRegistry({
-      waitBoundMs: 80,
+      waitBoundMs: 5_000,
       pollAfterMs: 20,
       retentionMs: 5_000,
       now: () => clockValue,
     });
 
-    const running = (await registry.evaluate('retention-id', repo)) as Record<string, unknown>;
-    expect(running.status).toBe('running');
-    const advertisedPollAfterMs = running.pollAfterMs as number;
+    // The terminal evaluate outcome is the lifecycle barrier. In particular,
+    // a vanished filesystem lock alone is insufficient: execute() releases
+    // it before its promise settles and before launch() deletes inFlight.
+    const first = (await registry.evaluate('retention-id', repo)) as Record<string, unknown>;
+    expect(first.status).toBe('completed');
+    const advertisedPollAfterMs = registry.pollAfterMs;
     // The invariant itself, not just the mechanism: retention exceeds the
-    // pollAfterMs this very call advertised, by the stated margin.
+    // configured pollAfterMs, by the stated margin.
     expect(registry.retentionMs).toBeGreaterThan(advertisedPollAfterMs * RETENTION_POLL_MARGIN - 1);
 
-    const attemptId = running.attemptId as string;
-    await waitForLockFree('retention-id');
-    expect((await registry.status('retention-id', attemptId)).status).toBe('completed');
+    const attemptId = first.attemptId as string;
     expect(registry.ownsAttempt(attemptId)).toBe(true);
 
     clockValue += 60_000;
@@ -474,7 +470,10 @@ describe('retention and compaction', () => {
 
     // Compaction only ever runs as the tail step of an acquisition made for
     // another reason; a genuinely new attempt for the id is one such reason.
-    await registry.evaluate('retention-id', repo);
+    const second = (await registry.evaluate('retention-id', repo)) as Record<string, unknown>;
+    expect(second.status).toBe('completed');
+    expect(second.attemptId).not.toBe(attemptId);
+    expect(invocations()).toBe(2);
     await waitFor(
       () => recordsFor('retention-id').filter((r) => r.kind === 'tombstone').length,
       (n) => n === 1,
@@ -486,6 +485,82 @@ describe('retention and compaction', () => {
     const pruned = await registry.result('retention-id', attemptId);
     expect(pruned.status).toBe('expired');
     expect(pruned.verdict).toBeUndefined();
+  }, 40_000);
+
+  it('keeps a lock-free local attempt joinable until its gated real release completes', async () => {
+    process.env.SOLUTION_PREFLIGHT_BIN = readyStub('stub-lock-free-inflight-overlap.sh');
+    const id = 'lock-free-inflight-overlap';
+    const lockDir = `${attemptLockAnchorPath(id)}.lock`;
+    const registry = new SolutionAttemptRegistry({ waitBoundMs: 5_000, pollAfterMs: 20 });
+    const realLock = lockfile.lock;
+    let gateFirstRelease = true;
+    let releaseStartedResolve!: () => void;
+    let allowReleaseResolve!: () => void;
+    const releaseStarted = new Promise<void>((resolve) => {
+      releaseStartedResolve = resolve;
+    });
+    const allowRelease = new Promise<void>((resolve) => {
+      allowReleaseResolve = resolve;
+    });
+    const lockSpy = vi.spyOn(lockfile, 'lock').mockImplementation(async (...args) => {
+      const release = await realLock(...args);
+      if (!gateFirstRelease) return release;
+      gateFirstRelease = false;
+      return async () => {
+        let released: Promise<void>;
+        try {
+          released = release();
+        } finally {
+          // This calls proper-lockfile's real release before pausing only the
+          // wrapper's completion, so the lock state is never fabricated.
+          releaseStartedResolve();
+        }
+        await allowRelease;
+        await released;
+      };
+    });
+
+    let attemptId: string | undefined;
+    const pendingOutcomes: Promise<unknown>[] = [];
+    try {
+      // Do not await this yet: the release event below proves the filesystem
+      // part has finished while this same local outcome remains unresolved.
+      const firstOutcome = registry.evaluate(id, repo);
+      pendingOutcomes.push(firstOutcome);
+      await releaseStarted;
+      await waitForLockFree(id);
+      expect(fs.existsSync(lockDir)).toBe(false);
+      const firstStart = recordsFor(id).find((record) => record.kind === 'start');
+      expect(firstStart).toBeDefined();
+      attemptId = firstStart?.attemptId;
+
+      // The same registry still owns the unresolved local outcome, so this
+      // must join that attempt even though a fresh registry could acquire the
+      // now-free filesystem lock.
+      const joinedOutcome = registry.evaluate(id, repo);
+      pendingOutcomes.push(joinedOutcome);
+      expect(invocations()).toBe(1);
+      expect(countKind(id, 'start')).toBe(1);
+
+      allowReleaseResolve();
+      // This is the lifecycle barrier. Both promises resolve only once the
+      // gated release and launch()'s inFlight cleanup have completed.
+      const terminalOutcomes = (await Promise.all([firstOutcome, joinedOutcome])) as Record<string, unknown>[];
+      const second = (await registry.evaluate(id, repo)) as Record<string, unknown>;
+      expect(second.attemptId).not.toBe(attemptId);
+      expect(terminalOutcomes.map((outcome) => outcome.status)).toEqual(['completed', 'completed']);
+      expect(terminalOutcomes.map((outcome) => outcome.attemptId)).toEqual([attemptId, attemptId]);
+      await waitFor(() => invocations(), (count) => count === 2);
+    } finally {
+      // The real release has already run; always let its completion settle
+      // and restore the wrapper so a failed assertion cannot leak either.
+      allowReleaseResolve();
+      try {
+        await Promise.allSettled(pendingOutcomes);
+      } finally {
+        lockSpy.mockRestore();
+      }
+    }
   }, 40_000);
 
   it('clamps retention up to RETENTION_POLL_MARGIN x the advertised pollAfterMs, and leaves a roomier one alone', () => {
