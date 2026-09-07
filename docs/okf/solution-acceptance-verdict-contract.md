@@ -247,9 +247,9 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
   this producer and the harness consumer that would silently break verification is
   meant to surface here first.
 
-### The four MCP tools (server.ts, version read from package.json at `server.ts:85#"const PACKAGE_VERSION = readPackageVersion();"`)
+### The four MCP tools (server.ts, version read from package.json at `server.ts:99#"const PACKAGE_VERSION = readPackageVersion();"`)
 
-- **`solution_evaluate`** (registered `server.ts:406#"'solution_evaluate'"`) — the producer. Runs preflight against
+- **`solution_evaluate`** (registered `server.ts:420#"'solution_evaluate'"`) — the producer. Runs preflight against
   the repo, records a HEAD-pinned verdict for `id`. Args: `id` (min 1, max 200,
   `MAX_ID_FILENAME_LENGTH`, the same bound the two lookups below enforce), optional
   `repoPath` (defaults to cwd), optional `forceNewAttempt`. It no longer calls
@@ -259,7 +259,7 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
   `evaluateSolution` underneath. Still wrapped in `withProgressPings`
   (`packages/grounding-mcp/src/progress.ts`) when the request carries a `progressToken`;
   that only sends `notifications/progress` pings and has no effect on the verdict.
-- **`solution_gate`** (registered `server.ts:481#"'solution_gate'"`) — read-only checker. Resolves current HEAD
+- **`solution_gate`** (registered `server.ts:495#"'solution_gate'"`) — read-only checker. Resolves current HEAD
   via `getHeadSha`, then `evaluateGate(id, head)`. Deny reasons are precise: no verdict /
   not ready + blockers / HEAD drift / unresolvable HEAD. Unchanged by the attempt
   lifecycle: it reads the signed marker and nothing else, and never consults the
