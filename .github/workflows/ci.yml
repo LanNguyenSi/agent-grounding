@@ -368,6 +368,45 @@ jobs:
         # disposable temp directories.
         run: npm run test:check-deps
 
+      - name: Release-exception classifier smoke check
+        # scripts/release-exception.js's CLI only exercises `classify(paths)`
+        # (path shape only): it has no PR base/head git ref to read file
+        # content from, so it cannot exercise `classifyPullFiles` (the
+        # status + parsed-content aware checker `merge-approval.yml`'s
+        # "Determine release exception" step actually calls); the unit-test
+        # step below is the coverage for that function. Classifying the
+        # empty list (invoked bare, no argv/stdin) can never discriminate a
+        # broken `classify` from a working one: `pure_release: false` is
+        # also what a `classify` that always returns `false` would print.
+        # This instead pipes a known-pure file list through the CLI and
+        # asserts `pure_release` reads back `true`, so the step actually
+        # fails if the module stops loading, stops running cleanly, or
+        # `classify` regresses to never-pure.
+        shell: bash
+        run: |
+          verdict="$(echo '["package.json","package-lock.json","CHANGELOG.md"]' | npm run --silent check:release-exception)"
+          echo "$verdict"
+          node -e '
+            const v = JSON.parse(process.argv[1]);
+            if (v.pure_release !== true) {
+              console.error("expected pure_release: true for a known-pure file list, got:", v);
+              process.exit(1);
+            }
+          ' "$verdict"
+
+      - name: Release-exception classifier unit tests
+        # Fixture-based unit tests for both `classify(paths)` (path shape
+        # only, including the real changed-file lists of PR #190 (pure) and
+        # PR #215 (not pure, source + docs rejected by name), and the CLI's
+        # stdin/argv paths) and `classifyPullFiles(files, { readFile })`
+        # (status + parsed-content aware, the function the workflow step
+        # actually calls), including PR #190's real base/head file content
+        # under scripts/fixtures/release-exception/ and synthetic
+        # not-pure cases (a scripts.version/dependency-named-version
+        # smuggle, a postinstall addition, a lockfile resolved/integrity
+        # repoint, a non-semver value, an unparsable or missing file).
+        run: npm run test:check-release-exception
+
       - name: Build
         # Uses the root `build` script (which topo-orders the wrapped libs
         # before everything else). A bare `npm run build --workspaces`

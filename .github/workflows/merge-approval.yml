@@ -43,16 +43,178 @@ jobs:
             core.setOutput('scope_matches_task',        has('review:scope-matches-task').toString());
             core.setOutput('evidence_logged',           has('review:evidence-logged').toString());
 
+      - name: Determine release exception from the PR's real changed files
+        # Narrow, data-driven exception (see CONTRIBUTING.md's "Cutting a
+        # release" section and scripts/release-exception.js for the
+        # allowlist, the status check, and the content check): a pure
+        # version-bump PR can satisfy all five prereqs below without a
+        # label round. `github.paginate` covers PRs over the API's 30-file
+        # page size; `classifyPullFiles` (not the path-only `classify`)
+        # also requires added/modified status (never renamed/removed), at
+        # least one real version bump somewhere in the PR, and, for
+        # package.json/package-lock.json, a PARSED comparison of the
+        # file's content at the PR's MERGE BASE and head commits (not a
+        # diff-text regex, see the module's own header comment for why that
+        # was replaced). The merge base, not the base branch tip, is what
+        # `listFiles` diffs against, so it is resolved here via
+        # `compareCommits` and passed in as the base ref; comparing against
+        # an advanced base branch tip would report lockfile paths this PR
+        # never touched. The classifier is `require()`d directly from the
+        # checked-out worktree (this step runs after Checkout) so the
+        # workflow and this file's own unit tests exercise the exact same
+        # code path. A mismatch between the paginated file count and the
+        # PR's own `changed_files` count forces `pure_release: false`: a
+        # partial page read must never read as "pure" by omission. The
+        # whole body is wrapped in try/catch: ANY error here (a paginate
+        # failure, a compareCommits failure or a response without a merge
+        # base, a getContent failure that isn't a plain 404, a classifier
+        # bug) sets `pure_release: false` and records why, rather than
+        # letting the step fail and skip the gate action below: the gate
+        # action must always run and always post a verdict.
+        id: release_exception
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const path = require('node:path');
+            const { classifyPullFiles, CONTENT_TOO_LARGE } = require(
+              path.join(process.env.GITHUB_WORKSPACE, 'scripts', 'release-exception.js'),
+            );
+
+            let pure_release = false;
+
+            try {
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.payload.pull_request.number,
+                per_page: 100,
+              });
+
+              const expectedCount = context.payload.pull_request.changed_files;
+              const paginationMismatch =
+                typeof expectedCount === 'number' && files.length !== expectedCount;
+
+              if (paginationMismatch) {
+                await core.summary
+                  .addHeading('Release exception NOT applied: file-count mismatch')
+                  .addRaw(
+                    `github.paginate returned ${files.length} changed file(s) but the ` +
+                      `PR reports changed_files=${expectedCount}; treating this PR as ` +
+                      'NOT a pure release out of caution.',
+                  )
+                  .write();
+              } else {
+                // `listFiles` diffs the PR against its MERGE BASE, not
+                // against the base branch tip, so base content has to be
+                // read at the merge base too: on a base branch that moved
+                // on since the PR branched, the tip carries changes this
+                // PR never made, and comparing against it would report
+                // unrelated (most visibly lockfile) paths. A
+                // compareCommits failure, or a response without a merge
+                // base, throws into the outer catch and forces
+                // `pure_release: false`.
+                const comparison = await github.rest.repos.compareCommits({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  base: context.payload.pull_request.base.sha,
+                  head: context.payload.pull_request.head.sha,
+                });
+                const mergeBaseSha = comparison.data.merge_base_commit?.sha;
+                if (typeof mergeBaseSha !== 'string' || mergeBaseSha === '') {
+                  throw new Error(
+                    'compareCommits returned no merge_base_commit.sha, so there is no merge base to compare content against',
+                  );
+                }
+                const baseRef = mergeBaseSha;
+                const headRef = context.payload.pull_request.head.sha;
+
+                // Reads filePath's content at git ref `ref` via the
+                // Contents API; `null` when absent (404) at that ref, so
+                // an added file (no base content) reads as `null` rather
+                // than throwing. The API only inlines blobs up to 1 MB;
+                // a larger file comes back with empty content and
+                // `encoding: "none"`, reported as the classifier's
+                // CONTENT_TOO_LARGE sentinel so the step summary names
+                // that case instead of calling the file absent. Either
+                // way the file is not pure.
+                const readFile = async (ref, filePath) => {
+                  let res;
+                  try {
+                    res = await github.rest.repos.getContent({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      path: filePath,
+                      ref,
+                    });
+                  } catch (err) {
+                    if (err.status === 404) return null;
+                    throw err;
+                  }
+                  if (Array.isArray(res.data)) return null;
+                  if (res.data.encoding !== 'base64') return CONTENT_TOO_LARGE;
+                  if (typeof res.data.content !== 'string') return null;
+                  return Buffer.from(res.data.content, 'base64').toString('utf8');
+                };
+
+                const verdict = await classifyPullFiles(
+                  files.map((f) => ({ filename: f.filename, status: f.status })),
+                  { readFile, baseRef, headRef },
+                );
+                pure_release = verdict.pure_release;
+
+                if (pure_release) {
+                  await core.summary
+                    .addHeading('Release exception applied')
+                    .addRaw(
+                      'This PR only touches release-only files with a parsed version-only ' +
+                        'content change, so the merge-approval gate below is satisfied ' +
+                        'without the usual review:* label round.',
+                    )
+                    .addList(verdict.allowed)
+                    .write();
+                } else {
+                  const lines = verdict.rejected.map(
+                    (r) =>
+                      `- \`${r.filename ?? '(missing filename)'}\` (status: ${r.status ?? 'unknown'}): ${r.reason}`,
+                  );
+                  // The verdict-level reason is always printed: a PR can
+                  // be NOT pure with an empty `rejected` list (a
+                  // CHANGELOG-only PR, or a formatting-only package.json:
+                  // reason `no-version-bump`), and that must not read as
+                  // an unexplained no-op.
+                  const detail =
+                    lines.length > 0
+                      ? lines.join('\n')
+                      : 'No changed file carried an allowed version bump, so this PR is not a release.';
+                  await core.summary
+                    .addHeading('Release exception NOT applied')
+                    .addRaw(`Reason: \`${verdict.reason ?? 'unknown'}\`.\n\n${detail}`)
+                    .write();
+                }
+              }
+            } catch (err) {
+              pure_release = false;
+              await core.summary
+                .addHeading('Release exception NOT applied: classifier error')
+                .addRaw(
+                  'The release-exception step failed with an error, so this PR is treated ' +
+                    `as NOT a pure release out of caution: ${err.message}`,
+                )
+                .write();
+            }
+
+            core.setOutput('pure_release', pure_release.toString());
+
       - name: Run merge-approval gate
         uses: LanNguyenSi/agent-grounding/packages/review-claim-gate/action@cd3971866e48050514bfa5056bcb7e1d79615bd7 # review-claim-gate-v0.1.6
         with:
           task-id: ${{ github.event.pull_request.head.ref }}
           pr-number: ${{ github.event.pull_request.number }}
-          tests-pass: ${{ steps.labels.outputs.tests_pass }}
-          review-checklist-complete: ${{ steps.labels.outputs.checklist_complete }}
-          comments-resolved: ${{ steps.labels.outputs.comments_resolved }}
-          scope-matches-task: ${{ steps.labels.outputs.scope_matches_task }}
-          evidence-logged: ${{ steps.labels.outputs.evidence_logged }}
+          tests-pass: ${{ steps.labels.outputs.tests_pass == 'true' || steps.release_exception.outputs.pure_release == 'true' }}
+          review-checklist-complete: ${{ steps.labels.outputs.checklist_complete == 'true' || steps.release_exception.outputs.pure_release == 'true' }}
+          comments-resolved: ${{ steps.labels.outputs.comments_resolved == 'true' || steps.release_exception.outputs.pure_release == 'true' }}
+          scope-matches-task: ${{ steps.labels.outputs.scope_matches_task == 'true' || steps.release_exception.outputs.pure_release == 'true' }}
+          evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
         # Keep an immutable pin so the consumer runs the reviewed v0.1.6
         # action implementation, including its current Node action runtimes.

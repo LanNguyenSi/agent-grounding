@@ -1,0 +1,51 @@
+{
+  "name": "@lannguyensi/understanding-gate",
+  "version": "0.4.11",
+  "description": "Pre-execution gate that asks AI agents to produce an Understanding Report before acting",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LanNguyenSi/agent-grounding.git",
+    "directory": "packages/understanding-gate"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "ROADMAP.md",
+    "CHANGELOG.md"
+  ],
+  "type": "module",
+  "bin": {
+    "understanding-gate": "dist/cli.js",
+    "understanding-gate-claude-hook": "dist/adapters/claude-code/user-prompt-submit.js",
+    "understanding-gate-claude-stop": "dist/adapters/claude-code/stop.js",
+    "understanding-gate-claude-pre-tool-use": "dist/adapters/claude-code/pre-tool-use.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc && chmod +x dist/cli.js dist/adapters/claude-code/user-prompt-submit.js dist/adapters/claude-code/stop.js dist/adapters/claude-code/pre-tool-use.js",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@lannguyensi/hypothesis-tracker": "0.6.0",
+    "ajv": "^8.12.0",
+    "ajv-formats": "^3.0.1",
+    "commander": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "tsx": "^4.22.4",
+    "typescript": "^5.3.3",
+    "vitest": "4.1.9"
+  }
+}

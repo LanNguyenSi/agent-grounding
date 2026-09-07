@@ -36,5 +36,5 @@ at them rather than copying them.
 ## Runbooks
 
 - [Merge-approval gate](merge-approval-gate-mechanics.md), the five `review:*`
-  labels, the branch-name key, when the check actually blocks, and how to
-  re-trigger it.
+  labels (plus a data-driven pure-release label-free path), the branch-name
+  key, when the check actually blocks, and how to re-trigger it.
