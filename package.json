@@ -22,7 +22,9 @@
     "check:okf-test-citation-shape": "node scripts/check-okf-test-citation-shape.js",
     "test:check-okf-test-citation-shape": "node --test scripts/check-okf-test-citation-shape.test.js",
     "check:okf-selectors": "node scripts/check-okf-selectors.js",
-    "test:check-okf-selectors": "node --test scripts/check-okf-selectors.test.js"
+    "test:check-okf-selectors": "node --test scripts/check-okf-selectors.test.js",
+    "check:release-exception": "node scripts/release-exception.js",
+    "test:check-release-exception": "node --test scripts/release-exception.test.js"
   },
   "overrides": {
     "js-yaml": "^4.3.1",

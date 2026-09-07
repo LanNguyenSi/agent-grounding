@@ -43,16 +43,56 @@ jobs:
             core.setOutput('scope_matches_task',        has('review:scope-matches-task').toString());
             core.setOutput('evidence_logged',           has('review:evidence-logged').toString());
 
+      - name: Determine release exception from the PR's real changed files
+        # Narrow, data-driven exception (see CONTRIBUTING.md's "Cutting a
+        # release" section and scripts/release-exception.js for the
+        # allowlist and rationale): a pure version-bump PR can satisfy all
+        # five prereqs below without a label round. `github.paginate`
+        # covers PRs over the API's 30-file page size. The classifier is
+        # `require()`d directly from the checked-out worktree (this step
+        # runs after Checkout) so the workflow and this file's own unit
+        # tests exercise the exact same code path.
+        id: release_exception
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const path = require('node:path');
+            const { classify } = require(
+              path.join(process.env.GITHUB_WORKSPACE, 'scripts', 'release-exception.js'),
+            );
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              per_page: 100,
+            });
+            const paths = files.map((f) => f.filename);
+
+            const verdict = classify(paths);
+            core.setOutput('pure_release', verdict.pure_release.toString());
+
+            if (verdict.pure_release) {
+              await core.summary
+                .addHeading('Release exception applied')
+                .addRaw(
+                  'This PR only touches release-only files, so the merge-approval ' +
+                    'gate below is satisfied without the usual review:* label round.',
+                )
+                .addList(verdict.allowed)
+                .write();
+            }
+
       - name: Run merge-approval gate
         uses: LanNguyenSi/agent-grounding/packages/review-claim-gate/action@cd3971866e48050514bfa5056bcb7e1d79615bd7 # review-claim-gate-v0.1.6
         with:
           task-id: ${{ github.event.pull_request.head.ref }}
           pr-number: ${{ github.event.pull_request.number }}
-          tests-pass: ${{ steps.labels.outputs.tests_pass }}
-          review-checklist-complete: ${{ steps.labels.outputs.checklist_complete }}
-          comments-resolved: ${{ steps.labels.outputs.comments_resolved }}
-          scope-matches-task: ${{ steps.labels.outputs.scope_matches_task }}
-          evidence-logged: ${{ steps.labels.outputs.evidence_logged }}
+          tests-pass: ${{ steps.labels.outputs.tests_pass == 'true' || steps.release_exception.outputs.pure_release == 'true' }}
+          review-checklist-complete: ${{ steps.labels.outputs.checklist_complete == 'true' || steps.release_exception.outputs.pure_release == 'true' }}
+          comments-resolved: ${{ steps.labels.outputs.comments_resolved == 'true' || steps.release_exception.outputs.pure_release == 'true' }}
+          scope-matches-task: ${{ steps.labels.outputs.scope_matches_task == 'true' || steps.release_exception.outputs.pure_release == 'true' }}
+          evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
         # Keep an immutable pin so the consumer runs the reviewed v0.1.6
         # action implementation, including its current Node action runtimes.

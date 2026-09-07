@@ -1,14 +1,16 @@
 ---
 type: runbook
 title: Merge-approval gate — labels, keys, and when it actually blocks
-description: How the merge-approval Check-Run maps five review:* PR labels to merge_approval booleans, keys evidence by the PR HEAD BRANCH NAME, and blocks only when required by an applicable branch-protection rule or ruleset.
+description: How the merge-approval Check-Run maps five review:* PR labels (OR'd with a data-driven pure-release exception) to merge_approval booleans, keys evidence by the PR HEAD BRANCH NAME, and blocks only when required by an applicable branch-protection rule or ruleset.
 tags: [merge-approval, review-claim-gate, ci, runbook, labels]
-timestamp: 2026-09-06T20:26:39Z
+timestamp: 2026-09-07T05:45:00Z
 sources:
   - .github/workflows/merge-approval.yml
+  - scripts/release-exception.js
   - packages/review-claim-gate/README.md
   - packages/review-claim-gate/action/action.yml
   - docs/testing/merge-approval-rollout.md
+  - CONTRIBUTING.md
 ---
 
 # Merge-approval gate — labels, keys, and when it actually blocks
@@ -28,14 +30,15 @@ The action is pinned by SHA, not a floating tag:
 uses: LanNguyenSi/agent-grounding/packages/review-claim-gate/action@cd3971866e48050514bfa5056bcb7e1d79615bd7 # review-claim-gate-v0.1.6
 ```
 
-(`merge-approval.yml:47#"review-claim-gate-v0.1.6"`; the referenced `packages/review-claim-gate/action/`
+(`merge-approval.yml:87#"review-claim-gate-v0.1.6"`; the referenced `packages/review-claim-gate/action/`
 directory exists and contains `action.yml`.)
 
 ## What it reads: the five labels → booleans
 
 The `Extract prereq flags from PR labels` step (`actions/github-script@v8`,
 `merge-approval.yml:31-44#"core.setOutput('evidence_logged',"`) maps each label name to a `"true"|"false"` output,
-which is passed into the action inputs (`merge-approval.yml:51-55#"evidence-logged: ${{ steps.labels.outputs.evidence_logged }}"`). Exact
+which is passed into the action inputs, each OR'd with the release-exception
+verdict below (`merge-approval.yml:91-95#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`). Exact
 mapping:
 
 | PR label (apply on the PR)     | github-script output   | action input               | `merge_approval` prereq             |
@@ -57,8 +60,45 @@ nothing in CI cross-checks. `review:evidence-logged` is different: as covered
 above, a committed evidence file already satisfies `evidence_logged` in CI
 without the label, so that prereq is only honour-system when the reviewer
 uses the label's force-override instead of committing evidence
-(`merge-approval-rollout.md:44-51#"for tracking history."`). Ticking a label you did not earn
+(`merge-approval-rollout.md:61-68#"for tracking history."`). Ticking a label you did not earn
 defeats the whole gate.
+
+## The pure-release exception: a sixth, data-driven path to all five `true`s
+
+Between the label-extraction step and the gate action, a `Determine release
+exception from the PR's real changed files` step
+(`merge-approval.yml:46-73#"core.setOutput('pure_release', verdict.pure_release.toString());"`)
+computes a `pure_release` boolean and OR's it into every one of the five
+action inputs above
+(`merge-approval.yml:91-95#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`).
+When `pure_release` is `true`, all five prereqs are satisfied regardless of
+which `review:*` labels are on the PR — no label round needed.
+
+`pure_release` comes from `scripts/release-exception.js`'s `classify(files)`,
+called on the PR's actual changed-file list obtained via
+`github.paginate(github.rest.pulls.listFiles, ...)` (paginated, so a PR with
+more than one API page of files is read correctly). A PR is `pure_release`
+only when every changed file matches one of these exact shapes, and the file
+list is non-empty:
+
+- `package.json`, `package-lock.json`, `CHANGELOG.md` (root)
+- `packages/<one path segment>/package.json`
+- `packages/<one path segment>/CHANGELOG.md`
+
+Nothing else — not `src/**`, not `docs/okf/**`, not a workflow file, not a
+nested `packages/<a>/<b>/package.json`. See `scripts/release-exception.js`'s
+own header comment for the full allowlist rationale and
+`CONTRIBUTING.md`'s "Cutting a release" section for what this looks like in
+practice, including the two disqualifiers that come up most often (a source
+version constant such as `packages/grounding-mcp/src/server.ts`, and a
+`docs/okf/*.md` re-stamp riding along with the bump). When the exception
+applies, the step writes a step-summary note naming the files it matched
+(`merge-approval.yml:75-83#".write();"`).
+
+This is additive, not a widening of what the five `review:*` labels mean:
+the label semantics, the pinned action, and the job/check name are all
+unchanged. A PR that touches anything outside the allowlist is unaffected by
+this step and goes through the normal label path described above.
 
 ## The task-id key: PR HEAD BRANCH NAME, not a task UUID
 
@@ -68,7 +108,7 @@ Load-bearing correction. The action's `task-id` input is:
 task-id: ${{ github.event.pull_request.head.ref }}
 ```
 
-(`merge-approval.yml:49#"task-id: ${{ github.event.pull_request.head.ref }}"`.) That is the **PR head branch name** (e.g. `feat/foo`),
+(`merge-approval.yml:89#"task-id: ${{ github.event.pull_request.head.ref }}"`.) That is the **PR head branch name** (e.g. `feat/foo`),
 **not** an agent-tasks task UUID. The rollout doc confirms: "`task-id` is the
 PR's head branch name — stable across commits on the branch"
 (`merge-approval-rollout.md:31-32#"branch and visible in both the PR UI and the Check-Run summary."`). Everywhere the gate says "task id" for
@@ -95,7 +135,7 @@ label to the `evidence-logged` input, but that label is optional: absent it,
 the action falls through to the committed-file auto-detect above, so a
 committed `.agent-grounding/evidence/<task-id>.jsonl` in the PR branch,
 with at least one valid JSONL entry, already satisfies `evidence_logged`
-in CI today, no label required (`merge-approval-rollout.md:36-42#"for the task id."`,
+in CI today, no label required (`merge-approval-rollout.md:53-59#"for the task id."`,
 follow-up task `5ea6d7cf` tracks history).
 
 ## When it actually blocks (two states — know which is live)
@@ -131,12 +171,12 @@ otherwise incomplete query does not establish absence; a legacy-protection 404
 only means legacy branch protection is unavailable and must be evaluated with
 the ruleset result. To promote it to a hard gate, add `merge-approval` (alongside
 the existing `ci`) to the required checks per
-`merge-approval-rollout.md:53-81#"alongside it.)"` (requires Admin).
+`merge-approval-rollout.md:70-98#"alongside it.)"` (requires Admin).
 
 ## How to make it pass legitimately
 
 Do the review, then add each label only when its dimension is genuinely met
-(reviewer cheat sheet, `merge-approval-rollout.md:83-95#"evidence-ledger entry under"`):
+(reviewer cheat sheet, `merge-approval-rollout.md:100-112#"evidence-ledger entry under"`):
 
 1. CI green → `review:tests-pass`.
 2. Walk the full checklist (correctness, security/scope, permissions, minimal

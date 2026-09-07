@@ -2,6 +2,56 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-07T05:45:00Z, merge-approval pure-release exception (task
+  `4493b316`): added `scripts/release-exception.js`, a dependency-free
+  classifier that turns a PR's real changed-file list into a
+  `{ pure_release, allowed, rejected }` verdict, and wired it into
+  `.github/workflows/merge-approval.yml` as a new `Determine release
+  exception from the PR's real changed files` step
+  (`merge-approval.yml:46-73#"core.setOutput('pure_release', verdict.pure_release.toString());"`)
+  between the label-extraction step and the pinned gate action. Each of
+  the five action inputs is now `<label == 'true'> || <pure_release ==
+  'true'>` (`merge-approval.yml:91-95#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`),
+  so a pure version-bump PR (root `package.json` / `package-lock.json` /
+  `CHANGELOG.md`, or a single package's `packages/<name>/package.json` /
+  `CHANGELOG.md`) satisfies the gate without a `review:*` label round; the
+  five prerequisites, the pinned action SHA, the job/check name, and the
+  triggers are unchanged. Inserting the new step ahead of the gate action
+  shifted the action-pin and `task-id` line numbers this same doc and
+  `docs/okf/evidence-ledger-session-key-shapes.md` cite
+  (47→87, 49→89); both re-stamped in this commit, sibling lines checked
+  against the current file. Unit tests
+  (`scripts/release-exception.test.js`, `node --test`, 15 cases) use the
+  real changed-file lists of PR #190 (understanding-gate 0.5.0: 3 files,
+  pure) and PR #215 (grounding-mcp 0.11.0: 9 files including
+  `packages/grounding-mcp/src/server.ts` and five `docs/okf/*.md`
+  re-stamps, not pure — the source file and all five docs land in
+  `rejected`), captured read-only via `gh pr view <n> --repo
+  LanNguyenSi/agent-grounding --json files`; plus the negative-control
+  shape (an otherwise-pure list plus one `.ts` file, not pure), a nested
+  `packages/a/b/package.json` (not pure), the workflow file alone (not
+  pure), the empty list (not pure), a `..`-traversal path and a
+  leading-`/` path (both rejected, not pure), and the CLI's argv/stdin
+  input paths including malformed-stdin exit codes. Mutation probes via
+  `agent-primitives probe --plan`, each on the test command `node --test
+  scripts/release-exception.test.js`: (1) widening
+  `PACKAGE_ALLOWLIST_PATTERN` to accept a nested `packages/**` path —
+  killed (the PR #215 and nested-path tests catch it); (2) making the
+  empty-list branch `pure_release: files.length >= 0` — killed (the
+  empty-list test catches it); (3) the workflow's five-input OR-vs-AND
+  swap has no automated test in this repo (a GitHub Actions expression
+  is not exercised by `node --test`); left as an explicit residual for
+  the orchestrator's live release-PR probe (criterion 4/negative control
+  at the workflow level), not claimed as covered here. CONTRIBUTING.md's
+  "Cutting a release" section documents both the label-free path and its
+  disqualifiers (a source version constant or a `docs/okf/*.md`
+  re-stamp riding along with the bump disqualifies a release PR from the
+  exception on that file alone), plus the separate, pre-existing finding
+  that the App-token PR-creation path does not work on this repo and
+  which credential to use instead. No package version was bumped and no
+  live release PR was opened by this task; that remains open (see this
+  task's own tracking).
+
 - 2026-09-06T21:11:51Z, review-round polish, round 2 (task `3846b4d5`):
   fixes from the reviewer's first pass over the round-1 diff below,
   packages/grounding-mcp only. Extracted `compactUnderLock`'s inline temp-file
