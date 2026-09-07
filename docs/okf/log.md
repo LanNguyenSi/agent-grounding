@@ -52,7 +52,15 @@
   response, plus two controls (a real pure bump, and the pre-existing
   oversized-file shape, both unchanged). Mutation probe: mapping a symlink
   response to the file-read branch (dropping the new `type` check) makes
-  the new base-side test fail; killed.
+  the new base-side test fail; killed. This diff's line shifts in
+  `.github/workflows/merge-approval.yml`, `scripts/release-exception.js`
+  and `scripts/release-exception.test.js` broke twelve citations of
+  earlier entries below, all in this file; those twelve were re-pointed to
+  the same source lines they always meant, so after this commit
+  `okf-kit check docs/okf` reports the same findings as on the base
+  commit (one pre-existing `sources-fresh` STALE warning unrelated to this
+  change, and the four pre-existing `citations-resolve` warnings that
+  predate this task).
 
 - 2026-09-07T07:36:11Z, task 4493b316 (orchestrator), live probes for criterion 3 and the
   round-4 review notes. Two probe PRs against this branch as base:
@@ -87,16 +95,16 @@
   being a release at all. `classifyPullFiles` now counts the allowed
   version paths that actually changed value across the whole PR and
   requires at least one
-  (`release-exception.js:458-465#"else if (versionBumps === 0) reason = 'no-version-bump';"`).
+  (`release-exception.js:490#"else if (versionBumps === 0) reason = 'no-version-bump';"`).
   The verdict gained a PR-level `reason` beside the per-file ones (`null`
   when pure, else `empty-file-list`, `rejected-files` or
   `no-version-bump`), which the step summary now always prints
-  (`merge-approval.yml:191#"verdict.reason ?? 'unknown'"`), so a not-pure
+  (`merge-approval.yml:198#"verdict.reason ?? 'unknown'"`), so a not-pure
   verdict with an empty rejected list is no longer an unexplained no-op.
   Two new tests pin it: the CHANGELOG-only case (which still asserts the
   entry lands in `allowed` and that the throwing reader is never called)
   and a formatting-only `package.json`
-  (`release-exception.test.js:535#"whitespace/key order only"`).
+  (`release-exception.test.js:536#"whitespace/key order only"`).
 
   (2) The step passed `pull_request.base.sha`, the base BRANCH TIP, as the
   ref to read base content at, while `listFiles` diffs the PR against its
@@ -113,15 +121,15 @@
   Three smaller findings from the same review: a `classifyPullFiles` case
   for a lockfile bump at a nested `$.packages["packages/a/b"].version`
   path now pins that the allowed lockfile path regex takes exactly one
-  segment (`release-exception.test.js:553#"NESTED packages path"`,
-  against `release-exception.js:316#".test(jsonPath)"`); the workflow's
+  segment (`release-exception.test.js:554#"NESTED packages path"`,
+  against `release-exception.js:339#".test(jsonPath)"`); the workflow's
   `readFile` now treats a response whose `encoding` is not `base64` (the
   Contents API's over-1-MB shape: empty content, `encoding: "none"`) as a
-  distinct signal (`merge-approval.yml:153-157#"res.data.encoding !== 'base64'"`)
+  distinct signal (`merge-approval.yml:161#"res.data.encoding !== 'base64'"`)
   rather than as an absent file, carried as an exported sentinel
-  (`release-exception.js:250#"Symbol.for('release-exception.content-too-large')"`)
+  (`release-exception.js:264#"Symbol.for('release-exception.content-too-large')"`)
   that the classifier maps to the reasons `content-too-large-base`/
-  `-head` (`release-exception.js:334#"content-too-large-base"`), with a
+  `-head` (`release-exception.js:359#"content-too-large-base"`), with a
   unit case for each side; the 1 MB limit is now stated in the module
   header and in `merge-approval-gate-mechanics.md`'s residuals. Note that
   the sentinel is not a string, so a reader that never sends it still
@@ -378,12 +386,12 @@
   helper. `.github/workflows/merge-approval.yml`'s release-exception step
   now calls `classifyPullFiles` with each file's `filename`/`status`/
   `patch`
-  (`merge-approval.yml:46-206#"core.setOutput('pure_release', pure_release.toString());"`)
+  (`merge-approval.yml:46-213#"core.setOutput('pure_release', pure_release.toString());"`)
   and also compares the paginated file count against the PR's own
   `changed_files`, forcing `pure_release: false` on a mismatch rather than
   risking a partial page reading as pure. The five action inputs
   themselves are unchanged
-  (`merge-approval.yml:213-217#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`).
+  (`merge-approval.yml:220-224#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`).
   New unit tests cover: the real package.json/package-lock.json
   version-bump patches of PR #190 (captured read-only via `gh api
   repos/LanNguyenSi/agent-grounding/pulls/190/files`), a postinstall
@@ -452,10 +460,10 @@
   `{ pure_release, allowed, rejected }` verdict, and wired it into
   `.github/workflows/merge-approval.yml` as a new `Determine release
   exception from the PR's real changed files` step
-  (`merge-approval.yml:46-206#"core.setOutput('pure_release', pure_release.toString());"`)
+  (`merge-approval.yml:46-213#"core.setOutput('pure_release', pure_release.toString());"`)
   between the label-extraction step and the pinned gate action. Each of
   the five action inputs is now `<label == 'true'> || <pure_release ==
-  'true'>` (`merge-approval.yml:213-217#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`),
+  'true'>` (`merge-approval.yml:220-224#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`),
   so a pure version-bump PR (root `package.json` / `package-lock.json` /
   `CHANGELOG.md`, or a single package's `packages/<name>/package.json` /
   `CHANGELOG.md`) satisfies the gate without a `review:*` label round; the
