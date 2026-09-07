@@ -22,3 +22,4 @@ export function isTaskLike(prompt: string): boolean {
   if (!verbHit) return false;
   return FILE_HINT.test(prompt) || prompt.length > LONG_PROMPT_THRESHOLD;
 }
+// probe(4493b316): a source touch that must keep the label path
