@@ -21,13 +21,14 @@
   ],
   "type": "module",
   "bin": {
-    "grounding-mcp": "dist/server.js"
+    "grounding-mcp": "dist/server.js",
+    "grounding-assessment-mcp": "dist/assessment-index.js"
   },
   "main": "./dist/server.js",
   "types": "./dist/server.d.ts",
   "scripts": {
     "build": "tsc",
-    "postbuild": "chmod +x dist/server.js",
+    "postbuild": "chmod +x dist/server.js dist/assessment-index.js",
     "dev": "tsx src/server.ts",
     "test": "vitest run",
     "test:ci": "vitest run --coverage",
