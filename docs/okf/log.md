@@ -20,8 +20,13 @@
   `docs/okf/evidence-ledger-session-key-shapes.md`,
   `docs/okf/solution-acceptance-verdict-contract.md` and
   `docs/okf/hypothesis-tracker-persistence-split.md` re-pointed every
-  `server.ts:<line>` citation shifted by the edit. check run: recorded by
-  the orchestrator after the probe PR. Review round 1 delta: generalized
+  `server.ts:<line>` citation shifted by the edit. criterion 4 probe (orchestrator): PR #225, a
+  release-shaped commit (grounding-mcp package.json, its CHANGELOG, the
+  root lockfile, version-only) against this branch, carried zero labels
+  and the merge-approval check run 101687922653 (workflow run
+  34104945295) returned ALLOWED with every prerequisite satisfied via
+  the release exception; the PR was closed unmerged and its branch
+  deleted. Review round 1 delta: generalized
   the release-only-source example off `server.ts` in
   `scripts/release-exception.js`, dropped the task-id parenthetical from
   the `CONTRIBUTING.md`/mechanics prose, reworded the tarball-`files` and
