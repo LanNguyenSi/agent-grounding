@@ -2,6 +2,27 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-07T07:36:11Z, task 4493b316 (orchestrator), live probes for criterion 3 and the
+  round-4 review notes. Two probe PRs against this branch as base:
+  PR #221 (`probe/4493b316-pure`, head `0e4aef1d792fe44aa443154daab31e7f541c2a5b`:
+  `packages/understanding-gate/package.json` 0.7.0 to 0.7.1, the matching
+  lockfile entry, a CHANGELOG line) ran the workflow from this branch and
+  its `merge-approval` check-run concluded success with no `review:*`
+  label set (job 101660170380); PR #222 (`probe/4493b316-negative`, head
+  `b73c5a451b4df1e311022a2090b8038cc085e122`: the same change plus one
+  appended comment line in a `packages/understanding-gate/src` file)
+  concluded failure without labels (job 101660161053), so a source touch
+  keeps the label path. Both probes closed unmerged, branches deleted.
+  Round-4 review notes closed here without code change: the
+  `oldValue !== newValue` guard in `scripts/release-exception.js` is a
+  restatement of what `collectDiffPaths` already guarantees (comment
+  added); the zero-diff-sibling residual is named in
+  `docs/okf/merge-approval-gate-mechanics.md` and `CONTRIBUTING.md`; the
+  symlink or submodule shape of a `getContent` response is reported as
+  `content-too-large-*` (fails closed, reason imprecise), left for a
+  follow-up. Criterion 4 (a real release through the path) stays open for
+  the operator.
+
 - 2026-09-07T07:20:00Z, merge-approval pure-release exception, round 4
   (task `4493b316`): bounded delta on the round-3 review's
   accept_with_notes findings, two of them correctness.
@@ -14,7 +35,7 @@
   being a release at all. `classifyPullFiles` now counts the allowed
   version paths that actually changed value across the whole PR and
   requires at least one
-  (`release-exception.js:461-468#"else if (versionBumps === 0) reason = 'no-version-bump';"`).
+  (`release-exception.js:459-466#"else if (versionBumps === 0) reason = 'no-version-bump';"`).
   The verdict gained a PR-level `reason` beside the per-file ones (`null`
   when pure, else `empty-file-list`, `rejected-files` or
   `no-version-bump`), which the step summary now always prints

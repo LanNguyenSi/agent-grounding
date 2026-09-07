@@ -3,7 +3,7 @@ type: runbook
 title: Merge-approval gate — labels, keys, and when it actually blocks
 description: How the merge-approval Check-Run maps five review:* PR labels (OR'd with a data-driven pure-release exception) to merge_approval booleans, keys evidence by the PR HEAD BRANCH NAME, and blocks only when required by an applicable branch-protection rule or ruleset.
 tags: [merge-approval, review-claim-gate, ci, runbook, labels]
-timestamp: 2026-09-07T07:20:00Z
+timestamp: 2026-09-07T07:36:11Z
 sources:
   - .github/workflows/merge-approval.yml
   - scripts/release-exception.js
@@ -167,7 +167,7 @@ takes that release PR back to the label path. See
 practice, including the two path-level disqualifiers that come up most
 often (a source version constant such as `packages/grounding-mcp/
 src/server.ts`, and a `docs/okf/*.md` re-stamp riding along with the bump),
-its residual on the one-package-per-release checklist rule (not enforced by
+its residual on the one-package-per-release checklist rule (not enforced by A touched allowlisted file with no content difference at all (a whitespace or key-order-only `package.json`) also passes, riding on any other file's real bump; it carries no change, so nothing moves, but it is wider than the several-packages residual above.
 this classifier), and the cross-pin case (only a dependent's own changed
 file is checked, not which packages a release *should* have touched).
 

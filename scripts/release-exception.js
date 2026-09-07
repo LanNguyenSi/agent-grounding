@@ -368,6 +368,8 @@ function checkVersionOnlyContent(basename, baseText, headText) {
     if (!oldOk || !newOk) {
       return { ok: false, reason: `non-semver-value:${diff.path}`, diffPaths };
     }
+    // collectDiffPaths only reports differing values, so this guard is a
+    // readability restatement of the invariant, not a reachable branch.
     if (diff.oldValue !== diff.newValue) bumpCount += 1;
   }
 
