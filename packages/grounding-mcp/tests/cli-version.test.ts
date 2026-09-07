@@ -25,9 +25,9 @@ describe('grounding-mcp CLI --version', () => {
     expect(result.status).toBe(0);
     expect(result.error).toBeUndefined();
     expect(result.stdout.trim()).toBe(expectedVersion());
-    // The short-circuit must keep the in-file constant in sync with
-    // package.json. If this drifts, the registered MCP handshake reports
-    // a different version than --version.
+    // The built dist/ layout resolves the package's own package.json at
+    // runtime, so --version and the registered MCP handshake read the same
+    // value and cannot diverge.
   });
 
   it('accepts the -v shorthand alias', () => {

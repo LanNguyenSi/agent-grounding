@@ -54,8 +54,8 @@ import {
 // package.json itself, read at runtime so a release bump never needs a
 // matching edit here. Resolved relative to this module so it works both
 // from src/ (dev, via tsx) and from the built dist/ layout (dist/server.js
-// sits one level below the package root, same as src/server.ts), and
-// package.json is always included in the npm tarball via the `files` field.
+// sits one level below the package root, same as src/server.ts). npm always
+// includes package.json in the published tarball, independent of `files`.
 function readPackageVersion(): string {
   try {
     const url = new URL('../package.json', import.meta.url);

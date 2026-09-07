@@ -30,6 +30,11 @@ describe('grounding-mcp MCP handshake version', () => {
     try {
       const serverVersion = client.getServerVersion();
       expect(serverVersion?.version).toBe(expectedVersion());
+      // Independent of the exact comparison above: catches a bundled dist/
+      // with no sibling package.json falling back to the hardcoded default,
+      // even where this test's own package.json resolution path is absent.
+      expect(serverVersion?.version).toMatch(/^\d+\.\d+\.\d+/);
+      expect(serverVersion?.version).not.toBe('0.0.0');
     } finally {
       await client.close();
       await server.close();

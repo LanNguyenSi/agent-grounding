@@ -167,7 +167,7 @@ takes that release PR back to the label path. See
 practice, including the two path-level disqualifiers that come up most
 often (a `docs/okf/*.md` re-stamp riding along with the bump, and a source
 version constant in a package that still hand-maintains one; grounding-mcp
-no longer does, task ed06b4c8: `packages/grounding-mcp/src/server.ts` reads
+no longer does: `packages/grounding-mcp/src/server.ts` reads
 the version from `package.json` at runtime instead),
 its residual on the one-package-per-release checklist rule (not enforced by A touched allowlisted file with no content difference at all (a whitespace or key-order-only `package.json`) also passes, riding on any other file's real bump; it carries no change, so nothing moves, but it is wider than the several-packages residual above.
 this classifier), and the cross-pin case (only a dependent's own changed
