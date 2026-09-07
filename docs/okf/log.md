@@ -2,6 +2,145 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-07T06:50:00Z, merge-approval pure-release exception, round 3
+  (task `4493b316`): orchestrator decision D-014 (binding), from round-2
+  review: the diff-text regex over `"version": "…"` value lines is
+  structurally unsound (a `"version": "curl … | sh"` line inside `scripts`,
+  or a dependency literally named `version`, matches the line shape while
+  being nothing like a version bump). Redesigned the content check as a
+  parsed base/head comparison rather than patching the regex.
+  `classifyPullFiles(files, { readFile, baseRef, headRef })`
+  (`scripts/release-exception.js`) is now async: for `package.json`/
+  `package-lock.json` it reads the file's actual text at `baseRef`/
+  `headRef` via the caller's `readFile(ref, path)`, `JSON.parse`s both,
+  deep-compares them (`collectDiffPaths`), and requires every differing
+  JSON path to be one of the version fields the file may change
+  (`$.version`; for the lockfile also `$.packages[""].version` and
+  `$.packages["packages/<one segment>"].version`), with a strict semver
+  string (`SEMVER_PATTERN`) on both sides at each such path. `isVersionOnlyPatch`
+  and the `patch`-text scan are removed entirely; `classify(paths)`
+  (path-shape only) is unchanged. `merge-approval.yml`'s release-exception
+  step now resolves `baseRef`/`headRef` from the event payload, implements
+  `readFile` via `github.rest.repos.getContent` (base64-decoded, a plain
+  404 becomes `null`), and wraps its whole body in one `try`/`catch` so
+  ANY error (a `paginate`/`getContent` failure, a classifier bug) forces
+  `pure_release: false` and records why in the step summary, rather than
+  letting the step itself fail and skip the pinned gate action below it;
+  the NOT-applied step-summary branch now also lists each rejected file
+  with its status and specific reason.
+
+  New unit tests (`scripts/release-exception.test.js`, `node --test`, 44
+  cases total, up from round 2's count) replay PR #190's real base/head
+  file content for the PURE assertions: fetched read-only via `gh api
+  repos/LanNguyenSi/agent-grounding/contents/<path>?ref=<sha>` (base
+  `5dc0cbc0…`, head `663a19b4…`, both from `gh pr view 190 --json
+  baseRefOid,headRefOid`) and checked in under
+  `scripts/fixtures/release-exception/`. `pr190-package-lock.trimmed.*`
+  is TRIMMED from the real 8975-line lockfile to its `name`/`version`/
+  `lockfileVersion`/`requires` plus exactly the two `packages` entries
+  this check reads (`""` and `packages/understanding-gate`); the other
+  627 workspace/`node_modules` entries carry no signal for this check and
+  are dropped, the two kept files are otherwise byte-for-byte the real
+  content. `pr190-package*.json`/`pr190-changelog*.md` are the real,
+  untrimmed content. Synthetic in-memory fixtures cover every
+  disqualifying condition: a `scripts.version` smuggle, a dependency
+  literally named `version`, a `postinstall` addition, a lockfile
+  `resolved` repoint, an added dependency key, a removed key, an array
+  change, a non-semver value at an allowed path (`^0.1.2`, a shell
+  command), a version bump at a disallowed lockfile path
+  (`node_modules/x`), an unparsable base and an unparsable head, a
+  non-object JSON root, an added file with no base content, a throwing
+  reader, a `CHANGELOG.md` entry that never calls `readFile`, and a
+  missing/non-string `filename` rejected with a named reason (not
+  `undefined` printed into `rejected`), plus the multi-package and
+  empty-list/non-array/missing-`readFile` cases. `.github/workflows/ci.yml`'s
+  smoke-check comment now says it only covers `classify(paths)` (the CLI
+  has no PR base/head git ref to exercise `classifyPullFiles` with); the
+  unit-test step is the coverage for that function. `CONTRIBUTING.md`,
+  `merge-approval-gate-mechanics.md`, and
+  `docs/testing/merge-approval-rollout.md` describe the parsed-comparison
+  design and its residuals: the classifier does not enforce this repo's
+  one-package-per-release rule, and a cross-pinned dependent is only
+  caught when its own changed file lands outside the allowed path.
+  CONTRIBUTING's PR-creation paragraph also drops the workspace-local
+  `gh-token.sh` script name while keeping the App-token credential rule
+  (an unrelated, requested cleanup, not part of the redesign).
+
+  Mutation probes via `agent-primitives probe --plan`, one shared baseline
+  against `node --test scripts/release-exception.test.js`, all 9 killed
+  and restored (verified by hash): replayed from round 1, widening
+  `PACKAGE_ALLOWLIST_PATTERN` to `packages/.*\/` (still killed, by the
+  nested-package-path and `isAllowedReleasePath` tests) and the
+  empty-list `>= 0` swap (still killed, by the empty-file-list test);
+  replayed from round 2, an `/i` flag on `PACKAGE_ALLOWLIST_PATTERN`
+  (still killed, by the case-sensitivity test) and status `renamed`
+  treated as pure (still killed, by the rename and removed-`package.json`
+  tests); four new this round: disabling the `isAllowedContentPath` path
+  filter (`if (false)` at its call site) killed by the disallowed
+  lockfile-path (`node_modules/x`) test, not by the `scripts.version`/
+  dependency-named-`version`/`postinstall` tests as first expected: those
+  three still fail under this mutant too, but via the independent semver
+  check (an added key's old-side value is always `undefined`, which the
+  semver check already rejects on its own), so they do not actually
+  isolate this specific mutant; disabling the semver check (`if (false)`
+  at the `!oldOk || !newOk` site) killed by the `^0.1.2` and
+  shell-command-value tests; treating a missing base as non-fatal (`if
+  (false) return …missing-base`) killed by the added-file test; treating
+  a base parse failure as pure (`return { ok: true }` in the
+  `parse-error-base` catch) killed by the unparsable-file test; widening
+  the lockfile allowed-path regex to any `$.packages["…"].version` killed
+  by the `node_modules/x` disallowed-path test.
+
+  `.github/workflows/ci.yml`'s smoke-check `run:` step body text is
+  unchanged from round 2 (only its comment changed); replayed anyway
+  under `bash --noprofile --norc -eo pipefail`: a known-pure input
+  (`["package.json","package-lock.json","CHANGELOG.md"]`) exits 0, a
+  not-pure input (`["src/server.ts"]`) exits 1, matching the step's
+  intent (fail loud if `classify` regresses to never-pure).
+
+  Citations shifted by the redesigned step are re-pointed in
+  `merge-approval-gate-mechanics.md` (into itself, `merge-approval.yml`,
+  and `merge-approval-rollout.md`) and in
+  `evidence-ledger-session-key-shapes.md`; both re-stamped
+  (`2026-09-07T06:50:00Z`). `docs/testing/merge-approval-rollout.md`'s own
+  internal section citations (honour-system, Making-check-Required,
+  reviewer-flow, all shifted +11 lines by the Label-free-path section's
+  rewrite) are re-verified against the file directly (it carries no
+  frontmatter timestamp to re-stamp). `grounding-stack-overview.md` was
+  checked and carries no citation into `merge-approval.yml` or
+  `release-exception.js`, so it needed no re-stamp (no `package.json`
+  changed either). This entry's predecessor's false claim that
+  `okf-kit check --require-anchors` was "unchanged from the round-1
+  measurement, 2 warnings ... 0 sources-fresh" is corrected in place
+  above (that check was never actually re-run at that point); the true
+  delta right after round 2 was 6 warnings (0 errors): the round-1
+  baseline's 2 pre-existing `citations-resolve` findings against
+  `log.md`'s own `solution-verdict.ts` citations (unrelated to this
+  task), plus 2 because round 1's own entry citations above were not
+  actually re-pointed to round 2's line shift despite that entry's own
+  claim otherwise (fixed here), plus 2 because round 2's edits broke the
+  two citations in the already-merged 2026-09-06 `7c21ca25` entry below
+  (its cited merge-approval.yml line 47 and merge-approval-gate-mechanics.md
+  line 28) as a side effect. This round's edits shift those same two
+  target lines again; per this doc's append-only convention that entry is
+  genuine history (already merged to master before this task's branch
+  existed) and is deliberately left as-is, not rewritten to chase a moving
+  target, unlike this task's own round-1/round-2 entries above, which
+  are re-pointed each round because this PR is still unmerged. `npx
+  okf-kit@0.10.0 check --require-anchors --json docs/okf` after this
+  round's commit: 4 warnings (0 errors), all `citations-resolve` against
+  `log.md`: the 2 pre-existing `solution-verdict.ts` findings (unrelated,
+  present at the task's own base measurement too) plus the 2 now-broken
+  `7c21ca25` citations named above; 0 `sources-fresh`/`sources-fresh-future`.
+  Against the task's own base measurement (3947993, before round 1: 2
+  warnings, 0 errors, 0 sources-fresh, both the same pre-existing
+  `solution-verdict.ts` findings), this task's net contribution is
+  +2 warnings, both the `7c21ca25` citations this task's own line shifts
+  broke, both non-blocking (log.md is excluded from the anchor-guard
+  job's blocking selectors). No package version was bumped and no live
+  release PR was opened by this task; that remains open (see this task's
+  own tracking).
+
 - 2026-09-07T06:15:00Z, merge-approval pure-release exception, round 2
   (task `4493b316`): fixes from the reviewer's first pass over the round-1
   diff below. The path-shape check alone was blind to content: a PR
@@ -73,7 +212,7 @@
   --require-anchors` against this bundle was "unchanged from the round-1
   measurement, 2 warnings ... 0 sources-fresh". That was never actually
   re-run at this point and was false: a real run against this commit shows
-  6 warnings, 0 errors, 0 `sources-fresh` — the round-1 baseline's 2
+  6 warnings, 0 errors, 0 `sources-fresh`: the round-1 baseline's 2
   pre-existing `citations-resolve` findings against `log.md`'s own
   `solution-verdict.ts` citations (unrelated to this task), plus 2 more
   because round 1's own entry citations above were not actually re-pointed
