@@ -133,6 +133,25 @@ export function verdictDir(): string {
 }
 
 /**
+ * Sentinel `sanitizeVerdictId` throws for an id it rejects outright (empty,
+ * `.`, `..`, or a string of only separators). Exported so a caller that needs
+ * to classify THIS specific rejection, as opposed to some other thrown error,
+ * matches `instanceof InvalidVerdictIdError` instead of retyping and
+ * re-matching the message string (see `SolutionAttemptRegistry.lookup`'s own
+ * catch classification in solution-attempt-log.ts). Not shared with the
+ * sibling sanitizers this one mirrors (`sanitizeSessionId` in
+ * session-store.ts, `sanitizeHypothesisSessionId` in hypothesis-store.ts):
+ * each throws its own distinct message naming its own kind of id, so there is
+ * no one message to unify a sentinel around across all three.
+ */
+export class InvalidVerdictIdError extends Error {
+  constructor(id: string) {
+    super(`invalid verdict id: ${JSON.stringify(id)}`);
+    this.name = 'InvalidVerdictIdError';
+  }
+}
+
+/**
  * Reduce a verdict id to a single safe path segment. Non-portable characters
  * collapse to `_`, and `path.basename` strips any residual separator so the id
  * can never escape `verdictDir()` (path-traversal guard). Empty / dot-only ids
@@ -142,7 +161,7 @@ export function sanitizeVerdictId(id: string): string {
   const cleaned = id.replace(/[^A-Za-z0-9._-]/g, '_');
   const base = path.basename(cleaned);
   if (base === '' || base === '.' || base === '..') {
-    throw new Error(`invalid verdict id: ${JSON.stringify(id)}`);
+    throw new InvalidVerdictIdError(id);
   }
   return base;
 }

@@ -56,6 +56,7 @@ import {
   sanitizeVerdictId,
   verdictDir,
   verdictPath,
+  InvalidVerdictIdError,
   type EvaluateResult,
   type Verdict,
 } from './solution-verdict.js';
@@ -132,7 +133,7 @@ export const MAX_RECORD_BYTES = 2_048;
  * 200 leaves `255 - 48 - 200 = 7` bytes of headroom under `NAME_MAX` on the
  * binding (compaction) case, with more to spare on every shorter one.
  *
- * The bound is enforced on ALL THREE tools up front: `.max(MAX_LOOKUP_ID_LENGTH)`
+ * The bound is enforced on ALL THREE tools up front: `.max(MAX_ID_FILENAME_LENGTH)`
  * on every tool's `id` schema in `server.ts`, and again at this module's own
  * entry point (`SolutionAttemptRegistry.evaluate()` rejects an over-long id
  * with the ordinary `{status:"failed", error}` payload before any filesystem
@@ -140,7 +141,7 @@ export const MAX_RECORD_BYTES = 2_048;
  * refusal. Ids are never paths either way: `sanitizeVerdictId` still reduces
  * every id to one safe segment before it is ever used to build a path.
  */
-export const MAX_LOOKUP_ID_LENGTH = 200;
+export const MAX_ID_FILENAME_LENGTH = 200;
 
 const TRUNCATION_MARKER = '... [truncated]';
 const MAX_SUMMARY_CHARS = 240;
@@ -540,6 +541,20 @@ function settledAt(records: AttemptRecord[]): number | null {
  * compaction-only holder would make a joiner join an attempt that does not
  * exist.
  */
+/**
+ * `compactUnderLock`'s own temp-file path for one compaction pass: the
+ * attempt log's own path, plus `.compact-<pid>-<nowMs>`. Exported so the
+ * NAME_MAX basename test in `tests/solution-attempt-lifecycle.test.ts`
+ * derives its longest-candidate name from the SAME production code
+ * `compactUnderLock` itself runs, rather than re-implementing the template
+ * as a second, independently-maintained copy that could silently drift from
+ * it (see `MAX_ID_FILENAME_LENGTH`'s own docstring, which measures against
+ * this exact basename).
+ */
+export function compactionTempPathForKey(key: string, pid: number, nowMs: number): string {
+  return `${attemptLogPathForKey(key)}.compact-${pid}-${nowMs}`;
+}
+
 export function compactUnderLock(key: string, now: number, retentionMs: number): boolean {
   const records = readAttemptRecords(key);
   if (records.length === 0) return false;
@@ -582,7 +597,7 @@ export function compactUnderLock(key: string, now: number, retentionMs: number):
   }
 
   const target = attemptLogPathForKey(key);
-  const temp = `${target}.compact-${process.pid}-${Date.now()}`;
+  const temp = compactionTempPathForKey(key, process.pid, Date.now());
   fs.writeFileSync(temp, kept.map((r) => encodeRecord(r)).join(''), { mode: 0o600 });
   fs.renameSync(temp, target);
   return true;
@@ -779,9 +794,9 @@ export class SolutionAttemptRegistry {
     repoPath: string,
     options: { forceNewAttempt?: boolean } = {},
   ): Promise<EvaluateAttemptResponse> {
-    if (id.length > MAX_LOOKUP_ID_LENGTH) {
+    if (id.length > MAX_ID_FILENAME_LENGTH) {
       // Enforced here as well as by every tool's schema in server.ts (see
-      // MAX_LOOKUP_ID_LENGTH's docstring for the derivation), so a library
+      // MAX_ID_FILENAME_LENGTH's docstring for the derivation), so a library
       // caller that bypasses the MCP transport gets the identical refusal
       // before any filesystem call: an id this long would overrun NAME_MAX
       // once this module appends a suffix to it (the compaction temp file is
@@ -790,7 +805,7 @@ export class SolutionAttemptRegistry {
         status: 'failed' as const,
         verdict: null,
         markerPath: null,
-        error: `verdict id is too long: ${id.length} characters exceeds the ${MAX_LOOKUP_ID_LENGTH}-character limit`,
+        error: `verdict id is too long: ${id.length} characters exceeds the ${MAX_ID_FILENAME_LENGTH}-character limit`,
         diagnostics: unavailablePreflightDiagnostics(
           { exitCode: null, signal: null },
           'preflight was not started because the verdict id is too long',
@@ -1121,6 +1136,13 @@ export class SolutionAttemptRegistry {
         try {
           reconcileUnderLock(key, this.nowIso());
           compactUnderLock(key, this.now(), this.retentionMs);
+          // Prune-before-release here is fine, unlike the ordering
+          // `execute()`'s own finally guards against (see the comment
+          // there): the release call below sits in THIS try's own
+          // `finally`, so an unforeseen throw out of `pruneOwned` still
+          // reaches it and the lock still gets released. There is no path
+          // through this method that runs `pruneOwned` and skips the
+          // release the way there used to be in `execute()`.
           this.pruneOwned();
         } finally {
           await release().catch((err: unknown) =>
@@ -1164,23 +1186,23 @@ export class SolutionAttemptRegistry {
    * error) so an id this module cannot use for ANY reason still answers
    * cleanly rather than throwing, but it is no longer a single undiscriminated
    * branch: an id `sanitizeVerdictId` itself rejects outright (`'.'`, `'..'`,
-   * a string of only separators) keeps today's exact, informative message,
-   * while any OTHER thrown error, an id long enough that a filesystem call
-   * under `verdictDir()` fails `ENAMETOOLONG`, or a genuine operational
-   * failure there (`EACCES`, `ENOSPC`, `EMFILE`), is reported through
-   * `warnSwallowed` (so a broken verdict store is visible on stderr instead of
-   * invisible behind a clean-looking payload) and answered with a fixed,
-   * path-free message: the raw exception can interpolate `verdictDir()`'s own
-   * filesystem path, which this module does not want to hand back to a
-   * caller. Neither branch can escape `verdictDir()` either way:
-   * `sanitizeVerdictId` is still the only path builder, and it still runs
-   * first.
+   * a string of only separators, an `InvalidVerdictIdError`) keeps today's
+   * exact, informative message, while any OTHER thrown error, an id long
+   * enough that a filesystem call under `verdictDir()` fails `ENAMETOOLONG`,
+   * or a genuine operational failure there (`EACCES`, `ENOSPC`, `EMFILE`), is
+   * reported through `warnSwallowed` (so a broken verdict store is visible on
+   * stderr instead of invisible behind a clean-looking payload) and answered
+   * with a fixed, path-free message: the raw exception can interpolate
+   * `verdictDir()`'s own filesystem path, which this module does not want to
+   * hand back to a caller. Neither branch can escape `verdictDir()` either
+   * way: `sanitizeVerdictId` is still the only path builder, and it still
+   * runs first.
    */
   private async lookup(id: string, attemptId?: string): Promise<LookupOutcome> {
     try {
       return await this.resolveForLookup(id, attemptId);
     } catch (err) {
-      if (err instanceof Error && err.message.startsWith('invalid verdict id:')) {
+      if (err instanceof InvalidVerdictIdError) {
         return {
           kind: 'unknown',
           ...(attemptId === undefined ? {} : { attemptId }),

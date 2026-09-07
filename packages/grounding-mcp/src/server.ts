@@ -46,7 +46,7 @@ import { withProgressPings, DEFAULT_PROGRESS_INTERVAL_MS, DEFAULT_PROGRESS_MESSA
 import {
   SolutionAttemptRegistry,
   reconcileOrphanedAttempts,
-  MAX_LOOKUP_ID_LENGTH,
+  MAX_ID_FILENAME_LENGTH,
 } from './solution-attempt-log.js';
 
 // Single source of truth for the version string emitted by both the
@@ -365,7 +365,7 @@ export function createServer(
   // anti-hacking contract and README for the marker contract harness consumes.
   //
   // ALL THREE tools below (solution_evaluate and both lookups) bound `id` at
-  // MAX_LOOKUP_ID_LENGTH (see solution-attempt-log.ts for the derivation): an
+  // MAX_ID_FILENAME_LENGTH (see solution-attempt-log.ts for the derivation): an
   // id over the bound is refused by this schema before the handler ever runs,
   // and SolutionAttemptRegistry.evaluate() enforces the identical bound again
   // at the registry's own entry point, so a library caller that bypasses this
@@ -379,7 +379,7 @@ export function createServer(
       id: z
         .string()
         .min(1)
-        .max(MAX_LOOKUP_ID_LENGTH)
+        .max(MAX_ID_FILENAME_LENGTH)
         .describe('Identifier the verdict is scoped to, e.g. a task id.'),
       repoPath: z
         .string()
@@ -418,7 +418,7 @@ export function createServer(
       id: z
         .string()
         .min(1)
-        .max(MAX_LOOKUP_ID_LENGTH)
+        .max(MAX_ID_FILENAME_LENGTH)
         .describe('The same identifier solution_evaluate was called with.'),
       attemptId: z
         .string()
@@ -436,7 +436,7 @@ export function createServer(
       id: z
         .string()
         .min(1)
-        .max(MAX_LOOKUP_ID_LENGTH)
+        .max(MAX_ID_FILENAME_LENGTH)
         .describe('The same identifier solution_evaluate was called with.'),
       attemptId: z
         .string()

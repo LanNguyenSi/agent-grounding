@@ -734,19 +734,29 @@ record appended (last-record-wins), WITH ONE READER-SIDE EXCEPTION: if any
 records, that attempt resolves to `unknown` regardless of what any record
 appended later for the same `attemptId` says, superseding last-record-wins
 for that one `attemptId` specifically. This is a READER rule, enforced by
-every consumer of the log, not a write-order guarantee: the write-side
+every consumer of the log, not a write-order guarantee. The write-side
 re-read described under record kind 2 below (a `terminal` write skips
 itself when a `reconciled-unknown` record for its own `attemptId` is
-already present) is an optimization that reduces how often a stale write
-is even attempted, but it cannot BE the guarantee, because the writer no
-longer holds that id's lock by the time it performs this re-read (section
-7; a `reconciled-unknown` record for a still-live attempt is written only
-once the writer no longer holds the lock in the first place), so the
-writer's own read-then-append is not atomic against a concurrent append
-the way the reconciliation pass's read-then-append under the lock is. The
-reader rule above is what actually closes "retry never upgrades unknown
-to success", not the write-side check alone. "The latest attempt for `id`"
-is the attempt whose `start` record has the latest `startedAt` among the
+already present) runs, on the ORDINARY path, while the writer still holds
+that id's lock: `execute` releases only in its own `finally`, after this
+write (re-read included) has already returned
+(`src/solution-attempt-log.ts`). Holding the lock through the re-read is
+exactly why it never actually finds a `reconciled-unknown` record on that
+path in the first place: reconciliation can append one only after
+acquiring the id's lock with no retries (section 7), which is impossible
+while this process still holds it. The re-read is a genuine, non-atomic
+check only for the two paths that fall OUTSIDE the ordinary one: a holder
+that has already lost its lock (`compromised`, section 7, including the
+starvation residual described later in the document, where the lock is
+already gone before this process's own heartbeat reports it) before this
+write runs, and any other process's terminal write for an attemptId a
+reconciler has meanwhile settled while that writer was itself outside the
+lock. Against those two, the read and the append are not atomic with each
+other the way the reconciliation pass's own read-then-append, entirely
+inside one lock acquisition, is. The reader rule above, not this
+write-side check, is what actually closes "retry never upgrades unknown
+to success". "The latest attempt for `id`" is the attempt whose `start`
+record has the latest `startedAt` among the
 attemptIds still present (not yet compacted away, below).
 
 Every record carries `attemptId`, `id`, and a `kind`. Exactly four kinds
@@ -781,10 +791,11 @@ exist:
    resolves; before appending, that process re-reads the log for its own
    attemptId and skips the append if a `reconciled-unknown` record for it
    is already present (see kind 3). This re-read is an OPTIMIZATION, not
-   the guarantee: it reduces how often a stale `terminal` record is even
-   attempted, but the writer no longer holds that id's lock by the time it
-   performs this re-read (section 7), so the read and the append are not
-   atomic with each other the way a lock-held reconciliation append is.
+   the guarantee: on the ORDINARY path it runs while the writer still
+   holds the id's lock (see the corrected ordering in "Log file layout"
+   above for why it never actually races there); it is a genuine,
+   non-atomic check only for the compromised-holder and
+   reconciled-elsewhere paths that fall outside the ordinary one.
    The actual guarantee that a late-arriving terminal write can never
    upgrade an already-`reconciled-unknown` attempt is the READER-side
    precedence rule stated above under "Log file layout"; section 9's

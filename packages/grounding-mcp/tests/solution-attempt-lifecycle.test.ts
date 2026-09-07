@@ -29,14 +29,17 @@ import {
   SolutionAttemptRegistry,
   appendAttemptRecord,
   attemptLockAnchorPath,
+  attemptLockAnchorPathForKey,
   attemptLogPath,
+  attemptLogPathForKey,
+  compactionTempPathForKey,
   compactUnderLock,
   encodeRecord,
   latestAttemptId,
   readAttemptRecords,
   reconcileOrphanedAttempts,
   resolveAttempts,
-  MAX_LOOKUP_ID_LENGTH,
+  MAX_ID_FILENAME_LENGTH,
   MAX_RECORD_BYTES,
   RETENTION_POLL_MARGIN,
   type AttemptRecord,
@@ -1016,6 +1019,45 @@ describe('terminal write order', () => {
   }, 40_000);
 });
 
+describe('release before prune ordering', () => {
+  it('has released the id lock by the time pruneOwned runs, on an ordinary evaluate', async () => {
+    // execute()'s finally releases the lock first, then runs pruneOwned as a
+    // pure, process-local convenience the release itself does not depend on
+    // (see the comment above `this.pruneOwned()` in solution-attempt-log.ts).
+    // Observed by instrumenting pruneOwned itself, not by racing a poller
+    // against a microtask chain: pruneOwned is called exactly once by
+    // execute()'s finally, synchronously, so sampling the lock's presence
+    // at that call site is deterministic rather than timing-dependent. An
+    // implementation that flipped the order (prune before release, as the
+    // code used to do before the comment's own fix) would make this sample
+    // observe the lock still held and fail here.
+    process.env.SOLUTION_PREFLIGHT_BIN = readyStub('stub-release-before-prune.sh');
+    const lockDir = `${attemptLockAnchorPath('release-before-prune')}.lock`;
+
+    const registry = new SolutionAttemptRegistry({ waitBoundMs: 20_000 });
+    const lockHeldAtPrune: boolean[] = [];
+    const realPruneOwned = registry.pruneOwned.bind(registry);
+    const pruneSpy = vi.spyOn(registry, 'pruneOwned').mockImplementation(() => {
+      lockHeldAtPrune.push(fs.existsSync(lockDir));
+      return realPruneOwned();
+    });
+
+    let res: Record<string, unknown>;
+    try {
+      res = (await registry.evaluate('release-before-prune', repo)) as Record<string, unknown>;
+      // Read the call count before restoring: mockRestore() also clears the
+      // spy's recorded call history, so this assertion must run first.
+      expect(pruneSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      pruneSpy.mockRestore();
+    }
+
+    expect(res.status).toBe('completed');
+    expect(lockHeldAtPrune).toEqual([false]);
+    expect(fs.existsSync(lockDir)).toBe(false);
+  }, 40_000);
+});
+
 // ── Unusable ids on the read-only lookups ────────────────────────────────
 
 describe('unusable ids on the lookups', () => {
@@ -1098,16 +1140,16 @@ describe('lookup() catch classification', () => {
 // ── id length bound on solution_evaluate (registry entry point) ─────────
 
 describe('id length bound on solution_evaluate', () => {
-  it('rejects an id over MAX_LOOKUP_ID_LENGTH with the ordinary failed payload before any filesystem call, even called directly on the registry (bypassing the MCP schema)', async () => {
+  it('rejects an id over MAX_ID_FILENAME_LENGTH with the ordinary failed payload before any filesystem call, even called directly on the registry (bypassing the MCP schema)', async () => {
     process.env.SOLUTION_PREFLIGHT_BIN = readyStub('stub-should-never-run.sh');
     const registry = new SolutionAttemptRegistry({ waitBoundMs: 5_000 });
-    const overBound = 'o'.repeat(MAX_LOOKUP_ID_LENGTH + 1);
+    const overBound = 'o'.repeat(MAX_ID_FILENAME_LENGTH + 1);
 
     const res = (await registry.evaluate(overBound, repo)) as Record<string, unknown>;
     expect(res.status).toBe('failed');
     expect(res.verdict).toBeNull();
     expect(res.markerPath).toBeNull();
-    expect(String(res.error)).toContain(String(MAX_LOOKUP_ID_LENGTH));
+    expect(String(res.error)).toContain(String(MAX_ID_FILENAME_LENGTH));
     expect(String(res.error)).toContain('too long');
 
     // No preflight was ever started, and nothing was ever written under
@@ -1117,15 +1159,81 @@ describe('id length bound on solution_evaluate', () => {
     expect(fs.existsSync(verdictDir()) ? fs.readdirSync(verdictDir()) : []).toEqual([]);
   }, 20_000);
 
-  it('accepts an id exactly at MAX_LOOKUP_ID_LENGTH and runs it normally', async () => {
+  it('accepts an id exactly at MAX_ID_FILENAME_LENGTH and runs it normally', async () => {
     process.env.SOLUTION_PREFLIGHT_BIN = readyStub('stub-at-bound.sh');
     const registry = new SolutionAttemptRegistry({ waitBoundMs: 20_000 });
-    const atBound = 'o'.repeat(MAX_LOOKUP_ID_LENGTH);
+    const atBound = 'o'.repeat(MAX_ID_FILENAME_LENGTH);
 
     const res = (await registry.evaluate(atBound, repo)) as Record<string, unknown>;
     expect(res.status).toBe('completed');
     expect(invocations()).toBe(1);
   }, 20_000);
+});
+
+describe('MAX_ID_FILENAME_LENGTH stays under NAME_MAX on every derived basename', () => {
+  it('keeps the longest real basename the module derives from a maximal-length id below the 255-byte NAME_MAX, including the compaction temp file', () => {
+    // NAME_MAX itself (255) is not exported anywhere in this module; it is
+    // the filesystem limit MAX_ID_FILENAME_LENGTH's own docstring is measured
+    // against, so it is named here the same way that docstring names it.
+    const NAME_MAX = 255;
+    const maxId = 'a'.repeat(MAX_ID_FILENAME_LENGTH);
+    const key = sanitizeVerdictId(maxId);
+    // A plain-letter id passes the sanitizer untouched; if that ever changed,
+    // the byte-length assertions below would silently stop matching what
+    // MAX_ID_FILENAME_LENGTH's own docstring claims, so pin it explicitly.
+    expect(key).toBe(maxId);
+    expect(key.length).toBe(MAX_ID_FILENAME_LENGTH);
+
+    const candidates: Array<{ label: string; basename: string }> = [
+      { label: 'attempt log', basename: path.basename(attemptLogPathForKey(key)) },
+      { label: 'lock anchor', basename: path.basename(attemptLockAnchorPathForKey(key)) },
+      {
+        // `proper-lockfile` manages `<anchor>.lock` as a directory beside the
+        // anchor file itself (see attemptLockAnchorPathForKey's own doc
+        // comment); that directory's name is still derived from the id and
+        // still has to fit under NAME_MAX.
+        label: "lock anchor's proper-lockfile directory",
+        basename: `${path.basename(attemptLockAnchorPathForKey(key))}.lock`,
+      },
+      { label: 'verdict marker', basename: path.basename(verdictPath(key)) },
+      {
+        // compactUnderLock's own temp file, built through the SAME exported
+        // helper compactUnderLock itself calls (`compactionTempPathForKey`),
+        // not a second, independently-maintained template of the string:
+        // that coupling is what makes a drift in the real template fail
+        // this test. Per MAX_ID_FILENAME_LENGTH's docstring this is the
+        // BINDING case (48 bytes past the key: 15 for the log suffix, 9 for
+        // ".compact-", 10 worst-case pid digits, 1 for the separator, 13
+        // worst-case Date.now() digits). Built from the worst-case digit
+        // counts the docstring itself names, not from this test process's
+        // own process.pid/Date.now() (which are shorter today and would
+        // under-test the real bound); the pid/nowMs args are passed as
+        // numbers, not the already-repeated strings, so a real caller's
+        // types still line up.
+        label: 'compaction temp file',
+        basename: path.basename(
+          compactionTempPathForKey(key, Number('9'.repeat(10)), Number('9'.repeat(13))),
+        ),
+      },
+    ];
+
+    for (const { label, basename } of candidates) {
+      const byteLength = Buffer.byteLength(basename, 'utf8');
+      // NAME_MAX (255 bytes) itself is a legal basename length on this
+      // filesystem (measured: 255 succeeds, 256 raises ENAMETOOLONG), so the
+      // bound here is <=, not <.
+      expect(byteLength, `${label} basename is ${byteLength} bytes: ${basename}`).toBeLessThanOrEqual(NAME_MAX);
+    }
+
+    const longest = candidates.reduce((a, b) =>
+      Buffer.byteLength(b.basename, 'utf8') > Buffer.byteLength(a.basename, 'utf8') ? b : a,
+    );
+    // Pins the docstring's own claim ("THIS is the longest name, and the one
+    // 200 is measured against") as a regression check: a future change that
+    // makes some OTHER derived name longer than the compaction temp file
+    // would need this test updated deliberately, not silently pass unnoticed.
+    expect(longest.label).toBe('compaction temp file');
+  });
 });
 
 // ── Two REAL server processes on one id (shape a) ────────────────────────

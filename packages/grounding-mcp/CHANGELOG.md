@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `MAX_LOOKUP_ID_LENGTH` renamed to `MAX_ID_FILENAME_LENGTH` (same value, same
+  enforcement points on all three `solution_evaluate*` tools); affects only
+  deep importers of `dist/solution-attempt-log.js` that referenced the old
+  export name directly.
+- `sanitizeVerdictId`'s rejection is now the exported `InvalidVerdictIdError`
+  sentinel (`solution-verdict.ts`), scoped to that sanitizer alone;
+  `SolutionAttemptRegistry.lookup`'s catch classification matches
+  `instanceof InvalidVerdictIdError` instead of the rejection message string.
+
 ## 0.11.0, 2026-09-06
 
 ### Added
