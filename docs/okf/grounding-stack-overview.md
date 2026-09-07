@@ -3,11 +3,14 @@ type: overview
 title: The grounding stack — where to read, and how releases are split
 description: Pointer doc — the root README already diagrams the whole stack; this entry adds the release topology (four version-locked packages under one root tag, eight independently-versioned ones) that the diagram does not show.
 tags: [overview, monorepo, releases, versioning, pointer]
-timestamp: 2026-09-06T13:01:19Z
+timestamp: 2026-09-07T09:06:37Z
 sources:
   - README.md
   - CHANGELOG.md
   - package.json
+  - packages/grounding-mcp/package.json
+  - packages/grounding-mcp/src/assessment-index.ts
+  - packages/grounding-mcp/src/assessment-server.ts
 ---
 
 # The grounding stack — pointer and release topology
@@ -65,3 +68,18 @@ hypothesis-tracker, grounding-mcp, grounding-sdk, review-claim-gate,
 runtime-reality-checker, understanding-gate) and **jest** (grounding-wrapper,
 debug-playbook-engine, domain-router, readme-first-resolver). Reach for the
 runner the package actually uses before adding a test.
+
+## Restricted producer entrypoint
+
+The grounding-mcp package also has a separate `grounding-assessment-mcp` bin
+(`packages/grounding-mcp/package.json:29-31#"dist/assessment-index.js"`).
+Its composition root loads explicit issuer configuration and connects only
+the assessment server to stdio
+(`packages/grounding-mcp/src/assessment-index.ts:11-13#"StdioServerTransport"`).
+That server registers the seven assessment lifecycle operations
+(`packages/grounding-mcp/src/assessment-server.ts:32-35#"] as const);"`).
+It uses the producer-owned assessment store, with no generic runtime, ledger,
+or solution-verdict tools. It is part of the same package and release lane,
+with separate startup configuration and deployment qualification. The package
+[README](../../packages/grounding-mcp/README.md#restricted-assessment-mcp)
+documents setup, byte transport, and consumer/activation boundaries.

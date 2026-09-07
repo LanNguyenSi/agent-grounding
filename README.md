@@ -210,3 +210,12 @@ The curated `docs/okf/` knowledge bundle is CI-gated: `.github/workflows/ci.yml`
 - **agent-grounding** verifies
 - [agent-preflight](https://github.com/LanNguyenSi/agent-preflight) gates pushes
 - [harness](https://github.com/LanNguyenSi/harness) declares + enforces the policy boundary that calls into all of the above
+
+## Restricted documentary assessment producer
+
+The grounding-mcp package also supplies `grounding-assessment-mcp`, a separate
+seven-tool stdio entrypoint for portable signed documentary assessments. It
+requires explicit issuer configuration and uses its own assessment store. See
+[configuration, tools, and activation boundaries](packages/grounding-mcp/README.md#restricted-assessment-mcp).
+The existing `grounding-mcp` session, ledger, and verdict tools retain their
+current contract.

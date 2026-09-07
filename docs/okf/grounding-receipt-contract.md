@@ -3,7 +3,7 @@ type: invariant
 title: Grounding receipt and assessment contract
 description: Portable documentary assessments, authoritative producer snapshots, immutable attempts, and the boundary between signature verification and issuer or task authority.
 tags: [grounding-mcp, receipt, contract, trust-boundary]
-timestamp: 2026-09-07T06:54:59Z
+timestamp: 2026-09-07T09:06:37Z
 sources:
   - packages/grounding-mcp/src/grounding-receipt.ts
   - packages/grounding-mcp/contracts/grounding-receipt-v1/README.md
@@ -14,6 +14,9 @@ sources:
   - packages/grounding-mcp/src/grounding-assessment-store.ts
   - packages/grounding-mcp/tests/grounding-assessment-policy.test.ts
   - packages/grounding-mcp/tests/grounding-assessment-store.test.ts
+  - packages/grounding-mcp/src/assessment-index.ts
+  - packages/grounding-mcp/src/assessment-server.ts
+  - packages/grounding-mcp/src/grounding-issuer.ts
 ---
 
 # Grounding receipt and assessment contract
@@ -67,15 +70,29 @@ fsync, atomic rename, and directory fsync define the commit boundary; an error
 after rename requires retry/read reconciliation. Corrupt state and exhausted
 capacity fail explicitly. The [package documentation](../../packages/grounding-mcp/README.md#authoritative-assessment-store)
 specifies configuration, limits, retry behavior, and recovery. Filesystem and
-OS isolation qualification, production key lifecycle, restricted transport
-registration, and consumer enforcement remain separate responsibilities.
+OS isolation qualification, production key lifecycle, and consumer enforcement
+remain separate responsibilities. The restricted transport is described below.
+
+## Restricted producer transport
+
+The separate `grounding-assessment-mcp` stdio entrypoint wires the assessment
+store to exactly seven operations: start, status, advance, dossier add/read,
+claim set, and export. Startup accepts only an operator-selected absolute
+configuration file containing an issuer, key id, absolute Ed25519 private-key
+path, absolute state directory, and the frozen policy identity. It has no
+default key/state path, key generation, discovery, or trust registration.
+Tool inputs cannot provide those fields. Export transmits the store's signed
+receipt as exact UTF-8 text; failed requests return no previous receipt. The
+transport does not establish consumer admission, production key lifecycle,
+rollout, or OS isolation.
 
 ## Source anchors
 
 The [repository contract](../../packages/grounding-mcp/contracts/grounding-receipt-v1/README.md)
 is authoritative for field bounds, nested schema, canonicalization, signature
 input, error codes, corpus interpretation and explicit vendoring. This module
-has no npm entrypoint or registered MCP endpoint.
+has no free-signing MCP endpoint; the restricted transport signs only through
+the assessment store.
 
 - Codec and explicit-key signature boundary:
   `packages/grounding-mcp/src/grounding-receipt.ts:206#"export function verifyReceipt"`.
@@ -99,3 +116,11 @@ has no npm entrypoint or registered MCP endpoint.
   `packages/grounding-mcp/tests/grounding-assessment-store.test.ts:248-266#"await stop(child.child);"`.
 - Independent frozen claim detector vector tests:
   `packages/grounding-mcp/tests/grounding-assessment-policy.test.ts:45-47#"expect(detectClaimType(claim)).toBe(expectedType);"`.
+- Restricted stdio composition root and sanitized startup failure:
+  `packages/grounding-mcp/src/assessment-index.ts:9-17#"main().catch"`.
+- Explicit issuer configuration and Ed25519 key validation:
+  `packages/grounding-mcp/src/grounding-issuer.ts:49-58#"key.asymmetricKeyType"`.
+- Capped single-handle reads and fatal UTF-8 decoding:
+  `packages/grounding-mcp/src/grounding-issuer.ts:31-44#"fatal: true"`.
+- Strict seven-tool registration and exact receipt transport:
+  `packages/grounding-mcp/src/assessment-server.ts:37-58#"catch (cause)"`.

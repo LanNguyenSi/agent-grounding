@@ -4,6 +4,11 @@
 
 ### Added
 
+- `grounding-assessment-mcp`, a dedicated seven-tool stdio producer entrypoint
+  for the existing assessment store, with strict caller schemas, exact receipt
+  byte transport, and restart-safe retries. It requires an explicit trusted issuer
+  configuration and exposes no legacy execution, path, or solution tools.
+
 - Pure `grounding-receipt/v1` codec and Ed25519 verification primitive with a
   frozen `debug-evidence-assessment/v1` policy snapshot and versioned golden
   conformance corpus. The module is not registered as an MCP tool and makes no
