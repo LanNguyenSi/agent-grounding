@@ -441,6 +441,80 @@ describe('restart simulation and reconciliation', () => {
 // ── Retention, compaction, tombstones ────────────────────────────────────
 
 describe('retention and compaction', () => {
+  type LaunchedAttempt = { outcome: Promise<unknown> };
+  type LaunchTarget = { launch: (key: string, id: string, repoPath: string, force: boolean) => LaunchedAttempt };
+  type ReleaseFixture = {
+    evaluate: SolutionAttemptRegistry['evaluate'];
+    operations: Promise<unknown>[];
+    waitForRelease: () => Promise<void>;
+    allowRelease: () => void;
+  };
+
+  async function withGatedRelease(
+    registry: SolutionAttemptRegistry,
+    use: (fixture: ReleaseFixture) => Promise<void>,
+    gatedAcquisition = 1,
+  ): Promise<void> {
+    const operations: Promise<unknown>[] = [];
+    const responses: Promise<unknown>[] = [];
+    // Test-only access to launch(): its returned outcome includes execute's
+    // real release AND launch's inFlight cleanup. evaluate() can time out
+    // while that operation is still alive, so it cannot own fixture cleanup.
+    const launchTarget = registry as unknown as LaunchTarget;
+    const realLaunch = launchTarget.launch.bind(registry);
+    let releaseReached!: (reached: boolean) => void;
+    const releaseEvent = new Promise<boolean>((resolve) => { releaseReached = resolve; });
+    let allowRelease!: () => void;
+    const releaseGate = new Promise<void>((resolve) => { allowRelease = resolve; });
+    const launchSpy = vi.spyOn(launchTarget, 'launch').mockImplementation((...args) => {
+      const live = realLaunch(...args);
+      operations.push(live.outcome);
+      const isTarget = operations.length === gatedAcquisition;
+      const settled = () => { if (isTarget) releaseReached(false); };
+      // Early acquisition failure/join must wake the event waiter too.
+      void live.outcome.then(settled, settled);
+      return live;
+    });
+    const realLock = lockfile.lock;
+    let acquisitions = 0;
+    const lockSpy = vi.spyOn(lockfile, 'lock').mockImplementation(async (...args) => {
+      const acquisition = ++acquisitions;
+      const release = await realLock(...args);
+      if (acquisition !== gatedAcquisition) return release;
+      return async () => {
+        await release();
+        releaseReached(true);
+        await releaseGate;
+      };
+    });
+    try {
+      await use({
+        evaluate: (...args) => {
+          const response = registry.evaluate(...args);
+          responses.push(response);
+          void response.catch(() => {});
+          return response;
+        },
+        operations,
+        waitForRelease: async () => {
+          if (operations.length < gatedAcquisition) throw new Error('gated acquisition was not launched');
+          if (!await releaseEvent) throw new Error('attempt settled before gated release');
+        },
+        allowRelease,
+      });
+    } finally {
+      allowRelease();
+      releaseReached(false);
+      try {
+        await Promise.allSettled(operations);
+        await Promise.allSettled(responses);
+      } finally {
+        lockSpy.mockRestore();
+        launchSpy.mockRestore();
+      }
+    }
+  }
+
   it('compacts a terminal attempt to a tombstone that resolves to expired, and prunes it from the in-memory registry', async () => {
     process.env.SOLUTION_PREFLIGHT_BIN = readyStub('stub-retention.sh');
     let clockValue = Date.now();
@@ -492,74 +566,95 @@ describe('retention and compaction', () => {
     const id = 'lock-free-inflight-overlap';
     const lockDir = `${attemptLockAnchorPath(id)}.lock`;
     const registry = new SolutionAttemptRegistry({ waitBoundMs: 5_000, pollAfterMs: 20 });
-    const realLock = lockfile.lock;
-    let gateFirstRelease = true;
-    let releaseStartedResolve!: () => void;
-    let allowReleaseResolve!: () => void;
-    const releaseStarted = new Promise<void>((resolve) => {
-      releaseStartedResolve = resolve;
-    });
-    const allowRelease = new Promise<void>((resolve) => {
-      allowReleaseResolve = resolve;
-    });
-    const lockSpy = vi.spyOn(lockfile, 'lock').mockImplementation(async (...args) => {
-      const release = await realLock(...args);
-      if (!gateFirstRelease) return release;
-      gateFirstRelease = false;
-      return async () => {
-        let released: Promise<void>;
-        try {
-          released = release();
-        } finally {
-          // This calls proper-lockfile's real release before pausing only the
-          // wrapper's completion, so the lock state is never fabricated.
-          releaseStartedResolve();
-        }
-        await allowRelease;
-        await released;
-      };
-    });
-
-    let attemptId: string | undefined;
-    const pendingOutcomes: Promise<unknown>[] = [];
-    try {
-      // Do not await this yet: the release event below proves the filesystem
-      // part has finished while this same local outcome remains unresolved.
-      const firstOutcome = registry.evaluate(id, repo);
-      pendingOutcomes.push(firstOutcome);
-      await releaseStarted;
-      await waitForLockFree(id);
+    await withGatedRelease(registry, async (fixture) => {
+      const firstOutcome = fixture.evaluate(id, repo);
+      // The event follows the real filesystem release; only its wrapper's
+      // completion is gated, leaving this same local attempt joinable.
+      await fixture.waitForRelease();
       expect(fs.existsSync(lockDir)).toBe(false);
       const firstStart = recordsFor(id).find((record) => record.kind === 'start');
       expect(firstStart).toBeDefined();
-      attemptId = firstStart?.attemptId;
+      const attemptId = firstStart?.attemptId;
 
       // The same registry still owns the unresolved local outcome, so this
       // must join that attempt even though a fresh registry could acquire the
       // now-free filesystem lock.
-      const joinedOutcome = registry.evaluate(id, repo);
-      pendingOutcomes.push(joinedOutcome);
+      const joinedOutcome = fixture.evaluate(id, repo);
       expect(invocations()).toBe(1);
       expect(countKind(id, 'start')).toBe(1);
 
-      allowReleaseResolve();
-      // This is the lifecycle barrier. Both promises resolve only once the
-      // gated release and launch()'s inFlight cleanup have completed.
+      fixture.allowRelease();
+      // Completed outcomes are the lifecycle barrier; a running response
+      // from either bounded call must fail the assertions below.
       const terminalOutcomes = (await Promise.all([firstOutcome, joinedOutcome])) as Record<string, unknown>[];
-      const second = (await registry.evaluate(id, repo)) as Record<string, unknown>;
+      const second = (await fixture.evaluate(id, repo)) as Record<string, unknown>;
       expect(second.attemptId).not.toBe(attemptId);
+      expect(second.status).toBe('completed');
       expect(terminalOutcomes.map((outcome) => outcome.status)).toEqual(['completed', 'completed']);
       expect(terminalOutcomes.map((outcome) => outcome.attemptId)).toEqual([attemptId, attemptId]);
-      await waitFor(() => invocations(), (count) => count === 2);
+      expect(invocations()).toBe(2);
+      expect(fixture.operations).toHaveLength(2);
+    });
+  }, 40_000);
+
+  it.each([1, 2])('cleans up acquisition %i after an assertion fails with an expired bounded response', async (gatedAcquisition) => {
+    process.env.SOLUTION_PREFLIGHT_BIN = readyStub('stub-release-cleanup.sh');
+    const id = 'release-cleanup';
+    const registry = new SolutionAttemptRegistry({ waitBoundMs: 1 });
+    const launchTarget = registry as unknown as LaunchTarget;
+    const realLaunch = launchTarget.launch;
+    const realLock = lockfile.lock;
+    const realPrune = registry.pruneOwned.bind(registry);
+    const wrappedAtPrune: boolean[] = [];
+    const pruneSpy = vi.spyOn(registry, 'pruneOwned').mockImplementation(() => {
+      // The real execution tail must still be inside the fixture's lifetime.
+      wrappedAtPrune.push(lockfile.lock !== realLock && launchTarget.launch !== realLaunch);
+      return realPrune();
+    });
+    let operations: Promise<unknown>[] = [];
+    try {
+      await expect(withGatedRelease(registry, async (fixture) => {
+        operations = fixture.operations;
+        if (gatedAcquisition === 2) {
+          fixture.evaluate(id, repo);
+          await operations[0];
+        }
+        const response = fixture.evaluate(id, repo);
+        await fixture.waitForRelease();
+        expect(['running', 'running-unconfirmed']).toContain((await response).status);
+        expect(wrappedAtPrune).toHaveLength(gatedAcquisition - 1);
+        expect.fail('injected assertion failure after response expiry');
+      }, gatedAcquisition)).rejects.toThrow('injected assertion failure after response expiry');
+      expect(wrappedAtPrune).toEqual(Array(gatedAcquisition).fill(true));
+      expect(lockfile.lock).toBe(realLock);
+      expect(launchTarget.launch).toBe(realLaunch);
+      expect(fs.existsSync(`${attemptLockAnchorPath(id)}.lock`)).toBe(false);
     } finally {
-      // The real release has already run; always let its completion settle
-      // and restore the wrapper so a failed assertion cannot leak either.
-      allowReleaseResolve();
-      try {
-        await Promise.allSettled(pendingOutcomes);
-      } finally {
-        lockSpy.mockRestore();
-      }
+      // Backstop even when a cleanup regression makes an assertion fail.
+      await Promise.allSettled(operations);
+      pruneSpy.mockRestore();
+    }
+  }, 40_000);
+
+  it('cleans up when the real acquisition fails before the release event', async () => {
+    const id = 'release-not-reached';
+    const releaseForeign = await takeForeignLock(id);
+    const registry = new SolutionAttemptRegistry({ waitBoundMs: 5_000 });
+    const launchTarget = registry as unknown as LaunchTarget;
+    const realLaunch = launchTarget.launch;
+    const realLock = lockfile.lock;
+    try {
+      await expect(withGatedRelease(registry, async (fixture) => {
+        fixture.evaluate(id, repo);
+        await fixture.waitForRelease();
+        expect.fail('the foreign holder prevents reaching release');
+      })).rejects.toThrow('attempt settled before gated release');
+      expect(lockfile.lock).toBe(realLock);
+      expect(launchTarget.launch).toBe(realLaunch);
+      expect(invocations()).toBe(0);
+      expect(fs.existsSync(`${attemptLockAnchorPath(id)}.lock`)).toBe(true);
+    } finally {
+      await releaseForeign();
     }
   }, 40_000);
 
