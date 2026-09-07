@@ -902,22 +902,22 @@
   citation at or after line 368 as the file stood after round 2 (the
   `solution_evaluate` registration's line at that point) by +11, uniformly, all the
   way to the end of the file: re-pointed to
-  `packages/grounding-mcp/src/server.ts:391#"'solution_evaluate'"` and
-  `packages/grounding-mcp/src/server.ts:466#"'solution_gate'"` in
+  `packages/grounding-mcp/src/server.ts:406#"'solution_evaluate'"` and
+  `packages/grounding-mcp/src/server.ts:481#"'solution_gate'"` in
   `solution-acceptance-verdict-contract.md`, and to
-  `packages/grounding-mcp/src/server.ts:511#"'hypothesis_record',"`,
-  `packages/grounding-mcp/src/server.ts:525#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:531#"'hypothesis_list',"`,
-  `packages/grounding-mcp/src/server.ts:554#"'hypothesis_evidence',"`,
-  `packages/grounding-mcp/src/server.ts:571#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:577#"'hypothesis_check_done',"`,
-  `packages/grounding-mcp/src/server.ts:603#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:609#"'hypothesis_reject',"`,
-  `packages/grounding-mcp/src/server.ts:625#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:631#"'hypothesis_support',"`,
-  `packages/grounding-mcp/src/server.ts:647#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
-  `packages/grounding-mcp/src/server.ts:652#"saveStore(sessionId, store);"` and
-  `packages/grounding-mcp/src/server.ts:658#"'hypothesis_reset',"` in
+  `packages/grounding-mcp/src/server.ts:526#"'hypothesis_record',"`,
+  `packages/grounding-mcp/src/server.ts:540#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:546#"'hypothesis_list',"`,
+  `packages/grounding-mcp/src/server.ts:569#"'hypothesis_evidence',"`,
+  `packages/grounding-mcp/src/server.ts:586#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:592#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:618#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:624#"'hypothesis_reject',"`,
+  `packages/grounding-mcp/src/server.ts:640#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:646#"'hypothesis_support',"`,
+  `packages/grounding-mcp/src/server.ts:662#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
+  `packages/grounding-mcp/src/server.ts:667#"saveStore(sessionId, store);"` and
+  `packages/grounding-mcp/src/server.ts:673#"'hypothesis_reset',"` in
   `hypothesis-tracker-persistence-split.md`. `evidence-ledger-session-key-shapes.md`'s
   own citations sit entirely before line 368 (`server.ts:241`, `server.ts:248-253/254`,
   as the file stood then) and did not move, but the file is re-stamped anyway: it declares `server.ts` as a
@@ -979,8 +979,8 @@
   `server.ts` edits (the import swap, the spelled-out `createServer` option
   type, the comment above the two lookup registrations, and the two widened `id`
   schemas) shifted the citations below them by +9 as far as
-  `packages/grounding-mcp/src/server.ts:391#"'solution_evaluate'"`, and by +23
-  from `packages/grounding-mcp/src/server.ts:466#"'solution_gate'"` onward. The
+  `packages/grounding-mcp/src/server.ts:406#"'solution_evaluate'"`, and by +23
+  from `packages/grounding-mcp/src/server.ts:481#"'solution_gate'"` onward. The
   new README paragraph shifted
   `packages/grounding-mcp/README.md:214#"the root cause is the backend container's missing OPENAI_API_KEY env var"`
   by +2, and the one new import in the roundtrip test shifted
@@ -1049,23 +1049,23 @@
   below them, by +5 at `PACKAGE_VERSION` (the version literal was `'0.10.0'` at
   the time of this entry, now read from `package.json` at runtime, task
   ed06b4c8)
-  (`packages/grounding-mcp/src/server.ts:70#"const PACKAGE_VERSION = readPackageVersion();"`), by +26
+  (`packages/grounding-mcp/src/server.ts:85#"const PACKAGE_VERSION = readPackageVersion();"`), by +26
   through the `ledger_add` handler
-  (`packages/grounding-mcp/src/server.ts:256#"Session id"`,
-  `packages/grounding-mcp/src/server.ts:263-269#"session: sessionId,"`), by +26 at
+  (`packages/grounding-mcp/src/server.ts:271#"Session id"`,
+  `packages/grounding-mcp/src/server.ts:278-284#"session: sessionId,"`), by +26 at
   the `solution_evaluate` registration
-  (`packages/grounding-mcp/src/server.ts:391#"'solution_evaluate'"`), and by +63
-  from `solution_gate` (`packages/grounding-mcp/src/server.ts:466#"'solution_gate'"`)
+  (`packages/grounding-mcp/src/server.ts:406#"'solution_evaluate'"`), and by +63
+  from `solution_gate` (`packages/grounding-mcp/src/server.ts:481#"'solution_gate'"`)
   through every `hypothesis_*` tool below it
-  (`packages/grounding-mcp/src/server.ts:511#"'hypothesis_record',"`,
-  `packages/grounding-mcp/src/server.ts:525#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:531#"'hypothesis_list',"`,
-  `packages/grounding-mcp/src/server.ts:554#"'hypothesis_evidence',"`,
-  `packages/grounding-mcp/src/server.ts:577#"'hypothesis_check_done',"`,
-  `packages/grounding-mcp/src/server.ts:609#"'hypothesis_reject',"`,
-  `packages/grounding-mcp/src/server.ts:631#"'hypothesis_support',"`,
-  `packages/grounding-mcp/src/server.ts:647#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
-  `packages/grounding-mcp/src/server.ts:658#"'hypothesis_reset',"`), since the two
+  (`packages/grounding-mcp/src/server.ts:526#"'hypothesis_record',"`,
+  `packages/grounding-mcp/src/server.ts:540#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:546#"'hypothesis_list',"`,
+  `packages/grounding-mcp/src/server.ts:569#"'hypothesis_evidence',"`,
+  `packages/grounding-mcp/src/server.ts:592#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:624#"'hypothesis_reject',"`,
+  `packages/grounding-mcp/src/server.ts:646#"'hypothesis_support',"`,
+  `packages/grounding-mcp/src/server.ts:662#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
+  `packages/grounding-mcp/src/server.ts:673#"'hypothesis_reset',"`), since the two
   new tool registrations sit between those two anchors. The `preWriteGuard` block
   moved the marker-write anchor's range end only
   (`packages/grounding-mcp/src/solution-verdict.ts:746-803#"const markerPath = writeVerdict(verdict);"`),
@@ -2312,3 +2312,37 @@
   --require-anchors --json docs/okf` reported 0 errors, 0 warnings, 0
   notices; `check:okf-test-citation-shape` and `check:okf-selectors` both
   passed.
+
+- 2026-09-07T11:04:05Z, silent version-read fallback diagnostic (task
+  f31ad37f): `readPackageVersion()`/`readVersion()` in `server.ts`,
+  `claim-gate/src/cli.ts`, and `evidence-ledger/src/cli.ts` now write one
+  `process.stderr` line naming the package and the failure (read error or
+  missing `version` field) before returning the unchanged `'0.0.0'`
+  fallback, and take an injectable `packageJsonUrl`/`read` pair so the
+  failure path is unit-testable without a dist/ subprocess. The
+  `server.ts` edit added a net +15 lines before `PACKAGE_VERSION`'s
+  declaration, shifting every later line in the file; re-pinned both
+  bounds of every citation this broke, both in
+  `solution-acceptance-verdict-contract.md` (`solution_evaluate`/
+  `solution_gate` registration lines,
+  `packages/grounding-mcp/src/server.ts:85#"const PACKAGE_VERSION = readPackageVersion();"`),
+  `evidence-ledger-session-key-shapes.md` (the `ledger_add` sessionId
+  param doc and write-through range), `hypothesis-tracker-persistence-split.md`
+  (all seven `hypothesis_*` registration lines, the `saveStore` call-site
+  list, and the not-found-rejected-or-checks-pending error line), and in
+  this doc's own earlier entries citing the same lines. The
+  `claim-gate/src/cli.ts` edit added a net +15 lines before
+  `has_evidence: opts.evidence,`/`process.exit(1)`; re-pinned both
+  citations in `claim-gate-vs-review-claim-gate.md`, and aligned that
+  package's and `evidence-ledger`'s tarball-inclusion comment to
+  `server.ts`'s existing wording ("npm always includes package.json in
+  the published tarball, independent of `files`") since the prior wording
+  named the `files` field as the reason, which is backwards. `okf-kit
+  check --require-anchors --json docs/okf` reported 0 errors and 0
+  notices both before and after, and the same 4 pre-existing log.md-only
+  warnings both before and after (`solution-verdict.ts:746-803`'s
+  markerPath anchor, the `merge-approval.yml:47` review-claim-gate-v0.1.6
+  anchor, and the blank-start-line finding in
+  `merge-approval-gate-mechanics.md:28`, both counted twice for the
+  short- and full-path citation forms); `check:okf-test-citation-shape`
+  and `check:okf-selectors` both passed.
