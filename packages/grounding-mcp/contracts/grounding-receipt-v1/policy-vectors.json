@@ -1,0 +1,3866 @@
+{
+  "format": "debug-evidence-assessment-policy-vectors/v1",
+  "scope": "Declarative expectations for a future producer evaluator. Tests validate corpus structure and frozen rule definitions, not dossier authority or policy evaluation.",
+  "minimumPredicates": [
+    {
+      "id": "session_binding-accepted",
+      "predicate": "session_binding",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "pass",
+        "reasons": []
+      },
+      "note": "Formally adequate fabricated agent_asserted statements satisfy documentary requirements. They do not establish truth or execution. This is an expected policy result, not a P01 evaluation."
+    },
+    {
+      "id": "session_revision-accepted",
+      "predicate": "session_revision",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "pass",
+        "reasons": []
+      },
+      "note": "Formally adequate fabricated agent_asserted statements satisfy documentary requirements. They do not establish truth or execution. This is an expected policy result, not a P01 evaluation."
+    },
+    {
+      "id": "mandatory_steps-accepted",
+      "predicate": "mandatory_steps",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "pass",
+        "reasons": []
+      },
+      "note": "Formally adequate fabricated agent_asserted statements satisfy documentary requirements. They do not establish truth or execution. This is an expected policy result, not a P01 evaluation."
+    },
+    {
+      "id": "fact-accepted",
+      "predicate": "fact",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "pass",
+        "reasons": []
+      },
+      "note": "Formally adequate fabricated agent_asserted statements satisfy documentary requirements. They do not establish truth or execution. This is an expected policy result, not a P01 evaluation."
+    },
+    {
+      "id": "claim-accepted",
+      "predicate": "claim",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "pass",
+        "reasons": []
+      },
+      "note": "Formally adequate fabricated agent_asserted statements satisfy documentary requirements. They do not establish truth or execution. This is an expected policy result, not a P01 evaluation."
+    },
+    {
+      "id": "claim_prerequisites-accepted",
+      "predicate": "claim_prerequisites",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "pass",
+        "reasons": []
+      },
+      "note": "Formally adequate fabricated agent_asserted statements satisfy documentary requirements. They do not establish truth or execution. This is an expected policy result, not a P01 evaluation."
+    },
+    {
+      "id": "atomic_snapshot-accepted",
+      "predicate": "atomic_snapshot",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "pass",
+        "reasons": []
+      },
+      "note": "Formally adequate fabricated agent_asserted statements satisfy documentary requirements. They do not establish truth or execution. This is an expected policy result, not a P01 evaluation."
+    },
+    {
+      "id": "session-not-found",
+      "predicate": "session_binding",
+      "input": {
+        "session": {
+          "existsInProducerStore": false,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "session_binding_invalid"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "session-identity-mismatch",
+      "predicate": "session_binding",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "other.session",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "session_binding_invalid"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "session-binding-audience",
+      "predicate": "session_binding",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "different",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "session_binding_invalid"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "session-binding-projectId",
+      "predicate": "session_binding",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "different",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "session_binding_invalid"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "session-binding-taskId",
+      "predicate": "session_binding",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "different",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "session_binding_invalid"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "session-binding-subjectDigest",
+      "predicate": "session_binding",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "different"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "session_binding_invalid"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "session-revision-mismatch",
+      "predicate": "session_revision",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 1,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "session_revision_invalid"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "session-revision-zero",
+      "predicate": "session_revision",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 0,
+          "snapshotRevision": 0,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "session_revision_invalid"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "step-event-missing",
+      "predicate": "mandatory_steps",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "mandatory_steps_incomplete"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "step-event-out-of-order",
+      "predicate": "mandatory_steps",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "mandatory_steps_incomplete"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "forged-free-phase-array",
+      "predicate": "mandatory_steps",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [],
+          "phaseStateOrigin": "caller_payload",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "mandatory_steps_incomplete"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "forged-runtime-skip",
+      "predicate": "mandatory_steps",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "skipped",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "caller_payload"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "mandatory_steps_incomplete"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "producer-derived-empty-runtime-phase",
+      "predicate": "mandatory_steps",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "database",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "skipped",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "pass",
+        "reasons": []
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "facts-empty",
+      "predicate": "fact",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "fact_missing",
+          "claim_prerequisites_missing"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "fact-whitespace",
+      "predicate": "fact",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": " \n\t",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "fact_missing",
+          "claim_prerequisites_missing"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "fact-wrong-type",
+      "predicate": "fact",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "hypothesis",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "fact_missing",
+          "claim_prerequisites_missing"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "fact-malformed-content",
+      "predicate": "fact",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": 7,
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "fact_missing",
+          "claim_prerequisites_missing"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "fact-other-session",
+      "predicate": "fact",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "other.session",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "fact_missing",
+          "claim_prerequisites_missing"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "fact-unknown-origin",
+      "predicate": "fact",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "producer_observed"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "fact_missing",
+          "claim_prerequisites_missing"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "claim-empty",
+      "predicate": "claim",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "claim_missing"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "claim-whitespace",
+      "predicate": "claim",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": " \n",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "claim_missing"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "claim-missing",
+      "predicate": "claim",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": null
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "claim_missing"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "claim-prerequisite-missing",
+      "predicate": "claim_prerequisites",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "claim_prerequisites_missing"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "claim-type-override-ignored",
+      "predicate": "claim_prerequisites",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted",
+            "requestedType": "generic"
+          }
+        }
+      },
+      "expected": {
+        "decision": "fail",
+        "reasons": [
+          "claim_prerequisites_missing"
+        ]
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    },
+    {
+      "id": "snapshot-not-atomic",
+      "predicate": "atomic_snapshot",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": false,
+          "dossierRevision": 2,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "issuer_error",
+        "reasons": []
+      },
+      "note": "No positive receipt may be signed. Snapshot failure is an issuer error, not a successful schema/signature check."
+    },
+    {
+      "id": "snapshot-mixed-revisions",
+      "predicate": "atomic_snapshot",
+      "input": {
+        "session": {
+          "existsInProducerStore": true,
+          "id": "session.test",
+          "requestedId": "session.test",
+          "storedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "requestedBinding": {
+            "audience": "consumer.test",
+            "projectId": "11111111-1111-1111-8111-111111111111",
+            "taskId": "22222222-2222-2222-8222-222222222222",
+            "subjectDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          "currentRevision": 2,
+          "snapshotRevision": 2,
+          "keyword": "service",
+          "phaseStatus": {
+            "scope-resolution": "done",
+            "doc-reading": "done",
+            "playbook-loading": "done",
+            "runtime-inspection": "done",
+            "evidence-collection": "done",
+            "claim-evaluation": "pending",
+            "complete": "pending"
+          },
+          "completionEvents": [
+            {
+              "tool": "domain-router",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "readme-first-resolver",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "debug-playbook-engine",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "runtime-reality-checker",
+              "origin": "producer_api_agent_confirmation"
+            },
+            {
+              "tool": "evidence-ledger",
+              "origin": "producer_api_agent_confirmation"
+            }
+          ],
+          "phaseStateOrigin": "producer_store",
+          "skipOrigin": "producer_sequence"
+        },
+        "snapshot": {
+          "atomic": true,
+          "dossierRevision": 1,
+          "phaseRevision": 2,
+          "assessmentRevision": 2
+        },
+        "dossier": {
+          "sessionId": "session.test",
+          "facts": [
+            {
+              "type": "fact",
+              "content": "I invented a successful process observation; no command was run.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "rejected": [
+            {
+              "type": "rejected",
+              "content": "I invented a rejected alternative.",
+              "origin": "agent_asserted"
+            }
+          ],
+          "claim": {
+            "text": "root cause identified",
+            "origin": "agent_asserted"
+          }
+        }
+      },
+      "expected": {
+        "decision": "issuer_error",
+        "reasons": []
+      },
+      "note": "Declarative specification only: the P01 codec does not evaluate this dossier or establish session authority."
+    }
+  ],
+  "claimPrerequisites": [
+    {
+      "id": "architecture-accepted",
+      "type": "architecture",
+      "focusPrerequisite": null,
+      "claim": "Architecture root cause",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": true,
+        "config_checked": true,
+        "health_checked": true,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "baseline snapshot",
+      "expectedClaimAllowed": true,
+      "expectedMissing": [],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "architecture-readme_read",
+      "type": "architecture",
+      "focusPrerequisite": "readme_read",
+      "claim": "Architecture root cause",
+      "expectedDerivedContext": {
+        "readme_read": false,
+        "process_checked": true,
+        "config_checked": true,
+        "health_checked": true,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "doc-reading not satisfied",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "readme_read"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "architecture-process_checked",
+      "type": "architecture",
+      "focusPrerequisite": "process_checked",
+      "claim": "Architecture root cause",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": false,
+        "config_checked": false,
+        "health_checked": false,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "runtime-inspection not satisfied (all three runtime flags false)",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "process_checked",
+        "config_checked"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "architecture-config_checked",
+      "type": "architecture",
+      "focusPrerequisite": "config_checked",
+      "claim": "Architecture root cause",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": false,
+        "config_checked": false,
+        "health_checked": false,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "runtime-inspection not satisfied (all three runtime flags false)",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "process_checked",
+        "config_checked"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "architecture-alternatives_considered",
+      "type": "architecture",
+      "focusPrerequisite": "alternatives_considered",
+      "claim": "Architecture root cause",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": true,
+        "config_checked": true,
+        "health_checked": true,
+        "has_evidence": true,
+        "alternatives_considered": false
+      },
+      "snapshotDifference": "no rejected alternatives",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "alternatives_considered"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "root_cause-accepted",
+      "type": "root_cause",
+      "focusPrerequisite": null,
+      "claim": "Root cause identified",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": true,
+        "config_checked": true,
+        "health_checked": true,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "baseline snapshot",
+      "expectedClaimAllowed": true,
+      "expectedMissing": [],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "root_cause-readme_read",
+      "type": "root_cause",
+      "focusPrerequisite": "readme_read",
+      "claim": "Root cause identified",
+      "expectedDerivedContext": {
+        "readme_read": false,
+        "process_checked": true,
+        "config_checked": true,
+        "health_checked": true,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "doc-reading not satisfied",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "readme_read"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "root_cause-process_checked",
+      "type": "root_cause",
+      "focusPrerequisite": "process_checked",
+      "claim": "Root cause identified",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": false,
+        "config_checked": false,
+        "health_checked": false,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "runtime-inspection not satisfied (all three runtime flags false)",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "process_checked",
+        "config_checked"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "root_cause-config_checked",
+      "type": "root_cause",
+      "focusPrerequisite": "config_checked",
+      "claim": "Root cause identified",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": false,
+        "config_checked": false,
+        "health_checked": false,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "runtime-inspection not satisfied (all three runtime flags false)",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "process_checked",
+        "config_checked"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "root_cause-has_evidence",
+      "type": "root_cause",
+      "focusPrerequisite": "has_evidence",
+      "claim": "Root cause identified",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": true,
+        "config_checked": true,
+        "health_checked": true,
+        "has_evidence": false,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "no valid facts",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "has_evidence"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "root_cause-alternatives_considered",
+      "type": "root_cause",
+      "focusPrerequisite": "alternatives_considered",
+      "claim": "Root cause identified",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": true,
+        "config_checked": true,
+        "health_checked": true,
+        "has_evidence": true,
+        "alternatives_considered": false
+      },
+      "snapshotDifference": "no rejected alternatives",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "alternatives_considered"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "security-accepted",
+      "type": "security",
+      "focusPrerequisite": null,
+      "claim": "Security issue",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": true,
+        "config_checked": true,
+        "health_checked": true,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "baseline snapshot",
+      "expectedClaimAllowed": true,
+      "expectedMissing": [],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "security-readme_read",
+      "type": "security",
+      "focusPrerequisite": "readme_read",
+      "claim": "Security issue",
+      "expectedDerivedContext": {
+        "readme_read": false,
+        "process_checked": true,
+        "config_checked": true,
+        "health_checked": true,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "doc-reading not satisfied",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "readme_read"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "security-config_checked",
+      "type": "security",
+      "focusPrerequisite": "config_checked",
+      "claim": "Security issue",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": false,
+        "config_checked": false,
+        "health_checked": false,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "runtime-inspection not satisfied (all three runtime flags false)",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "config_checked"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "security-has_evidence",
+      "type": "security",
+      "focusPrerequisite": "has_evidence",
+      "claim": "Security issue",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": true,
+        "config_checked": true,
+        "health_checked": true,
+        "has_evidence": false,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "no valid facts",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "has_evidence"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "network-accepted",
+      "type": "network",
+      "focusPrerequisite": null,
+      "claim": "Network issue",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": true,
+        "config_checked": true,
+        "health_checked": true,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "baseline snapshot",
+      "expectedClaimAllowed": true,
+      "expectedMissing": [],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "network-health_checked",
+      "type": "network",
+      "focusPrerequisite": "health_checked",
+      "claim": "Network issue",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": false,
+        "config_checked": false,
+        "health_checked": false,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "runtime-inspection not satisfied (all three runtime flags false)",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "health_checked",
+        "process_checked"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "network-process_checked",
+      "type": "network",
+      "focusPrerequisite": "process_checked",
+      "claim": "Network issue",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": false,
+        "config_checked": false,
+        "health_checked": false,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "runtime-inspection not satisfied (all three runtime flags false)",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "health_checked",
+        "process_checked"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "configuration-accepted",
+      "type": "configuration",
+      "focusPrerequisite": null,
+      "claim": "Config issue",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": true,
+        "config_checked": true,
+        "health_checked": true,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "baseline snapshot",
+      "expectedClaimAllowed": true,
+      "expectedMissing": [],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "configuration-readme_read",
+      "type": "configuration",
+      "focusPrerequisite": "readme_read",
+      "claim": "Config issue",
+      "expectedDerivedContext": {
+        "readme_read": false,
+        "process_checked": true,
+        "config_checked": true,
+        "health_checked": true,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "doc-reading not satisfied",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "readme_read"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "configuration-config_checked",
+      "type": "configuration",
+      "focusPrerequisite": "config_checked",
+      "claim": "Config issue",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": false,
+        "config_checked": false,
+        "health_checked": false,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "runtime-inspection not satisfied (all three runtime flags false)",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "config_checked"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "process-accepted",
+      "type": "process",
+      "focusPrerequisite": null,
+      "claim": "Process stopped",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": true,
+        "config_checked": true,
+        "health_checked": true,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "baseline snapshot",
+      "expectedClaimAllowed": true,
+      "expectedMissing": [],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "process-process_checked",
+      "type": "process",
+      "focusPrerequisite": "process_checked",
+      "claim": "Process stopped",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": false,
+        "config_checked": false,
+        "health_checked": false,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "runtime-inspection not satisfied (all three runtime flags false)",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "process_checked"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "availability-accepted",
+      "type": "availability",
+      "focusPrerequisite": null,
+      "claim": "Unavailable and offline",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": true,
+        "config_checked": true,
+        "health_checked": true,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "baseline snapshot",
+      "expectedClaimAllowed": true,
+      "expectedMissing": [],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "availability-health_checked",
+      "type": "availability",
+      "focusPrerequisite": "health_checked",
+      "claim": "Unavailable and offline",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": false,
+        "config_checked": false,
+        "health_checked": false,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "runtime-inspection not satisfied (all three runtime flags false)",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "health_checked",
+        "process_checked"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "availability-process_checked",
+      "type": "availability",
+      "focusPrerequisite": "process_checked",
+      "claim": "Unavailable and offline",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": false,
+        "config_checked": false,
+        "health_checked": false,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "runtime-inspection not satisfied (all three runtime flags false)",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "health_checked",
+        "process_checked"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "token-accepted",
+      "type": "token",
+      "focusPrerequisite": null,
+      "claim": "Token invalid",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": true,
+        "config_checked": true,
+        "health_checked": true,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "baseline snapshot",
+      "expectedClaimAllowed": true,
+      "expectedMissing": [],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "token-config_checked",
+      "type": "token",
+      "focusPrerequisite": "config_checked",
+      "claim": "Token invalid",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": false,
+        "config_checked": false,
+        "health_checked": false,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "runtime-inspection not satisfied (all three runtime flags false)",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "config_checked"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "token-has_evidence",
+      "type": "token",
+      "focusPrerequisite": "has_evidence",
+      "claim": "Token invalid",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": true,
+        "config_checked": true,
+        "health_checked": true,
+        "has_evidence": false,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "no valid facts",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "has_evidence"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "generic-accepted",
+      "type": "generic",
+      "focusPrerequisite": null,
+      "claim": "The behavior is explained",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": true,
+        "config_checked": true,
+        "health_checked": true,
+        "has_evidence": true,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "baseline snapshot",
+      "expectedClaimAllowed": true,
+      "expectedMissing": [],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    },
+    {
+      "id": "generic-has_evidence",
+      "type": "generic",
+      "focusPrerequisite": "has_evidence",
+      "claim": "The behavior is explained",
+      "expectedDerivedContext": {
+        "readme_read": true,
+        "process_checked": true,
+        "config_checked": true,
+        "health_checked": true,
+        "has_evidence": false,
+        "alternatives_considered": true
+      },
+      "snapshotDifference": "no valid facts",
+      "expectedClaimAllowed": false,
+      "expectedMissing": [
+        "has_evidence"
+      ],
+      "scope": "Declarative claim subdecision only. Other failed dossier predicates may also block pass. No P02 evaluator is executed."
+    }
+  ],
+  "claimDetection": [
+    {
+      "claim": "Architecture root cause",
+      "expectedType": "architecture"
+    },
+    {
+      "claim": "Root cause identified",
+      "expectedType": "root_cause"
+    },
+    {
+      "claim": "Security issue",
+      "expectedType": "security"
+    },
+    {
+      "claim": "Network issue",
+      "expectedType": "network"
+    },
+    {
+      "claim": "Config issue",
+      "expectedType": "configuration"
+    },
+    {
+      "claim": "Process stopped",
+      "expectedType": "process"
+    },
+    {
+      "claim": "Unavailable and offline",
+      "expectedType": "availability"
+    },
+    {
+      "claim": "Token invalid",
+      "expectedType": "token"
+    },
+    {
+      "claim": "The behavior is explained",
+      "expectedType": "generic"
+    },
+    {
+      "claim": "API key config auth root cause architecture",
+      "expectedType": "architecture"
+    },
+    {
+      "claim": "API key config auth root cause",
+      "expectedType": "root_cause"
+    },
+    {
+      "claim": "network auth",
+      "expectedType": "security"
+    },
+    {
+      "claim": "config port",
+      "expectedType": "network"
+    },
+    {
+      "claim": "stopped config",
+      "expectedType": "configuration"
+    },
+    {
+      "claim": "offline process",
+      "expectedType": "process"
+    },
+    {
+      "claim": "offline token",
+      "expectedType": "availability"
+    },
+    {
+      "claim": "API_KEY",
+      "expectedType": "token"
+    },
+    {
+      "claim": "GRUNDURSACHE",
+      "expectedType": "root_cause"
+    },
+    {
+      "claim": "system design",
+      "expectedType": "architecture"
+    },
+    {
+      "claim": "architektur",
+      "expectedType": "architecture"
+    },
+    {
+      "claim": "architecture",
+      "expectedType": "architecture"
+    },
+    {
+      "claim": "design flaw",
+      "expectedType": "architecture"
+    },
+    {
+      "claim": "system design",
+      "expectedType": "architecture"
+    },
+    {
+      "claim": "root-cause",
+      "expectedType": "root_cause"
+    },
+    {
+      "claim": "root cause",
+      "expectedType": "root_cause"
+    },
+    {
+      "claim": "eigentliche ursache",
+      "expectedType": "root_cause"
+    },
+    {
+      "claim": "grundursache",
+      "expectedType": "root_cause"
+    },
+    {
+      "claim": "security",
+      "expectedType": "security"
+    },
+    {
+      "claim": "sicherheit",
+      "expectedType": "security"
+    },
+    {
+      "claim": "cve",
+      "expectedType": "security"
+    },
+    {
+      "claim": "injection",
+      "expectedType": "security"
+    },
+    {
+      "claim": "exploit",
+      "expectedType": "security"
+    },
+    {
+      "claim": "auth",
+      "expectedType": "security"
+    },
+    {
+      "claim": "network",
+      "expectedType": "network"
+    },
+    {
+      "claim": "netzwerk",
+      "expectedType": "network"
+    },
+    {
+      "claim": "firewall",
+      "expectedType": "network"
+    },
+    {
+      "claim": "port",
+      "expectedType": "network"
+    },
+    {
+      "claim": "dns",
+      "expectedType": "network"
+    },
+    {
+      "claim": "tcp",
+      "expectedType": "network"
+    },
+    {
+      "claim": "udp",
+      "expectedType": "network"
+    },
+    {
+      "claim": "config",
+      "expectedType": "configuration"
+    },
+    {
+      "claim": "konfiguration",
+      "expectedType": "configuration"
+    },
+    {
+      "claim": "env",
+      "expectedType": "configuration"
+    },
+    {
+      "claim": "environment",
+      "expectedType": "configuration"
+    },
+    {
+      "claim": "setting",
+      "expectedType": "configuration"
+    },
+    {
+      "claim": "process",
+      "expectedType": "process"
+    },
+    {
+      "claim": "prozess",
+      "expectedType": "process"
+    },
+    {
+      "claim": "service läuft",
+      "expectedType": "process"
+    },
+    {
+      "claim": "not running",
+      "expectedType": "process"
+    },
+    {
+      "claim": "stopped",
+      "expectedType": "process"
+    },
+    {
+      "claim": "verfügbar",
+      "expectedType": "availability"
+    },
+    {
+      "claim": "available",
+      "expectedType": "availability"
+    },
+    {
+      "claim": "down",
+      "expectedType": "availability"
+    },
+    {
+      "claim": "unreachable",
+      "expectedType": "availability"
+    },
+    {
+      "claim": "offline",
+      "expectedType": "availability"
+    },
+    {
+      "claim": "token",
+      "expectedType": "token"
+    },
+    {
+      "claim": "key",
+      "expectedType": "token"
+    },
+    {
+      "claim": "secret",
+      "expectedType": "token"
+    },
+    {
+      "claim": "credential",
+      "expectedType": "token"
+    },
+    {
+      "claim": "api-key",
+      "expectedType": "token"
+    }
+  ]
+}

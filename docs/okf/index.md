@@ -26,6 +26,9 @@ at them rather than copying them.
 - [claim-gate vs review-claim-gate](claim-gate-vs-review-claim-gate.md), the
   same word "evidence" with opposite trust models: a caller-supplied boolean
   versus a store that is actually read.
+- [Grounding receipt codec contract](grounding-receipt-contract.md), the
+  portable documentary-assessment wire format, frozen policy digest, and
+  boundary between a signature check and a task decision.
 - [Hypothesis state](hypothesis-tracker-persistence-split.md), one pure library,
   two consumers, opposite persistence guarantees, and two promotion paths that
   disagree about required_checks.

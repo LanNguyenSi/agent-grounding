@@ -1,0 +1,324 @@
+{
+  "id": "debug-evidence-assessment/v1",
+  "revision": "1",
+  "meaning": "A producer assessed a named session snapshot and documentary dossier. Facts remain agent_asserted; this profile does not attest to diagnosis truth, test execution, or coverage.",
+  "provenance": {
+    "kind": "static-v1-snapshot",
+    "sources": [
+      "packages/grounding-wrapper/src/lib.ts",
+      "packages/claim-gate/src/lib.ts",
+      "packages/grounding-mcp/src/derive-context.ts"
+    ],
+    "updateRule": "Explicit new profile revision and vendored digest; never import live rules."
+  },
+  "phases": {
+    "ordered": [
+      "scope-resolution",
+      "doc-reading",
+      "playbook-loading",
+      "runtime-inspection",
+      "evidence-collection",
+      "claim-evaluation",
+      "complete"
+    ],
+    "initial": {
+      "current": "scope-resolution",
+      "scope-resolution": "active",
+      "others": "pending"
+    },
+    "sequence": [
+      "domain-router",
+      "readme-first-resolver",
+      "debug-playbook-engine",
+      "evidence-ledger",
+      "claim-gate",
+      "hypothesis-tracker"
+    ],
+    "conditionalInsertion": {
+      "tool": "runtime-reality-checker",
+      "index": 3,
+      "keywordIncludesAny": [
+        "monitor",
+        "agent",
+        "service",
+        "server",
+        "gateway"
+      ]
+    },
+    "steps": [
+      {
+        "tool": "domain-router",
+        "phase": "scope-resolution",
+        "mandatory": true
+      },
+      {
+        "tool": "readme-first-resolver",
+        "phase": "doc-reading",
+        "mandatory": true
+      },
+      {
+        "tool": "debug-playbook-engine",
+        "phase": "playbook-loading",
+        "mandatory": true
+      },
+      {
+        "tool": "runtime-reality-checker",
+        "phase": "runtime-inspection",
+        "mandatory": true
+      },
+      {
+        "tool": "evidence-ledger",
+        "phase": "evidence-collection",
+        "mandatory": true
+      },
+      {
+        "tool": "claim-gate",
+        "phase": "claim-evaluation",
+        "mandatory": true
+      },
+      {
+        "tool": "hypothesis-tracker",
+        "phase": "evidence-collection",
+        "mandatory": false
+      }
+    ],
+    "advance": {
+      "order": "phase order, not tool sequence (optional hypothesis-tracker shares evidence-collection)",
+      "current": "mark done",
+      "next": "skip phases with no selected steps; mark skipped; activate next nonempty phase",
+      "terminal": "complete is done; advancing complete is idempotent"
+    },
+    "skip": {
+      "wrapper": "Only a phase with no selected steps is skipped. Runtime-inspection is empty when conditional insertion is absent.",
+      "externalAssessment": "Only producer-derived non-applicability counts. An agent-supplied skipped phase is not evidence of completion. All selected mandatory steps before claim-evaluation require producer API completion events.",
+      "optional": "hypothesis-tracker is present in the sequence but non-mandatory; claim-evaluation is evaluated separately."
+    },
+    "scopeChange": "reinitialize with validated new keyword, same problem, scope_changed=true; external binding cannot be reassigned"
+  },
+  "facts": {
+    "minimum": 1,
+    "origin": "agent_asserted",
+    "rule": "At least one bound structurally valid fact with non-whitespace content. All asserted facts and rejected alternatives retain agent_asserted; no truth or execution attestation."
+  },
+  "claim": {
+    "detectionOrder": [
+      "architecture",
+      "root_cause",
+      "security",
+      "network",
+      "configuration",
+      "process",
+      "availability",
+      "token",
+      "generic"
+    ],
+    "prerequisites": {
+      "architecture": [
+        "readme_read",
+        "process_checked",
+        "config_checked",
+        "alternatives_considered"
+      ],
+      "root_cause": [
+        "readme_read",
+        "process_checked",
+        "config_checked",
+        "has_evidence",
+        "alternatives_considered"
+      ],
+      "security": [
+        "readme_read",
+        "config_checked",
+        "has_evidence"
+      ],
+      "network": [
+        "health_checked",
+        "process_checked"
+      ],
+      "configuration": [
+        "readme_read",
+        "config_checked"
+      ],
+      "process": [
+        "process_checked"
+      ],
+      "availability": [
+        "health_checked",
+        "process_checked"
+      ],
+      "token": [
+        "config_checked",
+        "has_evidence"
+      ],
+      "generic": [
+        "has_evidence"
+      ]
+    },
+    "detectionPatterns": [
+      {
+        "type": "architecture",
+        "pattern": "architektur|architecture|design flaw|system design"
+      },
+      {
+        "type": "root_cause",
+        "pattern": "root.?cause|root cause|eigentliche ursache|grundursache"
+      },
+      {
+        "type": "security",
+        "pattern": "security|sicherheit|cve|injection|exploit|auth"
+      },
+      {
+        "type": "network",
+        "pattern": "network|netzwerk|firewall|port|dns|tcp|udp"
+      },
+      {
+        "type": "configuration",
+        "pattern": "config|konfiguration|env|environment|setting"
+      },
+      {
+        "type": "process",
+        "pattern": "process|prozess|service läuft|not running|stopped"
+      },
+      {
+        "type": "availability",
+        "pattern": "verfügbar|available|down|unreachable|offline"
+      },
+      {
+        "type": "token",
+        "pattern": "token|key|secret|credential|api.?key"
+      },
+      {
+        "type": "generic",
+        "fallback": true
+      }
+    ],
+    "nonEmpty": "trimmed claim length > 0",
+    "origin": "agent_asserted",
+    "typeSelection": "ECMAScript toLowerCase then first matching unflagged ECMAScript RegExp in detectionPatterns; generic is the fallback, not a regex. No caller type override.",
+    "deriveContext": {
+      "phaseSatisfied": "done or skipped; external producer must establish skipped as genuinely empty using frozen sequence",
+      "readme_read": "phaseSatisfied(doc-reading)",
+      "process_checked": "phaseSatisfied(runtime-inspection)",
+      "config_checked": "phaseSatisfied(runtime-inspection)",
+      "health_checked": "phaseSatisfied(runtime-inspection)",
+      "has_evidence": "facts.length > 0",
+      "alternatives_considered": "rejected.length > 0",
+      "authority": "Derived from authoritative snapshot, never free caller flags. These are documentary agent confirmations, not observed execution."
+    },
+    "allowed": "all requires flags truthy after deriving boolean context",
+    "missing": "prerequisite names in the selected policy requires order",
+    "score": "round(satisfied / requires.length * 100); 100 if requires is empty; diagnostic only"
+  },
+  "reasonCodes": [
+    "session_binding_invalid",
+    "session_revision_invalid",
+    "mandatory_steps_incomplete",
+    "fact_missing",
+    "claim_missing",
+    "claim_prerequisites_missing"
+  ],
+  "limits": {
+    "wireBytes": 32768,
+    "payloadBytes": 16384,
+    "receiptLifetimeSeconds": 900,
+    "maxWireIdentifierLength": 128,
+    "nonceBytes": 32,
+    "signatureBytes": 64,
+    "maxSafeInteger": 9007199254740991,
+    "maxJsonDepth": 32,
+    "reasonCount": 6,
+    "timeOrder": "0 <= evaluatedAt <= issuedAt < expiresAt; expiresAt - evaluatedAt <= 900",
+    "consumerOnly": {
+      "challengeTtlSeconds": 86400,
+      "clockSkewSeconds": 60,
+      "rules": "Explicit consumer context checks challenge lifetime, future/evaluation time, freshness, bindings and replay. Codec has no clock."
+    }
+  },
+  "keyword": {
+    "type": "string",
+    "minRawUtf16Length": 1,
+    "maxRawUtf16Length": 64,
+    "normalization": "toLowerCase; replace /[^a-z0-9]+/g with hyphen; trim leading/trailing hyphens",
+    "valid": "normalized value contains at least one ASCII alphanumeric",
+    "selectionInput": "original validated keyword converted to lowercase, before slug normalization"
+  },
+  "guardrails": {
+    "always": [
+      "no-root-cause-before-readme",
+      "no-step-skipping",
+      "no-architecture-claim-before-docs",
+      "no-network-claim-before-process-check"
+    ],
+    "conditional": [
+      {
+        "keywordIncludesAny": [
+          "token",
+          "auth",
+          "config"
+        ],
+        "add": [
+          "no-token-claim-before-config-check"
+        ]
+      },
+      {
+        "keywordIncludesAny": [
+          "monitor",
+          "dashboard",
+          "agent"
+        ],
+        "add": [
+          "no-token-claim-before-config-check",
+          "no-network-claim-before-process-check"
+        ]
+      },
+      {
+        "keywordIncludesAny": [
+          "arch",
+          "design",
+          "system"
+        ],
+        "add": [
+          "no-architecture-claim-before-docs"
+        ]
+      }
+    ],
+    "order": "start root-cause, step-skipping; append conditional groups in order; append architecture, network; deduplicate preserving first occurrence"
+  },
+  "minimumPredicates": [
+    {
+      "id": "session_binding",
+      "requires": "Session exists in authoritative producer storage, with matching identity, audience, project, task and subject digest bound at external creation; a changed binding requires a new session.",
+      "reason": "session_binding_invalid"
+    },
+    {
+      "id": "session_revision",
+      "requires": "Current session revision matches the evaluated revision; positive safe integer.",
+      "reason": "session_revision_invalid"
+    },
+    {
+      "id": "mandatory_steps",
+      "requires": "Producer API completion events cover every selected mandatory step before claim-evaluation in phase order. Producer-derived non-applicable empty phases alone may be skipped. Caller phase arrays are not authority.",
+      "reason": "mandatory_steps_incomplete"
+    },
+    {
+      "id": "fact",
+      "requires": "At least one bound structurally valid fact with non-whitespace content and agent_asserted origin; hypotheses, unknowns, decisions and rejected entries alone do not count.",
+      "reason": "fact_missing"
+    },
+    {
+      "id": "claim",
+      "requires": "Non-whitespace claim recorded with agent_asserted origin in the hashed dossier.",
+      "reason": "claim_missing"
+    },
+    {
+      "id": "claim_prerequisites",
+      "requires": "Derive context from the same bound snapshot; frozen text detection selects the claim type, with no caller override; all prerequisites must be satisfied.",
+      "reason": "claim_prerequisites_missing"
+    },
+    {
+      "id": "atomic_snapshot",
+      "requires": "Dossier digest, phase findings and assessment derive from one immutable atomic snapshot. A snapshot/evaluation error cannot produce pass.",
+      "onError": "issuer_error (no receipt)"
+    }
+  ]
+}

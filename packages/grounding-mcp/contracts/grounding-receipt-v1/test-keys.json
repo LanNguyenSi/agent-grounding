@@ -1,0 +1,7 @@
+{
+  "purpose": "TEST ONLY. This deterministic seed and derived public key are public and must never be used for an issuer.",
+  "seedHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAA6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=\n-----END PUBLIC KEY-----\n",
+  "pkcs8DerPrefixHex": "302e020100300506032b657004220420",
+  "publicKeySpkiDerHex": "302a300506032b657003210003a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8"
+}
