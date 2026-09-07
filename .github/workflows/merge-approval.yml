@@ -76,7 +76,7 @@ jobs:
         with:
           script: |
             const path = require('node:path');
-            const { classifyPullFiles, CONTENT_TOO_LARGE, NOT_A_FILE } = require(
+            const { classifyPullFiles, makeGetContentReader } = require(
               path.join(process.env.GITHUB_WORKSPACE, 'scripts', 'release-exception.js'),
             );
 
@@ -129,39 +129,18 @@ jobs:
                 const headRef = context.payload.pull_request.head.sha;
 
                 // Reads filePath's content at git ref `ref` via the
-                // Contents API; `null` when absent (404) at that ref, or
-                // when the path is a directory (an array response), so an
-                // added file (no base content) reads as `null` rather than
-                // throwing. A single-object response whose `type` is not
-                // `'file'` (a symlink or a submodule entry) has no base64
-                // content either, but it is not a size problem, so it is
-                // reported as the classifier's NOT_A_FILE sentinel rather
-                // than CONTENT_TOO_LARGE. A `type: 'file'` response above
-                // the API's 1 MB inline limit comes back with empty
-                // content and `encoding: "none"`, reported as
-                // CONTENT_TOO_LARGE so the step summary names that case
-                // instead of calling the file absent. Every one of these
-                // shapes makes the file not pure either way; only the
-                // reported reason differs.
-                const readFile = async (ref, filePath) => {
-                  let res;
-                  try {
-                    res = await github.rest.repos.getContent({
-                      owner: context.repo.owner,
-                      repo: context.repo.repo,
-                      path: filePath,
-                      ref,
-                    });
-                  } catch (err) {
-                    if (err.status === 404) return null;
-                    throw err;
-                  }
-                  if (Array.isArray(res.data)) return null;
-                  if (res.data.type !== 'file') return NOT_A_FILE;
-                  if (res.data.encoding !== 'base64') return CONTENT_TOO_LARGE;
-                  if (typeof res.data.content !== 'string') return null;
-                  return Buffer.from(res.data.content, 'base64').toString('utf8');
-                };
+                // Contents API, `null`/`CONTENT_TOO_LARGE`/`NOT_A_FILE`
+                // for the non-file shapes the API can answer with; see
+                // `makeGetContentReader`'s own doc comment in
+                // scripts/release-exception.js for the full shape-by-
+                // shape rationale (this is only the wiring, the reader
+                // itself is unit-tested there against the real API
+                // shapes).
+                const readFile = makeGetContentReader({
+                  getContent: github.rest.repos.getContent,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                });
 
                 const verdict = await classifyPullFiles(
                   files.map((f) => ({ filename: f.filename, status: f.status })),

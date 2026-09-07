@@ -35,6 +35,75 @@
   and added a semver-shape assertion to `server-version.test.ts`.
   The comment rewrites of that delta touched three source files (server.ts, CONTRIBUTING.md, release-exception.js); the four bundle docs that list them were re-stamped in a follow-up commit after checking that every citation into those files still resolves.
 
+- 2026-09-07T09:13:32Z, task b77efb40 round 2, review fixes: extracted
+  the workflow's inline `readFile` into an exported
+  `makeGetContentReader({ getContent, owner, repo })` factory in
+  `scripts/release-exception.js` (`release-exception.js:325#"function makeGetContentReader"`);
+  the `github-script` step now only wires the factory to
+  `github.rest.repos.getContent` instead of defining the reader inline,
+  so the entry-type handling is unit-testable against the real Contents
+  API response shapes, not only reachable through a bare sentinel handed
+  straight to the classifier. New unit tests cover: a `type:'file'` +
+  base64 response (read), `encoding:'none'` (`CONTENT_TOO_LARGE`), a
+  `type:'symlink'` response with a `target` field
+  (`NOT_A_FILE`), a symlink the API resolved to a normal in-repo file
+  (reads as that file, pinning that this reader deliberately does not
+  special-case it), a `type:'submodule'` response with a
+  `submodule_git_url` field (`NOT_A_FILE`), a directory array (`null`), a
+  lone `type:'dir'` single-object response (`NOT_A_FILE`, pinned
+  fail-closed though not an observed real single-getContent shape), a 404
+  (`null`), a non-404 error (propagates), and a malformed response with
+  `res.data` missing (throws, fail-closed via the caller); plus two
+  `classifyPullFiles`-level tests confirming the extracted reader's
+  `NOT_A_FILE` for a symlink and for a submodule flow through to the same
+  named reasons as the sentinel-level tests. Two mutation probes on the
+  extracted `res.data.type !== 'file'` check
+  (`release-exception.js:335#"if (res.data.type !== 'file') return NOT_A_FILE;"`):
+  letting a symlink through (`&& res.data.type !== 'symlink'`) and
+  letting a submodule through (`&& res.data.type !== 'submodule'`); both
+  killed by `agent-primitives probe --plan`. The round-1 probe (mapping a
+  symlink to the file branch at the classifier's `not-a-file-base` check)
+  was replayed first and still kills. The manual replay of the extracted
+  step body (a hand-written extraction, no `js-yaml` installed in this
+  worktree beyond the root `overrides` pin, so the AsyncFunction-over-
+  parsed-YAML route from the review was not available) ran three
+  scenarios against stubbed `github`/`core`/`context`: a pure version
+  bump (`pure_release: true`), a symlink the API did not resolve at base
+  (`pure_release: false`, reason `not-a-file-base`), and a submodule at
+  head (`pure_release: false`, reason `not-a-file-head`); the
+  AsyncFunction compile is the syntax check, there being no `node --check`
+  for a body using top-level `await`. Corrected two review findings: the
+  module header, the sentinel comment, and
+  `merge-approval-gate-mechanics.md`'s residuals paragraph all said a
+  symlink "comes back without base64 content" unconditionally; per
+  GitHub's Contents API docs a symlink whose target is a normal file in
+  the same repository instead resolves to that file's own content, so all
+  three sites now say "a submodule entry, or a symlink the API cannot
+  resolve to a normal file in the same repository", and the mechanics doc
+  gained a residual sentence pinning that a `package.json` replaced by
+  such an in-repo symlink still classifies purely on the target's content
+  (narrow: the target must already exist in-repo, any edit to it is
+  caught on its own path). Also corrected the round-1 entry below, which
+  claimed its twelve re-pointed citations were "all in this file": the
+  round-1 delta commit re-pointed twenty-one citations across three docs
+  (twelve in this file, six in `merge-approval-gate-mechanics.md`, three
+  in `evidence-ledger-session-key-shapes.md`), and named both sentinels
+  (not only `CONTENT_TOO_LARGE`) in the `classifyPullFiles` JSDoc and this
+  test file's own header comment. This round's own extraction shifted
+  `.github/workflows/merge-approval.yml` (shorter, the inline reader
+  removed) and `scripts/release-exception.js`/`scripts/release-exception.test.js`
+  (longer, the factory and its tests added); every citation into those
+  three files from earlier log entries below and from
+  `merge-approval-gate-mechanics.md` and
+  `evidence-ledger-session-key-shapes.md` was re-pointed to the same
+  source lines it always meant (one citation, for the `encoding !==
+  'base64'` check, now points at `release-exception.js` instead of
+  `merge-approval.yml` since that check itself moved into the extracted
+  factory), so `okf-kit check docs/okf` reports the same findings as
+  before this round (the same one pre-existing `sources-fresh` STALE
+  warning and four pre-existing `citations-resolve` warnings that predate
+  this task).
+
 - 2026-09-07, task b77efb40, closes the round-4 residual named just below:
   the workflow's `readFile` (`.github/workflows/merge-approval.yml`) now
   checks `res.data.type` before falling back to the 1 MB oversized-file
@@ -43,7 +112,7 @@
   `NOT_A_FILE` sentinel instead of `CONTENT_TOO_LARGE`.
   `scripts/release-exception.js`'s `checkVersionOnlyContent` maps it to the
   per-file reasons `not-a-file-base`/`not-a-file-head`
-  (`release-exception.js:357#"not-a-file-base"`); the verdict is unchanged
+  (`release-exception.js:424#"not-a-file-base"`); the verdict is unchanged
   (still not pure, fail-closed) either way, only the reported reason is
   now accurate. Unit tests for both sides
   (`scripts/release-exception.test.js`); the extracted step body replayed
@@ -54,10 +123,12 @@
   response to the file-read branch (dropping the new `type` check) makes
   the new base-side test fail; killed. This diff's line shifts in
   `.github/workflows/merge-approval.yml`, `scripts/release-exception.js`
-  and `scripts/release-exception.test.js` broke twelve citations of
-  earlier entries below, all in this file; those twelve were re-pointed to
-  the same source lines they always meant, so after this commit
-  `okf-kit check docs/okf` reports the same findings as on the base
+  and `scripts/release-exception.test.js` broke twenty-one citations of
+  earlier entries: twelve in this file, six in
+  `docs/okf/merge-approval-gate-mechanics.md`, and three in
+  `docs/okf/evidence-ledger-session-key-shapes.md`; those twenty-one were
+  re-pointed to the same source lines they always meant, so after this
+  commit `okf-kit check docs/okf` reports the same findings as on the base
   commit (one pre-existing `sources-fresh` STALE warning unrelated to this
   change, and the four pre-existing `citations-resolve` warnings that
   predate this task).
@@ -95,16 +166,16 @@
   being a release at all. `classifyPullFiles` now counts the allowed
   version paths that actually changed value across the whole PR and
   requires at least one
-  (`release-exception.js:490#"else if (versionBumps === 0) reason = 'no-version-bump';"`).
+  (`release-exception.js:561#"else if (versionBumps === 0) reason = 'no-version-bump';"`).
   The verdict gained a PR-level `reason` beside the per-file ones (`null`
   when pure, else `empty-file-list`, `rejected-files` or
   `no-version-bump`), which the step summary now always prints
-  (`merge-approval.yml:198#"verdict.reason ?? 'unknown'"`), so a not-pure
+  (`merge-approval.yml:177#"verdict.reason ?? 'unknown'"`), so a not-pure
   verdict with an empty rejected list is no longer an unexplained no-op.
   Two new tests pin it: the CHANGELOG-only case (which still asserts the
   entry lands in `allowed` and that the throwing reader is never called)
   and a formatting-only `package.json`
-  (`release-exception.test.js:536#"whitespace/key order only"`).
+  (`release-exception.test.js:544#"whitespace/key order only"`).
 
   (2) The step passed `pull_request.base.sha`, the base BRANCH TIP, as the
   ref to read base content at, while `listFiles` diffs the PR against its
@@ -121,15 +192,15 @@
   Three smaller findings from the same review: a `classifyPullFiles` case
   for a lockfile bump at a nested `$.packages["packages/a/b"].version`
   path now pins that the allowed lockfile path regex takes exactly one
-  segment (`release-exception.test.js:554#"NESTED packages path"`,
-  against `release-exception.js:339#".test(jsonPath)"`); the workflow's
+  segment (`release-exception.test.js:562#"NESTED packages path"`,
+  against `release-exception.js:406#".test(jsonPath)"`); the workflow's
   `readFile` now treats a response whose `encoding` is not `base64` (the
   Contents API's over-1-MB shape: empty content, `encoding: "none"`) as a
-  distinct signal (`merge-approval.yml:161#"res.data.encoding !== 'base64'"`)
+  distinct signal (`release-exception.js:336#"res.data.encoding !== 'base64'"`)
   rather than as an absent file, carried as an exported sentinel
-  (`release-exception.js:264#"Symbol.for('release-exception.content-too-large')"`)
+  (`release-exception.js:273#"Symbol.for('release-exception.content-too-large')"`)
   that the classifier maps to the reasons `content-too-large-base`/
-  `-head` (`release-exception.js:359#"content-too-large-base"`), with a
+  `-head` (`release-exception.js:426#"content-too-large-base"`), with a
   unit case for each side; the 1 MB limit is now stated in the module
   header and in `merge-approval-gate-mechanics.md`'s residuals. Note that
   the sentinel is not a string, so a reader that never sends it still
@@ -386,12 +457,12 @@
   helper. `.github/workflows/merge-approval.yml`'s release-exception step
   now calls `classifyPullFiles` with each file's `filename`/`status`/
   `patch`
-  (`merge-approval.yml:46-213#"core.setOutput('pure_release', pure_release.toString());"`)
+  (`merge-approval.yml:46-192#"core.setOutput('pure_release', pure_release.toString());"`)
   and also compares the paginated file count against the PR's own
   `changed_files`, forcing `pure_release: false` on a mismatch rather than
   risking a partial page reading as pure. The five action inputs
   themselves are unchanged
-  (`merge-approval.yml:220-224#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`).
+  (`merge-approval.yml:199-203#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`).
   New unit tests cover: the real package.json/package-lock.json
   version-bump patches of PR #190 (captured read-only via `gh api
   repos/LanNguyenSi/agent-grounding/pulls/190/files`), a postinstall
@@ -460,10 +531,10 @@
   `{ pure_release, allowed, rejected }` verdict, and wired it into
   `.github/workflows/merge-approval.yml` as a new `Determine release
   exception from the PR's real changed files` step
-  (`merge-approval.yml:46-213#"core.setOutput('pure_release', pure_release.toString());"`)
+  (`merge-approval.yml:46-192#"core.setOutput('pure_release', pure_release.toString());"`)
   between the label-extraction step and the pinned gate action. Each of
   the five action inputs is now `<label == 'true'> || <pure_release ==
-  'true'>` (`merge-approval.yml:220-224#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`),
+  'true'>` (`merge-approval.yml:199-203#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`),
   so a pure version-bump PR (root `package.json` / `package-lock.json` /
   `CHANGELOG.md`, or a single package's `packages/<name>/package.json` /
   `CHANGELOG.md`) satisfies the gate without a `review:*` label round; the
