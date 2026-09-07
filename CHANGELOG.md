@@ -36,32 +36,38 @@ The seven packages above (other than understanding-gate) each carry their own ve
 ### Changed
 
 - `claim-gate`: `readVersion()` now writes one `process.stderr` line naming
-  the package and the failure (read error, parse error, or a missing
-  `version` field) before returning the unchanged `'0.0.0'` fallback,
-  instead of swallowing the failure silently; it also now takes an
-  injectable `packageJsonUrl`/`read` pair so the failure path is
-  unit-testable. Its tarball-inclusion comment now says npm always
+  the package and the failure (read error, parse error, or a missing,
+  empty, or non-string `version` field) before returning the unchanged
+  `'0.0.0'` fallback, instead of swallowing the failure silently; it also
+  now takes an injectable `packageJsonUrl`/`read` pair so the failure path
+  is unit-testable. Its tarball-inclusion comment now says npm always
   includes `package.json` in the published tarball independent of
   `files`, matching `grounding-mcp`'s wording (the prior wording named
   the `files` field as the reason, which is backwards). The diagnostic
   write itself is wrapped in its own try/catch, so a throwing
   `process.stderr.write` (closed or bad fd) is swallowed and
-  `readVersion()` still returns `'0.0.0'` instead of throwing. (task
-  f31ad37f)
+  `readVersion()` still returns `'0.0.0'` instead of throwing; that
+  never-throws guarantee also covers formatting the failure reason itself
+  (a throwing `Error#message` getter or a throwing `String(err)` on a
+  non-Error value), and the reason is collapsed to a single line before
+  being written. (task f31ad37f)
 
 - `evidence-ledger`: `readVersion()` now writes one `process.stderr` line
   naming the package and the failure (read error, parse error, or a
-  missing `version` field) before returning the unchanged `'0.0.0'`
-  fallback, instead of swallowing the failure silently; it also now takes
-  an injectable `packageJsonUrl`/`read` pair so the failure path is
-  unit-testable. Its tarball-inclusion comment now says npm always
-  includes `package.json` in the published tarball independent of
-  `files`, matching `grounding-mcp`'s wording (the prior wording named
-  the `files` field as the reason, which is backwards). The diagnostic
-  write itself is wrapped in its own try/catch, so a throwing
+  missing, empty, or non-string `version` field) before returning the
+  unchanged `'0.0.0'` fallback, instead of swallowing the failure
+  silently; it also now takes an injectable `packageJsonUrl`/`read` pair
+  so the failure path is unit-testable. Its tarball-inclusion comment now
+  says npm always includes `package.json` in the published tarball
+  independent of `files`, matching `grounding-mcp`'s wording (the prior
+  wording named the `files` field as the reason, which is backwards). The
+  diagnostic write itself is wrapped in its own try/catch, so a throwing
   `process.stderr.write` (closed or bad fd) is swallowed and
-  `readVersion()` still returns `'0.0.0'` instead of throwing. (task
-  f31ad37f)
+  `readVersion()` still returns `'0.0.0'` instead of throwing; that
+  never-throws guarantee also covers formatting the failure reason itself
+  (a throwing `Error#message` getter or a throwing `String(err)` on a
+  non-Error value), and the reason is collapsed to a single line before
+  being written. (task f31ad37f)
 
 ## [0.6.0] - 2026-07-18
 

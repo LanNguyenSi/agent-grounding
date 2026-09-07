@@ -84,13 +84,16 @@ export function readPackageVersion(
     }
     return pkg.version;
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
     try {
+      const reason = (err instanceof Error ? err.message : String(err))
+        .replace(/\r?\n/g, ' ')
+        .slice(0, 500);
       process.stderr.write(
         `grounding-mcp: could not read version from package.json (${reason}); reporting 0.0.0\n`,
       );
     } catch {
-      // stderr itself is unwritable; nothing more can be reported.
+      // stderr itself is unwritable, or the error's message/toString threw;
+      // nothing more can be reported.
     }
     return '0.0.0';
   }

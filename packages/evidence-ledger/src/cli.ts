@@ -30,6 +30,8 @@ import { buildHandoffMarkdown, buildHandoffJson } from "./handoff.js";
 // The diagnostic write is best-effort: it runs in its own try/catch so a
 // throwing process.stderr.write (closed or bad fd, EBADF) can never escape
 // this function.
+// readVersion is exported only as a test seam, not supported API.
+// @internal
 export function readVersion(
   packageJsonUrl: URL = new URL("../package.json", import.meta.url),
   read: (url: URL, encoding: BufferEncoding) => string = readFileSync,
@@ -50,13 +52,16 @@ export function readVersion(
     }
     return pkg.version;
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
     try {
+      const reason = (err instanceof Error ? err.message : String(err))
+        .replace(/\r?\n/g, " ")
+        .slice(0, 500);
       process.stderr.write(
         `evidence-ledger: could not read version from package.json (${reason}); reporting 0.0.0\n`,
       );
     } catch {
-      // stderr itself is unwritable; nothing more can be reported.
+      // stderr itself is unwritable, or the error's message/toString threw;
+      // nothing more can be reported.
     }
     return "0.0.0";
   }
