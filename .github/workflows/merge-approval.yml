@@ -76,7 +76,7 @@ jobs:
         with:
           script: |
             const path = require('node:path');
-            const { classifyPullFiles, CONTENT_TOO_LARGE } = require(
+            const { classifyPullFiles, CONTENT_TOO_LARGE, NOT_A_FILE } = require(
               path.join(process.env.GITHUB_WORKSPACE, 'scripts', 'release-exception.js'),
             );
 
@@ -129,14 +129,20 @@ jobs:
                 const headRef = context.payload.pull_request.head.sha;
 
                 // Reads filePath's content at git ref `ref` via the
-                // Contents API; `null` when absent (404) at that ref, so
-                // an added file (no base content) reads as `null` rather
-                // than throwing. The API only inlines blobs up to 1 MB;
-                // a larger file comes back with empty content and
-                // `encoding: "none"`, reported as the classifier's
-                // CONTENT_TOO_LARGE sentinel so the step summary names
-                // that case instead of calling the file absent. Either
-                // way the file is not pure.
+                // Contents API; `null` when absent (404) at that ref, or
+                // when the path is a directory (an array response), so an
+                // added file (no base content) reads as `null` rather than
+                // throwing. A single-object response whose `type` is not
+                // `'file'` (a symlink or a submodule entry) has no base64
+                // content either, but it is not a size problem, so it is
+                // reported as the classifier's NOT_A_FILE sentinel rather
+                // than CONTENT_TOO_LARGE. A `type: 'file'` response above
+                // the API's 1 MB inline limit comes back with empty
+                // content and `encoding: "none"`, reported as
+                // CONTENT_TOO_LARGE so the step summary names that case
+                // instead of calling the file absent. Every one of these
+                // shapes makes the file not pure either way; only the
+                // reported reason differs.
                 const readFile = async (ref, filePath) => {
                   let res;
                   try {
@@ -151,6 +157,7 @@ jobs:
                     throw err;
                   }
                   if (Array.isArray(res.data)) return null;
+                  if (res.data.type !== 'file') return NOT_A_FILE;
                   if (res.data.encoding !== 'base64') return CONTENT_TOO_LARGE;
                   if (typeof res.data.content !== 'string') return null;
                   return Buffer.from(res.data.content, 'base64').toString('utf8');

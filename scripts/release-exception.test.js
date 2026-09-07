@@ -50,6 +50,7 @@ const {
   isUnsafePath,
   isAllowedReleasePath,
   CONTENT_TOO_LARGE,
+  NOT_A_FILE,
 } = require('./release-exception');
 
 const SCRIPT_PATH = path.join(__dirname, 'release-exception.js');
@@ -598,6 +599,31 @@ test('classifyPullFiles(): a reader signalling CONTENT_TOO_LARGE is NOT pure, wi
   );
   assert.equal(headVerdict.pure_release, false);
   assert.equal(headVerdict.rejected[0].reason, 'content-too-large-head');
+});
+
+test('classifyPullFiles(): a reader signalling NOT_A_FILE (symlink/submodule) is NOT pure, with its own named reason', async () => {
+  // GitHub's Contents API returns a symlink or submodule entry without
+  // base64 content, same as an oversized file; the reader has to tell
+  // those two shapes apart so the step summary names the real cause
+  // instead of reporting "too large" for a path that is not a file at
+  // all.
+  const baseNotAFile = async (ref) =>
+    (ref === 'base' ? NOT_A_FILE : JSON.stringify({ version: '1.0.1' }));
+  const baseVerdict = await classifyPullFiles(
+    [{ filename: 'package-lock.json', status: 'modified' }],
+    { readFile: baseNotAFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(baseVerdict.pure_release, false);
+  assert.equal(baseVerdict.rejected[0].reason, 'not-a-file-base');
+
+  const headNotAFile = async (ref) =>
+    (ref === 'head' ? NOT_A_FILE : JSON.stringify({ version: '1.0.0' }));
+  const headVerdict = await classifyPullFiles(
+    [{ filename: 'package-lock.json', status: 'modified' }],
+    { readFile: headNotAFile, baseRef: 'base', headRef: 'head' },
+  );
+  assert.equal(headVerdict.pure_release, false);
+  assert.equal(headVerdict.rejected[0].reason, 'not-a-file-head');
 });
 
 test('classifyPullFiles(): a rename into an allowlisted CHANGELOG.md path is NOT pure', async () => {

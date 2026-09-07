@@ -95,19 +95,32 @@
  * prints it in the step summary, so a "not pure" verdict with an empty
  * `rejected` list is never reported as an unexplained no-op.
  *
- * ── `CONTENT_TOO_LARGE`: the reader's 1 MB signal ───────────────────────
+ * ── `CONTENT_TOO_LARGE` and `NOT_A_FILE`: naming the reader's non-file
+ *    shapes ─────────────────────────────────────────────────────────────
  *
- * The workflow's `readFile` is GitHub's Contents API, which only inlines a
- * blob up to 1 MB; above that it answers with empty `content` and
- * `encoding: "none"` instead of the file. A reader that cannot deliver
- * content for that reason returns the exported `CONTENT_TOO_LARGE`
- * sentinel (a `Symbol.for` value, so a second copy of this module agrees
- * on it), which this classifier maps to the per-file reasons
- * `content-too-large-base` / `content-too-large-head`. The file is NOT
- * pure either way: the sentinel is not a string, so a reader that does not
- * use it still fails closed through `missing-base`/`missing-head`. The
- * sentinel only buys an accurate reason in the step summary instead of
- * "the file was not there at that ref".
+ * The workflow's `readFile` is GitHub's Contents API, and a `getContent`
+ * response can come back in shapes other than "a file's base64 content":
+ *
+ *   - An array (the path is a directory): mapped to `null` (the missing-
+ *     base/missing-head path), same as a 404.
+ *   - A single object with `type !== 'file'` (a symlink or a submodule
+ *     entry): GitHub answers these without base64 content, same shape as
+ *     an oversized file, but they are not a size problem, so the reader
+ *     checks `type` first and returns the exported `NOT_A_FILE` sentinel,
+ *     which this classifier maps to `not-a-file-base` / `not-a-file-head`.
+ *   - A `type: 'file'` object whose blob exceeds the API's 1 MB inline
+ *     limit: `encoding` comes back `"none"` instead of `"base64"` and
+ *     `content` empty. A reader that cannot deliver content for that
+ *     reason returns the exported `CONTENT_TOO_LARGE` sentinel, mapped to
+ *     `content-too-large-base` / `content-too-large-head`.
+ *
+ * Both sentinels are `Symbol.for` values, so a second copy of this module
+ * still agrees on them. The file is NOT pure through any of these paths
+ * either way: neither sentinel is a string, so a reader that does not use
+ * them still fails closed through `missing-base`/`missing-head`. The
+ * sentinels only buy an accurate reason in the step summary instead of
+ * conflating "not a file at all" with "too large to read" or "not there at
+ * that ref".
  *
  * A read, parse, or shape failure at any point (the reader throws, returns
  * a value that is not a string when content was expected, the text does not
@@ -249,6 +262,15 @@ const SEMVER_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
 // this module still compare equal. See the file header.
 const CONTENT_TOO_LARGE = Symbol.for('release-exception.content-too-large');
 
+// Sentinel a `readFile` returns instead of content when the path exists at
+// the ref but names something the classifier cannot read as file text: a
+// symlink or a submodule entry (`res.data.type !== 'file'`). GitHub's
+// Contents API answers both without base64 content, the same shape as the
+// 1 MB oversized-file case, so the reader tells them apart by `type` before
+// falling back to `CONTENT_TOO_LARGE`. `Symbol.for` so two copies of this
+// module still compare equal. See the file header.
+const NOT_A_FILE = Symbol.for('release-exception.not-a-file');
+
 function basenameOf(file) {
   const idx = file.lastIndexOf('/');
   return idx === -1 ? file : file.slice(idx + 1);
@@ -331,6 +353,8 @@ function isAllowedContentPath(basename, jsonPath) {
  * @returns {{ ok: boolean, reason?: string, diffPaths?: string[], bumpCount?: number }}
  */
 function checkVersionOnlyContent(basename, baseText, headText) {
+  if (baseText === NOT_A_FILE) return { ok: false, reason: 'not-a-file-base' };
+  if (headText === NOT_A_FILE) return { ok: false, reason: 'not-a-file-head' };
   if (baseText === CONTENT_TOO_LARGE) return { ok: false, reason: 'content-too-large-base' };
   if (headText === CONTENT_TOO_LARGE) return { ok: false, reason: 'content-too-large-head' };
   if (typeof baseText !== 'string') return { ok: false, reason: 'missing-base' };
@@ -537,4 +561,5 @@ module.exports = {
   SEMVER_PATTERN,
   CONTENT_CHECKED_BASENAMES,
   CONTENT_TOO_LARGE,
+  NOT_A_FILE,
 };

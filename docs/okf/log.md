@@ -35,6 +35,25 @@
   and added a semver-shape assertion to `server-version.test.ts`.
   The comment rewrites of that delta touched three source files (server.ts, CONTRIBUTING.md, release-exception.js); the four bundle docs that list them were re-stamped in a follow-up commit after checking that every citation into those files still resolves.
 
+- 2026-09-07, task b77efb40, closes the round-4 residual named just below:
+  the workflow's `readFile` (`.github/workflows/merge-approval.yml`) now
+  checks `res.data.type` before falling back to the 1 MB oversized-file
+  check, so a symlink or submodule `getContent` response (no base64
+  content, same shape as an oversized file) returns the classifier's new
+  `NOT_A_FILE` sentinel instead of `CONTENT_TOO_LARGE`.
+  `scripts/release-exception.js`'s `checkVersionOnlyContent` maps it to the
+  per-file reasons `not-a-file-base`/`not-a-file-head`
+  (`release-exception.js:357#"not-a-file-base"`); the verdict is unchanged
+  (still not pure, fail-closed) either way, only the reported reason is
+  now accurate. Unit tests for both sides
+  (`scripts/release-exception.test.js`); the extracted step body replayed
+  under plain `node` against stubbed `github`/`core`/`context` objects (a
+  `vm.createContext` sandbox) for a symlink-at-base and a submodule-at-head
+  response, plus two controls (a real pure bump, and the pre-existing
+  oversized-file shape, both unchanged). Mutation probe: mapping a symlink
+  response to the file-read branch (dropping the new `type` check) makes
+  the new base-side test fail; killed.
+
 - 2026-09-07T07:36:11Z, task 4493b316 (orchestrator), live probes for criterion 3 and the
   round-4 review notes. Two probe PRs against this branch as base:
   PR #221 (`probe/4493b316-pure`, head `0e4aef1d792fe44aa443154daab31e7f541c2a5b`:
