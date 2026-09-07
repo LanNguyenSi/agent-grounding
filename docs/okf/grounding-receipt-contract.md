@@ -57,4 +57,4 @@ has no npm entrypoint or registered MCP endpoint.
 - Frozen documentary requirements:
   `packages/grounding-mcp/contracts/grounding-receipt-v1/policy.json:287#"minimumPredicates"`.
 - The distinction between fixed receipt checks and future dossier evaluation:
-  `packages/grounding-mcp/tests/grounding-receipt.test.ts:190#"frozen declarative policy, not a P02 dossier evaluator"`.
+  `packages/grounding-mcp/contracts/grounding-receipt-v1/README.md:100-103#"proves neither diagnostic truth"`.
