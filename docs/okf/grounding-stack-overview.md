@@ -3,7 +3,7 @@ type: overview
 title: The grounding stack — where to read, and how releases are split
 description: Pointer doc — the root README already diagrams the whole stack; this entry adds the release topology (four version-locked packages under one root tag, eight independently-versioned ones) that the diagram does not show.
 tags: [overview, monorepo, releases, versioning, pointer]
-timestamp: 2026-09-07T10:14:46Z
+timestamp: 2026-09-07T11:06:07Z
 sources:
   - README.md
   - CHANGELOG.md
@@ -11,6 +11,8 @@ sources:
   - packages/grounding-mcp/package.json
   - packages/grounding-mcp/src/assessment-index.ts
   - packages/grounding-mcp/src/assessment-server.ts
+  - .github/workflows/ci.yml
+  - scripts/check-grounding-mcp-pack.js
 ---
 
 # The grounding stack — pointer and release topology
@@ -68,6 +70,22 @@ hypothesis-tracker, grounding-mcp, grounding-sdk, review-claim-gate,
 runtime-reality-checker, understanding-gate) and **jest** (grounding-wrapper,
 debug-playbook-engine, domain-router, readme-first-resolver). Reach for the
 runner the package actually uses before adding a test.
+
+## Packaging verification (CI)
+
+`grounding-mcp`'s runtime version read (see the release topology note above)
+is checked against the actual published artifact on every PR, not only by
+hand at release time: the `ci` job's "grounding-mcp packed-tarball --version
+check" step (`.github/workflows/ci.yml:430-445#"npm run check:grounding-mcp-pack"`)
+runs `scripts/check-grounding-mcp-pack.js`, which packs the workspace
+package, installs the tarball with `--omit=dev` into a scratch consumer
+directory outside the repo tree, and asserts the installed
+`grounding-mcp --version` bin's output equals the TARBALL's own
+`package.json` version — the same "works from the published tarball" check
+PR #226 (task ed06b4c8) verified by hand, now automated (task d341afd5). Its
+own fixture and end-to-end unit tests run in the following "grounding-mcp
+packed-tarball --version checker unit tests" step
+(`package.json:29#"check:grounding-mcp-pack"`).
 
 ## Restricted producer entrypoint
 

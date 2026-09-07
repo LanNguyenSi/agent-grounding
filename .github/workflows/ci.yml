@@ -427,6 +427,32 @@ jobs:
         # hypothesis-tracker) can resolve it.
         run: npm run build
 
+      - name: grounding-mcp packed-tarball --version check
+        # Repeats, in CI, the "works from the published tarball" manual
+        # verification behind PR #226 (task ed06b4c8): `npm pack`s the
+        # @lannguyensi/grounding-mcp workspace package, installs the tarball
+        # with --omit=dev into a scratch consumer directory outside the repo
+        # tree (os.tmpdir()), runs the served `grounding-mcp --version` bin
+        # from there, and asserts its output equals the TARBALL's own
+        # package.json version (not this repo's in-tree one) -- so a future
+        # change to `files`, `bin`, the build layout, or a bundler step that
+        # breaks the runtime `../package.json` resolution
+        # (packages/grounding-mcp/src/server.ts) fails here instead of only
+        # being caught by hand at release time (task d341afd5). Runs after
+        # Build: the package must already have dist/ output to pack.
+        # One pack, one install -- see scripts/check-grounding-mcp-pack.js's
+        # own docblock for the full recipe and the negative-control mode.
+        run: npm run check:grounding-mcp-pack
+
+      - name: grounding-mcp packed-tarball --version checker unit tests
+        # Fixture-based unit tests for the pure comparison and corruption
+        # helpers, plus two end-to-end tests against the real
+        # packages/grounding-mcp workspace package: a happy-path pass, and
+        # the required negative control (installed package.json removed --
+        # server.ts's own ENOENT fallback then serves "0.0.0", which this
+        # checker's comparison must reject, not the binary itself failing).
+        run: npm run test:check-grounding-mcp-pack
+
       - name: Typecheck
         # Runs per workspace only if the script is defined — packages that
         # don't have a typecheck entry are silently skipped.

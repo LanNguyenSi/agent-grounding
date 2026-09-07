@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- CI now packs this package (`npm pack`), installs the tarball with
+  `--omit=dev` into a scratch consumer directory outside the repo tree, and
+  asserts `grounding-mcp --version` there equals the TARBALL's own
+  `package.json` version -- repeating, on every PR, the "works from the
+  published tarball" verification that used to be manual-only for the
+  runtime `package.json` version read below (`scripts/check-grounding-mcp-pack.js`,
+  `.github/workflows/ci.yml`, task d341afd5).
+
 ### Changed
 
 - `server.ts` no longer hardcodes a `PACKAGE_VERSION` literal; the version

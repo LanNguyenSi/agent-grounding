@@ -2281,3 +2281,15 @@
   --require-anchors --json docs/okf` reported 0 errors, 0 warnings, 0
   notices; `check:okf-test-citation-shape` and `check:okf-selectors` both
   passed.
+
+- 2026-09-07T11:06:07Z, packaging verification CI check (task d341afd5):
+  grounding-stack-overview gained a "Packaging verification (CI)" section
+  pointing at the new `ci` job step
+  (`.github/workflows/ci.yml:430-445#"npm run check:grounding-mcp-pack"`)
+  that packs `@lannguyensi/grounding-mcp`, installs the tarball into a
+  scratch consumer directory, and asserts `grounding-mcp --version` there
+  matches the tarball's own `package.json` version -- automating the
+  manual "works from the published tarball" verification behind PR #226
+  (task ed06b4c8). `okf-kit check --require-anchors --json docs/okf`
+  reported 0 errors, 0 citations-resolve warnings, 0 unresolved-ambiguous
+  notices against the doc's new citations.
