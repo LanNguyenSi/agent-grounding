@@ -2,6 +2,23 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-07T10:32:51Z, operator decision after batch 41 (orchestrator): master's ruleset
+  `main-protection` (id 16522106) now lists `merge-approval`, `ci` and
+  `OKF bundle citation guard` as required status checks
+  (`strict_required_status_checks_policy: false`,
+  `do_not_enforce_on_create: false`); the pre-existing deletion,
+  non-fast-forward and pull-request rules and the RepositoryRole admin
+  bypass are unchanged. The merge-approval Check-Run is therefore the
+  hard gate the rollout doc describes: a red verdict
+  (`packages/review-claim-gate/action/action.yml:217#"conclusion: result.allowed ? 'success' : 'failure',"`)
+  blocks the merge until the five `review:*` labels are set or the PR
+  classifies as a pure release. `audit` and the warn-only staleness job
+  stay out of the required set so a registry outage cannot block a
+  merge. This supersedes the 2026-08-26 entry below as the state last
+  verified (advisory for PR merges then); the live state remains the
+  ruleset query in `merge-approval-gate-mechanics.md` ("How to tell
+  which one is live"), run against the branch rules endpoint.
+
 - 2026-09-07T09:08:37Z, task ed06b4c8 (implementer): grounding-mcp served
   its version from a hand-maintained `PACKAGE_VERSION` literal in
   `packages/grounding-mcp/src/server.ts`, so every grounding-mcp release PR
