@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `server.ts` no longer hardcodes a `PACKAGE_VERSION` literal; the version
+  served by the MCP `name+version` handshake and the `--version` CLI
+  short-circuit is now read from the package's own `package.json` at
+  runtime, so a release bump touches no source file and the release PR
+  qualifies for the `merge-approval` label-free path (task ed06b4c8).
+
 ### Added
 
 - `grounding-assessment-mcp`, a dedicated seven-tool stdio producer entrypoint

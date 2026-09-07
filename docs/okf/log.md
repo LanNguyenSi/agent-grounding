@@ -2,6 +2,27 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-07T10:45:00Z, task ed06b4c8 (implementer): grounding-mcp served
+  its version from a hand-maintained `PACKAGE_VERSION` literal in
+  `packages/grounding-mcp/src/server.ts`, so every grounding-mcp release PR
+  touched a source file and took the label path (`CONTRIBUTING.md`'s
+  disqualifier list named it by path). `server.ts` now resolves the version
+  at runtime from the package's own `package.json` (`new URL('../package.json',
+  import.meta.url)`, matching the existing `claim-gate`/`evidence-ledger`
+  CLI pattern), used at both the MCP `name+version` handshake and the
+  `--version` CLI short-circuit. A new
+  `packages/grounding-mcp/tests/server-version.test.ts` asserts the MCP
+  handshake version equals `package.json#version`; the existing
+  `tests/cli-version.test.ts` already covered the built-`dist/` `--version`
+  path. `CONTRIBUTING.md` and `docs/okf/merge-approval-gate-mechanics.md`
+  no longer name `server.ts` as a common disqualifier example and record
+  that a grounding-mcp release now qualifies for the label-free path.
+  `docs/okf/evidence-ledger-session-key-shapes.md`,
+  `docs/okf/solution-acceptance-verdict-contract.md` and
+  `docs/okf/hypothesis-tracker-persistence-split.md` re-pointed every
+  `server.ts:<line>` citation shifted by the edit. check run: recorded by
+  the orchestrator after the probe PR.
+
 - 2026-09-07T07:36:11Z, task 4493b316 (orchestrator), live probes for criterion 3 and the
   round-4 review notes. Two probe PRs against this branch as base:
   PR #221 (`probe/4493b316-pure`, head `0e4aef1d792fe44aa443154daab31e7f541c2a5b`:
@@ -698,22 +719,22 @@
   citation at or after line 368 as the file stood after round 2 (the
   `solution_evaluate` registration's line at that point) by +11, uniformly, all the
   way to the end of the file: re-pointed to
-  `packages/grounding-mcp/src/server.ts:376#"'solution_evaluate'"` and
-  `packages/grounding-mcp/src/server.ts:451#"'solution_gate'"` in
+  `packages/grounding-mcp/src/server.ts:391#"'solution_evaluate'"` and
+  `packages/grounding-mcp/src/server.ts:466#"'solution_gate'"` in
   `solution-acceptance-verdict-contract.md`, and to
-  `packages/grounding-mcp/src/server.ts:496#"'hypothesis_record',"`,
-  `packages/grounding-mcp/src/server.ts:510#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:516#"'hypothesis_list',"`,
-  `packages/grounding-mcp/src/server.ts:539#"'hypothesis_evidence',"`,
-  `packages/grounding-mcp/src/server.ts:556#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:562#"'hypothesis_check_done',"`,
-  `packages/grounding-mcp/src/server.ts:588#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:594#"'hypothesis_reject',"`,
-  `packages/grounding-mcp/src/server.ts:610#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:616#"'hypothesis_support',"`,
-  `packages/grounding-mcp/src/server.ts:632#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
-  `packages/grounding-mcp/src/server.ts:637#"saveStore(sessionId, store);"` and
-  `packages/grounding-mcp/src/server.ts:643#"'hypothesis_reset',"` in
+  `packages/grounding-mcp/src/server.ts:511#"'hypothesis_record',"`,
+  `packages/grounding-mcp/src/server.ts:525#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:531#"'hypothesis_list',"`,
+  `packages/grounding-mcp/src/server.ts:554#"'hypothesis_evidence',"`,
+  `packages/grounding-mcp/src/server.ts:571#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:577#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:603#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:609#"'hypothesis_reject',"`,
+  `packages/grounding-mcp/src/server.ts:625#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:631#"'hypothesis_support',"`,
+  `packages/grounding-mcp/src/server.ts:647#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
+  `packages/grounding-mcp/src/server.ts:652#"saveStore(sessionId, store);"` and
+  `packages/grounding-mcp/src/server.ts:658#"'hypothesis_reset',"` in
   `hypothesis-tracker-persistence-split.md`. `evidence-ledger-session-key-shapes.md`'s
   own citations sit entirely before line 368 (`server.ts:241`, `server.ts:248-253/254`)
   and did not move, but the file is re-stamped anyway: it declares `server.ts` as a
@@ -775,8 +796,8 @@
   `server.ts` edits (the import swap, the spelled-out `createServer` option
   type, the comment above the two lookup registrations, and the two widened `id`
   schemas) shifted the citations below them by +9 as far as
-  `packages/grounding-mcp/src/server.ts:376#"'solution_evaluate'"`, and by +23
-  from `packages/grounding-mcp/src/server.ts:451#"'solution_gate'"` onward. The
+  `packages/grounding-mcp/src/server.ts:391#"'solution_evaluate'"`, and by +23
+  from `packages/grounding-mcp/src/server.ts:466#"'solution_gate'"` onward. The
   new README paragraph shifted
   `packages/grounding-mcp/README.md:214#"the root cause is the backend container's missing OPENAI_API_KEY env var"`
   by +2, and the one new import in the roundtrip test shifted
@@ -843,24 +864,25 @@
   `createServer`, the extended `solution_evaluate` handler, the two new
   registrations, and the reconciliation call in `main()`) shifted every citation
   below them, by +5 at `PACKAGE_VERSION` (the version literal was `'0.10.0'` at
-  the time of this entry, now `'0.11.0'`)
-  (`packages/grounding-mcp/src/server.ts:55#"PACKAGE_VERSION = '0.11.0'"`), by +26
+  the time of this entry, now read from `package.json` at runtime, task
+  ed06b4c8)
+  (`packages/grounding-mcp/src/server.ts:70#"const PACKAGE_VERSION = readPackageVersion();"`), by +26
   through the `ledger_add` handler
-  (`packages/grounding-mcp/src/server.ts:241#"Session id"`,
-  `packages/grounding-mcp/src/server.ts:248-254#"session: sessionId,"`), by +26 at
+  (`packages/grounding-mcp/src/server.ts:256#"Session id"`,
+  `packages/grounding-mcp/src/server.ts:263-269#"session: sessionId,"`), by +26 at
   the `solution_evaluate` registration
-  (`packages/grounding-mcp/src/server.ts:376#"'solution_evaluate'"`), and by +63
-  from `solution_gate` (`packages/grounding-mcp/src/server.ts:451#"'solution_gate'"`)
+  (`packages/grounding-mcp/src/server.ts:391#"'solution_evaluate'"`), and by +63
+  from `solution_gate` (`packages/grounding-mcp/src/server.ts:466#"'solution_gate'"`)
   through every `hypothesis_*` tool below it
-  (`packages/grounding-mcp/src/server.ts:496#"'hypothesis_record',"`,
-  `packages/grounding-mcp/src/server.ts:510#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:516#"'hypothesis_list',"`,
-  `packages/grounding-mcp/src/server.ts:539#"'hypothesis_evidence',"`,
-  `packages/grounding-mcp/src/server.ts:562#"'hypothesis_check_done',"`,
-  `packages/grounding-mcp/src/server.ts:594#"'hypothesis_reject',"`,
-  `packages/grounding-mcp/src/server.ts:616#"'hypothesis_support',"`,
-  `packages/grounding-mcp/src/server.ts:632#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
-  `packages/grounding-mcp/src/server.ts:643#"'hypothesis_reset',"`), since the two
+  (`packages/grounding-mcp/src/server.ts:511#"'hypothesis_record',"`,
+  `packages/grounding-mcp/src/server.ts:525#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:531#"'hypothesis_list',"`,
+  `packages/grounding-mcp/src/server.ts:554#"'hypothesis_evidence',"`,
+  `packages/grounding-mcp/src/server.ts:577#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:609#"'hypothesis_reject',"`,
+  `packages/grounding-mcp/src/server.ts:631#"'hypothesis_support',"`,
+  `packages/grounding-mcp/src/server.ts:647#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
+  `packages/grounding-mcp/src/server.ts:658#"'hypothesis_reset',"`), since the two
   new tool registrations sit between those two anchors. The `preWriteGuard` block
   moved the marker-write anchor's range end only
   (`packages/grounding-mcp/src/solution-verdict.ts:746-803#"const markerPath = writeVerdict(verdict);"`),
