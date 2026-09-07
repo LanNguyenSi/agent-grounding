@@ -2,7 +2,7 @@
 
 <!-- Add new entries at the top, newest first. -->
 
-- 2026-09-07T10:45:00Z, task ed06b4c8 (implementer): grounding-mcp served
+- 2026-09-07T09:08:37Z, task ed06b4c8 (implementer): grounding-mcp served
   its version from a hand-maintained `PACKAGE_VERSION` literal in
   `packages/grounding-mcp/src/server.ts`, so every grounding-mcp release PR
   touched a source file and took the label path (`CONTRIBUTING.md`'s
@@ -21,7 +21,13 @@
   `docs/okf/solution-acceptance-verdict-contract.md` and
   `docs/okf/hypothesis-tracker-persistence-split.md` re-pointed every
   `server.ts:<line>` citation shifted by the edit. check run: recorded by
-  the orchestrator after the probe PR.
+  the orchestrator after the probe PR. Review round 1 delta: generalized
+  the release-only-source example off `server.ts` in
+  `scripts/release-exception.js`, dropped the task-id parenthetical from
+  the `CONTRIBUTING.md`/mechanics prose, reworded the tarball-`files` and
+  in-sync-constant comments, made the historical
+  `server.ts:241`/`:248-253/254` citations' point-in-time status explicit,
+  and added a semver-shape assertion to `server-version.test.ts`.
 
 - 2026-09-07T07:36:11Z, task 4493b316 (orchestrator), live probes for criterion 3 and the
   round-4 review notes. Two probe PRs against this branch as base:
@@ -56,7 +62,7 @@
   being a release at all. `classifyPullFiles` now counts the allowed
   version paths that actually changed value across the whole PR and
   requires at least one
-  (`release-exception.js:459-466#"else if (versionBumps === 0) reason = 'no-version-bump';"`).
+  (`release-exception.js:458-465#"else if (versionBumps === 0) reason = 'no-version-bump';"`).
   The verdict gained a PR-level `reason` beside the per-file ones (`null`
   when pure, else `empty-file-list`, `rejected-files` or
   `no-version-bump`), which the step summary now always prints
@@ -83,14 +89,14 @@
   for a lockfile bump at a nested `$.packages["packages/a/b"].version`
   path now pins that the allowed lockfile path regex takes exactly one
   segment (`release-exception.test.js:553#"NESTED packages path"`,
-  against `release-exception.js:317#".test(jsonPath)"`); the workflow's
+  against `release-exception.js:316#".test(jsonPath)"`); the workflow's
   `readFile` now treats a response whose `encoding` is not `base64` (the
   Contents API's over-1-MB shape: empty content, `encoding: "none"`) as a
   distinct signal (`merge-approval.yml:153-157#"res.data.encoding !== 'base64'"`)
   rather than as an absent file, carried as an exported sentinel
-  (`release-exception.js:251#"Symbol.for('release-exception.content-too-large')"`)
+  (`release-exception.js:250#"Symbol.for('release-exception.content-too-large')"`)
   that the classifier maps to the reasons `content-too-large-base`/
-  `-head` (`release-exception.js:335#"content-too-large-base"`), with a
+  `-head` (`release-exception.js:334#"content-too-large-base"`), with a
   unit case for each side; the 1 MB limit is now stated in the module
   header and in `merge-approval-gate-mechanics.md`'s residuals. Note that
   the sentinel is not a string, so a reader that never sends it still
@@ -736,8 +742,8 @@
   `packages/grounding-mcp/src/server.ts:652#"saveStore(sessionId, store);"` and
   `packages/grounding-mcp/src/server.ts:658#"'hypothesis_reset',"` in
   `hypothesis-tracker-persistence-split.md`. `evidence-ledger-session-key-shapes.md`'s
-  own citations sit entirely before line 368 (`server.ts:241`, `server.ts:248-253/254`)
-  and did not move, but the file is re-stamped anyway: it declares `server.ts` as a
+  own citations sit entirely before line 368 (`server.ts:241`, `server.ts:248-253/254`,
+  as the file stood then) and did not move, but the file is re-stamped anyway: it declares `server.ts` as a
   source, and that file changed. Every quoted anchor text is unchanged and still
   resolves verbatim at its new line; none of the re-pointed docs' `sources:` lists
   changed. `solution-acceptance-verdict-contract.md`'s `solution_evaluate` args
