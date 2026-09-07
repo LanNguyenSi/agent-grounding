@@ -58,11 +58,12 @@
   `merge-approval-gate-mechanics.md`'s residuals paragraph (the
   submodule/symlink qualifier was misplaced mid-clause). All prior
   probes replayed and still kill.
+  Rebase onto master after task ed06b4c8 merged (#226): the release-exception.js citations of this PR moved by one line for that PR's comment rewrite and were re-pointed against the final file; evidence-ledger-session-key-shapes.md took that PR's server.ts re-points and this PR's merge-approval.yml re-point, and it and grounding-stack-overview.md (root package.json gained the new test script) were re-stamped after every citation into the changed files was checked.
 
 - 2026-09-07T09:13:32Z, task b77efb40 round 2, review fixes: extracted
   the workflow's inline `readFile` into an exported
   `makeGetContentReader({ getContent, owner, repo })` factory in
-  `scripts/release-exception.js` (`release-exception.js:329#"function makeGetContentReader"`);
+  `scripts/release-exception.js` (`release-exception.js:328#"function makeGetContentReader"`);
   the `github-script` step now only wires the factory to
   `github.rest.repos.getContent` instead of defining the reader inline,
   so the entry-type handling is unit-testable against the real Contents
@@ -82,7 +83,7 @@
   `NOT_A_FILE` for a symlink and for a submodule flow through to the same
   named reasons as the sentinel-level tests. Two mutation probes on the
   extracted `res.data.type !== 'file'` check
-  (`release-exception.js:339#"if (res.data.type !== 'file') return NOT_A_FILE;"`):
+  (`release-exception.js:338#"if (res.data.type !== 'file') return NOT_A_FILE;"`):
   letting a symlink through (`&& res.data.type !== 'symlink'`) and
   letting a submodule through (`&& res.data.type !== 'submodule'`); both
   killed by `agent-primitives probe --plan`. The round-1 probe (mapping a
@@ -136,7 +137,7 @@
   `NOT_A_FILE` sentinel instead of `CONTENT_TOO_LARGE`.
   `scripts/release-exception.js`'s `checkVersionOnlyContent` maps it to the
   per-file reasons `not-a-file-base`/`not-a-file-head`
-  (`release-exception.js:428#"not-a-file-base"`); the verdict is unchanged
+  (`release-exception.js:427#"not-a-file-base"`); the verdict is unchanged
   (still not pure, fail-closed) either way, only the reported reason is
   now accurate. Unit tests for both sides
   (`scripts/release-exception.test.js`); the extracted step body replayed
@@ -190,7 +191,7 @@
   being a release at all. `classifyPullFiles` now counts the allowed
   version paths that actually changed value across the whole PR and
   requires at least one
-  (`release-exception.js:565#"else if (versionBumps === 0) reason = 'no-version-bump';"`).
+  (`release-exception.js:564#"else if (versionBumps === 0) reason = 'no-version-bump';"`).
   The verdict gained a PR-level `reason` beside the per-file ones (`null`
   when pure, else `empty-file-list`, `rejected-files` or
   `no-version-bump`), which the step summary now always prints
@@ -217,14 +218,14 @@
   for a lockfile bump at a nested `$.packages["packages/a/b"].version`
   path now pins that the allowed lockfile path regex takes exactly one
   segment (`release-exception.test.js:562#"NESTED packages path"`,
-  against `release-exception.js:410#".test(jsonPath)"`); the workflow's
+  against `release-exception.js:409#".test(jsonPath)"`); the workflow's
   `readFile` now treats a response whose `encoding` is not `base64` (the
   Contents API's over-1-MB shape: empty content, `encoding: "none"`) as a
-  distinct signal (`release-exception.js:340#"res.data.encoding !== 'base64'"`)
+  distinct signal (`release-exception.js:339#"res.data.encoding !== 'base64'"`)
   rather than as an absent file, carried as an exported sentinel
-  (`release-exception.js:273#"Symbol.for('release-exception.content-too-large')"`)
+  (`release-exception.js:272#"Symbol.for('release-exception.content-too-large')"`)
   that the classifier maps to the reasons `content-too-large-base`/
-  `-head` (`release-exception.js:430#"content-too-large-base"`), with a
+  `-head` (`release-exception.js:429#"content-too-large-base"`), with a
   unit case for each side; the 1 MB limit is now stated in the module
   header and in `merge-approval-gate-mechanics.md`'s residuals. Note that
   the sentinel is not a string, so a reader that never sends it still
