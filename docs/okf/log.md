@@ -28,6 +28,7 @@
   in-sync-constant comments, made the historical
   `server.ts:241`/`:248-253/254` citations' point-in-time status explicit,
   and added a semver-shape assertion to `server-version.test.ts`.
+  The comment rewrites of that delta touched three source files (server.ts, CONTRIBUTING.md, release-exception.js); the four bundle docs that list them were re-stamped in a follow-up commit after checking that every citation into those files still resolves.
 
 - 2026-09-07T07:36:11Z, task 4493b316 (orchestrator), live probes for criterion 3 and the
   round-4 review notes. Two probe PRs against this branch as base:
