@@ -2,6 +2,228 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-07T12:13:46Z, merge of master into the packaging-verification branch (task
+  d341afd5, orchestrator): master's squash of task f31ad37f re-dated
+  `CHANGELOG.md` to the merge instant, so `grounding-stack-overview.md`
+  (whose `sources:` lists it) read STALE on the merged branch while master
+  itself stays fresh (its doc and source share one commit). Re-verified
+  the one passage that rests on the root CHANGELOG, the split release
+  topology (`CHANGELOG.md:9-30#"readme-first-resolver"`), against the
+  merged file: unchanged by the diagnostic entries, which sit under the
+  `[Unreleased]` heading below it. Re-stamped the doc; no other doc in the
+  bundle lists the root CHANGELOG as a source.
+
+- 2026-09-07T12:05:48Z, packaging verification CI check, round 3 review
+  fixes (task d341afd5): a reviewer found no test pinned the SOURCE of the
+  expected version -- mutating `run()` to read the in-tree
+  `packages/grounding-mcp/package.json`
+  (`scripts/check-grounding-mcp-pack.js:403#"expectedVersion = readVersionFn(tgzPath);"`)
+  instead of the packed tarball survived every existing test. Fixed by
+  adding an injectable `readVersionFn` seam next to the existing `execFn`
+  one, with a new assertion in the argv-level `run()` test pinning that it
+  is called with the packed grounding-mcp tarball path, never the in-tree
+  manifest
+  (`scripts/check-grounding-mcp-pack.test.js:480#"test('run(): the install call gets every real version-locked sibling tarball"`).
+  D-012: `findVersionLockedWorkspaceSiblings` was a fixed one-hop read of
+  `dependencies` against a hardcoded `packages/` scan, shallower than its
+  own docblock claimed. Reworked as a breadth-first walk seeded with
+  grounding-mcp that also scans each discovered sibling's own exact-pinned
+  `@lannguyensi/*` dependencies
+  (`scripts/check-grounding-mcp-pack.js:177#"function findVersionLockedWorkspaceSiblings(rootDir, packageDir) {"`),
+  covering both `dependencies` and `optionalDependencies`; the workspace
+  package directories are now derived from the root `package.json`'s own
+  `workspaces` entries
+  (`scripts/check-grounding-mcp-pack.js:97#"function resolveWorkspaceDirs(rootDir) {"`,
+  supporting the `<dir>/*` glob form and an explicit path, no glob
+  library) instead of a hardcoded `packages/*` scan; and the exact-version
+  regex now accepts build metadata (`1.2.3+build`). Extended with a
+  sibling-of-a-sibling fixture case and an optionalDependencies fixture
+  case
+  (`scripts/check-grounding-mcp-pack.test.js:184#"function makeFixtureWorkspace(tmpRoot) {"`).
+  Against today's real grounding-mcp siblings this walk still terminates
+  at depth 1 (none of the four direct siblings exact-pin a further
+  `@lannguyensi/*` package), so the docblock's own claim was narrowed to
+  describe what the function implements rather than what today's
+  manifests happen to exercise. The range-pin exclusion's docblock claim
+  ("the registry always has a satisfying version") was replaced with a
+  named assumption and a pointer to this log's own history of a held-back
+  sibling
+  (`scripts/check-grounding-mcp-pack.js:168#"correctly excluded by the exact-pin check"`).
+  The install call had no timeout: against a black-holed registry it hung
+  past this job's own `timeout-minutes: 10`, which then kills the whole
+  job with a generic timeout instead of a named failure here.
+  `installTarballs`
+  (`scripts/check-grounding-mcp-pack.js:283#"function installTarballs(tgzPaths, consumerDir, execFn = execFileSync) {"`)
+  now passes a 5-minute `timeout` and `--fetch-retries=2`; a timeout-shaped
+  exec error (Node's own `.killed` convention) is re-thrown with a named
+  "timed out after ... ms" message, tested through the `execFn` seam.
+  `run()`'s own install-failure message
+  (`scripts/check-grounding-mcp-pack.js:410#"installTarballs([...siblingTgzPaths, tgzPath], consumerDir, execFn);"`)
+  no longer names the already-removed scratch consumer directory, matching
+  `evaluateVersionMatch`'s existing convention, and now extracts the
+  unresolved `name@spec` from npm's own ETARGET/E404 stderr when present
+  (`extractUnresolvedDependency`) so a future range-pin failure names the
+  offending dependency at a glance. `main()`'s `--corrupt=` argv parsing
+  was extracted into `parseCorruptArg`
+  (`scripts/check-grounding-mcp-pack.js:453#"function parseCorruptArg(argv) {"`)
+  and unit-tested directly. The install argv's tarball ORDER (every
+  sibling before grounding-mcp itself) is now pinned in both the
+  `installTarballs` and `run()` argv-level tests. Prior-round review-round
+  bookkeeping (finding letters, round numbers) baked into `ci.yml`'s step
+  comments and this script/test file's own docblocks was trimmed to the
+  "why" a reader needs, pointing at this log for the rest.
+  `grounding-stack-overview.md`'s packaging-verification citation range
+  was corrected to end on the line the cited command actually occurs on
+  (`.github/workflows/ci.yml:430-446`, not `430-455`) after the comment
+  trim moved it. `okf-kit check --require-anchors --json docs/okf`
+  reported 0 errors, 0 new citations-resolve warnings beyond this bundle's
+  four pre-existing ones, 0 unresolved-ambiguous notices.
+
+- 2026-09-07T11:29:10Z, packaging verification CI check, round 2 review
+  fixes (task d341afd5): a reviewer reproduced a false-red on this repo's
+  own lockstep release PRs -- grounding-mcp's exact-pinned
+  `@lannguyensi/*` sibling dependencies are re-pinned to a same-PR,
+  not-yet-published version in the same commit that bumps those siblings,
+  so the round-1 checker's scratch install (grounding-mcp's tarball alone)
+  resolved those pins off the public registry and hit ETARGET. Fixed by
+  packing every version-locked sibling too
+  (`findVersionLockedWorkspaceSiblings`, derived from
+  `packages/grounding-mcp/package.json`'s own dependency map, not a
+  hardcoded list) and installing all the tarballs together in one `npm
+  install` call, so npm satisfies the pins from the local files; verified
+  by hand that the installed tree's `package-lock.json` then resolves each
+  sibling via a `file:` path, not a registry URL. The round-1 end-to-end
+  unit tests silently skipped (exit 0) when `packages/grounding-mcp/dist`
+  was missing -- exactly the layout regression this checker exists to
+  catch; the CI unit-test step
+  (`.github/workflows/ci.yml:457-478#"npm run test:check-grounding-mcp-pack"`)
+  now sets `GROUNDING_MCP_PACK_REQUIRE_DIST=1`, which turns that skip into
+  a named hard failure, while a local run with no env var still skips.
+  Added argv-level tests (an injectable `execFn`) pinning the install
+  call's `--omit=dev` flag and every tarball path, and the version-check
+  bin invocation's path/cwd; a prior round's redundant happy-path
+  end-to-end test was dropped in favor of this in-process coverage, so the
+  job now does two real pack+install rounds for this checker, not three.
+  `grounding-stack-overview.md`'s "Packaging verification (CI)" section was
+  updated to describe the sibling co-pack, its citation for the unit-test
+  step corrected from `package.json:29#"check:grounding-mcp-pack"` (which
+  named the wrong script) to
+  `package.json:30#"test:check-grounding-mcp-pack"`, its "checked against
+  the actual published artifact" wording corrected to "checked against the
+  packed artifact (the tarball `npm publish` would upload)" (nothing is
+  actually published by this check), and its inline PR/task provenance
+  mentions removed in favor of pointing at this log (that section was the
+  only place in the doc carrying bare PR/task references). `okf-kit check
+  --require-anchors --json docs/okf` reported 0 errors, 0 citations-resolve
+  warnings, 0 unresolved-ambiguous notices against the doc's changed
+  citations.
+
+- 2026-09-07T11:06:07Z, packaging verification CI check (task d341afd5):
+  grounding-stack-overview gained a "Packaging verification (CI)" section
+  pointing at the new `ci` job step
+  (`.github/workflows/ci.yml:430-455#"npm run check:grounding-mcp-pack"`)
+  that packs `@lannguyensi/grounding-mcp`, installs the tarball into a
+  scratch consumer directory, and asserts `grounding-mcp --version` there
+  matches the tarball's own `package.json` version -- automating the
+  manual "works from the published tarball" verification behind PR #226
+  (task ed06b4c8). `okf-kit check --require-anchors --json docs/okf`
+  reported 0 errors, 0 citations-resolve warnings, 0 unresolved-ambiguous
+  notices against the doc's new citations.
+
+- 2026-09-07T11:04:05Z, silent version-read fallback diagnostic (task
+  f31ad37f): `readPackageVersion()`/`readVersion()` in `server.ts`,
+  `claim-gate/src/cli.ts`, and `evidence-ledger/src/cli.ts` now write one
+  `process.stderr` line naming the package and the failure (read error or
+  missing `version` field) before returning the unchanged `'0.0.0'`
+  fallback, and take an injectable `packageJsonUrl`/`read` pair so the
+  failure path is unit-testable without a dist/ subprocess. The
+  `server.ts` edit added a net +15 lines before `PACKAGE_VERSION`'s
+  declaration, shifting every later line in the file; re-pinned both
+  bounds of every citation this broke, both in
+  `solution-acceptance-verdict-contract.md` (`solution_evaluate`/
+  `solution_gate` registration lines,
+  `packages/grounding-mcp/src/server.ts:102#"const PACKAGE_VERSION = readPackageVersion();"`),
+  `evidence-ledger-session-key-shapes.md` (the `ledger_add` sessionId
+  param doc and write-through range), `hypothesis-tracker-persistence-split.md`
+  (all seven `hypothesis_*` registration lines, the `saveStore` call-site
+  list, and the not-found-rejected-or-checks-pending error line), and in
+  this doc's own earlier entries citing the same lines. The
+  `claim-gate/src/cli.ts` edit added a net +15 lines before
+  `has_evidence: opts.evidence,`/`process.exit(1)`; re-pinned both
+  citations in `claim-gate-vs-review-claim-gate.md`, and aligned that
+  package's and `evidence-ledger`'s tarball-inclusion comment to
+  `server.ts`'s existing wording ("npm always includes package.json in
+  the published tarball, independent of `files`") since the prior wording
+  named the `files` field as the reason, which is backwards. `okf-kit
+  check --require-anchors --json docs/okf` reported 0 errors and 0
+  notices, and the same pre-existing log.md-only warnings as master
+  before and after, identity-matched: the `solution-verdict.ts` markerPath
+  anchor-not-found (short- and full-path citation forms), the
+  `merge-approval.yml:47` review-claim-gate-v0.1.6 anchor-not-found, and
+  the merge-approval-gate-mechanics.md blank-start-line warning (the
+  citation whose start line is blank);
+  `check:okf-test-citation-shape` and `check:okf-selectors` both passed.
+
+  Round-2 correction (task f31ad37f, review round 1): that "0 errors and
+  0 notices... same warnings before and after" claim above was wrong as
+  measured by review round 1 — the F3/F4 fix pass in this same task
+  re-shifted `server.ts` (+14) and `claim-gate/src/cli.ts` (+12) a second
+  time, and a first attempt at this sentence itself minted a new
+  `[blank-start-line]` finding by citing
+  `merge-approval-gate-mechanics.md` with a bare, unanchored `:28` line
+  suffix. Both are fixed: every citation into `server.ts` (in
+  `solution-acceptance-verdict-contract.md`, `evidence-ledger-session-key-shapes.md`,
+  `hypothesis-tracker-persistence-split.md`, and this doc's own history)
+  and into `claim-gate/src/cli.ts` (in `claim-gate-vs-review-claim-gate.md`)
+  was re-pinned to the new line numbers, `grounding-stack-overview.md`
+  was re-verified against `CHANGELOG.md`'s new `[Unreleased]` entries and
+  re-stamped, and the paragraph above now names the
+  merge-approval-gate-mechanics.md warning by doc and finding class
+  instead of a bare line reference. Measured after this correction:
+  `okf-kit check --require-anchors --json docs/okf` again reports 0
+  errors, 0 notices, and exactly the four pre-existing log.md-only
+  warnings named above; `check:okf-test-citation-shape` and
+  `check:okf-selectors` both passed.
+
+  Round-3 delta (task f31ad37f, review round 2): fixed four review-round-2
+  notes without reopening the fallback contract. M1: the paragraph above
+  named the merge-approval-gate-mechanics.md warning as
+  "uses-anchor-not-found" when okf-kit actually reports it as
+  `[blank-start-line]` (its citation's start line is blank); reworded to
+  say "blank-start-line warning (the citation whose start line is
+  blank)". L1: in all three readers the stderr diagnostic's failure
+  reason was computed with `err instanceof Error ? err.message :
+  String(err)` outside the best-effort try/catch guarding the write
+  itself, so a throwing `Error#message` getter or a throwing
+  `String(err)` (an object with a throwing toString/Symbol.toPrimitive)
+  could still escape the function; the reason is now computed inside that
+  guard and collapsed to one line before interpolation. L2: claim-gate's
+  and evidence-ledger's `readVersion` exports now carry the same
+  "test seam, not supported API" `@internal` marker
+  `packages/grounding-mcp/src/server.ts:66#"@internal"` already had.
+  L3: the missing-version tests' `toContain('version')` assertions also
+  matched the read-failure message; replaced with the distinguishing
+  substring per branch, and added a seventh per-package case for
+  `{ version: '' }` (already routed through the missing-version branch
+  since an earlier round in this task, just untested until now).
+
+  The L1 fix shifted `server.ts` by +3 lines (`const PACKAGE_VERSION =
+  readPackageVersion();` now at
+  `packages/grounding-mcp/src/server.ts:102#"const PACKAGE_VERSION = readPackageVersion();"`)
+  and `claim-gate/src/cli.ts` by +5 (L2's marker added two of those);
+  every citation into both files was re-pinned, including the two bare,
+  unanchored `server.ts` point-in-time references this doc's own history
+  carries (now `server.ts:244` and `server.ts:251-256/257`, both above
+  in this same entry). L4:
+  `grounding-stack-overview.md` was re-verified against `CHANGELOG.md`'s
+  extended `[Unreleased]` bullets and re-stamped in the commit after the
+  source/CHANGELOG commit landed, so its `timestamp:` postdates the
+  CHANGELOG edit it declares as a source. Measured after this round:
+  `okf-kit check --require-anchors --json docs/okf` again reports 0
+  errors, 0 notices, and exactly the four pre-existing log.md-only
+  warnings named above; `check:okf-test-citation-shape` and
+  `check:okf-selectors` both passed.
+
 - 2026-09-07T10:48:26Z, task 8233a401 round 1 (implementer): unspliced the
   residuals paragraph in `merge-approval-gate-mechanics.md`
   (`merge-approval-gate-mechanics.md:189-194`). A prior edit had inserted the
@@ -2313,96 +2535,3 @@
   notices; `check:okf-test-citation-shape` and `check:okf-selectors` both
   passed.
 
-- 2026-09-07T11:04:05Z, silent version-read fallback diagnostic (task
-  f31ad37f): `readPackageVersion()`/`readVersion()` in `server.ts`,
-  `claim-gate/src/cli.ts`, and `evidence-ledger/src/cli.ts` now write one
-  `process.stderr` line naming the package and the failure (read error or
-  missing `version` field) before returning the unchanged `'0.0.0'`
-  fallback, and take an injectable `packageJsonUrl`/`read` pair so the
-  failure path is unit-testable without a dist/ subprocess. The
-  `server.ts` edit added a net +15 lines before `PACKAGE_VERSION`'s
-  declaration, shifting every later line in the file; re-pinned both
-  bounds of every citation this broke, both in
-  `solution-acceptance-verdict-contract.md` (`solution_evaluate`/
-  `solution_gate` registration lines,
-  `packages/grounding-mcp/src/server.ts:102#"const PACKAGE_VERSION = readPackageVersion();"`),
-  `evidence-ledger-session-key-shapes.md` (the `ledger_add` sessionId
-  param doc and write-through range), `hypothesis-tracker-persistence-split.md`
-  (all seven `hypothesis_*` registration lines, the `saveStore` call-site
-  list, and the not-found-rejected-or-checks-pending error line), and in
-  this doc's own earlier entries citing the same lines. The
-  `claim-gate/src/cli.ts` edit added a net +15 lines before
-  `has_evidence: opts.evidence,`/`process.exit(1)`; re-pinned both
-  citations in `claim-gate-vs-review-claim-gate.md`, and aligned that
-  package's and `evidence-ledger`'s tarball-inclusion comment to
-  `server.ts`'s existing wording ("npm always includes package.json in
-  the published tarball, independent of `files`") since the prior wording
-  named the `files` field as the reason, which is backwards. `okf-kit
-  check --require-anchors --json docs/okf` reported 0 errors and 0
-  notices, and the same pre-existing log.md-only warnings as master
-  before and after, identity-matched: the `solution-verdict.ts` markerPath
-  anchor-not-found (short- and full-path citation forms), the
-  `merge-approval.yml:47` review-claim-gate-v0.1.6 anchor-not-found, and
-  the merge-approval-gate-mechanics.md blank-start-line warning (the
-  citation whose start line is blank);
-  `check:okf-test-citation-shape` and `check:okf-selectors` both passed.
-
-  Round-2 correction (task f31ad37f, review round 1): that "0 errors and
-  0 notices... same warnings before and after" claim above was wrong as
-  measured by review round 1 — the F3/F4 fix pass in this same task
-  re-shifted `server.ts` (+14) and `claim-gate/src/cli.ts` (+12) a second
-  time, and a first attempt at this sentence itself minted a new
-  `[blank-start-line]` finding by citing
-  `merge-approval-gate-mechanics.md` with a bare, unanchored `:28` line
-  suffix. Both are fixed: every citation into `server.ts` (in
-  `solution-acceptance-verdict-contract.md`, `evidence-ledger-session-key-shapes.md`,
-  `hypothesis-tracker-persistence-split.md`, and this doc's own history)
-  and into `claim-gate/src/cli.ts` (in `claim-gate-vs-review-claim-gate.md`)
-  was re-pinned to the new line numbers, `grounding-stack-overview.md`
-  was re-verified against `CHANGELOG.md`'s new `[Unreleased]` entries and
-  re-stamped, and the paragraph above now names the
-  merge-approval-gate-mechanics.md warning by doc and finding class
-  instead of a bare line reference. Measured after this correction:
-  `okf-kit check --require-anchors --json docs/okf` again reports 0
-  errors, 0 notices, and exactly the four pre-existing log.md-only
-  warnings named above; `check:okf-test-citation-shape` and
-  `check:okf-selectors` both passed.
-
-  Round-3 delta (task f31ad37f, review round 2): fixed four review-round-2
-  notes without reopening the fallback contract. M1: the paragraph above
-  named the merge-approval-gate-mechanics.md warning as
-  "uses-anchor-not-found" when okf-kit actually reports it as
-  `[blank-start-line]` (its citation's start line is blank); reworded to
-  say "blank-start-line warning (the citation whose start line is
-  blank)". L1: in all three readers the stderr diagnostic's failure
-  reason was computed with `err instanceof Error ? err.message :
-  String(err)` outside the best-effort try/catch guarding the write
-  itself, so a throwing `Error#message` getter or a throwing
-  `String(err)` (an object with a throwing toString/Symbol.toPrimitive)
-  could still escape the function; the reason is now computed inside that
-  guard and collapsed to one line before interpolation. L2: claim-gate's
-  and evidence-ledger's `readVersion` exports now carry the same
-  "test seam, not supported API" `@internal` marker
-  `packages/grounding-mcp/src/server.ts:66#"@internal"` already had.
-  L3: the missing-version tests' `toContain('version')` assertions also
-  matched the read-failure message; replaced with the distinguishing
-  substring per branch, and added a seventh per-package case for
-  `{ version: '' }` (already routed through the missing-version branch
-  since an earlier round in this task, just untested until now).
-
-  The L1 fix shifted `server.ts` by +3 lines (`const PACKAGE_VERSION =
-  readPackageVersion();` now at
-  `packages/grounding-mcp/src/server.ts:102#"const PACKAGE_VERSION = readPackageVersion();"`)
-  and `claim-gate/src/cli.ts` by +5 (L2's marker added two of those);
-  every citation into both files was re-pinned, including the two bare,
-  unanchored `server.ts` point-in-time references this doc's own history
-  carries (now `server.ts:244` and `server.ts:251-256/257`, both above
-  in this same entry). L4:
-  `grounding-stack-overview.md` was re-verified against `CHANGELOG.md`'s
-  extended `[Unreleased]` bullets and re-stamped in the commit after the
-  source/CHANGELOG commit landed, so its `timestamp:` postdates the
-  CHANGELOG edit it declares as a source. Measured after this round:
-  `okf-kit check --require-anchors --json docs/okf` again reports 0
-  errors, 0 notices, and exactly the four pre-existing log.md-only
-  warnings named above; `check:okf-test-citation-shape` and
-  `check:okf-selectors` both passed.
