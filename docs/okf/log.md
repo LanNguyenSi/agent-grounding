@@ -2,6 +2,37 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-07T10:48:26Z, task 8233a401 round 1 (implementer): unspliced the
+  residuals paragraph in `merge-approval-gate-mechanics.md`
+  (`merge-approval-gate-mechanics.md:189-194`). A prior edit had inserted the
+  whole "no content difference at all" sentence in the middle of the
+  parenthetical `(not enforced by ... this classifier)`, splitting it across
+  a line break. The parenthetical now reads whole again, and the inserted
+  sentence stands on its own after the cross-pin clause, matching
+  `CONTRIBUTING.md`'s ordering of the same three residuals (one-package rule
+  not enforced, cross-pin not caught, no-content-difference file rides on
+  another's real bump). Re-verified both residuals directly against
+  `scripts/release-exception.js`'s `classifyPullFiles`: its per-file loop
+  tracks no per-package count or cross-file dependency check at all, only a
+  PR-wide bump counter (`release-exception.js:512#"let versionBumps = 0;"`,
+  `release-exception.js:557#"versionBumps += result.bumpCount;"`), and the
+  only aggregate rejection is a zero-bump check
+  (`release-exception.js:564#"else if (versionBumps === 0) reason = 'no-version-bump';"`),
+  so a file with an identical parsed document (`bumpCount: 0`) still lets
+  the PR classify pure as long as some other allowed file's `bumpCount` is
+  nonzero. Re-stamped the doc's `timestamp` after this fix, in the same
+  commit as the fix. `okf-kit check --json docs/okf` and `okf-kit check
+  --json --require-anchors docs/okf` (both `okf-kit@0.10.0`) report the same
+  4 `citations-resolve` warnings before and after, all pre-existing and all
+  in this file (`log.md`): the `solution-verdict.ts` line-746-803
+  anchor-not-found (two citations, one pointing into `log.md` itself and one
+  into `merge-approval-gate-mechanics.md`'s source lines), the
+  `merge-approval.yml` line-47 anchor-not-found, and `merge-approval-gate-mechanics.md`'s own
+  line-28 blank-start-line notice; zero errors both times.
+  `.github/workflows/ci.yml`'s "Citation guard" step
+  (`okf-kit check --require-anchors --json "${BUNDLE_PATH}"`, `BUNDLE_PATH=
+  docs/okf`) replayed locally with the same result.
+
 - 2026-09-07T10:32:51Z, operator decision after batch 41 (orchestrator): master's ruleset
   `main-protection` (id 16522106) now lists `merge-approval`, `ci` and
   `OKF bundle citation guard` as required status checks
@@ -48,7 +79,7 @@
   `scripts/release-exception.js`, dropped the task-id parenthetical from
   the `CONTRIBUTING.md`/mechanics prose, reworded the tarball-`files` and
   in-sync-constant comments, made the historical
-  `server.ts:241`/`:248-253/254` citations' point-in-time status explicit,
+  `server.ts:244`/`:248-253/254` citations' point-in-time status explicit,
   and added a semver-shape assertion to `server-version.test.ts`.
   The comment rewrites of that delta touched three source files (server.ts, CONTRIBUTING.md, release-exception.js); the four bundle docs that list them were re-stamped in a follow-up commit after checking that every citation into those files still resolves.
 
@@ -871,24 +902,24 @@
   citation at or after line 368 as the file stood after round 2 (the
   `solution_evaluate` registration's line at that point) by +11, uniformly, all the
   way to the end of the file: re-pointed to
-  `packages/grounding-mcp/src/server.ts:391#"'solution_evaluate'"` and
-  `packages/grounding-mcp/src/server.ts:466#"'solution_gate'"` in
+  `packages/grounding-mcp/src/server.ts:423#"'solution_evaluate'"` and
+  `packages/grounding-mcp/src/server.ts:498#"'solution_gate'"` in
   `solution-acceptance-verdict-contract.md`, and to
-  `packages/grounding-mcp/src/server.ts:511#"'hypothesis_record',"`,
-  `packages/grounding-mcp/src/server.ts:525#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:531#"'hypothesis_list',"`,
-  `packages/grounding-mcp/src/server.ts:554#"'hypothesis_evidence',"`,
-  `packages/grounding-mcp/src/server.ts:571#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:577#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:543#"'hypothesis_record',"`,
+  `packages/grounding-mcp/src/server.ts:557#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:563#"'hypothesis_list',"`,
+  `packages/grounding-mcp/src/server.ts:586#"'hypothesis_evidence',"`,
   `packages/grounding-mcp/src/server.ts:603#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:609#"'hypothesis_reject',"`,
-  `packages/grounding-mcp/src/server.ts:625#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:631#"'hypothesis_support',"`,
-  `packages/grounding-mcp/src/server.ts:647#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
-  `packages/grounding-mcp/src/server.ts:652#"saveStore(sessionId, store);"` and
-  `packages/grounding-mcp/src/server.ts:658#"'hypothesis_reset',"` in
+  `packages/grounding-mcp/src/server.ts:609#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:635#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:641#"'hypothesis_reject',"`,
+  `packages/grounding-mcp/src/server.ts:657#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:663#"'hypothesis_support',"`,
+  `packages/grounding-mcp/src/server.ts:679#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
+  `packages/grounding-mcp/src/server.ts:684#"saveStore(sessionId, store);"` and
+  `packages/grounding-mcp/src/server.ts:690#"'hypothesis_reset',"` in
   `hypothesis-tracker-persistence-split.md`. `evidence-ledger-session-key-shapes.md`'s
-  own citations sit entirely before line 368 (`server.ts:241`, `server.ts:248-253/254`,
+  own citations sit entirely before line 368 (`server.ts:244`, `server.ts:251-256/257`,
   as the file stood then) and did not move, but the file is re-stamped anyway: it declares `server.ts` as a
   source, and that file changed. Every quoted anchor text is unchanged and still
   resolves verbatim at its new line; none of the re-pointed docs' `sources:` lists
@@ -948,8 +979,8 @@
   `server.ts` edits (the import swap, the spelled-out `createServer` option
   type, the comment above the two lookup registrations, and the two widened `id`
   schemas) shifted the citations below them by +9 as far as
-  `packages/grounding-mcp/src/server.ts:391#"'solution_evaluate'"`, and by +23
-  from `packages/grounding-mcp/src/server.ts:466#"'solution_gate'"` onward. The
+  `packages/grounding-mcp/src/server.ts:423#"'solution_evaluate'"`, and by +23
+  from `packages/grounding-mcp/src/server.ts:498#"'solution_gate'"` onward. The
   new README paragraph shifted
   `packages/grounding-mcp/README.md:214#"the root cause is the backend container's missing OPENAI_API_KEY env var"`
   by +2, and the one new import in the roundtrip test shifted
@@ -1018,23 +1049,23 @@
   below them, by +5 at `PACKAGE_VERSION` (the version literal was `'0.10.0'` at
   the time of this entry, now read from `package.json` at runtime, task
   ed06b4c8)
-  (`packages/grounding-mcp/src/server.ts:70#"const PACKAGE_VERSION = readPackageVersion();"`), by +26
+  (`packages/grounding-mcp/src/server.ts:102#"const PACKAGE_VERSION = readPackageVersion();"`), by +26
   through the `ledger_add` handler
-  (`packages/grounding-mcp/src/server.ts:256#"Session id"`,
-  `packages/grounding-mcp/src/server.ts:263-269#"session: sessionId,"`), by +26 at
+  (`packages/grounding-mcp/src/server.ts:288#"Session id"`,
+  `packages/grounding-mcp/src/server.ts:295-301#"session: sessionId,"`), by +26 at
   the `solution_evaluate` registration
-  (`packages/grounding-mcp/src/server.ts:391#"'solution_evaluate'"`), and by +63
-  from `solution_gate` (`packages/grounding-mcp/src/server.ts:466#"'solution_gate'"`)
+  (`packages/grounding-mcp/src/server.ts:423#"'solution_evaluate'"`), and by +63
+  from `solution_gate` (`packages/grounding-mcp/src/server.ts:498#"'solution_gate'"`)
   through every `hypothesis_*` tool below it
-  (`packages/grounding-mcp/src/server.ts:511#"'hypothesis_record',"`,
-  `packages/grounding-mcp/src/server.ts:525#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:531#"'hypothesis_list',"`,
-  `packages/grounding-mcp/src/server.ts:554#"'hypothesis_evidence',"`,
-  `packages/grounding-mcp/src/server.ts:577#"'hypothesis_check_done',"`,
-  `packages/grounding-mcp/src/server.ts:609#"'hypothesis_reject',"`,
-  `packages/grounding-mcp/src/server.ts:631#"'hypothesis_support',"`,
-  `packages/grounding-mcp/src/server.ts:647#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
-  `packages/grounding-mcp/src/server.ts:658#"'hypothesis_reset',"`), since the two
+  (`packages/grounding-mcp/src/server.ts:543#"'hypothesis_record',"`,
+  `packages/grounding-mcp/src/server.ts:557#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:563#"'hypothesis_list',"`,
+  `packages/grounding-mcp/src/server.ts:586#"'hypothesis_evidence',"`,
+  `packages/grounding-mcp/src/server.ts:609#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:641#"'hypothesis_reject',"`,
+  `packages/grounding-mcp/src/server.ts:663#"'hypothesis_support',"`,
+  `packages/grounding-mcp/src/server.ts:679#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
+  `packages/grounding-mcp/src/server.ts:690#"'hypothesis_reset',"`), since the two
   new tool registrations sit between those two anchors. The `preWriteGuard` block
   moved the marker-write anchor's range end only
   (`packages/grounding-mcp/src/solution-verdict.ts:746-803#"const markerPath = writeVerdict(verdict);"`),
@@ -2398,3 +2429,96 @@
   trim moved it. `okf-kit check --require-anchors --json docs/okf`
   reported 0 errors, 0 new citations-resolve warnings beyond this bundle's
   four pre-existing ones, 0 unresolved-ambiguous notices.
+- 2026-09-07T11:04:05Z, silent version-read fallback diagnostic (task
+  f31ad37f): `readPackageVersion()`/`readVersion()` in `server.ts`,
+  `claim-gate/src/cli.ts`, and `evidence-ledger/src/cli.ts` now write one
+  `process.stderr` line naming the package and the failure (read error or
+  missing `version` field) before returning the unchanged `'0.0.0'`
+  fallback, and take an injectable `packageJsonUrl`/`read` pair so the
+  failure path is unit-testable without a dist/ subprocess. The
+  `server.ts` edit added a net +15 lines before `PACKAGE_VERSION`'s
+  declaration, shifting every later line in the file; re-pinned both
+  bounds of every citation this broke, both in
+  `solution-acceptance-verdict-contract.md` (`solution_evaluate`/
+  `solution_gate` registration lines,
+  `packages/grounding-mcp/src/server.ts:102#"const PACKAGE_VERSION = readPackageVersion();"`),
+  `evidence-ledger-session-key-shapes.md` (the `ledger_add` sessionId
+  param doc and write-through range), `hypothesis-tracker-persistence-split.md`
+  (all seven `hypothesis_*` registration lines, the `saveStore` call-site
+  list, and the not-found-rejected-or-checks-pending error line), and in
+  this doc's own earlier entries citing the same lines. The
+  `claim-gate/src/cli.ts` edit added a net +15 lines before
+  `has_evidence: opts.evidence,`/`process.exit(1)`; re-pinned both
+  citations in `claim-gate-vs-review-claim-gate.md`, and aligned that
+  package's and `evidence-ledger`'s tarball-inclusion comment to
+  `server.ts`'s existing wording ("npm always includes package.json in
+  the published tarball, independent of `files`") since the prior wording
+  named the `files` field as the reason, which is backwards. `okf-kit
+  check --require-anchors --json docs/okf` reported 0 errors and 0
+  notices, and the same pre-existing log.md-only warnings as master
+  before and after, identity-matched: the `solution-verdict.ts` markerPath
+  anchor-not-found (short- and full-path citation forms), the
+  `merge-approval.yml:47` review-claim-gate-v0.1.6 anchor-not-found, and
+  the merge-approval-gate-mechanics.md blank-start-line warning (the
+  citation whose start line is blank);
+  `check:okf-test-citation-shape` and `check:okf-selectors` both passed.
+
+  Round-2 correction (task f31ad37f, review round 1): that "0 errors and
+  0 notices... same warnings before and after" claim above was wrong as
+  measured by review round 1 — the F3/F4 fix pass in this same task
+  re-shifted `server.ts` (+14) and `claim-gate/src/cli.ts` (+12) a second
+  time, and a first attempt at this sentence itself minted a new
+  `[blank-start-line]` finding by citing
+  `merge-approval-gate-mechanics.md` with a bare, unanchored `:28` line
+  suffix. Both are fixed: every citation into `server.ts` (in
+  `solution-acceptance-verdict-contract.md`, `evidence-ledger-session-key-shapes.md`,
+  `hypothesis-tracker-persistence-split.md`, and this doc's own history)
+  and into `claim-gate/src/cli.ts` (in `claim-gate-vs-review-claim-gate.md`)
+  was re-pinned to the new line numbers, `grounding-stack-overview.md`
+  was re-verified against `CHANGELOG.md`'s new `[Unreleased]` entries and
+  re-stamped, and the paragraph above now names the
+  merge-approval-gate-mechanics.md warning by doc and finding class
+  instead of a bare line reference. Measured after this correction:
+  `okf-kit check --require-anchors --json docs/okf` again reports 0
+  errors, 0 notices, and exactly the four pre-existing log.md-only
+  warnings named above; `check:okf-test-citation-shape` and
+  `check:okf-selectors` both passed.
+
+  Round-3 delta (task f31ad37f, review round 2): fixed four review-round-2
+  notes without reopening the fallback contract. M1: the paragraph above
+  named the merge-approval-gate-mechanics.md warning as
+  "uses-anchor-not-found" when okf-kit actually reports it as
+  `[blank-start-line]` (its citation's start line is blank); reworded to
+  say "blank-start-line warning (the citation whose start line is
+  blank)". L1: in all three readers the stderr diagnostic's failure
+  reason was computed with `err instanceof Error ? err.message :
+  String(err)` outside the best-effort try/catch guarding the write
+  itself, so a throwing `Error#message` getter or a throwing
+  `String(err)` (an object with a throwing toString/Symbol.toPrimitive)
+  could still escape the function; the reason is now computed inside that
+  guard and collapsed to one line before interpolation. L2: claim-gate's
+  and evidence-ledger's `readVersion` exports now carry the same
+  "test seam, not supported API" `@internal` marker
+  `packages/grounding-mcp/src/server.ts:66#"@internal"` already had.
+  L3: the missing-version tests' `toContain('version')` assertions also
+  matched the read-failure message; replaced with the distinguishing
+  substring per branch, and added a seventh per-package case for
+  `{ version: '' }` (already routed through the missing-version branch
+  since an earlier round in this task, just untested until now).
+
+  The L1 fix shifted `server.ts` by +3 lines (`const PACKAGE_VERSION =
+  readPackageVersion();` now at
+  `packages/grounding-mcp/src/server.ts:102#"const PACKAGE_VERSION = readPackageVersion();"`)
+  and `claim-gate/src/cli.ts` by +5 (L2's marker added two of those);
+  every citation into both files was re-pinned, including the two bare,
+  unanchored `server.ts` point-in-time references this doc's own history
+  carries (now `server.ts:244` and `server.ts:251-256/257`, both above
+  in this same entry). L4:
+  `grounding-stack-overview.md` was re-verified against `CHANGELOG.md`'s
+  extended `[Unreleased]` bullets and re-stamped in the commit after the
+  source/CHANGELOG commit landed, so its `timestamp:` postdates the
+  CHANGELOG edit it declares as a source. Measured after this round:
+  `okf-kit check --require-anchors --json docs/okf` again reports 0
+  errors, 0 notices, and exactly the four pre-existing log.md-only
+  warnings named above; `check:okf-test-citation-shape` and
+  `check:okf-selectors` both passed.
