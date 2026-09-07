@@ -2,6 +2,17 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-07T12:13:46Z, merge of master into the packaging-verification branch (task
+  d341afd5, orchestrator): master's squash of task f31ad37f re-dated
+  `CHANGELOG.md` to the merge instant, so `grounding-stack-overview.md`
+  (whose `sources:` lists it) read STALE on the merged branch while master
+  itself stays fresh (its doc and source share one commit). Re-verified
+  the one passage that rests on the root CHANGELOG, the split release
+  topology (`CHANGELOG.md:9-30#"readme-first-resolver"`), against the
+  merged file: unchanged by the diagnostic entries, which sit under the
+  `[Unreleased]` heading below it. Re-stamped the doc; no other doc in the
+  bundle lists the root CHANGELOG as a source.
+
 - 2026-09-07T10:48:26Z, task 8233a401 round 1 (implementer): unspliced the
   residuals paragraph in `merge-approval-gate-mechanics.md`
   (`merge-approval-gate-mechanics.md:189-194`). A prior edit had inserted the
