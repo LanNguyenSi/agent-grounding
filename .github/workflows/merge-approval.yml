@@ -46,18 +46,25 @@ jobs:
       - name: Determine release exception from the PR's real changed files
         # Narrow, data-driven exception (see CONTRIBUTING.md's "Cutting a
         # release" section and scripts/release-exception.js for the
-        # allowlist and rationale): a pure version-bump PR can satisfy all
-        # five prereqs below without a label round. `github.paginate`
-        # covers PRs over the API's 30-file page size. The classifier is
-        # `require()`d directly from the checked-out worktree (this step
-        # runs after Checkout) so the workflow and this file's own unit
-        # tests exercise the exact same code path.
+        # allowlist, the status check, and the version-only content check):
+        # a pure version-bump PR can satisfy all five prereqs below without
+        # a label round. `github.paginate` covers PRs over the API's
+        # 30-file page size; `classifyPullFiles` (not the path-only
+        # `classify`) also requires added/modified status (never
+        # renamed/removed) and, for package.json/package-lock.json, that
+        # the diff changes nothing but "version" value lines. The
+        # classifier is `require()`d directly from the checked-out
+        # worktree (this step runs after Checkout) so the workflow and
+        # this file's own unit tests exercise the exact same code path. A
+        # mismatch between the paginated file count and the PR's own
+        # `changed_files` count forces `pure_release: false`: a partial
+        # page read must never read as "pure" by omission.
         id: release_exception
         uses: actions/github-script@v8
         with:
           script: |
             const path = require('node:path');
-            const { classify } = require(
+            const { classifyPullFiles } = require(
               path.join(process.env.GITHUB_WORKSPACE, 'scripts', 'release-exception.js'),
             );
 
@@ -67,17 +74,38 @@ jobs:
               pull_number: context.payload.pull_request.number,
               per_page: 100,
             });
-            const paths = files.map((f) => f.filename);
 
-            const verdict = classify(paths);
-            core.setOutput('pure_release', verdict.pure_release.toString());
+            const expectedCount = context.payload.pull_request.changed_files;
+            const paginationMismatch =
+              typeof expectedCount === 'number' && files.length !== expectedCount;
 
-            if (verdict.pure_release) {
+            const verdict = classifyPullFiles(
+              files.map((f) => ({
+                filename: f.filename,
+                status: f.status,
+                previous_filename: f.previous_filename,
+                patch: f.patch,
+              })),
+            );
+            const pure_release = !paginationMismatch && verdict.pure_release;
+            core.setOutput('pure_release', pure_release.toString());
+
+            if (paginationMismatch) {
+              await core.summary
+                .addHeading('Release exception NOT applied: file-count mismatch')
+                .addRaw(
+                  `github.paginate returned ${files.length} changed file(s) but the ` +
+                    `PR reports changed_files=${expectedCount}; treating this PR as ` +
+                    'NOT a pure release out of caution.',
+                )
+                .write();
+            } else if (pure_release) {
               await core.summary
                 .addHeading('Release exception applied')
                 .addRaw(
-                  'This PR only touches release-only files, so the merge-approval ' +
-                    'gate below is satisfied without the usual review:* label round.',
+                  'This PR only touches release-only files with version-only content ' +
+                    'changes, so the merge-approval gate below is satisfied without ' +
+                    'the usual review:* label round.',
                 )
                 .addList(verdict.allowed)
                 .write();

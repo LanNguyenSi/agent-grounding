@@ -2,6 +2,80 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-07T06:15:00Z, merge-approval pure-release exception, round 2
+  (task `4493b316`): fixes from the reviewer's first pass over the round-1
+  diff below. The path-shape check alone was blind to content: a PR
+  touching only `package.json` could still add a `postinstall` script or a
+  new dependency, and a lockfile-only PR could repoint `resolved`/
+  `integrity`, while still classifying pure on path alone. Added
+  `classifyPullFiles(files)` (`scripts/release-exception.js`), which takes
+  the real `listFiles` API objects rather than plain path strings and
+  additionally requires: (1) `status` is `added` or `modified`, never
+  `renamed`/`removed` (a rename's `previous_filename` is never itself
+  checked against the allowlist); (2) for `package.json`/
+  `package-lock.json` only, the `patch` diff text changes nothing but
+  `"version": "…"` value lines, and a missing `patch` field is NOT pure,
+  fail-closed. `classify(paths)` is kept unchanged as the path-only CLI
+  helper. `.github/workflows/merge-approval.yml`'s release-exception step
+  now calls `classifyPullFiles` with each file's `filename`/`status`/
+  `patch`
+  (`merge-approval.yml:46-91#"core.setOutput('pure_release', pure_release.toString());"`)
+  and also compares the paginated file count against the PR's own
+  `changed_files`, forcing `pure_release: false` on a mismatch rather than
+  risking a partial page reading as pure. The five action inputs
+  themselves are unchanged
+  (`merge-approval.yml:119-123#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`).
+  New unit tests cover: the real package.json/package-lock.json
+  version-bump patches of PR #190 (captured read-only via `gh api
+  repos/LanNguyenSi/agent-grounding/pulls/190/files`), a postinstall
+  addition and a lockfile `resolved` change (both not pure), a missing
+  `patch` field (not pure), a version line with and without a trailing
+  comma, a nested unrelated `"version"` key (still fine), a rename into an
+  allowlisted `CHANGELOG.md` path and a removed `package.json` (both not
+  pure), a multi-package pure list, case-insensitive allowlist matching
+  (`PACKAGE.JSON`/`Package.json` and a nested-package uppercase form, all
+  rejected), and a leading-`./` path form (rejected). Mutation probes via
+  `agent-primitives probe --plan`, each on the test command `node --test
+  scripts/release-exception.test.js`: replayed the round-1 pair (widening
+  `PACKAGE_ALLOWLIST_PATTERN`, and the empty-list `>= 0` swap, both still
+  killed), plus four new mutants: adding an `/i` flag to
+  `PACKAGE_ALLOWLIST_PATTERN` (killed by the new nested-package
+  case-sensitivity assertions), disabling the version-line content check
+  (killed by the postinstall and `resolved` tests), treating a missing
+  `patch` as pure (killed by the missing-patch test), and treating status
+  `renamed` as pure (killed by the rename test); all six restored,
+  verified by hash. `.github/workflows/ci.yml`'s smoke-check step
+  classified only the empty list before, which cannot discriminate a
+  broken classifier from a working one (`pure_release: false` is also
+  what an always-false stub prints); it now pipes a known-pure file list
+  through the CLI and asserts `pure_release` reads back true, replayed
+  locally under `bash --noprofile --norc -eo pipefail` with both a pure
+  and a not-pure input. CONTRIBUTING.md and
+  `docs/testing/merge-approval-rollout.md` reworded "a single package's"
+  to "any number of packages'" (the code never capped package count) and
+  now describe the status and content checks; CONTRIBUTING's PR-creation
+  paragraph dropped the batch date and the internal MCP tool name,
+  keeping the App-token rule and the 403 troubleshooting hint.
+  `merge-approval-gate-mechanics.md` documents the three-part pure check,
+  the pagination-mismatch guard, and one added trust-boundary sentence:
+  the classifier and the workflow both come from the PR ref on
+  `pull_request` events, so the exception is a discipline mechanism, not
+  an integrity boundary. `grounding-stack-overview.md` and
+  `evidence-ledger-session-key-shapes.md` were re-verified against the
+  current `merge-approval.yml`/`package.json` and re-stamped; no content
+  drift found beyond the line-number shift the new step introduced,
+  re-pointed the same way as round 1 (citations above; `merge-approval.yml`
+  citations in `evidence-ledger-session-key-shapes.md` moved 89→117 and
+  87→115). This entry's own predecessor's "15 cases"/"15/15 green" wording
+  was replaced with delta language, since totals rot as more tests are
+  added; this entry states deltas only. `okf-kit check --require-anchors`
+  against this bundle: unchanged from the round-1 measurement, 2 warnings,
+  both pre-existing `citations-resolve` findings against `log.md` (a
+  reserved, append-only doc excluded from the anchor-guard job's blocking
+  selectors), 0 `sources-fresh`. No package version was bumped and no live
+  release PR was opened by this task; that remains open (see this task's
+  own tracking).
+
 - 2026-09-07T05:45:00Z, merge-approval pure-release exception (task
   `4493b316`): added `scripts/release-exception.js`, a dependency-free
   classifier that turns a PR's real changed-file list into a
@@ -20,8 +94,8 @@
   shifted the action-pin and `task-id` line numbers this same doc and
   `docs/okf/evidence-ledger-session-key-shapes.md` cite
   (47→87, 49→89); both re-stamped in this commit, sibling lines checked
-  against the current file. Unit tests
-  (`scripts/release-exception.test.js`, `node --test`, 15 cases) use the
+  against the current file. New unit tests
+  (`scripts/release-exception.test.js`, `node --test`) use the
   real changed-file lists of PR #190 (understanding-gate 0.5.0: 3 files,
   pure) and PR #215 (grounding-mcp 0.11.0: 9 files including
   `packages/grounding-mcp/src/server.ts` and five `docs/okf/*.md`
@@ -43,7 +117,7 @@
   hash. (3) The workflow's five-input OR-to-AND swap has no automated
   test in this repo: manually flipped one `||` to `&&` in
   `merge-approval.yml` and reran the full `node --test
-  scripts/release-exception.test.js` suite (still 15/15 green,
+  scripts/release-exception.test.js` suite (still green,
   confirming no repo test reacts to a workflow-level operator change),
   then restored the file byte-identical; left as an explicit residual
   for the orchestrator's live release-PR probe (criterion 3's negative

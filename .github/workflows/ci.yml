@@ -370,13 +370,25 @@ jobs:
 
       - name: Release-exception classifier smoke check
         # scripts/release-exception.js backs the merge-approval.yml
-        # "Determine release exception" step. Invoked bare (no argv, no
-        # piped stdin) it classifies the empty file list, which is always
-        # `pure_release: false` by definition; this only asserts the
-        # module loads and runs cleanly, matching this job's other
-        # `check:*` sanity steps for a root script with no ambient repo
-        # state of its own to check.
-        run: npm run check:release-exception < /dev/null
+        # "Determine release exception" step. Classifying the empty list
+        # (invoked bare, no argv/stdin) can never discriminate a broken
+        # classifier from a working one: `pure_release: false` is also
+        # what a `classify` that always returns `false` would print. This
+        # instead pipes a known-pure file list through the CLI and asserts
+        # `pure_release` reads back `true`, so the step actually fails if
+        # the module stops loading, stops running cleanly, or regresses to
+        # never-pure.
+        shell: bash
+        run: |
+          verdict="$(echo '["package.json","package-lock.json","CHANGELOG.md"]' | npm run --silent check:release-exception)"
+          echo "$verdict"
+          node -e '
+            const v = JSON.parse(process.argv[1]);
+            if (v.pure_release !== true) {
+              console.error("expected pure_release: true for a known-pure file list, got:", v);
+              process.exit(1);
+            }
+          ' "$verdict"
 
       - name: Release-exception classifier unit tests
         # Fixture-based unit tests for classify(), including the real

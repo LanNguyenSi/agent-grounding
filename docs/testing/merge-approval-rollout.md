@@ -34,14 +34,21 @@ branch and visible in both the PR UI and the Check-Run summary.
 ## Label-free path: a pure release PR
 
 All five prereqs are also satisfied, with no label needed, when the PR's
-actual changed-file list is a "pure release": only `package.json`,
-`package-lock.json`, `CHANGELOG.md` (root) and/or a single package's
-`packages/<name>/package.json` / `packages/<name>/CHANGELOG.md`. A
-`Determine release exception from the PR's real changed files` step
-computes this from the real PR diff (`scripts/release-exception.js`,
-`github.paginate(github.rest.pulls.listFiles, ...)`) and OR's the result
-into every one of the five action inputs, so this is additive, not a
-change to what the labels themselves mean. See
+actual changed files classify as a "pure release": each file must be
+`package.json`, `package-lock.json`, `CHANGELOG.md` (root) and/or any
+number of packages' `packages/<name>/package.json` /
+`packages/<name>/CHANGELOG.md`, added or modified (never renamed or
+removed), and, for `package.json`/`package-lock.json` specifically, its
+diff must change nothing but `"version": "…"` value lines (so a version
+bump that also slips in a `postinstall` script, a new dependency, or a
+lockfile `resolved`/`integrity` repoint does not qualify). A `Determine
+release exception from the PR's real changed files` step computes this
+from the real PR diff (`scripts/release-exception.js`'s
+`classifyPullFiles`, `github.paginate(github.rest.pulls.listFiles, ...)`)
+and OR's the result into every one of the five action inputs, so this is
+additive, not a change to what the labels themselves mean. Both the
+classifier and the workflow come from the PR ref on `pull_request` events,
+so this is a discipline mechanism, not an integrity boundary. See
 `docs/okf/merge-approval-gate-mechanics.md`'s "The pure-release exception"
 section for the exact allowlist and mechanics, and CONTRIBUTING.md's
 "Cutting a release" section for what disqualifies a release PR from this

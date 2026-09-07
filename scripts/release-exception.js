@@ -20,6 +20,42 @@
  * `require()`d directly by the workflow step via an absolute path built from
  * `GITHUB_WORKSPACE`, not shelled out to.
  *
+ * ── `classify(paths)` vs `classifyPullFiles(files)` ────────────────────
+ *
+ * `classify(paths)` takes plain path strings and only checks path shape
+ * (used by the CLI below, and kept for its own unit tests). The workflow
+ * step instead calls `classifyPullFiles(files)`, which takes the actual
+ * GitHub `listFiles` API objects (`{ filename, status, patch,
+ * previous_filename }`) and additionally requires, per file:
+ *
+ *   - `status` is `added` or `modified`. A `renamed` or `removed` entry is
+ *     never pure, regardless of what its `filename` (or the old
+ *     `previous_filename`, which is never itself checked against the
+ *     allowlist) looks like: a rename can smuggle an unrelated change in
+ *     under a release-shaped name, and a removal is never "just a version
+ *     bump".
+ *   - for a `package.json` or `package-lock.json` entry (root or
+ *     `packages/<name>/package.json`), the unified diff text in `patch`
+ *     changes nothing but `"version": "…"` value lines (see
+ *     `isVersionOnlyPatch` below). A `CHANGELOG.md` entry has no such
+ *     content constraint: prose is expected to change.
+ *   - a file entry with no `patch` field at all (GitHub omits it for very
+ *     large diffs) is treated as NOT pure, fail-closed, for
+ *     `package.json` / `package-lock.json`: there is nothing to verify,
+ *     so there is nothing to have verified.
+ *
+ * This exists because the path-shape check alone is blind to content: a PR
+ * touching only `package.json` could still add a `postinstall` script or a
+ * new `bin`/dependency entry, and a lockfile-only PR could repoint a
+ * dependency's `resolved`/`integrity`, while still classifying as "pure" on
+ * path alone. The residual: this check reads the PR's diff text as GitHub
+ * reports it, not a semantic package/lockfile verification; a change that
+ * happens to land entirely on lines matching the version-line shape (there
+ * is no other JSON key this repo's package.json/package-lock.json files use
+ * named exactly `version`) would still pass. See CONTRIBUTING.md and
+ * docs/okf/merge-approval-gate-mechanics.md for the same statement in
+ * context.
+ *
  * ── The allowlist is DATA, not a heuristic ─────────────────────────────
  *
  * Exactly five path *shapes* count as "release-only":
@@ -131,6 +167,95 @@ function classify(files) {
   return { pure_release, allowed, rejected };
 }
 
+// Basenames whose diff content is constrained to version-only changes.
+// CHANGELOG.md is deliberately excluded: prose is expected to change.
+const CONTENT_CHECKED_BASENAMES = new Set(['package.json', 'package-lock.json']);
+
+// One JSON `"version": "…"` value line, with or without a trailing comma,
+// and any amount of leading indentation (JSON indentation width is not
+// something this check constrains).
+const VERSION_LINE_PATTERN = /^\s*"version"\s*:\s*"[^"]*"\s*,?\s*$/;
+
+function basenameOf(file) {
+  const idx = file.lastIndexOf('/');
+  return idx === -1 ? file : file.slice(idx + 1);
+}
+
+/**
+ * True when a unified-diff `patch` string changes nothing but
+ * `"version": "…"` value lines. Every added/removed line (i.e. every line
+ * starting with `+` or `-`, excluding the `+++`/`---` file-header lines a
+ * full unified diff can carry, though GitHub's `listFiles` `patch` field
+ * omits them) must match `VERSION_LINE_PATTERN` once the leading `+`/`-`
+ * marker is stripped. A non-string `patch` (the field GitHub omits for a
+ * very large diff) is never version-only: fail closed.
+ */
+function isVersionOnlyPatch(patch) {
+  if (typeof patch !== 'string' || patch.length === 0) return false;
+
+  for (const line of patch.split('\n')) {
+    if (line.startsWith('+++') || line.startsWith('---')) continue;
+    if (line.startsWith('+') || line.startsWith('-')) {
+      if (!VERSION_LINE_PATTERN.test(line.slice(1))) return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * True when a single GitHub `listFiles` file object is a pure release
+ * change: an allowed release path, added/modified (never renamed/removed),
+ * and, for package.json/package-lock.json specifically, a version-only
+ * diff. `previous_filename` (present on a rename) is never itself checked
+ * against the allowlist; the `status` check alone disqualifies a rename.
+ */
+function isPureReleaseFile(file) {
+  const filename = file && file.filename;
+  const status = file && file.status;
+
+  if (isUnsafePath(filename) || !isAllowedReleasePath(filename)) return false;
+  if (status !== 'added' && status !== 'modified') return false;
+
+  if (CONTENT_CHECKED_BASENAMES.has(basenameOf(filename))) {
+    return isVersionOnlyPatch(file.patch);
+  }
+
+  return true;
+}
+
+/**
+ * Classify a PR's real `listFiles` API objects as a pure release commit or
+ * not. Unlike `classify(paths)`, this also enforces file status
+ * (added/modified only) and, for package.json/package-lock.json, that the
+ * diff content changes nothing but version values.
+ *
+ * @param {unknown} files - expected: array of `{ filename, status, patch,
+ *   previous_filename }` objects, i.e. GitHub's PR `listFiles` shape.
+ * @returns {{ pure_release: boolean, allowed: string[], rejected: string[] }}
+ */
+function classifyPullFiles(files) {
+  if (!Array.isArray(files)) {
+    throw new TypeError('classifyPullFiles(files): files must be an array of file objects');
+  }
+
+  const allowed = [];
+  const rejected = [];
+
+  for (const file of files) {
+    const filename = file && file.filename;
+    if (isPureReleaseFile(file)) {
+      allowed.push(filename);
+    } else {
+      rejected.push(filename);
+    }
+  }
+
+  const pure_release = files.length > 0 && rejected.length === 0;
+
+  return { pure_release, allowed, rejected };
+}
+
 function readStdin() {
   return new Promise((resolve, reject) => {
     let data = '';
@@ -188,8 +313,11 @@ if (require.main === module) {
 
 module.exports = {
   classify,
+  classifyPullFiles,
   isUnsafePath,
   isAllowedReleasePath,
+  isVersionOnlyPatch,
   ROOT_ALLOWLIST,
   PACKAGE_ALLOWLIST_PATTERN,
+  VERSION_LINE_PATTERN,
 };
