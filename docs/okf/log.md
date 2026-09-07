@@ -24,11 +24,12 @@
   commit as the fix. `okf-kit check --json docs/okf` and `okf-kit check
   --json --require-anchors docs/okf` (both `okf-kit@0.10.0`) report the same
   4 `citations-resolve` warnings before and after, all pre-existing and all
-  in this file (`log.md`): the `solution-verdict.ts:746-803` anchor-not-found
-  (two citations, `log.md` and `merge-approval-gate-mechanics.md` source
-  lines), the `merge-approval.yml:47` anchor-not-found, and the
-  `merge-approval-gate-mechanics.md:28` blank-start-line notice; zero errors
-  both times. `.github/workflows/ci.yml`'s "Citation guard" step
+  in this file (`log.md`): the `solution-verdict.ts` line-746-803
+  anchor-not-found (two citations, one pointing into `log.md` itself and one
+  into `merge-approval-gate-mechanics.md`'s source lines), the
+  `merge-approval.yml` line-47 anchor-not-found, and this doc's own
+  line-28 blank-start-line notice; zero errors both times.
+  `.github/workflows/ci.yml`'s "Citation guard" step
   (`okf-kit check --require-anchors --json "${BUNDLE_PATH}"`, `BUNDLE_PATH=
   docs/okf`) replayed locally with the same result.
 
