@@ -27,7 +27,7 @@
   in this file (`log.md`): the `solution-verdict.ts` line-746-803
   anchor-not-found (two citations, one pointing into `log.md` itself and one
   into `merge-approval-gate-mechanics.md`'s source lines), the
-  `merge-approval.yml` line-47 anchor-not-found, and this doc's own
+  `merge-approval.yml` line-47 anchor-not-found, and `merge-approval-gate-mechanics.md`'s own
   line-28 blank-start-line notice; zero errors both times.
   `.github/workflows/ci.yml`'s "Citation guard" step
   (`okf-kit check --require-anchors --json "${BUNDLE_PATH}"`, `BUNDLE_PATH=
