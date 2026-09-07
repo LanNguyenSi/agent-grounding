@@ -16,7 +16,7 @@
  * This module is intentionally dependency-free (house style: see
  * check-pins.js / check-deps.js / check-lockfile-integrity.js) and exports a
  * pure `classify(files)` function so the workflow's `actions/github-script`
- * step and this file's own unit tests exercise exactly the same code path —
+ * step and this file's own unit tests exercise exactly the same code path,
  * `require()`d directly by the workflow step via an absolute path built from
  * `GITHUB_WORKSPACE`, not shelled out to.
  *
@@ -31,7 +31,7 @@
  *   - `packages/<one segment>/CHANGELOG.md`
  *
  * Nothing else. In particular this deliberately does NOT allow `src/**`,
- * `docs/okf/**`, `README.md`, or any workflow file — a release PR that also
+ * `docs/okf/**`, `README.md`, or any workflow file: a release PR that also
  * touches a version constant in source (e.g. `packages/grounding-mcp/
  * src/server.ts`, see PR #215) or re-stamps an OKF doc's `timestamp:`
  * front-matter is disqualified on purpose and falls back to the normal
@@ -45,13 +45,14 @@
  * sub-packages exist or are supported by the workspace glob in the root
  * `package.json`).
  *
- * An empty file list is NOT pure — there is nothing to look at, so there is
- * nothing to have verified. See `MERGE-APPROVAL.md` / CONTRIBUTING.md.
+ * An empty file list is NOT pure: there is nothing to look at, so there is
+ * nothing to have verified. See CONTRIBUTING.md's "Cutting a release"
+ * section and docs/okf/merge-approval-gate-mechanics.md.
  *
  * ── Path safety ─────────────────────────────────────────────────────────
  *
  * Any path that is absolute (starts with `/`) or contains a `..` segment is
- * rejected outright — it can never be one of the five allowed shapes above,
+ * rejected outright: it can never be one of the five allowed shapes above,
  * and treating it as such would be a mistake regardless of the exact
  * string. GitHub's PR "changed files" API only ever returns repo-relative
  * paths with no `..`, but a defensive check costs nothing and covers a
@@ -62,11 +63,11 @@
  * Two equivalent input styles, matching house style: either pass the file
  * paths as argv positionals, or (when no positionals are given) pipe a JSON
  * array of strings on stdin. The verdict is always printed as one JSON line
- * on stdout and the process exits 0 — the verdict IS the answer, both
+ * on stdout and the process exits 0: the verdict IS the answer, both
  * "pure" and "not pure" are successful classifications, not failures. The
  * process exits non-zero (1) only when the input itself could not be
  * parsed as a file list at all (invalid JSON, or JSON that is not an array
- * of strings) — that is a caller bug, not a finding about the PR.
+ * of strings); that is a caller bug, not a finding about the PR.
  */
 
 'use strict';

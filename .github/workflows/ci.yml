@@ -372,7 +372,7 @@ jobs:
         # scripts/release-exception.js backs the merge-approval.yml
         # "Determine release exception" step. Invoked bare (no argv, no
         # piped stdin) it classifies the empty file list, which is always
-        # `pure_release: false` by definition — this only asserts the
+        # `pure_release: false` by definition; this only asserts the
         # module loads and runs cleanly, matching this job's other
         # `check:*` sanity steps for a root script with no ambient repo
         # state of its own to check.

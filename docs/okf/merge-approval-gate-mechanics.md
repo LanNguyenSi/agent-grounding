@@ -72,7 +72,7 @@ computes a `pure_release` boolean and OR's it into every one of the five
 action inputs above
 (`merge-approval.yml:91-95#"evidence-logged: ${{ steps.labels.outputs.evidence_logged == 'true' || steps.release_exception.outputs.pure_release == 'true' }}"`).
 When `pure_release` is `true`, all five prereqs are satisfied regardless of
-which `review:*` labels are on the PR — no label round needed.
+which `review:*` labels are on the PR: no label round needed.
 
 `pure_release` comes from `scripts/release-exception.js`'s `classify(files)`,
 called on the PR's actual changed-file list obtained via
@@ -85,7 +85,7 @@ list is non-empty:
 - `packages/<one path segment>/package.json`
 - `packages/<one path segment>/CHANGELOG.md`
 
-Nothing else — not `src/**`, not `docs/okf/**`, not a workflow file, not a
+Nothing else: not `src/**`, not `docs/okf/**`, not a workflow file, not a
 nested `packages/<a>/<b>/package.json`. See `scripts/release-exception.js`'s
 own header comment for the full allowlist rationale and
 `CONTRIBUTING.md`'s "Cutting a release" section for what this looks like in

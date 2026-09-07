@@ -25,8 +25,8 @@
   real changed-file lists of PR #190 (understanding-gate 0.5.0: 3 files,
   pure) and PR #215 (grounding-mcp 0.11.0: 9 files including
   `packages/grounding-mcp/src/server.ts` and five `docs/okf/*.md`
-  re-stamps, not pure — the source file and all five docs land in
-  `rejected`), captured read-only via `gh pr view <n> --repo
+  re-stamps, not pure (the source file and all five docs land in
+  `rejected`)), captured read-only via `gh pr view <n> --repo
   LanNguyenSi/agent-grounding --json files`; plus the negative-control
   shape (an otherwise-pure list plus one `.ts` file, not pure), a nested
   `packages/a/b/package.json` (not pure), the workflow file alone (not
@@ -35,14 +35,19 @@
   input paths including malformed-stdin exit codes. Mutation probes via
   `agent-primitives probe --plan`, each on the test command `node --test
   scripts/release-exception.test.js`: (1) widening
-  `PACKAGE_ALLOWLIST_PATTERN` to accept a nested `packages/**` path —
-  killed (the PR #215 and nested-path tests catch it); (2) making the
-  empty-list branch `pure_release: files.length >= 0` — killed (the
-  empty-list test catches it); (3) the workflow's five-input OR-vs-AND
-  swap has no automated test in this repo (a GitHub Actions expression
-  is not exercised by `node --test`); left as an explicit residual for
-  the orchestrator's live release-PR probe (criterion 4/negative control
-  at the workflow level), not claimed as covered here. CONTRIBUTING.md's
+  `PACKAGE_ALLOWLIST_PATTERN` to accept any `packages/*` path, killed
+  (the PR #215 and nested-path tests both catch it, since
+  `packages/grounding-mcp/src/server.ts` then reads as allowed); (2)
+  making the empty-list branch `pure_release: files.length >= 0`,
+  killed (the empty-list test catches it); both restored, verified by
+  hash. (3) The workflow's five-input OR-to-AND swap has no automated
+  test in this repo: manually flipped one `||` to `&&` in
+  `merge-approval.yml` and reran the full `node --test
+  scripts/release-exception.test.js` suite (still 15/15 green,
+  confirming no repo test reacts to a workflow-level operator change),
+  then restored the file byte-identical; left as an explicit residual
+  for the orchestrator's live release-PR probe (criterion 3's negative
+  control at the workflow level), not claimed as covered here. CONTRIBUTING.md's
   "Cutting a release" section documents both the label-free path and its
   disqualifiers (a source version constant or a `docs/okf/*.md`
   re-stamp riding along with the bump disqualifies a release PR from the
