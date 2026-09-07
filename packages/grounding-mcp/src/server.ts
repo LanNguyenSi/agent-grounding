@@ -56,13 +56,28 @@ import {
 // from src/ (dev, via tsx) and from the built dist/ layout (dist/server.js
 // sits one level below the package root, same as src/server.ts). npm always
 // includes package.json in the published tarball, independent of `files`.
-function readPackageVersion(): string {
+// packageJsonUrl and read are injectable so tests can drive the failure
+// path (missing file, invalid JSON, missing version field) without
+// spawning a dist/ subprocess or mutating the real package.json.
+export function readPackageVersion(
+  packageJsonUrl: URL = new URL('../package.json', import.meta.url),
+  read: (url: URL, encoding: BufferEncoding) => string = readFileSync,
+): string {
   try {
-    const url = new URL('../package.json', import.meta.url);
-    const text = readFileSync(url, 'utf8');
+    const text = read(packageJsonUrl, 'utf8');
     const pkg = JSON.parse(text) as { version?: string };
-    return pkg.version ?? '0.0.0';
-  } catch {
+    if (typeof pkg.version !== 'string' || pkg.version.length === 0) {
+      process.stderr.write(
+        'grounding-mcp: package.json has no "version" field; reporting 0.0.0\n',
+      );
+      return '0.0.0';
+    }
+    return pkg.version;
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    process.stderr.write(
+      `grounding-mcp: could not read version from package.json (${reason}); reporting 0.0.0\n`,
+    );
     return '0.0.0';
   }
 }

@@ -10,15 +10,30 @@ import type { ClaimContext, ClaimType } from "./lib.js";
 // can never desync from the published version on a release bump. Resolved
 // relative to this module so it works both from src/ (dev, via tsx) and from
 // the built dist/ layout (dist/cli.js sits one level below the package root,
-// same as src/cli.ts), and package.json is always included in the npm
-// tarball via the `files` field.
-function readVersion(): string {
+// same as src/cli.ts). npm always includes package.json in the published
+// tarball, independent of `files`.
+// packageJsonUrl and read are injectable so tests can drive the failure
+// path (missing file, invalid JSON, missing version field) without
+// spawning a dist/ subprocess or mutating the real package.json.
+export function readVersion(
+  packageJsonUrl: URL = new URL("../package.json", import.meta.url),
+  read: (url: URL, encoding: BufferEncoding) => string = readFileSync,
+): string {
   try {
-    const url = new URL("../package.json", import.meta.url);
-    const text = readFileSync(url, "utf8");
+    const text = read(packageJsonUrl, "utf8");
     const pkg = JSON.parse(text) as { version?: string };
-    return pkg.version ?? "0.0.0";
-  } catch {
+    if (typeof pkg.version !== "string" || pkg.version.length === 0) {
+      process.stderr.write(
+        'claim-gate: package.json has no "version" field; reporting 0.0.0\n',
+      );
+      return "0.0.0";
+    }
+    return pkg.version;
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    process.stderr.write(
+      `claim-gate: could not read version from package.json (${reason}); reporting 0.0.0\n`,
+    );
     return "0.0.0";
   }
 }

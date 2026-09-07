@@ -33,6 +33,28 @@ The seven packages above (other than understanding-gate) each carry their own ve
 
 ## [Unreleased]
 
+### Changed
+
+- `claim-gate`: `readVersion()` now writes one `process.stderr` line naming
+  the package and the failure (read error, parse error, or a missing
+  `version` field) before returning the unchanged `'0.0.0'` fallback,
+  instead of swallowing the failure silently; it also now takes an
+  injectable `packageJsonUrl`/`read` pair so the failure path is
+  unit-testable. Its tarball-inclusion comment now says npm always
+  includes `package.json` in the published tarball independent of
+  `files`, matching `grounding-mcp`'s wording (the prior wording named
+  the `files` field as the reason, which is backwards). (task f31ad37f)
+
+- `evidence-ledger`: `readVersion()` now writes one `process.stderr` line
+  naming the package and the failure (read error, parse error, or a
+  missing `version` field) before returning the unchanged `'0.0.0'`
+  fallback, instead of swallowing the failure silently; it also now takes
+  an injectable `packageJsonUrl`/`read` pair so the failure path is
+  unit-testable. Its tarball-inclusion comment now says npm always
+  includes `package.json` in the published tarball independent of
+  `files`, matching `grounding-mcp`'s wording (the prior wording named
+  the `files` field as the reason, which is backwards). (task f31ad37f)
+
 ## [0.6.0] - 2026-07-18
 
 ### Fixed

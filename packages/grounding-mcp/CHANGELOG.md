@@ -4,6 +4,13 @@
 
 ### Changed
 
+- `readPackageVersion()` now writes one `process.stderr` line naming the
+  package and the failure (read error, parse error, or a missing
+  `version` field) before returning the unchanged `'0.0.0'` fallback,
+  instead of swallowing the failure silently; it also now takes an
+  injectable `packageJsonUrl`/`read` pair so the failure path is
+  unit-testable (task f31ad37f).
+
 - `server.ts` no longer hardcodes a `PACKAGE_VERSION` literal; the version
   served by the MCP `name+version` handshake and the `--version` CLI
   short-circuit is now read from the package's own `package.json` at
