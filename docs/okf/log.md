@@ -2332,3 +2332,69 @@
   --require-anchors --json docs/okf` reported 0 errors, 0 citations-resolve
   warnings, 0 unresolved-ambiguous notices against the doc's changed
   citations.
+
+- 2026-09-07T12:05:48Z, packaging verification CI check, round 3 review
+  fixes (task d341afd5): a reviewer found no test pinned the SOURCE of the
+  expected version -- mutating `run()` to read the in-tree
+  `packages/grounding-mcp/package.json`
+  (`scripts/check-grounding-mcp-pack.js:403#"expectedVersion = readVersionFn(tgzPath);"`)
+  instead of the packed tarball survived every existing test. Fixed by
+  adding an injectable `readVersionFn` seam next to the existing `execFn`
+  one, with a new assertion in the argv-level `run()` test pinning that it
+  is called with the packed grounding-mcp tarball path, never the in-tree
+  manifest
+  (`scripts/check-grounding-mcp-pack.test.js:480#"test('run(): the install call gets every real version-locked sibling tarball"`).
+  D-012: `findVersionLockedWorkspaceSiblings` was a fixed one-hop read of
+  `dependencies` against a hardcoded `packages/` scan, shallower than its
+  own docblock claimed. Reworked as a breadth-first walk seeded with
+  grounding-mcp that also scans each discovered sibling's own exact-pinned
+  `@lannguyensi/*` dependencies
+  (`scripts/check-grounding-mcp-pack.js:177#"function findVersionLockedWorkspaceSiblings(rootDir, packageDir) {"`),
+  covering both `dependencies` and `optionalDependencies`; the workspace
+  package directories are now derived from the root `package.json`'s own
+  `workspaces` entries
+  (`scripts/check-grounding-mcp-pack.js:97#"function resolveWorkspaceDirs(rootDir) {"`,
+  supporting the `<dir>/*` glob form and an explicit path, no glob
+  library) instead of a hardcoded `packages/*` scan; and the exact-version
+  regex now accepts build metadata (`1.2.3+build`). Extended with a
+  sibling-of-a-sibling fixture case and an optionalDependencies fixture
+  case
+  (`scripts/check-grounding-mcp-pack.test.js:184#"function makeFixtureWorkspace(tmpRoot) {"`).
+  Against today's real grounding-mcp siblings this walk still terminates
+  at depth 1 (none of the four direct siblings exact-pin a further
+  `@lannguyensi/*` package), so the docblock's own claim was narrowed to
+  describe what the function implements rather than what today's
+  manifests happen to exercise. The range-pin exclusion's docblock claim
+  ("the registry always has a satisfying version") was replaced with a
+  named assumption and a pointer to this log's own history of a held-back
+  sibling
+  (`scripts/check-grounding-mcp-pack.js:168#"correctly excluded by the exact-pin check"`).
+  The install call had no timeout: against a black-holed registry it hung
+  past this job's own `timeout-minutes: 10`, which then kills the whole
+  job with a generic timeout instead of a named failure here.
+  `installTarballs`
+  (`scripts/check-grounding-mcp-pack.js:283#"function installTarballs(tgzPaths, consumerDir, execFn = execFileSync) {"`)
+  now passes a 5-minute `timeout` and `--fetch-retries=2`; a timeout-shaped
+  exec error (Node's own `.killed` convention) is re-thrown with a named
+  "timed out after ... ms" message, tested through the `execFn` seam.
+  `run()`'s own install-failure message
+  (`scripts/check-grounding-mcp-pack.js:410#"installTarballs([...siblingTgzPaths, tgzPath], consumerDir, execFn);"`)
+  no longer names the already-removed scratch consumer directory, matching
+  `evaluateVersionMatch`'s existing convention, and now extracts the
+  unresolved `name@spec` from npm's own ETARGET/E404 stderr when present
+  (`extractUnresolvedDependency`) so a future range-pin failure names the
+  offending dependency at a glance. `main()`'s `--corrupt=` argv parsing
+  was extracted into `parseCorruptArg`
+  (`scripts/check-grounding-mcp-pack.js:453#"function parseCorruptArg(argv) {"`)
+  and unit-tested directly. The install argv's tarball ORDER (every
+  sibling before grounding-mcp itself) is now pinned in both the
+  `installTarballs` and `run()` argv-level tests. Prior-round review-round
+  bookkeeping (finding letters, round numbers) baked into `ci.yml`'s step
+  comments and this script/test file's own docblocks was trimmed to the
+  "why" a reader needs, pointing at this log for the rest.
+  `grounding-stack-overview.md`'s packaging-verification citation range
+  was corrected to end on the line the cited command actually occurs on
+  (`.github/workflows/ci.yml:430-446`, not `430-455`) after the comment
+  trim moved it. `okf-kit check --require-anchors --json docs/okf`
+  reported 0 errors, 0 new citations-resolve warnings beyond this bundle's
+  four pre-existing ones, 0 unresolved-ambiguous notices.

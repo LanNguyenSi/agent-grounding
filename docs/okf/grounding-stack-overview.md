@@ -3,7 +3,7 @@ type: overview
 title: The grounding stack — where to read, and how releases are split
 description: Pointer doc — the root README already diagrams the whole stack; this entry adds the release topology (four version-locked packages under one root tag, eight independently-versioned ones) that the diagram does not show.
 tags: [overview, monorepo, releases, versioning, pointer]
-timestamp: 2026-09-07T11:29:10Z
+timestamp: 2026-09-07T12:05:48Z
 sources:
   - README.md
   - CHANGELOG.md
@@ -77,7 +77,7 @@ runner the package actually uses before adding a test.
 is checked against the packed artifact (the tarball `npm publish` would
 upload) on every PR, not only by hand at release time: the `ci` job's
 "grounding-mcp packed-tarball --version check" step
-(`.github/workflows/ci.yml:430-455#"npm run check:grounding-mcp-pack"`) runs
+(`.github/workflows/ci.yml:430-446#"npm run check:grounding-mcp-pack"`) runs
 `scripts/check-grounding-mcp-pack.js`, which packs the workspace package
 together with its version-locked `@lannguyensi/*` sibling dependencies
 (derived from grounding-mcp's own package.json, not a hardcoded list),

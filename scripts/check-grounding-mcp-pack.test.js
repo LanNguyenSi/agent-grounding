@@ -14,11 +14,10 @@
  * correctly excluded) and against this repo's real
  * `packages/grounding-mcp` (proving today's actual sibling set). The
  * `installTarballs`/`runVersionCommand` argv tests use an injected `execFn`
- * to assert the exact command shape (which tarballs, `--omit=dev`, cwd)
- * without a real npm install or process spawn -- a regression guard for
- * review finding F3 (task d341afd5 round 2): a mutant that drops
- * `--omit=dev`, or drops a sibling tarball, from the real install call
- * previously survived because no test pinned the argv.
+ * to assert the exact command shape (which tarballs, in which order,
+ * `--omit=dev`, cwd) without a real npm install or process spawn -- a
+ * mutant that drops `--omit=dev`, drops a sibling tarball, or reorders the
+ * tarballs, from the real install call must fail one of these.
  *
  * `run()`'s own end-to-end test packs and installs the REAL
  * `packages/grounding-mcp` workspace package plus its real version-locked
@@ -29,13 +28,11 @@
  * replaces. A second, separate `run()` test also packs for real but fakes
  * the install/version-check exec calls (see `installTarballs`/
  * `runVersionCommand` above) to assert `run()`'s own internal argv/cwd
- * wiring (F3) without paying for a real install or process spawn. A prior
- * round of this check also had a THIRD `run()` test duplicating the
- * negative-control test's own happy path; review finding F7 (task
- * d341afd5 round 2) dropped it as redundant with the argv-level coverage
- * above -- the CI job now does two real pack+install rounds for this
- * checker (one in the "check" step itself, one in the kept end-to-end
- * test here), not three.
+ * wiring, and that the expected-version read (`readVersionFn`) is called
+ * against the packed TARBALL, not this repo's in-tree package.json,
+ * without paying for a real install or process spawn. See
+ * `docs/okf/log.md` for this checker's own review history (why the CI job
+ * does two real pack+install rounds for it, not three).
  *
  * Uses Node's built-in test runner (`node --test`), matching this repo's
  * other scripts/*.test.js files.
@@ -51,10 +48,13 @@ const {
   findVersionLockedWorkspaceSiblings,
   readTarballVersion,
   installTarballs,
+  INSTALL_TIMEOUT_MS,
   installedPackageJsonPath,
   corruptInstalledPackage,
   runVersionCommand,
   evaluateVersionMatch,
+  extractUnresolvedDependency,
+  parseCorruptArg,
   run,
 } = require('./check-grounding-mcp-pack');
 
@@ -172,48 +172,80 @@ test('readTarballVersion: negative control -- an unparseable package.json entry 
   }
 });
 
-// ── findVersionLockedWorkspaceSiblings (synthetic fixture workspace) ───────
-// Proves the sibling list is DERIVED from a package's own dependencies
-// (review finding F1, task d341afd5 round 2), not a hardcoded name list: a
-// fresh fixture workspace here has NEVER been named by check-grounding-mcp
-// -pack.js, so a hardcoded-list implementation would return an empty (or
-// wrong) set against it.
+// ── findVersionLockedWorkspaceSiblings (synthetic fixture workspace) ───
+// Proves the sibling list is DERIVED from a package's own dependencies, not
+// a hardcoded name list: a fresh fixture workspace here has NEVER been
+// named by check-grounding-mcp-pack.js, so a hardcoded-list implementation
+// would return an empty (or wrong) set against it. The workspace package
+// directories themselves are derived from the fixture root's own
+// package.json `workspaces: ["packages/*"]` entry, not a hardcoded
+// `packages/` scan, so the fixture root ships a real root package.json too.
 
 function makeFixtureWorkspace(tmpRoot) {
   const packagesDir = path.join(tmpRoot, 'packages');
-  const write = (name, version, dependencies) => {
+  fs.mkdirSync(packagesDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(tmpRoot, 'package.json'),
+    JSON.stringify({ name: 'fixture-root', private: true, workspaces: ['packages/*'] }, null, 2),
+  );
+  const write = (name, version, dependencies, optionalDependencies) => {
     const dir = path.join(packagesDir, name.replace('@lannguyensi/', ''));
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name, version, dependencies }, null, 2));
+    const pkg = { name, version };
+    if (dependencies) pkg.dependencies = dependencies;
+    if (optionalDependencies) pkg.optionalDependencies = optionalDependencies;
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg, null, 2));
     return dir;
   };
   // The package under test: one exact-pinned workspace sibling (must be
   // picked up), one range-pinned workspace sibling (must be excluded, it
   // can float and the registry always has a satisfying version), one
   // exact-pinned name that names NO workspace package (must be excluded --
-  // not this monorepo's own package, nothing to co-pack), and one ordinary
-  // external dependency (must be ignored entirely).
-  const mainDir = write('@lannguyensi/fixture-main', '1.0.0', {
-    '@lannguyensi/fixture-locked-sibling': '2.3.4',
-    '@lannguyensi/fixture-ranged-sibling': '^2.0.0',
-    '@lannguyensi/fixture-external-only': '5.0.0',
-    chalk: '^5.3.0',
+  // not this monorepo's own package, nothing to co-pack), an ordinary
+  // external dependency (must be ignored entirely), and one exact-pinned
+  // OPTIONAL dependency (must be picked up too, not just `dependencies`).
+  const mainDir = write(
+    '@lannguyensi/fixture-main',
+    '1.0.0',
+    {
+      '@lannguyensi/fixture-locked-sibling': '2.3.4',
+      '@lannguyensi/fixture-ranged-sibling': '^2.0.0',
+      '@lannguyensi/fixture-external-only': '5.0.0',
+      chalk: '^5.3.0',
+    },
+    {
+      '@lannguyensi/fixture-optional-sibling': '4.0.0',
+    },
+  );
+  // fixture-locked-sibling itself exact-pins a further workspace package
+  // (a sibling of a sibling): the derivation must recurse, not stop after
+  // reading fixture-main's own dependency map.
+  write('@lannguyensi/fixture-locked-sibling', '2.3.4', {
+    '@lannguyensi/fixture-sub-sibling': '3.1.0',
   });
-  write('@lannguyensi/fixture-locked-sibling', '2.3.4', {});
+  write('@lannguyensi/fixture-sub-sibling', '3.1.0', {});
   write('@lannguyensi/fixture-ranged-sibling', '2.5.0', {});
+  write('@lannguyensi/fixture-optional-sibling', '4.0.0', {});
   return mainDir;
 }
 
-test('findVersionLockedWorkspaceSiblings: derives the exact-pinned @lannguyensi workspace siblings from the package.json dependency map (fixture, not hardcoded)', () => {
+test('findVersionLockedWorkspaceSiblings: derives the exact-pinned @lannguyensi workspace siblings from the package.json dependency map, recursing into a sibling-of-a-sibling and including optionalDependencies (fixture, not hardcoded)', () => {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pack-check-siblings-fixture-'));
   try {
     const mainDir = makeFixtureWorkspace(tmpRoot);
     const siblings = findVersionLockedWorkspaceSiblings(tmpRoot, mainDir);
     assert.deepEqual(
-      siblings.map((s) => s.name),
-      ['@lannguyensi/fixture-locked-sibling'],
+      siblings.map((s) => s.name).sort(),
+      [
+        '@lannguyensi/fixture-locked-sibling',
+        '@lannguyensi/fixture-optional-sibling',
+        '@lannguyensi/fixture-sub-sibling',
+      ],
     );
-    assert.equal(siblings[0].dir, path.join(tmpRoot, 'packages', 'fixture-locked-sibling'));
+    const byName = new Map(siblings.map((s) => [s.name, s.dir]));
+    assert.equal(byName.get('@lannguyensi/fixture-locked-sibling'), path.join(tmpRoot, 'packages', 'fixture-locked-sibling'));
+    assert.equal(byName.get('@lannguyensi/fixture-sub-sibling'), path.join(tmpRoot, 'packages', 'fixture-sub-sibling'));
+    assert.equal(byName.get('@lannguyensi/fixture-optional-sibling'), path.join(tmpRoot, 'packages', 'fixture-optional-sibling'));
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -236,7 +268,47 @@ test('findVersionLockedWorkspaceSiblings: a newly-added version-locked dependenc
     const siblings = findVersionLockedWorkspaceSiblings(tmpRoot, mainDir);
     assert.deepEqual(
       siblings.map((s) => s.name).sort(),
-      ['@lannguyensi/fixture-locked-sibling', '@lannguyensi/fixture-second-locked'],
+      [
+        '@lannguyensi/fixture-locked-sibling',
+        '@lannguyensi/fixture-optional-sibling',
+        '@lannguyensi/fixture-second-locked',
+        '@lannguyensi/fixture-sub-sibling',
+      ],
+    );
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('findVersionLockedWorkspaceSiblings: accepts build metadata in an exact pin (e.g. "1.2.3+build.5")', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pack-check-siblings-buildmeta-'));
+  try {
+    fs.mkdirSync(path.join(tmpRoot, 'packages'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpRoot, 'package.json'),
+      JSON.stringify({ name: 'fixture-root', private: true, workspaces: ['packages/*'] }, null, 2),
+    );
+    const mainDir = path.join(tmpRoot, 'packages', 'fixture-main');
+    fs.mkdirSync(mainDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(mainDir, 'package.json'),
+      JSON.stringify({
+        name: '@lannguyensi/fixture-main',
+        version: '1.0.0',
+        dependencies: { '@lannguyensi/fixture-buildmeta-sibling': '1.2.3+build.5' },
+      }),
+    );
+    const siblingDir = path.join(tmpRoot, 'packages', 'fixture-buildmeta-sibling');
+    fs.mkdirSync(siblingDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(siblingDir, 'package.json'),
+      JSON.stringify({ name: '@lannguyensi/fixture-buildmeta-sibling', version: '1.2.3+build.5' }),
+    );
+
+    const siblings = findVersionLockedWorkspaceSiblings(tmpRoot, mainDir);
+    assert.deepEqual(
+      siblings.map((s) => s.name),
+      ['@lannguyensi/fixture-buildmeta-sibling'],
     );
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
@@ -268,11 +340,10 @@ test('loadWorkspacePackageDirsByName: maps every real packages/*/package.json "n
 });
 
 // ── installTarballs / runVersionCommand (injected execFn, no real npm) ─────
-// Regression guard for review finding F3 (task d341afd5 round 2): a mutant
-// dropping '--omit=dev', or a sibling tarball, from the real install argv
-// previously survived every existing test.
+// A mutant dropping '--omit=dev', a sibling tarball, or the argv order,
+// from the real install call must fail one of the tests below.
 
-test('installTarballs: argv contains --omit=dev and every given tarball path, cwd is the consumer dir', () => {
+test('installTarballs: argv contains --omit=dev, --fetch-retries=2, and every given tarball path IN ORDER, cwd is the consumer dir, exec options carry a timeout', () => {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pack-check-install-argv-'));
   try {
     const consumerDir = path.join(tmpRoot, 'consumer');
@@ -294,16 +365,96 @@ test('installTarballs: argv contains --omit=dev and every given tarball path, cw
     assert.equal(captured.cmd, 'npm');
     assert.equal(captured.args[0], 'install');
     assert.ok(captured.args.includes('--omit=dev'), `expected --omit=dev in argv: ${captured.args.join(' ')}`);
-    for (const tgzPath of tgzPaths) {
-      assert.ok(captured.args.includes(tgzPath), `expected ${tgzPath} in argv: ${captured.args.join(' ')}`);
-    }
+    assert.ok(captured.args.includes('--fetch-retries=2'), `expected --fetch-retries=2 in argv: ${captured.args.join(' ')}`);
+    // The .tgz args must preserve the caller's own order (sibling tarballs
+    // before the grounding-mcp tarball, per run()'s own
+    // [...siblingTgzPaths, tgzPath]) -- installTarballs must not reorder
+    // (e.g. sort) them.
+    assert.deepEqual(
+      captured.args.filter((a) => a.endsWith('.tgz')),
+      tgzPaths,
+      `expected the .tgz args to appear in caller order: ${captured.args.join(' ')}`,
+    );
     assert.equal(captured.opts.cwd, consumerDir);
+    assert.equal(typeof captured.opts.timeout, 'number');
+    assert.ok(captured.opts.timeout > 0, `expected a positive install timeout, got ${captured.opts.timeout}`);
+    assert.equal(captured.opts.timeout, INSTALL_TIMEOUT_MS);
     // installTarballs itself creates the consumer dir even though the
     // (faked) install call never touches the filesystem.
     assert.equal(fs.existsSync(consumerDir), true);
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
+});
+
+test('installTarballs: a timeout-shaped exec error (killed=true) fails with a named "timed out" message, not the raw kill error', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pack-check-install-timeout-'));
+  try {
+    const consumerDir = path.join(tmpRoot, 'consumer');
+    const fakeExec = () => {
+      const err = new Error('Command failed: npm install ...');
+      err.killed = true;
+      err.signal = 'SIGTERM';
+      throw err;
+    };
+
+    assert.throws(
+      () => installTarballs([path.join(tmpRoot, 'pack', 'x.tgz')], consumerDir, fakeExec),
+      (err) => {
+        assert.match(err.message, /timed out after/);
+        assert.match(err.message, new RegExp(String(INSTALL_TIMEOUT_MS)));
+        return true;
+      },
+    );
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('installTarballs: a non-timeout exec error (e.g. ETARGET) is rethrown as-is, preserving npm\'s own message', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pack-check-install-etarget-'));
+  try {
+    const consumerDir = path.join(tmpRoot, 'consumer');
+    const fakeExec = () => {
+      throw new Error('Command failed: npm install ...\nnpm error code ETARGET\nnpm error notarget No matching version found for @lannguyensi/claim-gate@0.7.0.');
+    };
+
+    assert.throws(
+      () => installTarballs([path.join(tmpRoot, 'pack', 'x.tgz')], consumerDir, fakeExec),
+      /No matching version found for @lannguyensi\/claim-gate@0\.7\.0/,
+    );
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+// ── extractUnresolvedDependency (pure) ──────────────────────────────────
+// Names the dependency an ETARGET/E404 npm install failure could not
+// resolve, so a range-pin (or a mis-co-packed sibling) failure is
+// diagnosable at a glance instead of buried in npm's multi-line stderr.
+
+test('extractUnresolvedDependency: an ETARGET "No matching version found for X" message names X', () => {
+  const message = [
+    'Command failed: npm install --omit=dev x.tgz',
+    'npm error code ETARGET',
+    'npm error notarget No matching version found for left-pad@999.999.999.',
+    'npm error notarget In most cases you or one of your dependencies are requesting a package version that does not exist.',
+  ].join('\n');
+  assert.equal(extractUnresolvedDependency(message), 'left-pad@999.999.999');
+});
+
+test('extractUnresolvedDependency: an E404 "requested resource could not be found" message names the resource', () => {
+  const message = [
+    'Command failed: npm install --omit=dev x.tgz',
+    'npm error code E404',
+    "npm error 404 Not Found - GET https://registry.npmjs.org/foo - Not found",
+    "npm error 404  The requested resource 'foo@*' could not be found or you do not have permission to access it.",
+  ].join('\n');
+  assert.equal(extractUnresolvedDependency(message), 'foo@*');
+});
+
+test('extractUnresolvedDependency: a message naming neither pattern returns null', () => {
+  assert.equal(extractUnresolvedDependency('Command failed: npm install ...\nsome other error'), null);
 });
 
 test('runVersionCommand: invokes <consumerDir>/node_modules/.bin/grounding-mcp --version with cwd = consumerDir', () => {
@@ -326,14 +477,19 @@ test('runVersionCommand: invokes <consumerDir>/node_modules/.bin/grounding-mcp -
 //    injected so the following test stays fast and does not need dist/
 //    built or a real `node_modules/.bin` bin) ────────────────────────────
 
-test('run(): the install call gets every real version-locked sibling tarball plus grounding-mcp itself, and the version-check bin call is scoped to the same consumer dir under os.tmpdir() (F3 argv/cwd/tmpdir assertions)', () => {
+test('run(): the install call gets every real version-locked sibling tarball plus grounding-mcp itself LAST, the version-check bin call is scoped to the same consumer dir under os.tmpdir(), and the expected-version read is against the packed grounding-mcp TARBALL (not this repo\'s in-tree package.json)', () => {
   const calls = [];
   const fakeExec = (cmd, args, opts) => {
     calls.push({ cmd, args, opts });
     return 'fake-version-not-asserted\n';
   };
+  const readVersionCalls = [];
+  const fakeReadVersionFn = (tgzPath) => {
+    readVersionCalls.push(tgzPath);
+    return 'fake-expected-version-not-asserted';
+  };
 
-  run({ rootDir: REPO_ROOT, execFn: fakeExec });
+  run({ rootDir: REPO_ROOT, execFn: fakeExec, readVersionFn: fakeReadVersionFn });
 
   const installCall = calls.find((c) => c.cmd === 'npm' && c.args[0] === 'install');
   assert.ok(installCall, `expected an "npm install" call among: ${JSON.stringify(calls.map((c) => c.cmd))}`);
@@ -350,9 +506,11 @@ test('run(): the install call gets every real version-locked sibling tarball plu
       `expected the install argv to include a tarball for ${name}, got: ${tgzArgs.join(' ')}`,
     );
   }
+  // The grounding-mcp tarball must be installed LAST (after every sibling
+  // tarball), per run()'s own [...siblingTgzPaths, tgzPath] argv order.
   assert.ok(
-    tgzArgs.some((a) => path.basename(a).startsWith('lannguyensi-grounding-mcp')),
-    `expected the install argv to include the grounding-mcp tarball itself, got: ${tgzArgs.join(' ')}`,
+    path.basename(tgzArgs[tgzArgs.length - 1]).startsWith('lannguyensi-grounding-mcp'),
+    `expected the grounding-mcp tarball to be the LAST .tgz arg, got: ${tgzArgs.join(' ')}`,
   );
 
   const consumerDir = installCall.opts.cwd;
@@ -363,6 +521,19 @@ test('run(): the install call gets every real version-locked sibling tarball plu
   assert.equal(binCall.cmd, path.join(consumerDir, 'node_modules', '.bin', 'grounding-mcp'));
   assert.deepEqual(binCall.args, ['--version']);
   assert.equal(binCall.opts.cwd, consumerDir);
+
+  // The expected-version read must go through readVersionFn, called with
+  // the packed grounding-mcp TARBALL path (a .tgz under a tmpdir-rooted
+  // pack dir) -- never with this repo's in-tree
+  // packages/grounding-mcp/package.json. A mutant that reads the in-tree
+  // manifest instead would call readVersionFn with the wrong path (or not
+  // at all).
+  assert.equal(readVersionCalls.length, 1, `expected exactly one readVersionFn call, got: ${JSON.stringify(readVersionCalls)}`);
+  const readVersionArg = readVersionCalls[0];
+  assert.ok(readVersionArg.endsWith('.tgz'), `expected readVersionFn to be called with a .tgz path, got: ${readVersionArg}`);
+  assert.ok(path.basename(readVersionArg).startsWith('lannguyensi-grounding-mcp'), `expected the grounding-mcp tarball, got: ${readVersionArg}`);
+  assert.ok(readVersionArg.startsWith(os.tmpdir()), `expected a tmpdir-rooted pack path, got: ${readVersionArg}`);
+  assert.notEqual(readVersionArg, path.join(GROUNDING_MCP_DIR, 'package.json'));
 });
 
 // ── run() end-to-end (real packages/grounding-mcp workspace package,
@@ -371,12 +542,9 @@ test('run(): the install call gets every real version-locked sibling tarball plu
 // this check runs as places it after "Build"; a local run needs `npm run
 // build` first, same as any other test here that reads dist/ output). A
 // missing dist means the very layout this check exists to guard is
-// already broken (review finding F2, task d341afd5 round 2): in CI,
-// GROUNDING_MCP_PACK_REQUIRE_DIST=1 turns that into a hard failure instead
-// of the ordinary local skip, so a build regression cannot silently pass
-// this suite via "0 run, 0 fail, 2 skipped" the way it did before this
-// round (reproduced: renaming dist/server.js away skipped both e2e tests
-// and exited 0).
+// already broken: in CI, GROUNDING_MCP_PACK_REQUIRE_DIST=1 turns that into
+// a hard failure instead of the ordinary local skip, so a build regression
+// cannot silently pass this suite via "0 run, 0 fail, 2 skipped".
 test('run(): negative control -- removing the installed package.json fails red with a named message', (t) => {
   if (!fs.existsSync(DIST_ENTRY)) {
     if (REQUIRE_DIST) {
@@ -405,4 +573,20 @@ test('run(): negative control -- removing the installed package.json fails red w
   const combined = lines.join('\n');
   assert.match(combined, /"0\.0\.0"/);
   assert.match(combined, /grounding-mcp pack check failed/);
+});
+
+// ── parseCorruptArg (pure argv parsing, main()'s own seam) ──────────────
+
+test('parseCorruptArg: parses --corrupt=<mode> out of an argv array', () => {
+  assert.equal(parseCorruptArg(['--corrupt=remove-package-json']), 'remove-package-json');
+  assert.equal(parseCorruptArg(['node', 'script.js', '--corrupt=remove-package-json']), 'remove-package-json');
+});
+
+test('parseCorruptArg: an unrecognized mode string is still returned as-is -- corruptInstalledPackage rejects it downstream, not the parser', () => {
+  assert.equal(parseCorruptArg(['--corrupt=bogus']), 'bogus');
+});
+
+test('parseCorruptArg: no --corrupt= argument present returns null', () => {
+  assert.equal(parseCorruptArg([]), null);
+  assert.equal(parseCorruptArg(['node', 'script.js']), null);
 });

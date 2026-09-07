@@ -26,8 +26,7 @@
  *      See that function's own docblock for why this is required, not
  *      optional: without it, a lockstep release PR that re-pins these
  *      siblings to a same-PR, not-yet-published version would fail this
- *      check with an ETARGET resolving them off the public registry
- *      (review finding F1, task d341afd5 round 2).
+ *      check with an ETARGET resolving them off the public registry.
  *   2. Read the grounding-mcp tarball's OWN `package.json` `version` field
  *      (`tar -xOf`), not this repo's in-tree
  *      `packages/grounding-mcp/package.json` — the whole point is asserting
@@ -50,8 +49,9 @@
  * One pack per package, one combined install, one process spawn for the
  * version check — matches the manual check's own footprint, no extra
  * passes (this whole `run()` still does exactly one pack+install round;
- * see scripts/check-grounding-mcp-pack.test.js's own header for why the
- * CI job as a whole now does two such rounds, not three).
+ * see scripts/check-grounding-mcp-pack.test.js's own header, and
+ * docs/okf/log.md, for why the CI job as a whole does two such rounds, not
+ * three).
  *
  * `run({ corrupt })` accepts an optional corruption mode for the negative
  * control, applied to the INSTALLED tree after step 3 and before step 4, so
@@ -80,70 +80,123 @@ const SCOPE = '@lannguyensi';
 const PACKAGE_NAME = 'grounding-mcp';
 const BIN_NAME = 'grounding-mcp';
 
-// Matches an exact semver ("0.6.0", "1.2.3-beta.1") and rejects any range
-// operator ("^0.6.0", "~0.6.0", ">=0.6.0", "0.6.x", "*", a git/tag/alias
-// spec, ...). Deliberately conservative: anything that isn't unambiguously
-// an exact pin is treated as a range and excluded from co-packing.
-const EXACT_VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?$/;
+// Matches an exact semver ("0.6.0", "1.2.3-beta.1", "1.2.3+build.5") and
+// rejects any range operator ("^0.6.0", "~0.6.0", ">=0.6.0", "0.6.x", "*", a
+// git/tag/alias spec, ...). Deliberately conservative: anything that isn't
+// unambiguously an exact pin is treated as a range and excluded from
+// co-packing.
+const EXACT_VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/;
 
-/** Reads every `packages/*\/package.json` under `rootDir` and returns a Map
- * from package `name` to its absolute workspace directory. Skips any
- * workspace directory that has no package.json or no string `name`. */
+/** Reads `rootDir/package.json`'s own `workspaces` array and returns the
+ * list of absolute directories it names. Supports the `<dir>/*` glob form
+ * (lists the actual subdirectories under `<dir>` -- npm/Node workspaces'
+ * own most common shape) and an explicit path entry (used as-is, no
+ * expansion). No glob library: a pattern is treated as the glob form only
+ * when it ends in exactly `/*`; anything else is a literal path. A missing
+ * or non-array `workspaces` field yields no directories. */
+function resolveWorkspaceDirs(rootDir) {
+  const rootPkgPath = path.join(rootDir, 'package.json');
+  const rootPkg = JSON.parse(fs.readFileSync(rootPkgPath, 'utf8'));
+  const patterns = Array.isArray(rootPkg.workspaces) ? rootPkg.workspaces : [];
+  const dirs = [];
+  for (const pattern of patterns) {
+    if (typeof pattern !== 'string' || pattern.length === 0) continue;
+    if (pattern.endsWith('/*')) {
+      const baseDir = path.join(rootDir, pattern.slice(0, -'/*'.length));
+      if (!fs.existsSync(baseDir)) continue;
+      const entries = fs.readdirSync(baseDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) dirs.push(path.join(baseDir, entry.name));
+      }
+    } else {
+      dirs.push(path.join(rootDir, pattern));
+    }
+  }
+  return dirs;
+}
+
+/** Reads every workspace package directory named by `rootDir/package.json`'s
+ * `workspaces` entries (see `resolveWorkspaceDirs`) and returns a Map from
+ * package `name` to its absolute workspace directory. Skips any workspace
+ * directory that has no package.json or no string `name`. */
 function loadWorkspacePackageDirsByName(rootDir) {
-  const packagesDir = path.join(rootDir, 'packages');
-  const entries = fs.readdirSync(packagesDir, { withFileTypes: true });
   const byName = new Map();
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const pkgJsonPath = path.join(packagesDir, entry.name, 'package.json');
+  for (const dir of resolveWorkspaceDirs(rootDir)) {
+    const pkgJsonPath = path.join(dir, 'package.json');
     if (!fs.existsSync(pkgJsonPath)) continue;
     const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
     if (typeof pkg.name === 'string' && pkg.name.length > 0) {
-      byName.set(pkg.name, path.join(packagesDir, entry.name));
+      byName.set(pkg.name, dir);
     }
   }
   return byName;
 }
 
-/** Returns the version-LOCKED `@lannguyensi/*` dependencies `packageDir`'s
- * own package.json declares that are themselves workspace packages under
- * `rootDir/packages` — i.e. an exact pin (`"0.6.0"`), not a range
- * (`"^0.3.0"`). Sorted by name for a deterministic pack order.
+/** Returns the version-LOCKED `@lannguyensi/*` dependencies of `packageDir`
+ * and, recursively, of every such sibling it finds -- a breadth-first walk
+ * seeded with `packageDir` itself (excluded from the result) -- that are
+ * themselves workspace packages resolvable via `loadWorkspacePackageDirsByName`
+ * (i.e. an exact pin such as `"0.6.0"`, not a range like `"^0.3.0"`, scanning
+ * both `dependencies` and `optionalDependencies`). Sorted by name for a
+ * deterministic pack order; a package reachable by more than one path is
+ * only visited, and returned, once.
  *
- * Derived from the manifest, never hardcoded: this repo's lockstep release
- * PRs re-pin grounding-mcp's `claim-gate`/`evidence-ledger`/
- * `grounding-wrapper`/`hypothesis-tracker` dependencies to the SAME PR's
- * new version in the SAME commit that bumps those four packages themselves
- * (see e.g. commits 97dfa51, 20cf37f, 1433173) — so on exactly those PRs,
- * that new version does not exist on the public registry yet. A scratch
- * install of the grounding-mcp tarball ALONE would resolve those pins from
- * the registry (the only place it can look) and fail with ETARGET on
- * exactly the PRs this check most needs to pass (review finding F1, task
- * d341afd5 round 2; reproduced by hand with the siblings bumped to an
- * unpublished 0.7.0). Packing every version-locked sibling too and
- * installing all of them together as local tarballs (see `run()`) makes
- * npm satisfy those exact pins from disk instead, independent of registry
- * state — and because the list here is derived from the dependency map
- * rather than copied out, a fifth future version-locked sibling is picked
- * up automatically, with no edit to this file.
+ * Derived from each package's own manifest, never hardcoded: this repo's
+ * lockstep release PRs re-pin grounding-mcp's `claim-gate`/
+ * `evidence-ledger`/`grounding-wrapper`/`hypothesis-tracker` dependencies to
+ * the SAME PR's new version in the SAME commit that bumps those four
+ * packages themselves (see e.g. commits 97dfa51, 20cf37f, 1433173) — so on
+ * exactly those PRs, that new version does not exist on the public
+ * registry yet. A scratch install of the grounding-mcp tarball ALONE would
+ * resolve those pins from the registry (the only place it can look) and
+ * fail with ETARGET on exactly the PRs this check most needs to pass
+ * (reproduced by hand with the siblings bumped to an unpublished 0.7.0).
+ * Packing every version-locked sibling too and installing all of them
+ * together as local tarballs (see `run()`) makes npm satisfy those exact
+ * pins from disk instead, independent of registry state — and because the
+ * walk is BFS over each package's own dependency map (not copied out or
+ * limited to one hop), a future version-locked sibling -- including one
+ * pinned by another sibling rather than directly by grounding-mcp -- is
+ * picked up automatically, with no edit to this file. Today, none of
+ * grounding-mcp's four direct siblings themselves exact-pin a further
+ * `@lannguyensi/*` package, so the walk currently terminates at depth 1 in
+ * practice; see `check-grounding-mcp-pack.test.js`'s fixture-workspace
+ * tests for the depth-2 (sibling-of-a-sibling) and optionalDependencies
+ * cases this function actually implements.
  *
  * `runtime-reality-checker` (`"^0.3.0"` — a RANGE, not an exact pin) is
  * correctly excluded by the exact-pin check: its version is not re-pinned
- * in lockstep with grounding-mcp's own release, so the registry always has
- * a version satisfying the range.
+ * in lockstep with grounding-mcp's own release. That assumption -- the
+ * registry always has a version satisfying the range -- does not hold in
+ * general (this repo has, at least once, held a sibling back from the
+ * registry; see `docs/okf/log.md`); a range-pinned dependency is still
+ * excluded here because installing a range spec against a co-packed local
+ * tarball is not what npm reliably resolves, not because the assumption is
+ * guaranteed.
  */
 function findVersionLockedWorkspaceSiblings(rootDir, packageDir) {
-  const pkg = JSON.parse(fs.readFileSync(path.join(packageDir, 'package.json'), 'utf8'));
-  const deps = pkg.dependencies || {};
   const byName = loadWorkspacePackageDirsByName(rootDir);
-  const siblings = [];
-  for (const [depName, depRange] of Object.entries(deps)) {
-    if (!depName.startsWith(`${SCOPE}/`)) continue;
-    if (typeof depRange !== 'string' || !EXACT_VERSION_RE.test(depRange)) continue;
-    const dir = byName.get(depName);
-    if (!dir) continue;
-    siblings.push({ name: depName, dir });
+  const visitedDirs = new Set([packageDir]);
+  const resultByName = new Map();
+  const queue = [packageDir];
+  while (queue.length > 0) {
+    const currentDir = queue.shift();
+    const pkg = JSON.parse(fs.readFileSync(path.join(currentDir, 'package.json'), 'utf8'));
+    const depMaps = [pkg.dependencies || {}, pkg.optionalDependencies || {}];
+    for (const deps of depMaps) {
+      for (const [depName, depRange] of Object.entries(deps)) {
+        if (!depName.startsWith(`${SCOPE}/`)) continue;
+        if (typeof depRange !== 'string' || !EXACT_VERSION_RE.test(depRange)) continue;
+        const dir = byName.get(depName);
+        if (!dir) continue;
+        if (visitedDirs.has(dir)) continue;
+        visitedDirs.add(dir);
+        resultByName.set(depName, dir);
+        queue.push(dir);
+      }
+    }
   }
+  const siblings = Array.from(resultByName, ([name, dir]) => ({ name, dir }));
   siblings.sort((a, b) => a.name.localeCompare(b.name));
   return siblings;
 }
@@ -186,23 +239,61 @@ function readTarballVersion(tgzPath) {
   return pkg.version;
 }
 
+// Ceiling on the install call: a black-holed registry (unreachable, hanging
+// TCP) previously hung this step well past the ci job's own
+// `timeout-minutes: 10`, which then kills the whole job with a generic
+// timeout instead of this check's own named failure. 5 minutes leaves room
+// for a real (slow but working) install while still failing loudly, in this
+// step, before the job-level ceiling would.
+const INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
+
+/** Given an install error's message, names the `name@spec` npm's own stderr
+ * says it could not resolve -- an ETARGET ("No matching version found for
+ * X") or E404 ("requested resource 'X' could not be found") failure --  so
+ * a range-pin (or a mis-co-packed sibling) failure is diagnosable from the
+ * top-line message alone instead of npm's full multi-line stderr. Returns
+ * `null` when the message matches neither shape. */
+function extractUnresolvedDependency(message) {
+  const targetMatch = message.match(/No matching version found for (\S+?)\.?(?:\n|$)/);
+  if (targetMatch) return targetMatch[1];
+  const notFoundMatch = message.match(/requested resource '([^']+)' could not be found/);
+  if (notFoundMatch) return notFoundMatch[1];
+  return null;
+}
+
 /** Installs every path in `tgzPaths` into `consumerDir` (created if needed)
- * in ONE `npm install --omit=dev --no-audit --no-fund` call, matching the
- * manual verification's own install shape. Installing every version-locked
- * tarball together (rather than one call per tarball) is required, not
- * cosmetic: it is what lets npm resolve the `@lannguyensi/*` pins among
- * them from the local files instead of the registry (see this module's own
- * docblock and `findVersionLockedWorkspaceSiblings`'s).
+ * in ONE `npm install --omit=dev --no-audit --no-fund --fetch-retries=2`
+ * call, matching the manual verification's own install shape (plus a
+ * bounded retry count and an overall timeout, see `INSTALL_TIMEOUT_MS`).
+ * Installing every version-locked tarball together (rather than one call
+ * per tarball), IN THE GIVEN ORDER, is required, not cosmetic: it is what
+ * lets npm resolve the `@lannguyensi/*` pins among them from the local
+ * files instead of the registry (see this module's own docblock and
+ * `findVersionLockedWorkspaceSiblings`'s).
  *
  * `execFn` defaults to `execFileSync` and is injectable so tests can assert
- * on the exact argv (which tarballs, `--omit=dev`, cwd) without a real npm
- * install. */
+ * on the exact argv (which tarballs, in which order, `--omit=dev`, cwd,
+ * timeout) without a real npm install. A timeout-shaped `execFn` error
+ * (Node's own child_process convention: `.killed === true` when the
+ * process was killed for exceeding `timeout`) is re-thrown as a new error
+ * naming the timeout explicitly, rather than the raw "Command failed"
+ * message a hung process leaves; any other error (e.g. npm's own
+ * ETARGET/E404 stderr) is re-thrown as-is so the caller still sees the
+ * dependency `extractUnresolvedDependency` can name. */
 function installTarballs(tgzPaths, consumerDir, execFn = execFileSync) {
   fs.mkdirSync(consumerDir, { recursive: true });
-  execFn('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', ...tgzPaths], {
-    cwd: consumerDir,
-    stdio: 'pipe',
-  });
+  try {
+    execFn('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--fetch-retries=2', ...tgzPaths], {
+      cwd: consumerDir,
+      stdio: 'pipe',
+      timeout: INSTALL_TIMEOUT_MS,
+    });
+  } catch (err) {
+    if (err && err.killed) {
+      throw new Error(`install timed out after ${INSTALL_TIMEOUT_MS} ms; registry unreachable? (original error: ${err.message})`);
+    }
+    throw err;
+  }
 }
 
 /** Path to the installed package's own package.json inside `consumerDir`'s
@@ -258,17 +349,23 @@ function evaluateVersionMatch(reportedVersion, expectedVersion) {
 /** End-to-end run. `options.rootDir` defaults to the repo root;
  * `options.corrupt` (see module docblock) drives the negative-control
  * path; `options.execFn` (default `execFileSync`) is forwarded to
- * `installTarballs`/`runVersionCommand` only -- packing and reading the
- * tarball version always run for real, since those need to exist as real
- * files for the rest of the run to make sense. Injecting `execFn` lets a
- * test exercise `run()`'s own real pack + sibling-discovery + argv-
- * construction wiring while skipping the real install and process spawn
- * (see check-grounding-mcp-pack.test.js). Returns a process exit code (0
+ * `installTarballs`/`runVersionCommand` only; `options.readVersionFn`
+ * (default `readTarballVersion`) is forwarded ONLY to the expected-version
+ * read -- packing itself always runs for real, since it needs to exist as
+ * a real file for the rest of the run to make sense. Injecting `execFn`
+ * lets a test exercise `run()`'s own real pack + sibling-discovery + argv-
+ * construction wiring while skipping the real install and process spawn;
+ * injecting `readVersionFn` lets a test assert it is called with the
+ * packed grounding-mcp TARBALL path specifically, never this repo's
+ * in-tree `packages/grounding-mcp/package.json` (the whole point of this
+ * check -- see the module docblock) (see
+ * check-grounding-mcp-pack.test.js). Returns a process exit code (0
  * clean, 1 on any failure). Scratch directories are always cleaned up. */
 function run(options = {}) {
   const rootDir = options.rootDir ?? path.join(__dirname, '..');
   const corrupt = options.corrupt ?? null;
   const execFn = options.execFn ?? execFileSync;
+  const readVersionFn = options.readVersionFn ?? readTarballVersion;
   const packageDir = path.join(rootDir, PACKAGE_RELATIVE_DIR);
   const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'grounding-mcp-pack-check-'));
   const packDir = path.join(tmpBase, 'pack');
@@ -303,7 +400,7 @@ function run(options = {}) {
 
     let expectedVersion;
     try {
-      expectedVersion = readTarballVersion(tgzPath);
+      expectedVersion = readVersionFn(tgzPath);
     } catch (err) {
       console.error(`grounding-mcp pack check failed: ${err.message}`);
       return 1;
@@ -312,8 +409,10 @@ function run(options = {}) {
     try {
       installTarballs([...siblingTgzPaths, tgzPath], consumerDir, execFn);
     } catch (err) {
+      const unresolved = extractUnresolvedDependency(err.message || '');
+      const unresolvedNote = unresolved ? ` (unresolved dependency: ${unresolved})` : '';
       console.error(
-        `grounding-mcp pack check failed: could not install ${tgzPath} (with ${siblingTgzPaths.length} version-locked sibling tarball(s)) into ${consumerDir}: ${err.message}`,
+        `grounding-mcp pack check failed: could not install ${tgzPath} (with ${siblingTgzPaths.length} version-locked sibling tarball(s)): ${err.message}${unresolvedNote} (the scratch consumer directory has already been removed).`,
       );
       return 1;
     }
@@ -330,7 +429,7 @@ function run(options = {}) {
       reportedVersion = runVersionCommand(consumerDir, execFn);
     } catch (err) {
       console.error(
-        `grounding-mcp pack check failed: could not run "${BIN_NAME} --version" from ${consumerDir}: ${err.message}`,
+        `grounding-mcp pack check failed: could not run "${BIN_NAME} --version": ${err.message} (the scratch consumer directory has already been removed).`,
       );
       return 1;
     }
@@ -347,9 +446,17 @@ function run(options = {}) {
   }
 }
 
+/** Parses `--corrupt=<mode>` out of an argv-shaped array (`process.argv` or
+ * a fixture). Returns the mode string as-is, or `null` when no such
+ * argument is present -- does NOT validate the mode itself;
+ * `corruptInstalledPackage` rejects an unrecognized one downstream. */
+function parseCorruptArg(argv) {
+  const corruptArg = argv.find((a) => a.startsWith('--corrupt='));
+  return corruptArg ? corruptArg.slice('--corrupt='.length) : null;
+}
+
 function main() {
-  const corruptArg = process.argv.find((a) => a.startsWith('--corrupt='));
-  const corrupt = corruptArg ? corruptArg.slice('--corrupt='.length) : null;
+  const corrupt = parseCorruptArg(process.argv);
   process.exitCode = run({ corrupt });
 }
 
@@ -358,15 +465,18 @@ module.exports = {
   SCOPE,
   PACKAGE_NAME,
   BIN_NAME,
+  INSTALL_TIMEOUT_MS,
   loadWorkspacePackageDirsByName,
   findVersionLockedWorkspaceSiblings,
   packTarball,
   readTarballVersion,
   installTarballs,
+  extractUnresolvedDependency,
   installedPackageJsonPath,
   corruptInstalledPackage,
   runVersionCommand,
   evaluateVersionMatch,
+  parseCorruptArg,
   run,
 };
 
