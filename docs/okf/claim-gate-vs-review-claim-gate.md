@@ -3,7 +3,7 @@ type: invariant
 title: claim-gate vs review-claim-gate — same word, opposite trust models
 description: Two sibling packages both gate on "evidence" but claim-gate trusts a caller-supplied boolean (self-discipline) while review-claim-gate reads a store (CI gate) — never treat them as interchangeable.
 tags: [claim-gate, review-claim-gate, evidence, trust-boundary]
-timestamp: 2026-09-06T20:26:39Z
+timestamp: 2026-09-07T11:58:00Z
 sources:
   - packages/claim-gate/src/lib.ts
   - packages/claim-gate/src/cli.ts
@@ -48,7 +48,7 @@ review-claim-gate's non-`evidence_logged` flags are verified — defeats the gat
 - **`has_evidence` is a caller-supplied boolean.** It is a field of the
   `ClaimContext` interface at `packages/claim-gate/src/lib.ts:29#"has_evidence?: boolean;"`
   (`has_evidence?: boolean;`), set on the CLI purely from the `--evidence` flag
-  (`packages/claim-gate/src/cli.ts:63#"has_evidence: opts.evidence,"`, `has_evidence: opts.evidence,`).
+  (`packages/claim-gate/src/cli.ts:95#"has_evidence: opts.evidence,"`, `has_evidence: opts.evidence,`).
   Nothing verifies it.
 - **It never touches the evidence ledger.** `grep -rni "ledger"
   packages/claim-gate/src/` returns **zero hits** (exit 1). claim-gate has no
@@ -57,7 +57,7 @@ review-claim-gate's non-`evidence_logged` flags are verified — defeats the gat
   flag is the fact.
 - CLI: `claim-gate check <claim> [--readme --process --config --health
   --evidence --alternatives --type <t> --json]`. On a blocked claim it prints
-  missing prerequisites and **exits 1** (`packages/claim-gate/src/cli.ts:89#"process.exit(1)"`,
+  missing prerequisites and **exits 1** (`packages/claim-gate/src/cli.ts:121#"process.exit(1)"`,
   `if (!result.allowed) process.exit(1);`); `policies` lists all policies.
 - **Every input is agent-writable and therefore forgeable.** An agent can pass
   `--evidence` (or any flag) with no underlying work. That is by design: this is

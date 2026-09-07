@@ -22,15 +22,47 @@ import { buildHandoffMarkdown, buildHandoffJson } from "./handoff.js";
 // can never desync from the published version on a release bump. Resolved
 // relative to this module so it works both from src/ (dev, via tsx) and from
 // the built dist/ layout (dist/cli.js sits one level below the package root,
-// same as src/cli.ts), and package.json is always included in the npm
-// tarball via the `files` field.
-function readVersion(): string {
+// same as src/cli.ts). npm always includes package.json in the published
+// tarball, independent of `files`.
+// packageJsonUrl and read are injectable so tests can drive the failure
+// path (missing file, invalid JSON, missing version field) without
+// spawning a dist/ subprocess or mutating the real package.json.
+// The diagnostic write is best-effort: it runs in its own try/catch so a
+// throwing process.stderr.write (closed or bad fd, EBADF) can never escape
+// this function.
+// readVersion is exported only as a test seam, not supported API.
+// @internal
+export function readVersion(
+  packageJsonUrl: URL = new URL("../package.json", import.meta.url),
+  read: (url: URL, encoding: BufferEncoding) => string = readFileSync,
+): string {
   try {
-    const url = new URL("../package.json", import.meta.url);
-    const text = readFileSync(url, "utf8");
+    const text = read(packageJsonUrl, "utf8");
     const pkg = JSON.parse(text) as { version?: string };
-    return pkg.version ?? "0.0.0";
-  } catch {
+    if (typeof pkg.version !== "string" || pkg.version.length === 0) {
+      try {
+        process.stderr.write(
+          'evidence-ledger: package.json has no "version" field; reporting 0.0.0\n',
+        );
+      } catch {
+        // stderr itself is unwritable; the 0.0.0 fallback below still
+        // applies, this diagnostic is best-effort only.
+      }
+      return "0.0.0";
+    }
+    return pkg.version;
+  } catch (err) {
+    try {
+      const reason = (err instanceof Error ? err.message : String(err))
+        .replace(/\r?\n/g, " ")
+        .slice(0, 500);
+      process.stderr.write(
+        `evidence-ledger: could not read version from package.json (${reason}); reporting 0.0.0\n`,
+      );
+    } catch {
+      // stderr itself is unwritable, or the error's message/toString threw;
+      // nothing more can be reported.
+    }
     return "0.0.0";
   }
 }
