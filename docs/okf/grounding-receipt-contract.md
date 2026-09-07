@@ -3,7 +3,7 @@ type: invariant
 title: Grounding receipt codec contract
 description: Portable documentary assessment bytes, frozen policy identity, and the boundary between signature verification and issuer or task authority.
 tags: [grounding-mcp, receipt, contract, trust-boundary]
-timestamp: 2026-09-07T00:00:00Z
+timestamp: 2026-09-07T05:36:12Z
 sources:
   - packages/grounding-mcp/src/grounding-receipt.ts
   - packages/grounding-mcp/contracts/grounding-receipt-v1/README.md
