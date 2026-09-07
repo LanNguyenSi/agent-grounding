@@ -3,7 +3,7 @@ type: overview
 title: The grounding stack — where to read, and how releases are split
 description: Pointer doc — the root README already diagrams the whole stack; this entry adds the release topology (four version-locked packages under one root tag, eight independently-versioned ones) that the diagram does not show.
 tags: [overview, monorepo, releases, versioning, pointer]
-timestamp: 2026-09-07T11:06:07Z
+timestamp: 2026-09-07T11:29:10Z
 sources:
   - README.md
   - CHANGELOG.md
@@ -74,18 +74,23 @@ runner the package actually uses before adding a test.
 ## Packaging verification (CI)
 
 `grounding-mcp`'s runtime version read (see the release topology note above)
-is checked against the actual published artifact on every PR, not only by
-hand at release time: the `ci` job's "grounding-mcp packed-tarball --version
-check" step (`.github/workflows/ci.yml:430-445#"npm run check:grounding-mcp-pack"`)
-runs `scripts/check-grounding-mcp-pack.js`, which packs the workspace
-package, installs the tarball with `--omit=dev` into a scratch consumer
+is checked against the packed artifact (the tarball `npm publish` would
+upload) on every PR, not only by hand at release time: the `ci` job's
+"grounding-mcp packed-tarball --version check" step
+(`.github/workflows/ci.yml:430-455#"npm run check:grounding-mcp-pack"`) runs
+`scripts/check-grounding-mcp-pack.js`, which packs the workspace package
+together with its version-locked `@lannguyensi/*` sibling dependencies
+(derived from grounding-mcp's own package.json, not a hardcoded list),
+installs every tarball together with `--omit=dev` into one scratch consumer
 directory outside the repo tree, and asserts the installed
-`grounding-mcp --version` bin's output equals the TARBALL's own
-`package.json` version — the same "works from the published tarball" check
-PR #226 (task ed06b4c8) verified by hand, now automated (task d341afd5). Its
-own fixture and end-to-end unit tests run in the following "grounding-mcp
+`grounding-mcp --version` bin's output equals the grounding-mcp TARBALL's
+own `package.json` version. Co-packing the siblings keeps a lockstep
+release PR (which re-pins those siblings to a same-PR, not-yet-published
+version) from failing this check with a registry ETARGET. Its own fixture,
+argv-level, and end-to-end unit tests run in the following "grounding-mcp
 packed-tarball --version checker unit tests" step
-(`package.json:29#"check:grounding-mcp-pack"`).
+(`package.json:30#"test:check-grounding-mcp-pack"`); see
+`docs/okf/log.md` for this check's history.
 
 ## Restricted producer entrypoint
 

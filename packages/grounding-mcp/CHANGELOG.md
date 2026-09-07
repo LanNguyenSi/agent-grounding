@@ -4,13 +4,18 @@
 
 ### Added
 
-- CI now packs this package (`npm pack`), installs the tarball with
-  `--omit=dev` into a scratch consumer directory outside the repo tree, and
-  asserts `grounding-mcp --version` there equals the TARBALL's own
-  `package.json` version -- repeating, on every PR, the "works from the
-  published tarball" verification that used to be manual-only for the
-  runtime `package.json` version read below (`scripts/check-grounding-mcp-pack.js`,
-  `.github/workflows/ci.yml`, task d341afd5).
+- CI now packs this package (`npm pack`) together with its version-locked
+  `@lannguyensi/*` sibling dependencies (derived from this package's own
+  `dependencies`, not a hardcoded list), installs every tarball together
+  with `--omit=dev` into one scratch consumer directory outside the repo
+  tree, and asserts `grounding-mcp --version` there equals the
+  grounding-mcp TARBALL's own `package.json` version -- repeating, on
+  every PR, the "works from the published tarball" verification that used
+  to be manual-only for the runtime `package.json` version read below
+  (`scripts/check-grounding-mcp-pack.js`, `.github/workflows/ci.yml`, task
+  d341afd5; see `docs/okf/log.md` for the round that added sibling
+  co-packing after a lockstep release PR reproduced a registry ETARGET
+  without it).
 
 ### Changed
 

@@ -2285,7 +2285,7 @@
 - 2026-09-07T11:06:07Z, packaging verification CI check (task d341afd5):
   grounding-stack-overview gained a "Packaging verification (CI)" section
   pointing at the new `ci` job step
-  (`.github/workflows/ci.yml:430-445#"npm run check:grounding-mcp-pack"`)
+  (`.github/workflows/ci.yml:430-455#"npm run check:grounding-mcp-pack"`)
   that packs `@lannguyensi/grounding-mcp`, installs the tarball into a
   scratch consumer directory, and asserts `grounding-mcp --version` there
   matches the tarball's own `package.json` version -- automating the
@@ -2293,3 +2293,42 @@
   (task ed06b4c8). `okf-kit check --require-anchors --json docs/okf`
   reported 0 errors, 0 citations-resolve warnings, 0 unresolved-ambiguous
   notices against the doc's new citations.
+
+- 2026-09-07T11:29:10Z, packaging verification CI check, round 2 review
+  fixes (task d341afd5): a reviewer reproduced a false-red on this repo's
+  own lockstep release PRs -- grounding-mcp's exact-pinned
+  `@lannguyensi/*` sibling dependencies are re-pinned to a same-PR,
+  not-yet-published version in the same commit that bumps those siblings,
+  so the round-1 checker's scratch install (grounding-mcp's tarball alone)
+  resolved those pins off the public registry and hit ETARGET. Fixed by
+  packing every version-locked sibling too
+  (`findVersionLockedWorkspaceSiblings`, derived from
+  `packages/grounding-mcp/package.json`'s own dependency map, not a
+  hardcoded list) and installing all the tarballs together in one `npm
+  install` call, so npm satisfies the pins from the local files; verified
+  by hand that the installed tree's `package-lock.json` then resolves each
+  sibling via a `file:` path, not a registry URL. The round-1 end-to-end
+  unit tests silently skipped (exit 0) when `packages/grounding-mcp/dist`
+  was missing -- exactly the layout regression this checker exists to
+  catch; the CI unit-test step
+  (`.github/workflows/ci.yml:457-478#"npm run test:check-grounding-mcp-pack"`)
+  now sets `GROUNDING_MCP_PACK_REQUIRE_DIST=1`, which turns that skip into
+  a named hard failure, while a local run with no env var still skips.
+  Added argv-level tests (an injectable `execFn`) pinning the install
+  call's `--omit=dev` flag and every tarball path, and the version-check
+  bin invocation's path/cwd; a prior round's redundant happy-path
+  end-to-end test was dropped in favor of this in-process coverage, so the
+  job now does two real pack+install rounds for this checker, not three.
+  `grounding-stack-overview.md`'s "Packaging verification (CI)" section was
+  updated to describe the sibling co-pack, its citation for the unit-test
+  step corrected from `package.json:29#"check:grounding-mcp-pack"` (which
+  named the wrong script) to
+  `package.json:30#"test:check-grounding-mcp-pack"`, its "checked against
+  the actual published artifact" wording corrected to "checked against the
+  packed artifact (the tarball `npm publish` would upload)" (nothing is
+  actually published by this check), and its inline PR/task provenance
+  mentions removed in favor of pointing at this log (that section was the
+  only place in the doc carrying bare PR/task references). `okf-kit check
+  --require-anchors --json docs/okf` reported 0 errors, 0 citations-resolve
+  warnings, 0 unresolved-ambiguous notices against the doc's changed
+  citations.

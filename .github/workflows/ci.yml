@@ -430,27 +430,51 @@ jobs:
       - name: grounding-mcp packed-tarball --version check
         # Repeats, in CI, the "works from the published tarball" manual
         # verification behind PR #226 (task ed06b4c8): `npm pack`s the
-        # @lannguyensi/grounding-mcp workspace package, installs the tarball
-        # with --omit=dev into a scratch consumer directory outside the repo
-        # tree (os.tmpdir()), runs the served `grounding-mcp --version` bin
-        # from there, and asserts its output equals the TARBALL's own
-        # package.json version (not this repo's in-tree one) -- so a future
-        # change to `files`, `bin`, the build layout, or a bundler step that
-        # breaks the runtime `../package.json` resolution
-        # (packages/grounding-mcp/src/server.ts) fails here instead of only
-        # being caught by hand at release time (task d341afd5). Runs after
-        # Build: the package must already have dist/ output to pack.
-        # One pack, one install -- see scripts/check-grounding-mcp-pack.js's
-        # own docblock for the full recipe and the negative-control mode.
+        # @lannguyensi/grounding-mcp workspace package AND its version-
+        # locked @lannguyensi/* sibling dependencies (derived from
+        # grounding-mcp's own package.json, not hardcoded -- see
+        # findVersionLockedWorkspaceSiblings), installs every tarball
+        # together with --omit=dev into ONE scratch consumer directory
+        # outside the repo tree (os.tmpdir()), runs the served
+        # `grounding-mcp --version` bin from there, and asserts its output
+        # equals the TARBALL's own package.json version (not this repo's
+        # in-tree one) -- so a future change to `files`, `bin`, the build
+        # layout, or a bundler step that breaks the runtime
+        # `../package.json` resolution (packages/grounding-mcp/src/server.ts)
+        # fails here instead of only being caught by hand at release time
+        # (task d341afd5). Co-packing the siblings matters: this repo's
+        # lockstep release PRs re-pin grounding-mcp's exact-pinned
+        # dependencies to a same-PR, not-yet-published version, and a
+        # scratch install of grounding-mcp alone would resolve those pins
+        # from the public registry and fail with ETARGET on exactly those
+        # PRs (review finding F1, task d341afd5 round 2). Runs after Build:
+        # the package must already have dist/ output to pack.
+        # One pack per package, one combined install -- see
+        # scripts/check-grounding-mcp-pack.js's own docblock for the full
+        # recipe and the negative-control mode.
         run: npm run check:grounding-mcp-pack
 
       - name: grounding-mcp packed-tarball --version checker unit tests
-        # Fixture-based unit tests for the pure comparison and corruption
-        # helpers, plus two end-to-end tests against the real
-        # packages/grounding-mcp workspace package: a happy-path pass, and
-        # the required negative control (installed package.json removed --
+        # Fixture-based unit tests for the pure comparison, corruption, and
+        # sibling-derivation helpers, argv-level tests for the install/
+        # version-check calls (no real npm), and one end-to-end test
+        # against the real packages/grounding-mcp workspace package (the
+        # required negative control: installed package.json removed --
         # server.ts's own ENOENT fallback then serves "0.0.0", which this
         # checker's comparison must reject, not the binary itself failing).
+        # A prior round also ran a second, redundant happy-path end-to-end
+        # test; the argv-level tests now cover that path in-process, so the
+        # job does two real pack+install rounds total for this checker (one
+        # in the "check" step above, one in the kept end-to-end test here),
+        # not three (review finding F7, task d341afd5 round 2).
+        # GROUNDING_MCP_PACK_REQUIRE_DIST=1 turns the end-to-end test's
+        # "dist/ not built" case from a local-only skip into a hard failure:
+        # in CI, right after Build, a missing dist means the build/pack
+        # layout this checker exists to guard is already broken, and that
+        # must fail loudly here rather than silently report 0 failures with
+        # tests skipped (review finding F2, task d341afd5 round 2).
+        env:
+          GROUNDING_MCP_PACK_REQUIRE_DIST: '1'
         run: npm run test:check-grounding-mcp-pack
 
       - name: Typecheck
