@@ -43,7 +43,11 @@ The seven packages above (other than understanding-gate) each carry their own ve
   unit-testable. Its tarball-inclusion comment now says npm always
   includes `package.json` in the published tarball independent of
   `files`, matching `grounding-mcp`'s wording (the prior wording named
-  the `files` field as the reason, which is backwards). (task f31ad37f)
+  the `files` field as the reason, which is backwards). The diagnostic
+  write itself is wrapped in its own try/catch, so a throwing
+  `process.stderr.write` (closed or bad fd) is swallowed and
+  `readVersion()` still returns `'0.0.0'` instead of throwing. (task
+  f31ad37f)
 
 - `evidence-ledger`: `readVersion()` now writes one `process.stderr` line
   naming the package and the failure (read error, parse error, or a
@@ -53,7 +57,11 @@ The seven packages above (other than understanding-gate) each carry their own ve
   unit-testable. Its tarball-inclusion comment now says npm always
   includes `package.json` in the published tarball independent of
   `files`, matching `grounding-mcp`'s wording (the prior wording named
-  the `files` field as the reason, which is backwards). (task f31ad37f)
+  the `files` field as the reason, which is backwards). The diagnostic
+  write itself is wrapped in its own try/catch, so a throwing
+  `process.stderr.write` (closed or bad fd) is swallowed and
+  `readVersion()` still returns `'0.0.0'` instead of throwing. (task
+  f31ad37f)
 
 ## [0.6.0] - 2026-07-18
 

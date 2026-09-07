@@ -69,4 +69,38 @@ describe("readVersion diagnostics", () => {
       stderrSpy.mockRestore();
     }
   });
+
+  it("reports 0.0.0 and never throws when process.stderr.write itself throws (bad fd)", () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => {
+      throw new Error("EBADF: bad file descriptor");
+    });
+    try {
+      const read = vi.fn(() => {
+        throw Object.assign(new Error("ENOENT: no such file or directory"), { code: "ENOENT" });
+      });
+      let result: string | undefined;
+      expect(() => {
+        result = readVersion(new URL("file:///nonexistent/package.json"), read);
+      }).not.toThrow();
+      expect(result).toBe("0.0.0");
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('reports 0.0.0 and writes a stderr line naming the package when "version" is not a string', () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      const read = vi.fn(() => JSON.stringify({ version: 1 }));
+      const result = readVersion(new URL("file:///nonexistent/package.json"), read);
+      expect(result).toBe("0.0.0");
+      expect(stderrSpy).toHaveBeenCalledTimes(1);
+      const line = stderrSpy.mock.calls[0][0] as string;
+      expect(line).toContain("evidence-ledger");
+      expect(line).toContain("version");
+      expect(line).toContain("0.0.0");
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
 });

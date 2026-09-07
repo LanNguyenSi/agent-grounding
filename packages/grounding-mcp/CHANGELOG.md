@@ -9,7 +9,10 @@
   `version` field) before returning the unchanged `'0.0.0'` fallback,
   instead of swallowing the failure silently; it also now takes an
   injectable `packageJsonUrl`/`read` pair so the failure path is
-  unit-testable (task f31ad37f).
+  unit-testable. The diagnostic write itself is wrapped in its own
+  try/catch, so a throwing `process.stderr.write` (closed or bad fd) is
+  swallowed and `readPackageVersion()` still returns `'0.0.0'` instead of
+  throwing at module load (task f31ad37f).
 
 - `server.ts` no longer hardcodes a `PACKAGE_VERSION` literal; the version
   served by the MCP `name+version` handshake and the `--version` CLI

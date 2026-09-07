@@ -59,6 +59,11 @@ import {
 // packageJsonUrl and read are injectable so tests can drive the failure
 // path (missing file, invalid JSON, missing version field) without
 // spawning a dist/ subprocess or mutating the real package.json.
+// The diagnostic write is best-effort: it runs in its own try/catch so a
+// throwing process.stderr.write (closed or bad fd, EBADF) can never escape
+// this function. This module's `main` is dist/server.js, not this export;
+// readPackageVersion is exported only as a test seam, not supported API.
+// @internal
 export function readPackageVersion(
   packageJsonUrl: URL = new URL('../package.json', import.meta.url),
   read: (url: URL, encoding: BufferEncoding) => string = readFileSync,
@@ -67,17 +72,26 @@ export function readPackageVersion(
     const text = read(packageJsonUrl, 'utf8');
     const pkg = JSON.parse(text) as { version?: string };
     if (typeof pkg.version !== 'string' || pkg.version.length === 0) {
-      process.stderr.write(
-        'grounding-mcp: package.json has no "version" field; reporting 0.0.0\n',
-      );
+      try {
+        process.stderr.write(
+          'grounding-mcp: package.json has no "version" field; reporting 0.0.0\n',
+        );
+      } catch {
+        // stderr itself is unwritable; the 0.0.0 fallback below still
+        // applies, this diagnostic is best-effort only.
+      }
       return '0.0.0';
     }
     return pkg.version;
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    process.stderr.write(
-      `grounding-mcp: could not read version from package.json (${reason}); reporting 0.0.0\n`,
-    );
+    try {
+      process.stderr.write(
+        `grounding-mcp: could not read version from package.json (${reason}); reporting 0.0.0\n`,
+      );
+    } catch {
+      // stderr itself is unwritable; nothing more can be reported.
+    }
     return '0.0.0';
   }
 }
