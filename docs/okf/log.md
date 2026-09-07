@@ -2,6 +2,37 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-07T10:48:26Z, task 8233a401 round 1 (implementer): unspliced the
+  residuals paragraph in `merge-approval-gate-mechanics.md`
+  (`merge-approval-gate-mechanics.md:189-194`). A prior edit had inserted the
+  whole "no content difference at all" sentence in the middle of the
+  parenthetical `(not enforced by ... this classifier)`, splitting it across
+  a line break. The parenthetical now reads whole again, and the inserted
+  sentence stands on its own after the cross-pin clause, matching
+  `CONTRIBUTING.md`'s ordering of the same three residuals (one-package rule
+  not enforced, cross-pin not caught, no-content-difference file rides on
+  another's real bump). Re-verified both residuals directly against
+  `scripts/release-exception.js`'s `classifyPullFiles`: its per-file loop
+  tracks no per-package count or cross-file dependency check at all, only a
+  PR-wide bump counter (`release-exception.js:512#"let versionBumps = 0;"`,
+  `release-exception.js:557#"versionBumps += result.bumpCount;"`), and the
+  only aggregate rejection is a zero-bump check
+  (`release-exception.js:564#"else if (versionBumps === 0) reason = 'no-version-bump';"`),
+  so a file with an identical parsed document (`bumpCount: 0`) still lets
+  the PR classify pure as long as some other allowed file's `bumpCount` is
+  nonzero. Re-stamped the doc's `timestamp` after this fix, in the same
+  commit as the fix. `okf-kit check --json docs/okf` and `okf-kit check
+  --json --require-anchors docs/okf` (both `okf-kit@0.10.0`) report the same
+  4 `citations-resolve` warnings before and after, all pre-existing and all
+  in this file (`log.md`): the `solution-verdict.ts` line-746-803
+  anchor-not-found (two citations, one pointing into `log.md` itself and one
+  into `merge-approval-gate-mechanics.md`'s source lines), the
+  `merge-approval.yml` line-47 anchor-not-found, and `merge-approval-gate-mechanics.md`'s own
+  line-28 blank-start-line notice; zero errors both times.
+  `.github/workflows/ci.yml`'s "Citation guard" step
+  (`okf-kit check --require-anchors --json "${BUNDLE_PATH}"`, `BUNDLE_PATH=
+  docs/okf`) replayed locally with the same result.
+
 - 2026-09-07T10:32:51Z, operator decision after batch 41 (orchestrator): master's ruleset
   `main-protection` (id 16522106) now lists `merge-approval`, `ci` and
   `OKF bundle citation guard` as required status checks
