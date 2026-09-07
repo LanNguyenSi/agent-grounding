@@ -2,6 +2,31 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-06T20:26:39Z, sources-fresh re-verification (task 7c21ca25):
+  `claim-gate-vs-review-claim-gate.md` was flagged STALE against
+  `packages/review-claim-gate/package.json:3#"version": "0.1.6"` (bumped
+  by PR #207, review-claim-gate 0.1.5 to 0.1.6); the doc's Publish status
+  section, `claim-gate-vs-review-claim-gate.md:132#"@lannguyensi/review-claim-gate"`,
+  already names 0.1.6, so no content changed, only the stamp.
+  `merge-approval-gate-mechanics.md` was flagged STALE against
+  `.github/workflows/merge-approval.yml:47#"review-claim-gate-v0.1.6"` and
+  `packages/review-claim-gate/action/action.yml:54#"uses: actions/setup-node@v5"`
+  (PR #207's Node-24 action-runtime bump and PR #208's matching SHA
+  re-pin); the doc's own quote at
+  `merge-approval-gate-mechanics.md:28#"uses: LanNguyenSi/agent-grounding/packages/review-claim-gate/action@cd3971866e48050514bfa5056bcb7e1d79615bd7"`
+  already cites the post-bump SHA and tag, and the doc makes no claim
+  about action.yml's Node or action-runtime versions, so no content
+  changed there either. Re-checked every full citation in both docs
+  against HEAD (`packages/claim-gate/src/lib.ts` and `src/cli.ts`,
+  `packages/review-claim-gate/src/lib.ts` and `src/cli.ts` for the first
+  doc; `packages/review-claim-gate/README.md`,
+  `.github/workflows/merge-approval.yml`, and
+  `docs/testing/merge-approval-rollout.md` for the second): all resolved
+  at their cited lines, no anchors moved. `node
+  agent-dx/packages/okf-kit/dist/cli.js check --require-anchors --json
+  docs/okf` reported no `sources-fresh` finding on either doc after the
+  re-stamp.
+
 - 2026-09-06T13:01:19Z, grounding-mcp 0.11.0 release preparation: moved the
   unchanged grounding-mcp Unreleased notes (the attempt lifecycle plus
   `solution_evaluate_status`/`solution_evaluate_result`, the per-id attempt
