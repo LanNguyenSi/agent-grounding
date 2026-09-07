@@ -3,7 +3,7 @@ type: runbook
 title: Merge-approval gate — labels, keys, and when it actually blocks
 description: How the merge-approval Check-Run maps five review:* PR labels (OR'd with a data-driven pure-release exception) to merge_approval booleans, keys evidence by the PR HEAD BRANCH NAME, and blocks only when required by an applicable branch-protection rule or ruleset.
 tags: [merge-approval, review-claim-gate, ci, runbook, labels]
-timestamp: 2026-09-07T09:30:09Z
+timestamp: 2026-09-07T10:48:26Z
 sources:
   - .github/workflows/merge-approval.yml
   - scripts/release-exception.js
@@ -186,9 +186,13 @@ often (a `docs/okf/*.md` re-stamp riding along with the bump, and a source
 version constant in a package that still hand-maintains one; grounding-mcp
 no longer does: `packages/grounding-mcp/src/server.ts` reads
 the version from `package.json` at runtime instead),
-its residual on the one-package-per-release checklist rule (not enforced by A touched allowlisted file with no content difference at all (a whitespace or key-order-only `package.json`) also passes, riding on any other file's real bump; it carries no change, so nothing moves, but it is wider than the several-packages residual above.
+its residual on the one-package-per-release checklist rule (not enforced by
 this classifier), and the cross-pin case (only a dependent's own changed
-file is checked, not which packages a release *should* have touched).
+file is checked, not which packages a release *should* have touched). A
+touched allowlisted file with no content difference at all (a whitespace or
+key-order-only `package.json`) also passes, riding on any other file's real
+bump; it carries no change, so nothing moves, but it is wider than the
+several-packages residual above.
 
 **Pagination safety net.** The step also compares the number of files
 `github.paginate` actually returned against the PR's own
