@@ -590,3 +590,113 @@ test('parseCorruptArg: no --corrupt= argument present returns null', () => {
   assert.equal(parseCorruptArg([]), null);
   assert.equal(parseCorruptArg(['node', 'script.js']), null);
 });
+
+// Second synthetic fixture: an explicit (non-glob) `workspaces` path entry
+// per package (no `packages/*`), combined with a diamond dependency shape
+// (fixture-diamond-main depends on both fixture-diamond-left and
+// fixture-diamond-right, and BOTH of those exact-pin the same third
+// package, fixture-diamond-bottom). Proves two things a `packages/*` glob
+// fixture and a plain sibling-of-a-sibling fixture never exercise
+// together: (1) resolveWorkspaceDirs's literal-path branch is reached via
+// a caller that actually derives siblings from it, not only in isolation,
+// and (2) the shared package is visited, and its package.json read, only
+// ONCE by the BFS despite being reachable by two independent paths -- the
+// visited-set dedup in findVersionLockedWorkspaceSiblings (`visitedDirs`).
+// A mutant that drops the `if (visitedDirs.has(dir)) continue;` check, or
+// the `visitedDirs.add(dir)` that feeds it, re-enqueues and re-reads
+// fixture-diamond-bottom's package.json a second time via the second
+// parent; loadWorkspacePackageDirsByName's own initial workspace scan
+// already reads every workspace package.json once (fixture-diamond-bottom's
+// included) to build its name->dir map, so a correct walk reads
+// fixture-diamond-bottom's package.json exactly twice total (the scan plus
+// one BFS visit); a dedup-dropped walk reads it three times. The final
+// sibling *set* alone can't discriminate this mutant (resultByName is
+// keyed by package name, so a re-visited duplicate still collapses to one
+// entry) -- hence counting reads via a patched fs.readFileSync, not just
+// asserting the returned names.
+test('findVersionLockedWorkspaceSiblings: an explicit (non-glob) workspaces path entry resolves siblings, and a diamond dependency (two siblings exact-pinning the same third package) is visited once', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pack-check-explicit-diamond-'));
+  try {
+    const packagesDir = path.join(tmpRoot, 'packages');
+    fs.mkdirSync(packagesDir, { recursive: true });
+    const write = (name, version, dependencies) => {
+      const dir = path.join(packagesDir, name.replace('@lannguyensi/', ''));
+      fs.mkdirSync(dir, { recursive: true });
+      const pkg = { name, version };
+      if (dependencies) pkg.dependencies = dependencies;
+      fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg, null, 2));
+      return dir;
+    };
+    const mainDir = write('@lannguyensi/fixture-diamond-main', '1.0.0', {
+      '@lannguyensi/fixture-diamond-left': '1.0.0',
+      '@lannguyensi/fixture-diamond-right': '1.0.0',
+    });
+    write('@lannguyensi/fixture-diamond-left', '1.0.0', {
+      '@lannguyensi/fixture-diamond-bottom': '1.0.0',
+    });
+    write('@lannguyensi/fixture-diamond-right', '1.0.0', {
+      '@lannguyensi/fixture-diamond-bottom': '1.0.0',
+    });
+    const bottomDir = write('@lannguyensi/fixture-diamond-bottom', '1.0.0', {});
+    const bottomPkgJsonPath = path.join(bottomDir, 'package.json');
+
+    // Explicit (non-glob) workspaces entries: each package named by its own
+    // literal path, no `packages/*` glob anywhere in this fixture root.
+    fs.writeFileSync(
+      path.join(tmpRoot, 'package.json'),
+      JSON.stringify(
+        {
+          name: 'fixture-root',
+          private: true,
+          workspaces: [
+            'packages/fixture-diamond-main',
+            'packages/fixture-diamond-left',
+            'packages/fixture-diamond-right',
+            'packages/fixture-diamond-bottom',
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const originalReadFileSync = fs.readFileSync;
+    let bottomReadCount = 0;
+    fs.readFileSync = (...args) => {
+      if (args[0] === bottomPkgJsonPath) bottomReadCount += 1;
+      return originalReadFileSync.apply(fs, args);
+    };
+    let siblings;
+    try {
+      siblings = findVersionLockedWorkspaceSiblings(tmpRoot, mainDir);
+    } finally {
+      fs.readFileSync = originalReadFileSync;
+    }
+
+    assert.deepEqual(
+      siblings.map((s) => s.name).sort(),
+      [
+        '@lannguyensi/fixture-diamond-bottom',
+        '@lannguyensi/fixture-diamond-left',
+        '@lannguyensi/fixture-diamond-right',
+      ],
+    );
+    const byName = new Map(siblings.map((s) => [s.name, s.dir]));
+    assert.equal(byName.get('@lannguyensi/fixture-diamond-bottom'), bottomDir);
+    assert.equal(
+      byName.get('@lannguyensi/fixture-diamond-left'),
+      path.join(packagesDir, 'fixture-diamond-left'),
+    );
+    assert.equal(
+      byName.get('@lannguyensi/fixture-diamond-right'),
+      path.join(packagesDir, 'fixture-diamond-right'),
+    );
+
+    assert.ok(
+      bottomReadCount < 3,
+      `expected at most two reads of the shared package.json (workspace scan plus one BFS visit), got ${bottomReadCount}`,
+    );
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});

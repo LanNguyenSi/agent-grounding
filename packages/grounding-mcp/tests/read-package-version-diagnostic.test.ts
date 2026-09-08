@@ -168,4 +168,26 @@ describe('readPackageVersion diagnostics', () => {
       stderrSpy.mockRestore();
     }
   });
+
+  it('caps the reported reason at 500 characters when the error message is longer', () => {
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const longMessage = 'HEAD' + 'x'.repeat(596);
+      const read = vi.fn(() => {
+        throw new Error(longMessage);
+      });
+      const result = readPackageVersion(new URL('file:///nonexistent/package.json'), read);
+      expect(result).toBe('0.0.0');
+      expect(stderrSpy).toHaveBeenCalledTimes(1);
+      const line = stderrSpy.mock.calls[0][0] as string;
+      expect(line).not.toContain(longMessage);
+      const match = line.match(/\(([^)]*)\)/);
+      expect(match).not.toBeNull();
+      const reason = match![1];
+      expect(reason.length).toBe(500);
+      expect(reason.startsWith('HEAD')).toBe(true);
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
 });
