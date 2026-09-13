@@ -27,9 +27,83 @@
   ignored, and a key that is itself the template's own `<round>`
   placeholder is skipped as a documentation example, mirroring the
   existing `run-base` marker's own placeholder-key and malformed-line
-  treatment. See README.md's "Review-method axis" section. Anchored by a
-  corpus measurement (multiple review-method markers per line in real
-  review files).
+  treatment. See README.md's "Review-method axis" section.
+
+  Corpus measurement (round 1's anchor, made concrete in round 2): 5 real
+  `05-review-findings.md` files authored under kit 0.32.0 (this package's
+  own `.ai/runs/2026-09-12-quickwins-batch48`,
+  `2026-09-13-open-pool-batch50`, `2026-09-11-memory-sync-wipe`,
+  `2026-09-12-agent-dx-external-prs`, `2026-09-13-quickwins-batch51`) carry
+  50 `review-method[...]` occurrences on 27 lines total, batch48 alone
+  packing 27 occurrences onto 11 lines; only 5 `method-applied[...]`
+  occurrences exist anywhere in the corpus (all in this package's own
+  `batch51` run, added by hand). Round 1's mandatory-marker design (above)
+  therefore failed every one of the other 4 files outright (27/5/5/8
+  rounds respectively reported as missing `method_applied`, one reason per
+  round), and would also fail a run authored exactly from the shipped
+  template, which carries no `method-applied[...]` marker at all — only
+  its own prose `Method: <value> (...)` line. Round 2 (review finding F1)
+  fixes this:
+
+  - `method-applied[<round>]` stays the explicit, preferred record, but the
+    template's own `Method: <value> (...)` line immediately following a
+    `review-method[<round>]` declaration is now ALSO accepted as a
+    fallback record when it names one of the three values (the template's
+    unfilled `normal | rigorous | adversarial` legend is recognized and
+    skipped as a placeholder, not misread as the value `normal`); a
+    `Method:` line naming none of the three is its own malformed-record
+    blocker, and a round where the marker and the prose line disagree is
+    its own named conflict (neither silently wins). Cross-repo obligation,
+    unchanged: the shipped
+    `packages/orchestrator-workflow/assets/templates/05-review-findings.md`
+    should still add the `method-applied[<round>]` marker line; until then,
+    a run with a FILLED `Method:` line passes via this fallback, and a run
+    recording neither channel needs one line added to migrate.
+  - Quoted occurrences (a marker inside a fenced code block or inline code
+    span, e.g. quoted in prose or inside a findings-table cell) no longer
+    register as live declarations (review finding F2): every net in
+    `collectRoundMarkers` now runs against the same quoting-stripped text
+    `run-base` already uses for its own phrase check
+    (`stripQuotedMarkdownText`, generalized from the run-base-only
+    `stripQuotedRunBaseText`) — a deliberate asymmetry from `run-base`,
+    which is quoting-aware only on its phrase net; see README.md.
+  - Duplicate markers for one round now agree or block: identical
+    duplicates are tolerated (first occurrence wins, as before), but
+    disagreeing duplicates are a named conflict rather than a silent
+    first-wins pick (review finding F3).
+  - A wrapper-less marker line (`review-method[R1] = adversarial` or
+    `method-applied[R1] = normal` with no HTML comment at all) is no
+    longer invisible: it is now caught by a wrapper-less net mirroring the
+    `run-base` phrase net's own fail-closed discipline (review finding
+    F4).
+  - Per-round reasons are now bounded (`joinBounded`, review finding F5):
+    the "absent" and "weaker" cases each collapse into one reason per
+    category naming the affected rounds, instead of one reason per round
+    (batch48 alone produced 27 separate reasons under round 1's design).
+    Replaying the built reader against the 5 corpus files above with this
+    fix: batch48 collapses from 27 per-round reasons to 1 bounded reason
+    still naming 24 rounds (the other 3 — `T-011-R1`/`R2`/`R3` — resolve
+    via the new prose fallback, since the file's own summary `Method:`
+    line happens to immediately follow that round's marker line);
+    open-pool-batch50 and memory-sync-wipe each collapse from 5 reasons to
+    1 naming all 5 (no `Method:` line follows any of their markers, so
+    none resolve); agent-dx-external-prs collapses from 8 reasons to 1
+    naming all 8 (its only `Method:` line is the unfilled legend, correctly
+    still not accepted); this package's own batch51 run stays fully clean
+    (its 5 rounds already carry matching explicit `method-applied[...]`
+    markers). The remaining unresolved rounds are a genuine authoring gap
+    (no per-round `Method:` line to read), not a reader defect.
+  - Malformed-marker excerpts now carry their 1-based line number (review
+    finding F6, mirroring `run-base`'s own `line N: ` prefix), and the
+    round-key placeholder check reuses the existing `PLACEHOLDER_KEY`
+    regex instead of a duplicate `ROUND_PLACEHOLDER_KEY`.
+  - An orphan `method-applied[<round>]` marker with no matching declared
+    `review-method[<round>]` is documented as silently ignored (there is
+    nothing to check it against); a round whose declared and recorded keys
+    merely differ in spelling (e.g. `review-method[T-003 R1]` vs
+    `method-applied[R1]`) now names the mismatched keys actually present in
+    the file in its "no matching record" reason, the same way `run-base`'s
+    own key-mismatch reason does.
 
 - CI now packs this package (`npm pack`) together with its version-locked
   `@lannguyensi/*` sibling dependencies (a breadth-first walk seeded with

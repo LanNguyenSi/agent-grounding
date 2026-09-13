@@ -625,19 +625,24 @@ function blank(s: string): string {
 const INLINE_CODE_SPAN = /`[^`\n]*(?:\n(?!\s*\n)[^`\n]*)*?`/g;
 
 /**
- * `goal` with every QUOTED range blanked out (fenced code block lines, then
- * single-backtick inline code spans; see the module docstring's QUOTATION
- * EXEMPTION paragraph, `computeFencedLineFlags`, and `INLINE_CODE_SPAN`).
- * Fences are blanked FIRST so a backtick that is itself fenced content can
- * never pair with a backtick outside the fence. Line count and line
- * boundaries are preserved (only non-newline characters are ever replaced),
- * so the result can be re-split with the same `/\r?\n/` regex used on `goal`
- * and indexed line-for-line against it. An unmatched single backtick, or one
- * whose only pairing partner sits across a blank line, quotes nothing (fails
- * closed).
+ * `content` with every QUOTED range blanked out (fenced code block lines,
+ * then single-backtick inline code spans; see the module docstring's
+ * QUOTATION EXEMPTION paragraph, `computeFencedLineFlags`, and
+ * `INLINE_CODE_SPAN`). Fences are blanked FIRST so a backtick that is itself
+ * fenced content can never pair with a backtick outside the fence. Line
+ * count and line boundaries are preserved (only non-newline characters are
+ * ever replaced), so the result can be re-split with the same `/\r?\n/`
+ * regex used on `content` and indexed line-for-line against it. An unmatched
+ * single backtick, or one whose only pairing partner sits across a blank
+ * line, quotes nothing (fails closed).
+ *
+ * Generic over both consumers: the `run-base` grammar (`00-goal.md`) below,
+ * and the review-method axis grammar (`05-review-findings.md`) further down.
+ * The two consumers apply it asymmetrically on purpose — see each one's own
+ * docstring for the difference.
  */
-function stripQuotedRunBaseText(goal: string): string {
-  const lines = goal.split(/\r?\n/);
+function stripQuotedMarkdownText(content: string): string {
+  const lines = content.split(/\r?\n/);
   const fenced = computeFencedLineFlags(lines);
   const fenceStripped = lines.map((line, i) => (fenced[i] ? blank(line) : line)).join('\n');
   return fenceStripped.replace(INLINE_CODE_SPAN, blank);
@@ -649,7 +654,7 @@ function stripQuotedRunBaseText(goal: string): string {
 // exact, case-sensitive tokens the template uses is an attempted `run-base`
 // marker unless it is already accepted as well-formed (keyed or unkeyed,
 // checked before this is reached) OR the occurrence is entirely inside a
-// quoted range (round 2, D-027; see `stripQuotedRunBaseText`). Deliberately
+// quoted range (round 2, D-027; see `stripQuotedMarkdownText`). Deliberately
 // simple and total otherwise: no attempt to enumerate shapes, since
 // enumerating shapes is exactly what left the residual open before.
 function lineCarriesRunBasePhrase(line: string): boolean {
@@ -671,7 +676,7 @@ function lineCarriesRunBasePhrase(line: string): boolean {
  * `kind: 'keyed-attempt'`, or a bullet/prose/wrapper-less/leading-text
  * mention the loose net's line-start anchor cannot see, `kind:
  * 'phrase-only'`, and only when it survives the quoting exemption, see
- * `stripQuotedRunBaseText`) is collected as malformed with its 1-based line
+ * `stripQuotedMarkdownText`) is collected as malformed with its 1-based line
  * number and its category.
  */
 function collectKeyedRunBaseMarkers(goal: string): KeyedMarkerScan {
@@ -679,7 +684,7 @@ function collectKeyedRunBaseMarkers(goal: string): KeyedMarkerScan {
   const markers: KeyedRunBaseMarker[] = [];
   const malformedLines: MalformedRunBaseLine[] = [];
   const lines = goal.split(/\r?\n/);
-  const unquotedLines = stripQuotedRunBaseText(goal).split(/\r?\n/);
+  const unquotedLines = stripQuotedMarkdownText(goal).split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const strict = line.match(KEYED_RUN_BASE_STRICT);
@@ -1287,13 +1292,28 @@ function findingsFormatBlocker(content: string | null): string | null {
 
 // Review-method axis (orchestrator-workflow kit 0.32.0, assets/templates/05-review-findings.md):
 // each review round may declare `<!-- review-method[<round>] = normal|rigorous|adversarial -->`
-// above the Findings table. The kit template has no dedicated marker for the
-// reviewer's OWN returned `method_applied` yet (it is transferred by hand into
-// free prose today); this reader defines the counterpart marker
-// `<!-- method-applied[<round>] = normal|rigorous|adversarial -->` as the
-// machine-readable grammar it requires for that field: see README/CHANGELOG.
-// Strength order used for the weaker/absent comparison below.
+// above the Findings table. Round 1 defined the machine-readable counterpart
+// grammar the kit template does not ship yet, `<!-- method-applied[<round>] =
+// normal|rigorous|adversarial -->`. Round 2 (review finding F1, orchestrator
+// decision) found that mandating ONLY that marker fails a run authored
+// exactly from the shipped template (and all real runs then on kit 0.32.0):
+// the template's own immediately-following `Method: <value> (...)` prose line
+// is what a template-conformant run actually carries, not a marker. The
+// reader therefore ALSO accepts that prose line as a fallback record (see
+// `resolveProseMethodLine`), while still keeping `method-applied[<round>]` as
+// the explicit, preferred record; when both exist for a round and disagree,
+// that is its own named blocker rather than either one silently winning.
+// CROSS-REPO OBLIGATION (unchanged from round 1, still open): the shipped
+// packages/orchestrator-workflow/assets/templates/05-review-findings.md
+// should add `<!-- method-applied[<round>] = normal|rigorous|adversarial -->`
+// next to its existing `review-method[<round>]` marker and `Method:` line.
+// Until it does: a run authored under kit 0.32.0 with a FILLED `Method:
+// <value> (...)` line (not the pipe-joined legend) passes via the prose
+// fallback; a run recording NEITHER channel for a round needs one line added
+// (`<!-- method-applied[<round>] = <value> -->`, or filling in `Method:`) to
+// migrate. Strength order used for the weaker/absent comparison below.
 const REVIEW_METHOD_STRENGTH: Record<string, number> = { normal: 0, rigorous: 1, adversarial: 2 };
+const REVIEW_METHOD_VALUES = new Set(Object.keys(REVIEW_METHOD_STRENGTH));
 
 /** One well-formed `<field>[<round>] = <value>` marker occurrence. */
 interface RoundMarker {
@@ -1301,18 +1321,27 @@ interface RoundMarker {
   round: string;
   /** One of `normal`/`rigorous`/`adversarial` (enum-validated). */
   value: string;
+  /** Index into the scan content right after this occurrence's `-->`, for locating a trailing `Method:` prose line. */
+  endIndex: number;
+}
+
+/** Rounds with 2+ well-formed occurrences of one field whose values disagree. */
+interface RoundConflict {
+  /** The round key as authored on its first occurrence. */
+  round: string;
+  /** Distinct values seen, in first-seen order (always 2+). */
+  values: string[];
 }
 
 /** Result of scanning `content` for one marker field (`review-method` or `method-applied`). */
 interface RoundMarkerScan {
-  /** Well-formed markers keyed by lowercased round. First occurrence per round wins. */
+  /** Well-formed, non-conflicting markers keyed by lowercased round. First occurrence per round wins. */
   markers: Map<string, RoundMarker>;
-  /** Short excerpts of lines that attempted the marker but did not resolve to a well-formed one. */
+  /** Short, line-numbered excerpts of occurrences that attempted the marker but did not resolve to a well-formed one. */
   malformedExcerpts: string[];
+  /** Rounds (keyed by lowercased round) whose well-formed occurrences disagree on value. */
+  conflicts: Map<string, RoundConflict>;
 }
-
-/** A key/value that is itself the template's own documentation placeholder, not an authored marker. */
-const ROUND_PLACEHOLDER_KEY = /^<[^>]*>$/;
 
 /**
  * Collect every well-formed `<!-- <field>[<round>] = <value> -->` occurrence
@@ -1322,8 +1351,19 @@ const ROUND_PLACEHOLDER_KEY = /^<[^>]*>$/;
  * authored with several rounds packed onto one line
  * (`<!-- review-method[T-001-R1] = rigorous --> <!-- review-method[T-001-R2]
  * = rigorous -->`), so a whole-line requirement would misclassify that
- * legitimate shape as malformed. Anchored by a corpus measurement, see
- * CHANGELOG [Unreleased].
+ * legitimate shape as malformed. Anchored by a corpus measurement (5 real
+ * `05-review-findings.md` files under kit 0.32.0, 50 `review-method`
+ * occurrences on 27 lines, the largest packing 27 onto 11 lines; see
+ * CHANGELOG [Unreleased] for the per-file figures).
+ *
+ * Quoting (review finding F2): unlike the `run-base` grammar above, where
+ * only the position-independent phrase net is quoting-aware, EVERY net here
+ * (strict, loose, and the wrapper-less net below) runs against
+ * `stripQuotedMarkdownText(content)` — a marker sitting inside a fenced code
+ * block or an inline code span (e.g. quoted in prose, or inside a findings
+ * table cell) is never live, full stop. This is a deliberate asymmetry from
+ * `run-base`'s: the review-method grammar has no equivalent to `run-base`'s
+ * accepted "a fenced well-formed marker still resolves" residual.
  *
  * A match whose round key is placeholder-shaped (`<round>`, the template's own
  * documentation example) is skipped entirely (not counted as present, not
@@ -1331,42 +1371,75 @@ const ROUND_PLACEHOLDER_KEY = /^<[^>]*>$/;
  * give the run-base and findings-table template examples above. A match whose
  * value is not exactly one of `normal`/`rigorous`/`adversarial` (including the
  * template's own pipe-joined legend value used with a REAL, non-placeholder
- * key) is malformed. A separate, case-insensitive loose net catches wrapper
- * near-misses that never even reach the strict shape (wrong case, extra
- * dashes, stray whitespace before the bracket) so those block too instead of
- * being silently ignored, mirroring the run-base malformed-line discipline.
+ * key) is malformed. A case-insensitive loose net catches wrapper near-misses
+ * that never reach the strict shape (wrong case, extra dashes, stray
+ * whitespace before the bracket); a further wrapper-LESS net (review finding
+ * F4) catches a bare `review-method[R1] = adversarial` line with no HTML
+ * comment at all — mirroring the run-base phrase net's own fail-closed
+ * discipline for an unwrapped attempt. Both near-miss nets are checked
+ * against the ranges the strict/loose nets already claimed, so a genuine
+ * well-formed (or already-loose-malformed) occurrence is never double
+ * reported by the wrapper-less net.
+ *
+ * Duplicates (review finding F3): two or more well-formed occurrences for the
+ * SAME round are tolerated when their values agree (first occurrence wins,
+ * as before); when they disagree, the round is reported via `conflicts`
+ * instead of `markers` — a named blocker, not a silent first-wins pick.
  */
 function collectRoundMarkers(content: string, field: 'review-method' | 'method-applied'): RoundMarkerScan {
+  const scanContent = stripQuotedMarkdownText(content);
   const strictRe = new RegExp(`<!--\\s*${field}\\[([^\\]\\n]+)\\]\\s*=\\s*(\\S+)\\s*-->`, 'g');
   const looseRe = new RegExp(`<!--+\\s*${field}\\s*\\[`, 'gi');
+  const bareRe = new RegExp(`${field}\\s*\\[`, 'gi');
 
   const markers = new Map<string, RoundMarker>();
+  const seenValues = new Map<string, { round: string; values: string[] }>();
   const malformedExcerpts: string[] = [];
-  const strictRanges: Array<[number, number]> = [];
+  const claimedRanges: Array<[number, number]> = [];
 
   let m: RegExpExecArray | null;
-  while ((m = strictRe.exec(content)) !== null) {
-    strictRanges.push([m.index, m.index + m[0].length]);
+  while ((m = strictRe.exec(scanContent)) !== null) {
+    claimedRanges.push([m.index, m.index + m[0].length]);
     const round = m[1].trim();
     const value = m[2];
-    if (ROUND_PLACEHOLDER_KEY.test(round)) continue; // documentation example, not a marker
-    if (!Object.prototype.hasOwnProperty.call(REVIEW_METHOD_STRENGTH, value)) {
-      malformedExcerpts.push(truncate(m[0].trim(), 80));
+    if (PLACEHOLDER_KEY.test(round)) continue; // documentation example, not a marker
+    if (!REVIEW_METHOD_VALUES.has(value)) {
+      malformedExcerpts.push(`line ${lineAt(scanContent, m.index)}: ${truncate(m[0].trim(), 80)}`);
       continue;
     }
     const lowerRound = round.toLowerCase();
-    if (markers.has(lowerRound)) continue; // first occurrence per round wins
-    markers.set(lowerRound, { round, value });
+    const seen = seenValues.get(lowerRound) ?? { round, values: [] };
+    if (!seen.values.includes(value)) seen.values.push(value);
+    seenValues.set(lowerRound, seen);
+    if (!markers.has(lowerRound)) {
+      markers.set(lowerRound, { round, value, endIndex: m.index + m[0].length });
+    }
   }
 
   let lm: RegExpExecArray | null;
-  while ((lm = looseRe.exec(content)) !== null) {
-    const insideStrict = strictRanges.some(([start, end]) => lm!.index >= start && lm!.index < end);
-    if (insideStrict) continue;
-    malformedExcerpts.push(truncate(excerptFromIndex(content, lm.index), 80));
+  while ((lm = looseRe.exec(scanContent)) !== null) {
+    if (claimedRanges.some(([start, end]) => lm!.index >= start && lm!.index < end)) continue;
+    claimedRanges.push([lm.index, lm.index + lm[0].length]);
+    malformedExcerpts.push(
+      `line ${lineAt(scanContent, lm.index)}: ${truncate(excerptFromIndex(scanContent, lm.index), 80)}`,
+    );
   }
 
-  return { markers, malformedExcerpts };
+  let bm: RegExpExecArray | null;
+  while ((bm = bareRe.exec(scanContent)) !== null) {
+    if (claimedRanges.some(([start, end]) => bm!.index >= start && bm!.index < end)) continue;
+    malformedExcerpts.push(
+      `line ${lineAt(scanContent, bm.index)}: ${truncate(excerptFromIndex(scanContent, bm.index), 80)}`,
+    );
+  }
+
+  const conflicts = new Map<string, RoundConflict>();
+  for (const [lowerRound, seen] of seenValues) {
+    if (seen.values.length > 1) conflicts.set(lowerRound, seen);
+  }
+  for (const lowerRound of conflicts.keys()) markers.delete(lowerRound);
+
+  return { markers, malformedExcerpts, conflicts };
 }
 
 /** The rest of `content`'s line starting at `index`, trimmed (for a malformed-marker excerpt). */
@@ -1376,6 +1449,93 @@ function excerptFromIndex(content: string, index: number): string {
   return (newlineIdx === -1 ? rest : rest.slice(0, newlineIdx)).trim();
 }
 
+/** 1-based line number of `index` within `content` (review finding F6). */
+function lineAt(content: string, index: number): number {
+  let line = 1;
+  for (let i = 0; i < index && i < content.length; i++) {
+    if (content[i] === '\n') line++;
+  }
+  return line;
+}
+
+/** One resolved value from a `Method:` prose line, or why it did not resolve to one. */
+type ProseMethodLine = { kind: 'value'; value: string } | { kind: 'placeholder' } | { kind: 'malformed' };
+
+// The template's own unfilled legend value, exactly as shipped
+// (packages/orchestrator-workflow/assets/templates/05-review-findings.md):
+// `Method: normal | rigorous | adversarial (...)`. A `Method:` line whose
+// value starts with this pipe-joined legend is the placeholder, not a
+// filled-in record (review finding F1) — skipped the same way a placeholder
+// marker key is, never reported as malformed.
+const PROSE_METHOD_PLACEHOLDER = /^normal\s*\|\s*rigorous\s*\|\s*adversarial\b/;
+
+/**
+ * Resolve a trimmed line already known to start with `Method:` (case as in
+ * the template) to its record. The value token is the text after `Method:`
+ * up to the first whitespace or `(` — matching how the template's own filled
+ * example reads (`Method: adversarial (briefing and return match).`). The
+ * template's own unfilled pipe-joined legend is recognized as a WHOLE phrase
+ * first (its first token, `normal`, would otherwise misread as a valid,
+ * wrong value) and treated as a placeholder, not a record. Anything else that
+ * does not name exactly one of the three words is a malformed record
+ * (review finding F1: "a `Method:` line that names none of the three is a
+ * malformed record").
+ */
+function resolveProseMethodLine(trimmedLine: string): ProseMethodLine {
+  const rest = trimmedLine.slice('Method:'.length).trim();
+  if (PROSE_METHOD_PLACEHOLDER.test(rest)) return { kind: 'placeholder' };
+  const token = /^[^\s(]+/.exec(rest)?.[0] ?? '';
+  if (REVIEW_METHOD_VALUES.has(token)) return { kind: 'value', value: token };
+  return { kind: 'malformed' };
+}
+
+/**
+ * The prose `Method:` fallback record for one `review-method[<round>]`
+ * occurrence ending at `afterIndex` in `scanContent` (review finding F1):
+ * the NEXT non-blank line after the occurrence's own line, and ONLY when
+ * that line starts with `Method:` — matching the template's layout, where
+ * the `Method:` line immediately follows the marker with no intervening
+ * content. A next non-blank line that is something else (another packed
+ * marker line, a heading, ...) means no prose record, not a search further
+ * down the file. `undefined` when no prose record applies at all.
+ */
+function findProseMethodRecord(lines: string[], lineOffsets: number[], afterIndex: number): ProseMethodLine | undefined {
+  const occurrenceLine = lineIndexForOffset(lineOffsets, afterIndex);
+  for (let i = occurrenceLine + 1; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (trimmed === '') continue;
+    if (!trimmed.startsWith('Method:')) return undefined;
+    return resolveProseMethodLine(trimmed);
+  }
+  return undefined;
+}
+
+/** 0-based start offset of each line in `content` (index 0 is always 0). */
+function buildLineOffsets(content: string): number[] {
+  const offsets = [0];
+  for (let i = 0; i < content.length; i++) {
+    if (content[i] === '\n') offsets.push(i + 1);
+  }
+  return offsets;
+}
+
+/** 0-based index of the line containing character `index`, given `offsets` from `buildLineOffsets`. */
+function lineIndexForOffset(offsets: number[], index: number): number {
+  let lo = 0;
+  let hi = offsets.length - 1;
+  let ans = 0;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (offsets[mid] <= index) {
+      ans = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return ans;
+}
+
 interface ReviewMethodComplianceResult {
   reasons: string[];
 }
@@ -1383,18 +1543,27 @@ interface ReviewMethodComplianceResult {
 /**
  * Fail-closed check: a round that DECLARED a `review-method[<round>]` (the
  * `review_method` named in that round's briefing) must be matched by a
- * `method-applied[<round>]` record (this reader's own grammar for the
- * reviewer's returned `method_applied`, see `collectRoundMarkers`) that is AT
- * LEAST as strong (`normal < rigorous < adversarial`). A round with no
- * matching record, or one recording a WEAKER method, is an explicit named
- * blocker. Backward compatible by construction: a review file with NO
- * well-formed `review-method[...]` marker at all returns no reasons from the
- * comparison (though a malformed near-miss of either marker still blocks:
- * "malformed markers rejected with a reason, not silently ignored" applies
- * regardless of whether the comparison itself is reached).
+ * recorded `method_applied` that is AT LEAST as strong (`normal < rigorous <
+ * adversarial`) — read from either channel: an explicit
+ * `method-applied[<round>]` marker, or (review finding F1) the template's own
+ * `Method: <value>` prose line immediately following the declaration. A round
+ * with no matching record on EITHER channel, or one recording a WEAKER
+ * method, is an explicit named blocker; when BOTH channels exist for a round
+ * and disagree, that is its own named blocker (neither wins silently). All
+ * per-category reasons are bounded (`joinBounded`, review finding F5) rather
+ * than one reason per round. Backward compatible by construction: a review
+ * file with NO well-formed `review-method[...]` marker at all returns no
+ * reasons from the comparison (though a malformed or conflicting near-miss of
+ * either marker still blocks, and an orphan `method-applied[<round>]` with no
+ * matching declaration is silently ignored — documented, not evaluated,
+ * mirroring how a round nobody declared has nothing to check it against).
  */
 function scanReviewMethodCompliance(content: string | null): ReviewMethodComplianceResult {
   if (content === null) return { reasons: [] };
+
+  const scanContent = stripQuotedMarkdownText(content);
+  const lineOffsets = buildLineOffsets(scanContent);
+  const lines = scanContent.split(/\r?\n/);
 
   const declared = collectRoundMarkers(content, 'review-method');
   const applied = collectRoundMarkers(content, 'method-applied');
@@ -1412,26 +1581,79 @@ function scanReviewMethodCompliance(content: string | null): ReviewMethodComplia
         "(expected '<!-- method-applied[<round>] = normal|rigorous|adversarial -->' with one concrete value)",
     );
   }
+  if (declared.conflicts.size > 0) {
+    const items = [...declared.conflicts.values()].map((c) => `'${c.round}' (${c.values.join(' vs ')})`);
+    reasons.push(
+      `conflicting review-method value(s) in 05-review-findings.md for round(s): ${joinBounded(items, 5, ' | ')} ` +
+        '(duplicate review-method markers for the same round must agree)',
+    );
+  }
+  if (applied.conflicts.size > 0) {
+    const items = [...applied.conflicts.values()].map((c) => `'${c.round}' (${c.values.join(' vs ')})`);
+    reasons.push(
+      `conflicting method-applied value(s) in 05-review-findings.md for round(s): ${joinBounded(items, 5, ' | ')} ` +
+        '(duplicate method-applied markers for the same round must agree)',
+    );
+  }
 
   // Backward compatible: no well-formed review-method marker at all → the
   // comparison below never applies, unaffected.
   if (declared.markers.size === 0) return { reasons };
 
+  const disagreeItems: string[] = [];
+  const malformedProseItems: string[] = [];
+  const absentItems: string[] = [];
+  const weakerItems: string[] = [];
+
   for (const [lowerRound, decl] of declared.markers) {
     const rec = applied.markers.get(lowerRound);
-    if (rec === undefined) {
-      reasons.push(
-        `round '${decl.round}' declared review-method '${decl.value}' but recorded no matching ` +
-          `method_applied (add '<!-- method-applied[${decl.round}] = ${decl.value} -->' once confirmed)`,
-      );
+    const prose = findProseMethodRecord(lines, lineOffsets, decl.endIndex);
+
+    if (prose?.kind === 'malformed') {
+      malformedProseItems.push(`'${decl.round}'`);
       continue;
     }
-    if (REVIEW_METHOD_STRENGTH[rec.value] < REVIEW_METHOD_STRENGTH[decl.value]) {
-      reasons.push(
-        `round '${decl.round}' declared review-method '${decl.value}' but recorded method_applied ` +
-          `'${rec.value}' is weaker`,
-      );
+    const proseValue = prose?.kind === 'value' ? prose.value : undefined;
+
+    if (rec !== undefined && proseValue !== undefined && rec.value !== proseValue) {
+      disagreeItems.push(`'${decl.round}' (marker '${rec.value}' vs prose '${proseValue}')`);
+      continue;
     }
+
+    const effectiveValue = rec?.value ?? proseValue;
+    if (effectiveValue === undefined) {
+      const otherKeys = [...applied.markers.values()].map((v) => v.round);
+      const note = otherKeys.length > 0 ? ` (recorded method-applied key(s) present but not matching: ${joinBounded(otherKeys, 5, ', ')})` : '';
+      absentItems.push(`'${decl.round}' declared '${decl.value}'${note}`);
+      continue;
+    }
+    if (REVIEW_METHOD_STRENGTH[effectiveValue] < REVIEW_METHOD_STRENGTH[decl.value]) {
+      weakerItems.push(`'${decl.round}' declared '${decl.value}', recorded '${effectiveValue}'`);
+    }
+  }
+
+  if (disagreeItems.length > 0) {
+    reasons.push(
+      `round(s) with conflicting method_applied records in 05-review-findings.md: ${joinBounded(disagreeItems, 5, ' | ')} ` +
+        '(the method-applied marker and the Method: prose line disagree; make them match)',
+    );
+  }
+  if (malformedProseItems.length > 0) {
+    reasons.push(
+      `round(s) with a malformed 'Method:' prose record in 05-review-findings.md: ${joinBounded(malformedProseItems, 5, ' | ')} ` +
+        "(expected 'Method: normal|rigorous|adversarial ...' naming exactly one of the three)",
+    );
+  }
+  if (absentItems.length > 0) {
+    reasons.push(
+      `round(s) with no matching method_applied record in 05-review-findings.md: ${joinBounded(absentItems, 5, ' | ')} ` +
+        "(add '<!-- method-applied[<round>] = <value> -->' once confirmed, or fill in the immediately-following 'Method: <value>' line)",
+    );
+  }
+  if (weakerItems.length > 0) {
+    reasons.push(
+      `round(s) with a weaker recorded method_applied than declared in 05-review-findings.md: ${joinBounded(weakerItems, 5, ' | ')}`,
+    );
   }
 
   return { reasons };
