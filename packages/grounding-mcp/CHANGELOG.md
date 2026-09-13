@@ -36,20 +36,21 @@
   workspace's `.ai/runs/` run directories (not this package's own):
   `2026-09-12-quickwins-batch48` (27 occurrences on 11 lines),
   `2026-09-13-open-pool-batch50` (5 on 5), `2026-09-11-memory-sync-wipe`
-  (5 on 5), `2026-09-12-agent-dx-external-prs` (8 on 1 line, all four
-  packed together), `2026-09-11-sync-peer-file-conflict` (3 on 3, omitted
-  from round 2's citation), `2026-09-11-review-method-axis` (2 on 2,
+  (5 on 5), `2026-09-12-agent-dx-external-prs` (8 rounds across 3 PRs,
+  all 8 packed onto 1 line), `2026-09-11-sync-peer-file-conflict` (3 on 3,
+  omitted from round 2's citation), `2026-09-11-review-method-axis` (2 on 2,
   likewise omitted from round 2's citation), and
-  `2026-09-13-quickwins-batch51` (10 on 10; also 10 `method-applied[...]`
-  occurrences on 10 lines, the only file with any). Totals across all 7:
-  60 `review-method[...]` occurrences on 37 lines; the 6 files excluding
-  `batch51` carry 50 on 27; 10 `method-applied[...]` occurrences on 10
-  lines exist anywhere in the corpus, all in `batch51`. `batch51`'s own
-  `05-review-findings.md` is the run this very fix ships in and its round
-  count keeps growing while the run is open, so its figures above are a
-  measurement taken at the time of writing, not a fixed corpus fact (round
-  2 cited it at 5 rounds / 5 occurrences of each marker; by round 3 it had
-  grown to 10 of each). Round 1's mandatory-marker design (above) therefore
+  `2026-09-13-quickwins-batch51` (14 on 14 as of round 4; also 14
+  `method-applied[...]` occurrences on 14 lines, the only file with any).
+  Totals across all 7: 64 `review-method[...]` occurrences on 41 lines; the
+  6 files excluding `batch51` carry 50 on 27; 14 `method-applied[...]`
+  occurrences on 14 lines exist anywhere in the corpus, all in `batch51`.
+  `batch51`'s own `05-review-findings.md` is the run this very fix ships in
+  and its round count keeps growing while the run is open, so its figures
+  above are a measurement taken at the time of writing, not a fixed corpus
+  fact (round 2 cited it at 5 rounds / 5 occurrences of each marker; by
+  round 3 it had grown to 10 of each; by round 4, 14 of each). Round 1's
+  mandatory-marker design (above) therefore
   failed every one of the other 6 files outright (27/5/5/8/3/2 rounds
   respectively reported as missing `method_applied`, one reason per
   round), and would also fail a run authored exactly from the shipped
@@ -185,6 +186,52 @@
     is read at all, so a `method-applied[<round>]` recorded in
     `03-decisions.md` or `04-implementation-summary.md` instead is
     invisible to this check.
+
+  Round 4 (accept-with-notes lows from round 3's review) closes two more
+  fail-open shapes each of round 3's own fixes introduced, and cleans up
+  three docs residuals:
+
+  - **F1 correction (correctness):** round 3's `PROSE_METHOD_TRAILING`
+    (`/^(?:[.!?]*|\(.*)$/`) accepted anything after an opening `(`
+    verbatim, so a value followed by a parenthetical that never closes
+    (`Method: adversarial (`) or one with text appended after it DOES
+    close (`Method: adversarial (x) but actually normal`) both wrongly
+    resolved. The trailing grammar now requires a BALANCED parenthetical
+    aside followed only by end-of-sentence punctuation
+    (`/^(?:[.!?]*|\([^)]*\)[.!?]*)$/`); both shapes above are malformed
+    records now, and the template's own filled shape (`Method: adversarial
+    (briefing and return match).`) still resolves.
+  - **F2 correction (correctness):** round 3's single-occurrence-line gate
+    counted raw well-formed occurrences per line, so an AGREEING same-round
+    duplicate declared twice on one shared line (tolerated per review
+    finding F3) was wrongly treated as if two different rounds shared the
+    line, and fell through to absent. The gate now counts DISTINCT
+    lowercased rounds per line instead: a repeated agreeing declaration of
+    one round no longer spoils its own single-occurrence gate, while two
+    genuinely distinct rounds packed on one line still fall through to
+    absent as before.
+  - (docs) README's fallback-value-token sentence still said the token
+    reads "up to the first whitespace or `(`"; corrected to include the
+    end-of-sentence punctuation the code has always also stopped at
+    (`.`, `!`, `?`).
+  - (docs) the corpus-measurement paragraph's
+    `2026-09-12-agent-dx-external-prs` qualifier, "8 on 1 line, all four
+    packed together", wrongly implied 4 rounds; the line actually packs 8
+    rounds across 3 PRs (`PR-245` x1, `PR-247` x3, `PR-248` x4) onto 1
+    line, corrected accordingly. `quickwins-batch51`'s own moving figure
+    is re-measured at 14 `review-method[...]`/`method-applied[...]`
+    occurrences on 14 lines each as of this round (was 10/10 at round 3);
+    the corpus totals above are updated to match (64 on 41), still with
+    the same "measured at time of writing, not fixed" hedge since the run
+    stays open.
+  - (maintainability) the shipped template's placeholder `review-method`
+    marker literal was pinned only inline in one test fixture, with no
+    reciprocal-lockstep comment naming its agent-dx counterpart the way
+    `OW_FINDINGS_PLACEHOLDER_ROW` is. It is now also exported as
+    `OW_REVIEW_METHOD_PLACEHOLDER_MARKER`, carrying the same
+    reciprocal-lockstep comment (agent-dx's
+    `packages/orchestrator-workflow/test/template-markers.test.ts`), and
+    the fixture uses the constant instead of a bare string literal.
 
 - CI now packs this package (`npm pack`) together with its version-locked
   `@lannguyensi/*` sibling dependencies (a breadth-first walk seeded with
