@@ -800,7 +800,7 @@ describe('readOwRunCompleteness — run-base binding marker extraction', () => {
   });
 });
 
-describe('readOwRunCompleteness — review-method axis (declared vs. recorded method_applied)', () => {
+describe('readOwRunCompleteness: review-method axis (declared vs. recorded method_applied)', () => {
   /** A complete, non-methodAxis review, so only the method-axis reason (if any) shows up. */
   function baseOpts(methodLines: string[]): ReviewOpts {
     return {

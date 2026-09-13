@@ -1291,7 +1291,7 @@ function findingsFormatBlocker(content: string | null): string | null {
 // reviewer's OWN returned `method_applied` yet (it is transferred by hand into
 // free prose today); this reader defines the counterpart marker
 // `<!-- method-applied[<round>] = normal|rigorous|adversarial -->` as the
-// machine-readable grammar it requires for that field — see README/CHANGELOG.
+// machine-readable grammar it requires for that field: see README/CHANGELOG.
 // Strength order used for the weaker/absent comparison below.
 const REVIEW_METHOD_STRENGTH: Record<string, number> = { normal: 0, rigorous: 1, adversarial: 2 };
 
@@ -1326,8 +1326,8 @@ const ROUND_PLACEHOLDER_KEY = /^<[^>]*>$/;
  * CHANGELOG [Unreleased].
  *
  * A match whose round key is placeholder-shaped (`<round>`, the template's own
- * documentation example) is skipped entirely — not counted as present, not
- * malformed — the same treatment `PLACEHOLDER_KEY`/`PLACEHOLDER_ROW_CELLS`
+ * documentation example) is skipped entirely (not counted as present, not
+ * malformed), the same treatment `PLACEHOLDER_KEY`/`PLACEHOLDER_ROW_CELLS`
  * give the run-base and findings-table template examples above. A match whose
  * value is not exactly one of `normal`/`rigorous`/`adversarial` (including the
  * template's own pipe-joined legend value used with a REAL, non-placeholder
@@ -1389,7 +1389,7 @@ interface ReviewMethodComplianceResult {
  * matching record, or one recording a WEAKER method, is an explicit named
  * blocker. Backward compatible by construction: a review file with NO
  * well-formed `review-method[...]` marker at all returns no reasons from the
- * comparison (though a malformed near-miss of either marker still blocks —
+ * comparison (though a malformed near-miss of either marker still blocks:
  * "malformed markers rejected with a reason, not silently ignored" applies
  * regardless of whether the comparison itself is reached).
  */
