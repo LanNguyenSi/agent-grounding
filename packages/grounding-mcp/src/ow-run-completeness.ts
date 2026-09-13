@@ -638,7 +638,7 @@ const INLINE_CODE_SPAN = /`[^`\n]*(?:\n(?!\s*\n)[^`\n]*)*?`/g;
  *
  * Generic over both consumers: the `run-base` grammar (`00-goal.md`) below,
  * and the review-method axis grammar (`05-review-findings.md`) further down.
- * The two consumers apply it asymmetrically on purpose — see each one's own
+ * The two consumers apply it asymmetrically on purpose; see each one's own
  * docstring for the difference.
  */
 function stripQuotedMarkdownText(content: string): string {
@@ -1359,7 +1359,7 @@ interface RoundMarkerScan {
  * Quoting (review finding F2): unlike the `run-base` grammar above, where
  * only the position-independent phrase net is quoting-aware, EVERY net here
  * (strict, loose, and the wrapper-less net below) runs against
- * `stripQuotedMarkdownText(content)` — a marker sitting inside a fenced code
+ * `stripQuotedMarkdownText(content)`: a marker sitting inside a fenced code
  * block or an inline code span (e.g. quoted in prose, or inside a findings
  * table cell) is never live, full stop. This is a deliberate asymmetry from
  * `run-base`'s: the review-method grammar has no equivalent to `run-base`'s
@@ -1375,7 +1375,7 @@ interface RoundMarkerScan {
  * that never reach the strict shape (wrong case, extra dashes, stray
  * whitespace before the bracket); a further wrapper-LESS net (review finding
  * F4) catches a bare `review-method[R1] = adversarial` line with no HTML
- * comment at all — mirroring the run-base phrase net's own fail-closed
+ * comment at all, mirroring the run-base phrase net's own fail-closed
  * discipline for an unwrapped attempt. Both near-miss nets are checked
  * against the ranges the strict/loose nets already claimed, so a genuine
  * well-formed (or already-loose-malformed) occurrence is never double
@@ -1384,7 +1384,7 @@ interface RoundMarkerScan {
  * Duplicates (review finding F3): two or more well-formed occurrences for the
  * SAME round are tolerated when their values agree (first occurrence wins,
  * as before); when they disagree, the round is reported via `conflicts`
- * instead of `markers` — a named blocker, not a silent first-wins pick.
+ * instead of `markers`: a named blocker, not a silent first-wins pick.
  */
 function collectRoundMarkers(content: string, field: 'review-method' | 'method-applied'): RoundMarkerScan {
   const scanContent = stripQuotedMarkdownText(content);
@@ -1465,14 +1465,14 @@ type ProseMethodLine = { kind: 'value'; value: string } | { kind: 'placeholder' 
 // (packages/orchestrator-workflow/assets/templates/05-review-findings.md):
 // `Method: normal | rigorous | adversarial (...)`. A `Method:` line whose
 // value starts with this pipe-joined legend is the placeholder, not a
-// filled-in record (review finding F1) — skipped the same way a placeholder
+// filled-in record (review finding F1), skipped the same way a placeholder
 // marker key is, never reported as malformed.
 const PROSE_METHOD_PLACEHOLDER = /^normal\s*\|\s*rigorous\s*\|\s*adversarial\b/;
 
 /**
  * Resolve a trimmed line already known to start with `Method:` (case as in
  * the template) to its record. The value token is the text after `Method:`
- * up to the first whitespace or `(` — matching how the template's own filled
+ * up to the first whitespace or `(`, matching how the template's own filled
  * example reads (`Method: adversarial (briefing and return match).`). The
  * template's own unfilled pipe-joined legend is recognized as a WHOLE phrase
  * first (its first token, `normal`, would otherwise misread as a valid,
@@ -1493,7 +1493,7 @@ function resolveProseMethodLine(trimmedLine: string): ProseMethodLine {
  * The prose `Method:` fallback record for one `review-method[<round>]`
  * occurrence ending at `afterIndex` in `scanContent` (review finding F1):
  * the NEXT non-blank line after the occurrence's own line, and ONLY when
- * that line starts with `Method:` — matching the template's layout, where
+ * that line starts with `Method:`, matching the template's layout, where
  * the `Method:` line immediately follows the marker with no intervening
  * content. A next non-blank line that is something else (another packed
  * marker line, a heading, ...) means no prose record, not a search further
@@ -1544,7 +1544,7 @@ interface ReviewMethodComplianceResult {
  * Fail-closed check: a round that DECLARED a `review-method[<round>]` (the
  * `review_method` named in that round's briefing) must be matched by a
  * recorded `method_applied` that is AT LEAST as strong (`normal < rigorous <
- * adversarial`) — read from either channel: an explicit
+ * adversarial`), read from either channel: an explicit
  * `method-applied[<round>]` marker, or (review finding F1) the template's own
  * `Method: <value>` prose line immediately following the declaration. A round
  * with no matching record on EITHER channel, or one recording a WEAKER
@@ -1555,7 +1555,7 @@ interface ReviewMethodComplianceResult {
  * file with NO well-formed `review-method[...]` marker at all returns no
  * reasons from the comparison (though a malformed or conflicting near-miss of
  * either marker still blocks, and an orphan `method-applied[<round>]` with no
- * matching declaration is silently ignored — documented, not evaluated,
+ * matching declaration is silently ignored, documented rather than evaluated,
  * mirroring how a round nobody declared has nothing to check it against).
  */
 function scanReviewMethodCompliance(content: string | null): ReviewMethodComplianceResult {

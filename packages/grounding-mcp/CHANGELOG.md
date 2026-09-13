@@ -41,7 +41,7 @@
   therefore failed every one of the other 4 files outright (27/5/5/8
   rounds respectively reported as missing `method_applied`, one reason per
   round), and would also fail a run authored exactly from the shipped
-  template, which carries no `method-applied[...]` marker at all — only
+  template, which carries no `method-applied[...]` marker at all: only
   its own prose `Method: <value> (...)` line. Round 2 (review finding F1)
   fixes this:
 
@@ -65,7 +65,7 @@
     `collectRoundMarkers` now runs against the same quoting-stripped text
     `run-base` already uses for its own phrase check
     (`stripQuotedMarkdownText`, generalized from the run-base-only
-    `stripQuotedRunBaseText`) — a deliberate asymmetry from `run-base`,
+    `stripQuotedRunBaseText`), a deliberate asymmetry from `run-base`,
     which is quoting-aware only on its phrase net; see README.md.
   - Duplicate markers for one round now agree or block: identical
     duplicates are tolerated (first occurrence wins, as before), but
@@ -82,7 +82,7 @@
     (batch48 alone produced 27 separate reasons under round 1's design).
     Replaying the built reader against the 5 corpus files above with this
     fix: batch48 collapses from 27 per-round reasons to 1 bounded reason
-    still naming 24 rounds (the other 3 — `T-011-R1`/`R2`/`R3` — resolve
+    still naming 24 rounds (the other 3, `T-011-R1`/`R2`/`R3`, resolve
     via the new prose fallback, since the file's own summary `Method:`
     line happens to immediately follow that round's marker line);
     open-pool-batch50 and memory-sync-wipe each collapse from 5 reasons to
