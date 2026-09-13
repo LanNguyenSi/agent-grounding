@@ -3,7 +3,7 @@ type: invariant
 title: Solution-acceptance verdict contract — why the marker lives outside the ledger
 description: A "done" verdict is derived from a real preflight+OW run, HEAD-pinned, and written to an XDG state marker outside the agent-writable evidence-ledger because ledger rows are forgeable via ledger_add.
 tags: [solution-acceptance, verdicts, anti-hacking, trust-boundary]
-timestamp: 2026-09-07T11:58:00Z
+timestamp: 2026-09-13T10:27:44Z
 sources:
   - packages/grounding-mcp/src/solution-verdict.ts
   - packages/grounding-mcp/src/solution-attempt-log.ts
@@ -305,7 +305,7 @@ OW run files under `<repoPath>/.ai/runs/`:
   up from `repoPath` for the nearest `.git` entry — a directory, a linked
   worktree's `.git` FILE, or even a DANGLING symlink, checked with `fs.lstatSync`
   so a broken symlink still marks the root
-  (`findWorktreeRoot`, `ow-run-completeness.ts:849-852#"fs.lstatSync(path.join(dir, '.git'));"`).
+  (`findWorktreeRoot`, `ow-run-completeness.ts:859-862#"fs.lstatSync(path.join(dir, '.git'));"`).
   A `.ai/run` pointer file at that root, when present, has its target resolved
   with `fs.realpathSync` before the directory/dated-prefix checks — a
   symlinked pointer target is therefore transparent, its REAL directory is
@@ -313,11 +313,11 @@ OW run files under `<repoPath>/.ai/runs/`:
   file matters; an optional second line (for example `base=<sha>`) is
   ignored outright — the named run directory's own files are the source of
   truth, never the pointer file
-  (`resolveRunPointer`, `ow-run-completeness.ts:869-872#"why an invalid pointer is a distinct fail-closed blocker rather than a"`,
-  `ow-run-completeness.ts:883-922#"return { kind: 'run', dir: realTarget };"`)
+  (`resolveRunPointer`, `ow-run-completeness.ts:879-882#"why an invalid pointer is a distinct fail-closed blocker rather than a"`,
+  `ow-run-completeness.ts:893-932#"return { kind: 'run', dir: realTarget };"`)
   and WINS OUTRIGHT over the newest-run scan
   (`ow-run-completeness.ts:330-344#"runSource: 'pointer',"`); the scan
-  (`findActiveRun`, `ow-run-completeness.ts:1006-1023#"return path.join(runsDir, dirs[0]);"`:
+  (`findActiveRun`, `ow-run-completeness.ts:1016-1033#"return path.join(runsDir, dirs[0]);"`:
   newest dated dir, only dirs matching `/^\d{4}-\d{2}-\d{2}-/` are eligible;
   name-descending sort, mtime tiebreak) runs ONLY when no pointer file exists at
   all (`ow-run-completeness.ts:327-353#"runSource = activeRun === null ? null : 'scan';"`).
@@ -331,18 +331,18 @@ OW run files under `<repoPath>/.ai/runs/`:
 - **`05-review-findings.md`** → `acceptance-recommendation` marker (`ow-run-completeness.ts:389#"const recommendation = resolveAcceptanceValue"`); must be in
   `{accept, accept_with_notes}` (`ow-run-completeness.ts:287#"ACCEPT_RECOMMENDATION"`). Plus the **findings table**: rows are located
   by anchoring on a header row whose cells include both `Severity` and `Decision`
-  (`parseFindingsHeaderRow`, `ow-run-completeness.ts:1232#"function parseFindingsHeaderRow"`), not by the `## Findings` heading text. A concrete
+  (`parseFindingsHeaderRow`, `ow-run-completeness.ts:1242#"function parseFindingsHeaderRow"`), not by the `## Findings` heading text. A concrete
   `high`/`critical` severity row ARMS the gate UNLESS its Decision is explicitly in
   `{accepted, defer}` (`RESOLVED_DECISIONS`, `ow-run-completeness.ts:292#"RESOLVED_DECISIONS = new Set(['accepted', 'defer'])"`) — fix, reject, blank, `open`,
   `TODO`, unknown all block (fail-closed). All tables are parsed (appended second-round
   tables count); a findings section with content but no table yields an explicit format
-  blocker (`findingsFormatBlocker`, `ow-run-completeness.ts:1255#"function findingsFormatBlocker"`).
+  blocker (`findingsFormatBlocker`, `ow-run-completeness.ts:1265#"function findingsFormatBlocker"`).
 - **Mixed-state bypass guard** (task `8f173547`): completeness above is not enough —
   an operator could flip the acceptance markers to an accepted value without ever
-  transferring the reviewer's findings into the table. `scanFindings` (`ow-run-completeness.ts:1153-1210#"  return scan;"`)
+  transferring the reviewer's findings into the table. `scanFindings` (`ow-run-completeness.ts:1163-1220#"  return scan;"`)
   additionally tracks whether the shipped review template's placeholder/legend row
   survived untouched (`placeholderRowSeen`, matched byte-exactly cell-by-cell by
-  `isPlaceholderRow`, `ow-run-completeness.ts:1218-1221#"PLACEHOLDER_ROW_CELLS[idx]"`, against `OW_FINDINGS_PLACEHOLDER_ROW`,
+  `isPlaceholderRow`, `ow-run-completeness.ts:1228-1231#"PLACEHOLDER_ROW_CELLS[idx]"`, against `OW_FINDINGS_PLACEHOLDER_ROW`,
   `ow-run-completeness.ts:306-307#"correctness/architecture/security/tests/maintainability/performance/docs"`) and whether any row anywhere carries a real concrete severity
   (`concreteRowSeen`). When the placeholder row survived AND no concrete row was ever
   seen, `readOwRunCompleteness` blocks with `complete: false` (`ow-run-completeness.ts:418-423#"genuinely a zero-findings review"`), naming
@@ -365,9 +365,9 @@ OW run files under `<repoPath>/.ai/runs/`:
   (`run-base [alpha]`), one or more dashes in the comment opener (`<!--- `).
   A line the loose net catches but the strict shape rejects is collected as
   MALFORMED instead of silently degrading
-  (`ow-run-completeness.ts:672-699#"return { markers, malformedLines };"`;
+  (`ow-run-completeness.ts:682-709#"return { markers, malformedLines };"`;
   grammar constants at
-  `ow-run-completeness.ts:502-520#"const PLACEHOLDER_KEY = /^<[^>]*>$/;"`). A
+  `ow-run-completeness.ts:507-525#"const PLACEHOLDER_KEY = /^<[^>]*>$/;"`). A
   strict match whose key is placeholder-shaped (`<repo-basename>`-style,
   `/^<[^>]*>$/`) is a documentation example, not a marker, and is skipped
   entirely — not counted as present, not malformed; an example that itself
@@ -387,7 +387,7 @@ OW run files under `<repoPath>/.ai/runs/`:
   and `run-base` is now collected as malformed too, unless it is already
   accepted as a well-formed keyed or unkeyed marker
   (`lineCarriesRunBasePhrase`,
-  `ow-run-completeness.ts:650-652#"return line.includes('solution-acceptance') && line.includes('run-base');"`).
+  `ow-run-completeness.ts:660-662#"return line.includes('solution-acceptance') && line.includes('run-base');"`).
   The rationale: an attempted marker that cannot be read is worse than no
   marker at all: it signals the run intended to bind a `run-base` and
   failed, which must block rather than silently fall through to the legacy
@@ -426,7 +426,7 @@ OW run files under `<repoPath>/.ai/runs/`:
   non-whitespace value, WHATEVER follows on the line, rather than requiring
   the whole line to be nothing but that marker
   (`isUnkeyedRunBaseMarkerLine`/`UNKEYED_RUN_BASE_LINE_START`,
-  `ow-run-completeness.ts:536#"const UNKEYED_RUN_BASE_LINE_START = /^\s*<!--\s*solution-acceptance:\s*run-base\s*=\s*\S+/;"`).
+  `ow-run-completeness.ts:541#"const UNKEYED_RUN_BASE_LINE_START = /^\s*<!--\s*solution-acceptance:\s*run-base\s*=\s*\S+/;"`).
   The earlier whole-line-only shape under-matched relative to the resolver: an
   unkeyed marker whose value is followed by a trailing annotation resolved a
   value AND was reported malformed, regressing from `complete: true` before
@@ -444,12 +444,12 @@ OW run files under `<repoPath>/.ai/runs/`:
   git worktree) the main repository's basename, resolved via the worktree's
   `.git` `gitdir:` file and `commondir`
   (`repoKeys`/`resolveMainWorktreeRoot`,
-  `ow-run-completeness.ts:931-938#"return keys;"`,
-  `ow-run-completeness.ts:955-992#"if (worktreesMatch) return worktreesMatch[1];"`)
+  `ow-run-completeness.ts:941-948#"return keys;"`,
+  `ow-run-completeness.ts:965-1002#"if (worktreesMatch) return worktreesMatch[1];"`)
   — and the FIRST key whose WELL-FORMED keyed marker is present decides (its
   value, or `null` for `TODO`) without falling through to a later key or to
   the legacy unkeyed `run-base` marker
-  (`ow-run-completeness.ts:787-829#"exists; add a run-base[<key>] marker for this repo or an unkeyed run-base marker"`).
+  (`ow-run-completeness.ts:797-839#"exists; add a run-base[<key>] marker for this repo or an unkeyed run-base marker"`).
   Only when no well-formed keyed marker matches any key does the unkeyed
   marker apply. Whenever malformed near-miss lines were found, their blocker
   reason is reported REGARDLESS of whether a keyed match or the unkeyed
@@ -466,7 +466,7 @@ OW run files under `<repoPath>/.ai/runs/`:
   operator whose line never attempted bracket syntax at all is not pointed at
   the keyed shape as the fix
   (`malformedRunBaseReasons`,
-  `ow-run-completeness.ts:738-746#"(expected '<!-- solution-acceptance: run-base[<key>] = <sha> -->' on its own line)"`).
+  `ow-run-completeness.ts:748-756#"(expected '<!-- solution-acceptance: run-base[<key>] = <sha> -->' on its own line)"`).
   Both blocker messages are bounded (keys truncated to 64 chars / 10 shown,
   malformed-line excerpts truncated to 80 chars with up to 5 excerpts shown
   per reason category, `(+N more)` beyond that) so a goal file with many or
@@ -489,7 +489,7 @@ OW run files under `<repoPath>/.ai/runs/`:
   from the phrase check above (see the decision paragraph) so it is never
   misread as an attempted-but-broken keyed one.
 
-**Marker-first, prose fallback** throughout (`resolveAcceptanceValue`, `ow-run-completeness.ts:1046-1064#"kind: 'value', value: prose"`): the
+**Marker-first, prose fallback** throughout (`resolveAcceptanceValue`, `ow-run-completeness.ts:1056-1074#"kind: 'value', value: prose"`): the
 machine-readable `<!-- solution-acceptance: <field> = <value> -->` marker wins; only when
 the field is entirely absent does it fall back to the `## <heading>` prose value. A `TODO`
 or malformed marker surfaces its own blocker and never silently falls back (fail-closed).

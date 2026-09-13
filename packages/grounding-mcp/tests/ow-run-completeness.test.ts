@@ -9,7 +9,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { OW_FINDINGS_PLACEHOLDER_ROW, readOwRunCompleteness } from '../src/ow-run-completeness.js';
+import {
+  OW_FINDINGS_PLACEHOLDER_ROW,
+  OW_REVIEW_METHOD_PLACEHOLDER_MARKER,
+  readOwRunCompleteness,
+} from '../src/ow-run-completeness.js';
 
 let repo: string;
 
@@ -72,6 +76,8 @@ interface ReviewOpts {
   recommendationMarker?: string;
   /** Extra concrete findings table rows (full `| ... |` markdown rows). */
   findingRows?: string[];
+  /** Raw lines inserted above `## Findings` (review-method/method-applied markers). */
+  methodLines?: string[];
 }
 
 /**
@@ -102,6 +108,7 @@ function reviewDoc(opts: ReviewOpts = {}): string {
   return [
     '# Review Findings',
     '',
+    ...(opts.methodLines ?? []),
     '## Findings',
     '',
     ...rows,
@@ -131,6 +138,7 @@ function reviewDocNoFindings(opts: ReviewOpts = {}): string {
   return [
     '# Review Findings',
     '',
+    ...(opts.methodLines ?? []),
     '## Findings',
     '',
     '| Severity | Category | Description | Suggested Fix | Decision |',
@@ -796,6 +804,721 @@ describe('readOwRunCompleteness — run-base binding marker extraction', () => {
   });
 });
 
+describe('readOwRunCompleteness: review-method axis (declared vs. recorded method_applied)', () => {
+  /** A complete, non-methodAxis review, so only the method-axis reason (if any) shows up. */
+  function baseOpts(methodLines: string[]): ReviewOpts {
+    return {
+      recommendationMarker: 'accept',
+      findingRows: [],
+      methodLines,
+    };
+  }
+
+  it('a round whose recorded method_applied is WEAKER than the declared review-method fails, named', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts([
+          '<!-- review-method[T-005] = adversarial -->',
+          '<!-- method-applied[T-005] = rigorous -->',
+          '',
+        ]),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons).toEqual([
+      "round(s) with a weaker recorded method_applied than declared in 05-review-findings.md: " +
+        "'T-005' declared 'adversarial', recorded 'rigorous'",
+    ]);
+  });
+
+  it('a round with NO recorded method_applied at all fails, named as absent', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(baseOpts(['<!-- review-method[T-005] = adversarial -->', ''])),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons).toEqual([
+      "round(s) with no matching method_applied record in 05-review-findings.md: 'T-005' declared 'adversarial' " +
+        "(add '<!-- method-applied[<round>] = <value> -->' once confirmed, or fill in the immediately-following " +
+        "'Method: <value>' line)",
+    ]);
+  });
+
+  it('a matching declared/recorded pair passes (no reason)', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts([
+          '<!-- review-method[T-005] = adversarial -->',
+          '<!-- method-applied[T-005] = adversarial -->',
+          '',
+        ]),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('a STRONGER recorded method_applied than declared also passes', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts([
+          '<!-- review-method[T-005] = normal -->',
+          '<!-- method-applied[T-005] = adversarial -->',
+          '',
+        ]),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('a review file with NO review-method marker at all is unaffected (backward compatible)', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(baseOpts([])),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('the shipped template placeholder marker `[<round>]` with the pipe-joined legend value is not a marker (no reason)', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      // Pinned against the reader's own OW_REVIEW_METHOD_PLACEHOLDER_MARKER,
+      // itself lockstep-coupled (by hand) with agent-dx's
+      // packages/orchestrator-workflow/assets/templates/05-review-findings.md
+      // and its test/template-markers.test.ts.
+      review: reviewDocNoFindings(baseOpts([OW_REVIEW_METHOD_PLACEHOLDER_MARKER, ''])),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('multiple review-method markers packed on ONE line (the real authoring convention) all parse', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts([
+          '<!-- review-method[T-001-R1] = rigorous --> <!-- review-method[T-001-R2] = rigorous -->',
+          '<!-- method-applied[T-001-R1] = rigorous --> <!-- method-applied[T-001-R2] = rigorous -->',
+          '',
+        ]),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('a real value with a REAL key, still the pipe-joined legend, is malformed (not silently ignored)', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts(['<!-- review-method[T-005] = normal|rigorous|adversarial -->', '']),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons).toEqual([
+      "malformed review-method marker(s) in 05-review-findings.md: " +
+        "line 3: <!-- review-method[T-005] = normal|rigorous|adversarial --> " +
+        "(expected '<!-- review-method[<round>] = normal|rigorous|adversarial -->' with one concrete value)",
+    ]);
+  });
+
+  it('a wrapper near-miss (wrong case, `Review-Method[`) is malformed, not silently ignored', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(baseOpts(['<!-- Review-Method[T-005] = adversarial -->', ''])),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons).toEqual([
+      "malformed review-method marker(s) in 05-review-findings.md: " +
+        "line 3: <!-- Review-Method[T-005] = adversarial --> " +
+        "(expected '<!-- review-method[<round>] = normal|rigorous|adversarial -->' with one concrete value)",
+    ]);
+  });
+
+  it('round-key matching is case-insensitive between review-method and method-applied', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts([
+          '<!-- review-method[T-005] = adversarial -->',
+          '<!-- method-applied[t-005] = adversarial -->',
+          '',
+        ]),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  // --- Round 2 (review finding F1): the shipped kit template's own prose
+  // `Method:` fallback, since the template does not ship a `method-applied[...]`
+  // marker yet. Fixtures below reproduce the template's real text verbatim
+  // (packages/orchestrator-workflow/assets/templates/05-review-findings.md).
+
+  it('F1: a template-conformant run (marker + UNFILLED prose legend, no method-applied marker) still fails, named absent (P7: the legend is not a value)', () => {
+    // This is the literal shape of the real `agent-dx-external-prs` run under
+    // kit 0.32.0: the template's own placeholder sentence, never filled in.
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts([
+          '<!-- review-method[T-005] = adversarial -->',
+          'Method: normal | rigorous | adversarial (the `review_method` named in this',
+          "round's briefing and the `method_applied` the reviewer returned; not parsed",
+          'by the grounding-mcp completeness reader yet).',
+          '',
+        ]),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons).toEqual([
+      "round(s) with no matching method_applied record in 05-review-findings.md: 'T-005' declared 'adversarial' " +
+        "(add '<!-- method-applied[<round>] = <value> -->' once confirmed, or fill in the immediately-following " +
+        "'Method: <value>' line)",
+    ]);
+  });
+
+  it('F1: a template-conformant run with the prose Method: line FILLED IN (no method-applied marker) passes via the fallback', () => {
+    // The parenthetical aside must close on the SAME physical `Method:` line
+    // to resolve (round 4, `PROSE_METHOD_TRAILING` requires a balanced
+    // aside): a real Method: line does not wrap its aside across markdown
+    // lines the way this fixture did before round 4 (that shape, an aside
+    // never closed on its own line, is now malformed -- see the round-4
+    // fixtures below).
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts([
+          '<!-- review-method[T-005] = adversarial -->',
+          'Method: adversarial (the `review_method` named in this round\'s briefing and ' +
+            'the `method_applied` the reviewer returned).',
+          '',
+        ]),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('F1: a filled prose Method: line recording a WEAKER value than declared still fails, named weaker', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts(['<!-- review-method[T-005] = adversarial -->', 'Method: rigorous (briefing and return match).', '']),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons).toEqual([
+      "round(s) with a weaker recorded method_applied than declared in 05-review-findings.md: " +
+        "'T-005' declared 'adversarial', recorded 'rigorous'",
+    ]);
+  });
+
+  it('F1: a Method: line naming none of the three words is a malformed prose record, named', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts(['<!-- review-method[T-005] = adversarial -->', 'Method: thorough (briefing and return match).', '']),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons).toEqual([
+      "round(s) with a malformed 'Method:' prose record in 05-review-findings.md: 'T-005' " +
+        "(expected 'Method: normal|rigorous|adversarial ...' naming exactly one of the three)",
+    ]);
+  });
+
+  it('F1: an explicit method-applied marker and a disagreeing prose Method: line is a named conflict, neither wins silently', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts([
+          '<!-- review-method[T-005] = adversarial -->',
+          'Method: rigorous (briefing and return differ).',
+          '<!-- method-applied[T-005] = adversarial -->',
+          '',
+        ]),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons).toEqual([
+      "round(s) with conflicting method_applied records in 05-review-findings.md: " +
+        "'T-005' (marker 'adversarial' vs prose 'rigorous') " +
+        '(the method-applied marker and the Method: prose line disagree; make them match)',
+    ]);
+  });
+
+  it('F1: an orphan method-applied marker with no matching declared round is silently ignored (documented)', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(baseOpts(['<!-- method-applied[T-005] = adversarial -->', ''])),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('F1 (missing_tests): a key-spelling drift between review-method and method-applied names the recorded keys, not just "no record"', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts(['<!-- review-method[T-003 R1] = adversarial -->', '<!-- method-applied[R1] = adversarial -->', '']),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons).toEqual([
+      "round(s) with no matching method_applied record in 05-review-findings.md: 'T-003 R1' declared 'adversarial' " +
+        "(recorded method-applied key(s) present but not matching: R1) " +
+        "(add '<!-- method-applied[<round>] = <value> -->' once confirmed, or fill in the immediately-following " +
+        "'Method: <value>' line)",
+    ]);
+  });
+
+  // --- Round 2 (review finding F2): quoted markers must not become live declarations.
+
+  it('F2: a review-method marker inside a fenced code block is quoted, not a live declaration', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts(['```', '<!-- review-method[T-005] = adversarial -->', '```', '']),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('F2: a review-method marker inside inline code (e.g. quoted in a findings-table cell) is quoted, not a live declaration', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts(['See `<!-- review-method[T-005] = adversarial -->` for the convention.', '']),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  // --- Round 2 (review finding F3): duplicate markers for one round.
+
+  it('F3: identical duplicate review-method markers for one round are tolerated', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts([
+          '<!-- review-method[T-005] = adversarial -->',
+          '<!-- review-method[T-005] = adversarial -->',
+          '<!-- method-applied[T-005] = adversarial -->',
+          '',
+        ]),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('F3: conflicting duplicate review-method markers for one round is a named blocker (declared-first ordering)', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts([
+          '<!-- review-method[T-005] = adversarial -->',
+          '<!-- review-method[T-005] = rigorous -->',
+          '',
+        ]),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons).toEqual([
+      "conflicting review-method value(s) in 05-review-findings.md for round(s): 'T-005' (adversarial vs rigorous) " +
+        '(duplicate review-method markers for the same round must agree)',
+    ]);
+  });
+
+  it('F3: conflicting duplicate review-method markers, values in the OPPOSITE order, still names both and blocks', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts([
+          '<!-- review-method[T-005] = rigorous -->',
+          '<!-- review-method[T-005] = adversarial -->',
+          '',
+        ]),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons).toEqual([
+      "conflicting review-method value(s) in 05-review-findings.md for round(s): 'T-005' (rigorous vs adversarial) " +
+        '(duplicate review-method markers for the same round must agree)',
+    ]);
+  });
+
+  it('F3: identical duplicate method-applied markers for one round are tolerated', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts([
+          '<!-- review-method[T-005] = adversarial -->',
+          '<!-- method-applied[T-005] = adversarial -->',
+          '<!-- method-applied[T-005] = adversarial -->',
+          '',
+        ]),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('F3: conflicting duplicate method-applied markers for one round is a named blocker', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts([
+          '<!-- review-method[T-005] = adversarial -->',
+          '<!-- method-applied[T-005] = adversarial -->',
+          '<!-- method-applied[T-005] = rigorous -->',
+          '',
+        ]),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    // The conflicting method-applied duplicate is its own named blocker; the
+    // round ALSO shows up as having no single resolvable method_applied value
+    // (a conflicting record cannot be used as a valid one either), which is
+    // consistent, not contradictory.
+    expect(
+      r.reasons.some((x) =>
+        x.startsWith(
+          "conflicting method-applied value(s) in 05-review-findings.md for round(s): 'T-005' (adversarial vs rigorous) " +
+            '(duplicate method-applied markers for the same round must agree)',
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      r.reasons.some((x) => x.startsWith('round(s) with no matching method_applied record in 05-review-findings.md:')),
+    ).toBe(true);
+    expect(r.reasons).toHaveLength(2);
+  });
+
+  // --- Round 2 (review finding F4): a wrapper-less marker line must not be invisible.
+
+  it('F4: a wrapper-less review-method[R1] = ... line (no HTML comment) is a named malformed marker, not invisible', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(baseOpts(['review-method[T-005] = adversarial', ''])),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons).toEqual([
+      'malformed review-method marker(s) in 05-review-findings.md: line 3: review-method[T-005] = adversarial ' +
+        "(expected '<!-- review-method[<round>] = normal|rigorous|adversarial -->' with one concrete value)",
+    ]);
+  });
+
+  it('F4: a wrapper-less method-applied[R1] = ... line (no HTML comment) is a named malformed marker, not invisible', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts(['<!-- review-method[T-005] = adversarial -->', 'method-applied[T-005] = adversarial', '']),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(
+      r.reasons.some((x) =>
+        x.startsWith(
+          'malformed method-applied marker(s) in 05-review-findings.md: line 4: method-applied[T-005] = adversarial ',
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  // --- Round 2 (review finding F5): per-round reasons are bounded, not unbounded.
+
+  it('F5: more than 5 absent rounds collapse into ONE bounded reason (joinBounded, "+N more")', () => {
+    const methodLines: string[] = [];
+    for (let i = 1; i <= 7; i++) methodLines.push(`<!-- review-method[T-00${i}] = adversarial -->`);
+    methodLines.push('');
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(baseOpts(methodLines)),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons).toHaveLength(1);
+    expect(r.reasons[0]).toContain('round(s) with no matching method_applied record in 05-review-findings.md:');
+    expect(r.reasons[0]).toContain('(+2 more)');
+  });
+
+  // --- Round 3 (review finding F1): a Method: line whose first token merely
+  // happens to be one of the three words, but is actually the start of a
+  // qualified, multi-round sentence, is a malformed record, not a silent
+  // first-word read.
+
+  it("F1 (round 3): a qualified Method: sentence naming a different round's exception is a malformed prose record, not read as its first word", () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts([
+          '<!-- review-method[T-009] = adversarial -->',
+          'Method: adversarial for T-009 only; rigorous for this round.',
+          '',
+        ]),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons).toEqual([
+      "round(s) with a malformed 'Method:' prose record in 05-review-findings.md: 'T-009' " +
+        "(expected 'Method: normal|rigorous|adversarial ...' naming exactly one of the three)",
+    ]);
+  });
+
+  it('F1 (round 3): the real batch48 shape (a qualifying clause after the value, then a parenthetical) is malformed, not read as its first token', () => {
+    // Verbatim shape of .ai/runs/2026-09-12-quickwins-batch48/05-review-findings.md's
+    // summary line: the first token, `rigorous`, is not a record of the
+    // immediately-preceding round; it is the start of a sentence about OTHER
+    // rounds' exceptions.
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts([
+          '<!-- review-method[T-011-R3] = rigorous -->',
+          "Method: rigorous for every round except T-007 R1 and T-010 R1 (adversarial); `method_applied` matched the briefing in all 32 returns.",
+          '',
+        ]),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons).toEqual([
+      "round(s) with a malformed 'Method:' prose record in 05-review-findings.md: 'T-011-R3' " +
+        "(expected 'Method: normal|rigorous|adversarial ...' naming exactly one of the three)",
+    ]);
+  });
+
+  it('F1 (round 3): a value token followed only by end-of-sentence punctuation still resolves', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts(['<!-- review-method[T-005] = adversarial -->', 'Method: adversarial.', '']),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('F1 (round 3): the template shape, a value followed by a balanced parenthetical aside and a full stop, still resolves', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts([
+          '<!-- review-method[T-005] = adversarial -->',
+          'Method: adversarial (briefing and return match).',
+          '',
+        ]),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('F1 (round 4): text appended AFTER a closed parenthetical aside is a malformed record, not silently accepted', () => {
+    // Round 3's `\(.*` trailing half accepted anything after an opening paren
+    // verbatim, so `Method: adversarial (x) but actually normal` wrongly
+    // resolved to `adversarial`. The aside now must be the whole remainder.
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts([
+          '<!-- review-method[T-005] = adversarial -->',
+          'Method: adversarial (x) but actually normal',
+          '',
+        ]),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons).toEqual([
+      "round(s) with a malformed 'Method:' prose record in 05-review-findings.md: 'T-005' " +
+        "(expected 'Method: normal|rigorous|adversarial ...' naming exactly one of the three)",
+    ]);
+  });
+
+  it('F1 (round 4): an unterminated parenthetical aside is a malformed record, not silently accepted', () => {
+    // Round 3's `\(.*` trailing half also accepted an aside that never
+    // closes at all (`Method: adversarial (`).
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts(['<!-- review-method[T-005] = adversarial -->', 'Method: adversarial (', '']),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons).toEqual([
+      "round(s) with a malformed 'Method:' prose record in 05-review-findings.md: 'T-005' " +
+        "(expected 'Method: normal|rigorous|adversarial ...' naming exactly one of the three)",
+    ]);
+  });
+
+  // --- Round 3 (review finding F2): the prose fallback must not associate
+  // one packed line's Method: summary with every round declared on it.
+
+  it('F2 (round 3): three review-method declarations packed on one line, followed by ONE Method: line, resolve NONE of them (named absent, not cleared)', () => {
+    // Verbatim shape of quickwins-batch48's T-011-R1/R2/R3: three
+    // declarations packed onto one line, one Method: summary line
+    // immediately after. Before round 3, all three read that one line as
+    // their own record and passed; now none do.
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts([
+          '<!-- review-method[T-011-R1] = rigorous --> <!-- review-method[T-011-R2] = rigorous --> ' +
+            '<!-- review-method[T-011-R3] = rigorous -->',
+          'Method: rigorous (briefing and return match for all three rounds).',
+          '',
+        ]),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons).toEqual([
+      "round(s) with no matching method_applied record in 05-review-findings.md: 'T-011-R1' declared 'rigorous' | " +
+        "'T-011-R2' declared 'rigorous' | 'T-011-R3' declared 'rigorous' " +
+        "(add '<!-- method-applied[<round>] = <value> -->' once confirmed, or fill in the immediately-following " +
+        "'Method: <value>' line)",
+    ]);
+  });
+
+  it('F2 (round 3): a SINGLE review-method declaration on its own line still resolves via the following Method: line', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts(['<!-- review-method[T-005] = adversarial -->', 'Method: adversarial (briefing and return match).', '']),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('F2 (round 4): the SAME round declared twice in agreement on one shared line still resolves (duplicates are tolerated, not a multi-round line)', () => {
+    // Round 3 counted raw occurrences per line, so an agreeing same-round
+    // duplicate on one line wrongly tripped the multi-round "several rounds
+    // packed onto one line" path and fell through to absent, even though
+    // review finding F3 documents such duplicates as tolerated.
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts([
+          '<!-- review-method[R1] = adversarial --> <!-- review-method[R1] = adversarial -->',
+          'Method: adversarial.',
+          '',
+        ]),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('F2: several stacked single-occurrence declaration lines followed by a summary line NOT starting with `Method:` all fall through to absent (the real memory-sync-wipe shape)', () => {
+    // Verbatim shape of .ai/runs/2026-09-11-memory-sync-wipe/05-review-findings.md:
+    // five declarations each on their OWN line (so each is single-occurrence),
+    // followed by ONE summary line reading `Method round 1: adversarial (...)`
+    // -- which does not itself start with `Method:`, so none of the five
+    // rounds' immediately-following line is a `Method:` line at all.
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts([
+          '<!-- review-method[1] = adversarial -->',
+          '<!-- review-method[2] = adversarial -->',
+          '<!-- review-method[3] = adversarial -->',
+          'Method round 1: adversarial (method_applied: adversarial).',
+          '',
+        ]),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons).toEqual([
+      "round(s) with no matching method_applied record in 05-review-findings.md: '1' declared 'adversarial' | " +
+        "'2' declared 'adversarial' | '3' declared 'adversarial' " +
+        "(add '<!-- method-applied[<round>] = <value> -->' once confirmed, or fill in the immediately-following " +
+        "'Method: <value>' line)",
+    ]);
+  });
+
+  it('F2 (round 4): two DISTINCT rounds declared on one shared line still resolve NEITHER via the following Method: line', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(
+        baseOpts([
+          '<!-- review-method[R1] = adversarial --> <!-- review-method[R2] = adversarial -->',
+          'Method: adversarial.',
+          '',
+        ]),
+      ),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons).toEqual([
+      "round(s) with no matching method_applied record in 05-review-findings.md: 'R1' declared 'adversarial' | " +
+        "'R2' declared 'adversarial' " +
+        "(add '<!-- method-applied[<round>] = <value> -->' once confirmed, or fill in the immediately-following " +
+        "'Method: <value>' line)",
+    ]);
+  });
+
+  // --- Round 3 (review finding F4): a malformed/wrapper-less method-applied
+  // mention with NO review-method marker anywhere in the file still blocks;
+  // the file is "unaffected" only with zero marker-shaped mentions at all.
+
+  it('F4 (round 3): a wrapper-less method-applied[...] line with NO review-method marker anywhere still blocks (not silently "unaffected")', () => {
+    makeRun('2026-06-22-run', {
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings(baseOpts(['method-applied[T-005] = adversarial', ''])),
+    });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(false);
+    expect(r.reasons).toEqual([
+      'malformed method-applied marker(s) in 05-review-findings.md: line 3: method-applied[T-005] = adversarial ' +
+        "(expected '<!-- method-applied[<round>] = normal|rigorous|adversarial -->' with one concrete value)",
+    ]);
+  });
+});
+
 describe('readOwRunCompleteness — CRLF fixtures (Fix 4)', () => {
   it('parses markers and the findings table when the files use \\r\\n line endings', () => {
     const handoff = [
@@ -873,6 +1596,39 @@ describe('readOwRunCompleteness — CRLF fixtures (Fix 4)', () => {
           x.includes('zero-findings review'),
       ),
     ).toBe(true);
+  });
+
+  it('F4 (round 3): the review-method axis (marker plus Method: prose fallback) parses under CRLF line endings', () => {
+    const handoff = [
+      '# Operator Handoff',
+      '',
+      '## Final Status',
+      '',
+      '<!-- solution-acceptance: final-status = accepted -->',
+      'accepted',
+      '',
+    ].join('\r\n');
+    const review = [
+      '# Review Findings',
+      '',
+      '<!-- review-method[T-005] = adversarial -->',
+      'Method: adversarial (briefing and return match).',
+      '',
+      '## Findings',
+      '',
+      '| Severity | Category | Description | Suggested Fix | Decision |',
+      '|---|---|---|---|---|',
+      '',
+      '## Acceptance Recommendation',
+      '',
+      '<!-- solution-acceptance: acceptance-recommendation = accept -->',
+      'accept',
+      '',
+    ].join('\r\n');
+    makeRun('2026-06-22-run', { handoff, review });
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
   });
 });
 
@@ -1939,7 +2695,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
 
   it('a tilde-delimited fence around a phrase-carrying bullet is exempt', () => {
     // Round 3 mutation probe (i): disabling the fence branch of
-    // stripQuotedRunBaseText turns this red (the bullet would then block).
+    // stripQuotedMarkdownText turns this red (the bullet would then block).
     const goal = ['# Goal', '~~~', '- <!-- solution-acceptance: run-base[alpha] = aaaaaaa -->', '~~~', ''].join(
       '\n',
     );

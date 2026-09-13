@@ -429,6 +429,11 @@ export function readOwRunCompleteness(repoPath: string): OwRunCompleteness {
     reasons.push(formatBlocker);
   }
 
+  const methodScan = scanReviewMethodCompliance(review);
+  for (const r of methodScan.reasons) {
+    reasons.push(r);
+  }
+
   const runBaseSelection = selectRunBase(goal, repoKeys(worktreeRoot));
   for (const r of runBaseSelection.reasons) {
     reasons.push(r);
@@ -620,19 +625,24 @@ function blank(s: string): string {
 const INLINE_CODE_SPAN = /`[^`\n]*(?:\n(?!\s*\n)[^`\n]*)*?`/g;
 
 /**
- * `goal` with every QUOTED range blanked out (fenced code block lines, then
- * single-backtick inline code spans; see the module docstring's QUOTATION
- * EXEMPTION paragraph, `computeFencedLineFlags`, and `INLINE_CODE_SPAN`).
- * Fences are blanked FIRST so a backtick that is itself fenced content can
- * never pair with a backtick outside the fence. Line count and line
- * boundaries are preserved (only non-newline characters are ever replaced),
- * so the result can be re-split with the same `/\r?\n/` regex used on `goal`
- * and indexed line-for-line against it. An unmatched single backtick, or one
- * whose only pairing partner sits across a blank line, quotes nothing (fails
- * closed).
+ * `content` with every QUOTED range blanked out (fenced code block lines,
+ * then single-backtick inline code spans; see the module docstring's
+ * QUOTATION EXEMPTION paragraph, `computeFencedLineFlags`, and
+ * `INLINE_CODE_SPAN`). Fences are blanked FIRST so a backtick that is itself
+ * fenced content can never pair with a backtick outside the fence. Line
+ * count and line boundaries are preserved (only non-newline characters are
+ * ever replaced), so the result can be re-split with the same `/\r?\n/`
+ * regex used on `content` and indexed line-for-line against it. An unmatched
+ * single backtick, or one whose only pairing partner sits across a blank
+ * line, quotes nothing (fails closed).
+ *
+ * Generic over both consumers: the `run-base` grammar (`00-goal.md`) below,
+ * and the review-method axis grammar (`05-review-findings.md`) further down.
+ * The two consumers apply it asymmetrically on purpose; see each one's own
+ * docstring for the difference.
  */
-function stripQuotedRunBaseText(goal: string): string {
-  const lines = goal.split(/\r?\n/);
+function stripQuotedMarkdownText(content: string): string {
+  const lines = content.split(/\r?\n/);
   const fenced = computeFencedLineFlags(lines);
   const fenceStripped = lines.map((line, i) => (fenced[i] ? blank(line) : line)).join('\n');
   return fenceStripped.replace(INLINE_CODE_SPAN, blank);
@@ -644,7 +654,7 @@ function stripQuotedRunBaseText(goal: string): string {
 // exact, case-sensitive tokens the template uses is an attempted `run-base`
 // marker unless it is already accepted as well-formed (keyed or unkeyed,
 // checked before this is reached) OR the occurrence is entirely inside a
-// quoted range (round 2, D-027; see `stripQuotedRunBaseText`). Deliberately
+// quoted range (round 2, D-027; see `stripQuotedMarkdownText`). Deliberately
 // simple and total otherwise: no attempt to enumerate shapes, since
 // enumerating shapes is exactly what left the residual open before.
 function lineCarriesRunBasePhrase(line: string): boolean {
@@ -666,7 +676,7 @@ function lineCarriesRunBasePhrase(line: string): boolean {
  * `kind: 'keyed-attempt'`, or a bullet/prose/wrapper-less/leading-text
  * mention the loose net's line-start anchor cannot see, `kind:
  * 'phrase-only'`, and only when it survives the quoting exemption, see
- * `stripQuotedRunBaseText`) is collected as malformed with its 1-based line
+ * `stripQuotedMarkdownText`) is collected as malformed with its 1-based line
  * number and its category.
  */
 function collectKeyedRunBaseMarkers(goal: string): KeyedMarkerScan {
@@ -674,7 +684,7 @@ function collectKeyedRunBaseMarkers(goal: string): KeyedMarkerScan {
   const markers: KeyedRunBaseMarker[] = [];
   const malformedLines: MalformedRunBaseLine[] = [];
   const lines = goal.split(/\r?\n/);
-  const unquotedLines = stripQuotedRunBaseText(goal).split(/\r?\n/);
+  const unquotedLines = stripQuotedMarkdownText(goal).split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const strict = line.match(KEYED_RUN_BASE_STRICT);
@@ -1278,6 +1288,494 @@ function findingsFormatBlocker(content: string | null): string | null {
     }
   }
   return null;
+}
+
+// Review-method axis (orchestrator-workflow kit 0.32.0, assets/templates/05-review-findings.md):
+// each review round may declare `<!-- review-method[<round>] = normal|rigorous|adversarial -->`
+// above the Findings table. Round 1 defined the machine-readable counterpart
+// grammar the kit template does not ship yet, `<!-- method-applied[<round>] =
+// normal|rigorous|adversarial -->`. Round 2 (review finding F1, orchestrator
+// decision) found that mandating ONLY that marker fails a run authored
+// exactly from the shipped template (and all real runs then on kit 0.32.0):
+// the template's own immediately-following `Method: <value> (...)` prose line
+// is what a template-conformant run actually carries, not a marker. The
+// reader therefore ALSO accepts that prose line as a fallback record (see
+// `resolveProseMethodLine`), while still keeping `method-applied[<round>]` as
+// the explicit, preferred record; when both exist for a round and disagree,
+// that is its own named blocker rather than either one silently winning.
+// CROSS-REPO OBLIGATION (unchanged from round 1, still open): the shipped
+// packages/orchestrator-workflow/assets/templates/05-review-findings.md
+// should add `<!-- method-applied[<round>] = normal|rigorous|adversarial -->`
+// next to its existing `review-method[<round>]` marker and `Method:` line.
+// Until it does: a run authored under kit 0.32.0 with a FILLED `Method:
+// <value> (...)` line (not the pipe-joined legend) passes via the prose
+// fallback; a run recording NEITHER channel for a round needs one line added
+// (`<!-- method-applied[<round>] = <value> -->`, or filling in `Method:`) to
+// migrate. Strength order used for the weaker/absent comparison below.
+const REVIEW_METHOD_STRENGTH: Record<string, number> = { normal: 0, rigorous: 1, adversarial: 2 };
+const REVIEW_METHOD_VALUES = new Set(Object.keys(REVIEW_METHOD_STRENGTH));
+
+/** One well-formed `<field>[<round>] = <value>` marker occurrence. */
+interface RoundMarker {
+  /** The round key exactly as authored (trimmed, original case). */
+  round: string;
+  /** One of `normal`/`rigorous`/`adversarial` (enum-validated). */
+  value: string;
+  /** Index into the scan content right after this occurrence's `-->`, for locating a trailing `Method:` prose line. */
+  endIndex: number;
+}
+
+/** Rounds with 2+ well-formed occurrences of one field whose values disagree. */
+interface RoundConflict {
+  /** The round key as authored on its first occurrence. */
+  round: string;
+  /** Distinct values seen, in first-seen order (always 2+). */
+  values: string[];
+}
+
+/** Result of scanning `content` for one marker field (`review-method` or `method-applied`). */
+interface RoundMarkerScan {
+  /** Well-formed, non-conflicting markers keyed by lowercased round. First occurrence per round wins. */
+  markers: Map<string, RoundMarker>;
+  /** Short, line-numbered excerpts of occurrences that attempted the marker but did not resolve to a well-formed one. */
+  malformedExcerpts: string[];
+  /** Rounds (keyed by lowercased round) whose well-formed occurrences disagree on value. */
+  conflicts: Map<string, RoundConflict>;
+  /**
+   * EVERY well-formed occurrence, in file order, one entry per occurrence
+   * (not deduped by round): a round packed twice on one line, or two
+   * different rounds packed on one line, each contribute their own entry.
+   * Used (review finding F2, round 3) to count how many well-formed
+   * `review-method[...]` occurrences share one physical line, since the
+   * `Method:` prose fallback below is only safe to associate with a line
+   * that declares exactly one round.
+   */
+  occurrences: RoundMarker[];
+}
+
+/**
+ * Collect every well-formed `<!-- <field>[<round>] = <value> -->` occurrence
+ * in `content`, plus every occurrence that attempted the marker but did not
+ * resolve to one. Deliberately occurrence-scoped rather than whole-line-scoped
+ * (unlike the `run-base` keyed grammar above): the review-method note is
+ * authored with several rounds packed onto one line
+ * (`<!-- review-method[T-001-R1] = rigorous --> <!-- review-method[T-001-R2]
+ * = rigorous -->`), so a whole-line requirement would misclassify that
+ * legitimate shape as malformed. Anchored by a corpus measurement (7 real
+ * `05-review-findings.md` files under kit 0.32.0, drawn from this workspace's
+ * `.ai/runs/` run directories, not this package's own: 60 `review-method`
+ * occurrences on 37 lines total, the largest (`quickwins-batch48`) packing 27
+ * onto 11 lines; see CHANGELOG [Unreleased] for the per-file figures. One of
+ * the 7, `quickwins-batch51`, is the very run this fix ships in, so its own
+ * count is a moving target measured at the time of writing, not a fixed
+ * corpus fact).
+ *
+ * Quoting (review finding F2): unlike the `run-base` grammar above, where
+ * only the position-independent phrase net is quoting-aware, EVERY net here
+ * (strict, loose, and the wrapper-less net below) runs against
+ * `stripQuotedMarkdownText(content)`: a marker sitting inside a fenced code
+ * block or an inline code span (e.g. quoted in prose, or inside a findings
+ * table cell) is never live, full stop. This is a deliberate asymmetry from
+ * `run-base`'s: the review-method grammar has no equivalent to `run-base`'s
+ * accepted "a fenced well-formed marker still resolves" residual.
+ *
+ * A match whose round key is placeholder-shaped (`<round>`, the template's own
+ * documentation example) is skipped entirely (not counted as present, not
+ * malformed), the same treatment `PLACEHOLDER_KEY`/`PLACEHOLDER_ROW_CELLS`
+ * give the run-base and findings-table template examples above. A match whose
+ * value is not exactly one of `normal`/`rigorous`/`adversarial` (including the
+ * template's own pipe-joined legend value used with a REAL, non-placeholder
+ * key) is malformed. A case-insensitive loose net catches wrapper near-misses
+ * that never reach the strict shape (wrong case, extra dashes, stray
+ * whitespace before the bracket); a further wrapper-LESS net (review finding
+ * F4) catches a bare `review-method[R1] = adversarial` line with no HTML
+ * comment at all, mirroring the run-base phrase net's own fail-closed
+ * discipline for an unwrapped attempt. Both near-miss nets are checked
+ * against the ranges the strict/loose nets already claimed, so a genuine
+ * well-formed (or already-loose-malformed) occurrence is never double
+ * reported by the wrapper-less net.
+ *
+ * Duplicates (review finding F3): two or more well-formed occurrences for the
+ * SAME round are tolerated when their values agree (first occurrence wins,
+ * as before); when they disagree, the round is reported via `conflicts`
+ * instead of `markers`: a named blocker, not a silent first-wins pick.
+ */
+function collectRoundMarkers(content: string, field: 'review-method' | 'method-applied'): RoundMarkerScan {
+  const scanContent = stripQuotedMarkdownText(content);
+  const strictRe = new RegExp(`<!--\\s*${field}\\[([^\\]\\n]+)\\]\\s*=\\s*(\\S+)\\s*-->`, 'g');
+  const looseRe = new RegExp(`<!--+\\s*${field}\\s*\\[`, 'gi');
+  const bareRe = new RegExp(`${field}\\s*\\[`, 'gi');
+
+  const markers = new Map<string, RoundMarker>();
+  const seenValues = new Map<string, { round: string; values: string[] }>();
+  const malformedExcerpts: string[] = [];
+  const claimedRanges: Array<[number, number]> = [];
+  const occurrences: RoundMarker[] = [];
+
+  let m: RegExpExecArray | null;
+  while ((m = strictRe.exec(scanContent)) !== null) {
+    claimedRanges.push([m.index, m.index + m[0].length]);
+    const round = m[1].trim();
+    const value = m[2];
+    if (PLACEHOLDER_KEY.test(round)) continue; // documentation example, not a marker
+    if (!REVIEW_METHOD_VALUES.has(value)) {
+      malformedExcerpts.push(`line ${lineAt(scanContent, m.index)}: ${truncate(m[0].trim(), 80)}`);
+      continue;
+    }
+    const endIndex = m.index + m[0].length;
+    occurrences.push({ round, value, endIndex });
+    const lowerRound = round.toLowerCase();
+    const seen = seenValues.get(lowerRound) ?? { round, values: [] };
+    if (!seen.values.includes(value)) seen.values.push(value);
+    seenValues.set(lowerRound, seen);
+    if (!markers.has(lowerRound)) {
+      markers.set(lowerRound, { round, value, endIndex });
+    }
+  }
+
+  let lm: RegExpExecArray | null;
+  while ((lm = looseRe.exec(scanContent)) !== null) {
+    if (claimedRanges.some(([start, end]) => lm!.index >= start && lm!.index < end)) continue;
+    claimedRanges.push([lm.index, lm.index + lm[0].length]);
+    malformedExcerpts.push(
+      `line ${lineAt(scanContent, lm.index)}: ${truncate(excerptFromIndex(scanContent, lm.index), 80)}`,
+    );
+  }
+
+  let bm: RegExpExecArray | null;
+  while ((bm = bareRe.exec(scanContent)) !== null) {
+    if (claimedRanges.some(([start, end]) => bm!.index >= start && bm!.index < end)) continue;
+    malformedExcerpts.push(
+      `line ${lineAt(scanContent, bm.index)}: ${truncate(excerptFromIndex(scanContent, bm.index), 80)}`,
+    );
+  }
+
+  const conflicts = new Map<string, RoundConflict>();
+  for (const [lowerRound, seen] of seenValues) {
+    if (seen.values.length > 1) conflicts.set(lowerRound, seen);
+  }
+  for (const lowerRound of conflicts.keys()) markers.delete(lowerRound);
+
+  return { markers, malformedExcerpts, conflicts, occurrences };
+}
+
+/** The rest of `content`'s line starting at `index`, trimmed (for a malformed-marker excerpt). */
+function excerptFromIndex(content: string, index: number): string {
+  const rest = content.slice(index);
+  const newlineIdx = rest.indexOf('\n');
+  return (newlineIdx === -1 ? rest : rest.slice(0, newlineIdx)).trim();
+}
+
+/** 1-based line number of `index` within `content` (review finding F6). */
+function lineAt(content: string, index: number): number {
+  let line = 1;
+  for (let i = 0; i < index && i < content.length; i++) {
+    if (content[i] === '\n') line++;
+  }
+  return line;
+}
+
+/** One resolved value from a `Method:` prose line, or why it did not resolve to one. */
+type ProseMethodLine = { kind: 'value'; value: string } | { kind: 'placeholder' } | { kind: 'malformed' };
+
+// The template's own unfilled legend value, exactly as shipped
+// (packages/orchestrator-workflow/assets/templates/05-review-findings.md):
+// `Method: normal | rigorous | adversarial (...)`. A `Method:` line whose
+// value starts with this pipe-joined legend is the placeholder, not a
+// filled-in record (review finding F1), skipped the same way a placeholder
+// marker key is, never reported as malformed.
+const PROSE_METHOD_PLACEHOLDER = /^normal\s*\|\s*rigorous\s*\|\s*adversarial\b/;
+
+/**
+ * The exact literal text of the shipped review template's own unfilled
+ * `review-method[<round>]` marker (agent-dx repo,
+ * packages/orchestrator-workflow/assets/templates/05-review-findings.md).
+ * Exported ONLY so tests can pin it directly against the known template
+ * string (see this package's ow-run-completeness.test.ts reciprocal pinning
+ * test) and, by hand, against agent-dx's own
+ * packages/orchestrator-workflow/test/template-markers.test.ts pin -- the two
+ * repos are lockstep-coupled on this marker (round key `<round>`, legend
+ * value `normal|rigorous|adversarial`) and must be kept in sync manually,
+ * mirroring `OW_FINDINGS_PLACEHOLDER_ROW` above.
+ */
+export const OW_REVIEW_METHOD_PLACEHOLDER_MARKER =
+  '<!-- review-method[<round>] = normal|rigorous|adversarial -->';
+
+/**
+ * The trailing text allowed to follow the value token on a `Method:` line for
+ * it to still count as a record (review finding F1, round 3, tightened round
+ * 4): empty, plain end-of-sentence punctuation only (`.`, `!`, `?`, in any
+ * combination, e.g. `?!`), or a BALANCED parenthetical aside starting the
+ * template's own explanatory shape (`Method: adversarial (briefing and return
+ * match).`), followed only by end-of-sentence punctuation. Anything else --
+ * a qualifying clause, a second value, an unrelated sentence, text trailing
+ * an aside's closing paren other than punctuation, or an aside that never
+ * closes -- means the token was not actually naming the round's method, it
+ * was just the first word of unrelated prose (the real batch48 line this
+ * guards against: `Method: rigorous for every round except T-007 R1 and
+ * T-010 R1 (adversarial); ...`, where a bare first-token read would wrongly
+ * record `rigorous`). Round 3's original `\(.*` half accepted anything after
+ * an opening paren verbatim, including text appended after the aside closes
+ * (`Method: adversarial (x) but actually normal`) and an aside that never
+ * closes at all (`Method: adversarial (`); round 4 (review finding, round 4)
+ * closes both by requiring the parenthetical to actually balance before the
+ * line ends.
+ */
+const PROSE_METHOD_TRAILING = /^(?:[.!?]*|\([^)]*\)[.!?]*)$/;
+
+/**
+ * Resolve a trimmed line already known to start with `Method:` (case as in
+ * the template) to its record. The value token is the text after `Method:`
+ * up to the first whitespace, `(`, or end-of-sentence punctuation (`.`, `!`,
+ * `?`), matching how the template's own filled example reads (`Method:
+ * adversarial (briefing and return match).`) while still letting a bare
+ * `Method: adversarial.` (value immediately followed by a full stop, no
+ * space) resolve rather than swallowing the period into the token (review
+ * finding F1, round 3). The template's own unfilled pipe-joined legend is
+ * recognized as a WHOLE phrase first (its first token, `normal`, would
+ * otherwise misread as a valid, wrong value) and treated as a placeholder,
+ * not a record. A token that names one of the three words only counts as a
+ * record when the text AFTER it is empty, end-of-sentence punctuation only,
+ * or a balanced parenthetical aside followed only by end-of-sentence
+ * punctuation (see `PROSE_METHOD_TRAILING`, review finding F1, round 3,
+ * tightened round 4): a qualified or multi-clause sentence whose first word
+ * merely happens to be a valid value is a malformed record, not a
+ * silently-accepted one.
+ * Anything else -- no recognized token, or a recognized token followed by
+ * disqualifying trailing text -- is a malformed record (review finding F1:
+ * "a `Method:` line that names none of the three is a malformed record").
+ */
+function resolveProseMethodLine(trimmedLine: string): ProseMethodLine {
+  const rest = trimmedLine.slice('Method:'.length).trim();
+  if (PROSE_METHOD_PLACEHOLDER.test(rest)) return { kind: 'placeholder' };
+  const token = /^[^\s(.!?]+/.exec(rest)?.[0] ?? '';
+  if (!REVIEW_METHOD_VALUES.has(token)) return { kind: 'malformed' };
+  const trailing = rest.slice(token.length).trim();
+  if (!PROSE_METHOD_TRAILING.test(trailing)) return { kind: 'malformed' };
+  return { kind: 'value', value: token };
+}
+
+/**
+ * The prose `Method:` fallback record for one `review-method[<round>]`
+ * occurrence ending at `afterIndex` in `scanContent` (review finding F1):
+ * the NEXT non-blank line after the occurrence's own line, and ONLY when
+ * that line starts with `Method:`, matching the template's layout, where
+ * the `Method:` line immediately follows the marker with no intervening
+ * content. A next non-blank line that is something else (another packed
+ * marker line, a heading, ...) means no prose record, not a search further
+ * down the file. `undefined` when no prose record applies at all.
+ */
+function findProseMethodRecord(lines: string[], lineOffsets: number[], afterIndex: number): ProseMethodLine | undefined {
+  const occurrenceLine = lineIndexForOffset(lineOffsets, afterIndex);
+  for (let i = occurrenceLine + 1; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (trimmed === '') continue;
+    if (!trimmed.startsWith('Method:')) return undefined;
+    return resolveProseMethodLine(trimmed);
+  }
+  return undefined;
+}
+
+/** 0-based start offset of each line in `content` (index 0 is always 0). */
+function buildLineOffsets(content: string): number[] {
+  const offsets = [0];
+  for (let i = 0; i < content.length; i++) {
+    if (content[i] === '\n') offsets.push(i + 1);
+  }
+  return offsets;
+}
+
+/** 0-based index of the line containing character `index`, given `offsets` from `buildLineOffsets`. */
+function lineIndexForOffset(offsets: number[], index: number): number {
+  let lo = 0;
+  let hi = offsets.length - 1;
+  let ans = 0;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (offsets[mid] <= index) {
+      ans = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return ans;
+}
+
+interface ReviewMethodComplianceResult {
+  reasons: string[];
+}
+
+/**
+ * Fail-closed check: a round that DECLARED a `review-method[<round>]` (the
+ * `review_method` named in that round's briefing) must be matched by a
+ * recorded `method_applied` that is AT LEAST as strong (`normal < rigorous <
+ * adversarial`), read from either channel: an explicit
+ * `method-applied[<round>]` marker, or (review finding F1) the template's own
+ * `Method: <value>` prose line immediately following the declaration. A round
+ * with no matching record on EITHER channel, or one recording a WEAKER
+ * method, is an explicit named blocker; when BOTH channels exist for a round
+ * and disagree, that is its own named blocker (neither wins silently). All
+ * per-category reasons are bounded (`joinBounded`, review finding F5) rather
+ * than one reason per round. Backward compatible by construction: a review
+ * file with NO well-formed `review-method[...]` marker at all returns no
+ * reasons from the comparison (though a malformed or conflicting near-miss of
+ * either marker still blocks, and an orphan `method-applied[<round>]` with no
+ * matching declaration is silently ignored, documented rather than evaluated,
+ * mirroring how a round nobody declared has nothing to check it against).
+ *
+ * The `Method:` prose fallback (round 3, review findings F1/F2, tightened
+ * round 4) is read only when BOTH hold: (F1) the text after the recognized
+ * value token is empty, end-of-sentence punctuation only, or a balanced
+ * parenthetical aside followed only by end-of-sentence punctuation -- a
+ * qualified or multi-clause sentence whose first word merely happens to be
+ * one of the three values (`Method: rigorous for every round except ...
+ * (adversarial); ...`, the real shape found in `quickwins-batch48`) is a
+ * malformed record, not silently read as that first word, and neither is an
+ * aside that never closes or that has trailing text after it closes; and
+ * (F2, corrected round 4) the round's OWN declaration line carries exactly
+ * one DISTINCT well-formed `review-method[...]` round -- several rounds
+ * packed onto one shared line (also `quickwins-batch48`'s
+ * `T-011-R1`/`R2`/`R3`) never resolve via the following `Method:` line, since
+ * one prose line cannot stand for three distinct rounds' own confirmations,
+ * while the SAME round declared twice in agreement on one shared line still
+ * counts as single-occurrence for this gate; such a multi-round line falls
+ * through to the "no matching record" (absent) reason instead, same as if no
+ * `Method:` line followed it at all. Two residuals documented rather than
+ * fixed: a fenced code block sitting between the
+ * `review-method[<round>]` declaration and its `Method:` line is blanked by
+ * `stripQuotedMarkdownText` and so is skipped over rather than treated as
+ * intervening content, and only 05-review-findings.md is read at all, so a
+ * `method-applied[<round>]` recorded in 03-decisions.md or
+ * 04-implementation-summary.md instead is invisible to this check.
+ */
+function scanReviewMethodCompliance(content: string | null): ReviewMethodComplianceResult {
+  if (content === null) return { reasons: [] };
+
+  const scanContent = stripQuotedMarkdownText(content);
+  const lineOffsets = buildLineOffsets(scanContent);
+  const lines = scanContent.split(/\r?\n/);
+
+  const declared = collectRoundMarkers(content, 'review-method');
+  const applied = collectRoundMarkers(content, 'method-applied');
+  const reasons: string[] = [];
+
+  if (declared.malformedExcerpts.length > 0) {
+    reasons.push(
+      `malformed review-method marker(s) in 05-review-findings.md: ${joinBounded(declared.malformedExcerpts, 5, ' | ')} ` +
+        "(expected '<!-- review-method[<round>] = normal|rigorous|adversarial -->' with one concrete value)",
+    );
+  }
+  if (applied.malformedExcerpts.length > 0) {
+    reasons.push(
+      `malformed method-applied marker(s) in 05-review-findings.md: ${joinBounded(applied.malformedExcerpts, 5, ' | ')} ` +
+        "(expected '<!-- method-applied[<round>] = normal|rigorous|adversarial -->' with one concrete value)",
+    );
+  }
+  if (declared.conflicts.size > 0) {
+    const items = [...declared.conflicts.values()].map((c) => `'${c.round}' (${c.values.join(' vs ')})`);
+    reasons.push(
+      `conflicting review-method value(s) in 05-review-findings.md for round(s): ${joinBounded(items, 5, ' | ')} ` +
+        '(duplicate review-method markers for the same round must agree)',
+    );
+  }
+  if (applied.conflicts.size > 0) {
+    const items = [...applied.conflicts.values()].map((c) => `'${c.round}' (${c.values.join(' vs ')})`);
+    reasons.push(
+      `conflicting method-applied value(s) in 05-review-findings.md for round(s): ${joinBounded(items, 5, ' | ')} ` +
+        '(duplicate method-applied markers for the same round must agree)',
+    );
+  }
+
+  // Backward compatible: no well-formed review-method marker at all → the
+  // comparison below never applies, unaffected. (Only true in the narrow
+  // sense: the malformed/conflict reasons above already ran unconditionally,
+  // so a file with no genuine marker but a near-miss or wrapper-less mention
+  // of either field still blocks via those, not via the comparison below.)
+  if (declared.markers.size === 0) return { reasons };
+
+  // review finding F2 (round 3, corrected round 4): the `Method:` prose
+  // fallback is only safe to associate with a round when its declaration LINE
+  // carries exactly one DISTINCT well-formed `review-method[...]` round. Real
+  // runs pack several rounds' declarations onto one line followed by a single
+  // shared `Method:` summary line (e.g. batch48's `T-011-R1`/`R2`/`R3` sharing
+  // one line and one following `Method:` line): reading that one prose line
+  // as EACH packed round's own record would let one line silently clear every
+  // round packed with it. Round 3 counted raw occurrences per line, which
+  // wrongly blocked an agreeing SAME-round duplicate declared twice on one
+  // line (`<!-- review-method[R1] = adversarial --> <!-- review-method[R1] =
+  // adversarial -->`) as if two different rounds shared it, even though such
+  // duplicates are documented (review finding F3) as tolerated when they
+  // agree. Round 4 counts DISTINCT lowercased rounds per line instead, so a
+  // repeated declaration of the same round does not spoil its own
+  // single-occurrence gate.
+  const declaredRoundsPerLine = new Map<number, Set<string>>();
+  for (const occ of declared.occurrences) {
+    const ln = lineIndexForOffset(lineOffsets, occ.endIndex);
+    const roundsOnLine = declaredRoundsPerLine.get(ln) ?? new Set<string>();
+    roundsOnLine.add(occ.round.toLowerCase());
+    declaredRoundsPerLine.set(ln, roundsOnLine);
+  }
+
+  const disagreeItems: string[] = [];
+  const malformedProseItems: string[] = [];
+  const absentItems: string[] = [];
+  const weakerItems: string[] = [];
+
+  for (const [lowerRound, decl] of declared.markers) {
+    const rec = applied.markers.get(lowerRound);
+    const declLine = lineIndexForOffset(lineOffsets, decl.endIndex);
+    const singleOccurrenceLine = (declaredRoundsPerLine.get(declLine)?.size ?? 0) === 1;
+    const prose = singleOccurrenceLine ? findProseMethodRecord(lines, lineOffsets, decl.endIndex) : undefined;
+
+    if (prose?.kind === 'malformed') {
+      malformedProseItems.push(`'${decl.round}'`);
+      continue;
+    }
+    const proseValue = prose?.kind === 'value' ? prose.value : undefined;
+
+    if (rec !== undefined && proseValue !== undefined && rec.value !== proseValue) {
+      disagreeItems.push(`'${decl.round}' (marker '${rec.value}' vs prose '${proseValue}')`);
+      continue;
+    }
+
+    const effectiveValue = rec?.value ?? proseValue;
+    if (effectiveValue === undefined) {
+      const otherKeys = [...applied.markers.values()].map((v) => v.round);
+      const note = otherKeys.length > 0 ? ` (recorded method-applied key(s) present but not matching: ${joinBounded(otherKeys, 5, ', ')})` : '';
+      absentItems.push(`'${decl.round}' declared '${decl.value}'${note}`);
+      continue;
+    }
+    if (REVIEW_METHOD_STRENGTH[effectiveValue] < REVIEW_METHOD_STRENGTH[decl.value]) {
+      weakerItems.push(`'${decl.round}' declared '${decl.value}', recorded '${effectiveValue}'`);
+    }
+  }
+
+  if (disagreeItems.length > 0) {
+    reasons.push(
+      `round(s) with conflicting method_applied records in 05-review-findings.md: ${joinBounded(disagreeItems, 5, ' | ')} ` +
+        '(the method-applied marker and the Method: prose line disagree; make them match)',
+    );
+  }
+  if (malformedProseItems.length > 0) {
+    reasons.push(
+      `round(s) with a malformed 'Method:' prose record in 05-review-findings.md: ${joinBounded(malformedProseItems, 5, ' | ')} ` +
+        "(expected 'Method: normal|rigorous|adversarial ...' naming exactly one of the three)",
+    );
+  }
+  if (absentItems.length > 0) {
+    reasons.push(
+      `round(s) with no matching method_applied record in 05-review-findings.md: ${joinBounded(absentItems, 5, ' | ')} ` +
+        "(add '<!-- method-applied[<round>] = <value> -->' once confirmed, or fill in the immediately-following 'Method: <value>' line)",
+    );
+  }
+  if (weakerItems.length > 0) {
+    reasons.push(
+      `round(s) with a weaker recorded method_applied than declared in 05-review-findings.md: ${joinBounded(weakerItems, 5, ' | ')}`,
+    );
+  }
+
+  return { reasons };
 }
 
 /** Split a `| a | b | ... |` row into trimmed cell strings. */

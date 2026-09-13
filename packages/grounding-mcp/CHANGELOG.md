@@ -4,6 +4,235 @@
 
 ### Added
 
+- `readOwRunCompleteness()` now parses the review-method axis the
+  orchestrator-workflow kit added in 0.32.0
+  (`<!-- review-method[<round>] = normal|rigorous|adversarial -->`, one
+  marker per reviewer round above the Findings table) and fails
+  completeness, with a named reason, when a round's recorded
+  `method_applied` is weaker than its declared `review_method`, or is
+  missing entirely. The kit template has no dedicated marker yet for the
+  reviewer's own returned `method_applied` (transferred into free prose by
+  hand today), so this reader defines the counterpart grammar it requires:
+  `<!-- method-applied[<round>] = normal|rigorous|adversarial -->`, using
+  the same round key. `normal < rigorous < adversarial`; an equal or
+  stronger recorded method passes. A review file carrying no well-formed
+  `review-method[...]` marker at all is unaffected (backward compatible).
+  Parsing is occurrence-scoped rather than whole-line-scoped, unlike the
+  `run-base` keyed grammar: real review files pack several rounds' markers
+  onto one line, and a whole-line requirement would misclassify that as
+  malformed. A near-miss occurrence (wrong wrapper case/spacing, or a
+  value that is not exactly one of the three words, including the
+  template's own pipe-joined legend value used with a real round key) is
+  reported as its own malformed-marker blocker rather than silently
+  ignored, and a key that is itself the template's own `<round>`
+  placeholder is skipped as a documentation example, mirroring the
+  existing `run-base` marker's own placeholder-key and malformed-line
+  treatment. See README.md's "Review-method axis" section.
+
+  Corpus measurement (round 1's anchor, made concrete in round 2, corrected
+  and completed in round 3, review finding F3): 7 real
+  `05-review-findings.md` files authored under kit 0.32.0 carry a
+  `review-method[...]` or `method-applied[...]` occurrence, all under this
+  workspace's `.ai/runs/` run directories (not this package's own):
+  `2026-09-12-quickwins-batch48` (27 occurrences on 11 lines),
+  `2026-09-13-open-pool-batch50` (5 on 5), `2026-09-11-memory-sync-wipe`
+  (5 on 5), `2026-09-12-agent-dx-external-prs` (8 rounds across 3 PRs,
+  all 8 packed onto 1 line), `2026-09-11-sync-peer-file-conflict` (3 on 3,
+  omitted from round 2's citation), `2026-09-11-review-method-axis` (2 on 2,
+  likewise omitted from round 2's citation), and
+  `2026-09-13-quickwins-batch51` (14 on 14 as of round 4; also 14
+  `method-applied[...]` occurrences on 14 lines, the only file with any).
+  Totals across all 7: 64 `review-method[...]` occurrences on 41 lines; the
+  6 files excluding `batch51` carry 50 on 27; 14 `method-applied[...]`
+  occurrences on 14 lines exist anywhere in the corpus, all in `batch51`.
+  `batch51`'s own `05-review-findings.md` is the run this very fix ships in
+  and its round count keeps growing while the run is open, so its figures
+  above are a measurement taken at the time of writing, not a fixed corpus
+  fact (round 2 cited it at 5 rounds / 5 occurrences of each marker; by
+  round 3 it had grown to 10 of each; by round 4, 14 of each). Round 1's
+  mandatory-marker design (above) therefore
+  failed every one of the other 6 files outright (27/5/5/8/3/2 rounds
+  respectively reported as missing `method_applied`, one reason per
+  round), and would also fail a run authored exactly from the shipped
+  template, which carries no `method-applied[...]` marker at all: only
+  its own prose `Method: <value> (...)` line. Round 2 (review finding F1)
+  fixes this:
+
+  - `method-applied[<round>]` stays the explicit, preferred record, but the
+    template's own `Method: <value> (...)` line immediately following a
+    `review-method[<round>]` declaration is now ALSO accepted as a
+    fallback record when it names one of the three values (the template's
+    unfilled `normal | rigorous | adversarial` legend is recognized and
+    skipped as a placeholder, not misread as the value `normal`); a
+    `Method:` line naming none of the three is its own malformed-record
+    blocker, and a round where the marker and the prose line disagree is
+    its own named conflict (neither silently wins). Cross-repo obligation,
+    unchanged: the shipped
+    `packages/orchestrator-workflow/assets/templates/05-review-findings.md`
+    should still add the `method-applied[<round>]` marker line; until then,
+    a run with a FILLED `Method:` line passes via this fallback, and a run
+    recording neither channel needs one line added to migrate.
+  - Quoted occurrences (a marker inside a fenced code block or inline code
+    span, e.g. quoted in prose or inside a findings-table cell) no longer
+    register as live declarations (review finding F2): every net in
+    `collectRoundMarkers` now runs against the same quoting-stripped text
+    `run-base` already uses for its own phrase check
+    (`stripQuotedMarkdownText`, generalized from the run-base-only
+    `stripQuotedRunBaseText`), a deliberate asymmetry from `run-base`,
+    which is quoting-aware only on its phrase net; see README.md.
+  - Duplicate markers for one round now agree or block: identical
+    duplicates are tolerated (first occurrence wins, as before), but
+    disagreeing duplicates are a named conflict rather than a silent
+    first-wins pick (review finding F3).
+  - A wrapper-less marker line (`review-method[R1] = adversarial` or
+    `method-applied[R1] = normal` with no HTML comment at all) is no
+    longer invisible: it is now caught by a wrapper-less net mirroring the
+    `run-base` phrase net's own fail-closed discipline (review finding
+    F4).
+  - Per-round reasons are now bounded (`joinBounded`, review finding F5):
+    the "absent" and "weaker" cases each collapse into one reason per
+    category naming the affected rounds, instead of one reason per round
+    (batch48 alone produced 27 separate reasons under round 1's design).
+    Replaying the round-2 built reader against the corpus files above with
+    this fix: batch48 collapsed from 27 per-round reasons to 1 bounded
+    reason still naming 24 rounds (the other 3, `T-011-R1`/`R2`/`R3`,
+    resolved via the new prose fallback at the time, since the file's own
+    summary `Method:` line happens to immediately follow that round's
+    packed marker line); open-pool-batch50 and memory-sync-wipe each
+    collapsed from 5 reasons to 1 naming all 5 (no `Method:` line follows
+    any of their markers, so none resolve); agent-dx-external-prs
+    collapsed from 8 reasons to 1 naming all 8 (its only `Method:` line is
+    the unfilled legend, correctly still not accepted); the `batch51` run
+    stayed fully clean (its rounds already carry matching explicit
+    `method-applied[...]` markers). The remaining unresolved rounds were a
+    genuine authoring gap (no per-round `Method:` line to read), not a
+    reader defect. Round 3 (below) revisits the `T-011` resolution: it was
+    an artifact of reading one packed line's `Method:` summary as if it
+    confirmed each of the three rounds packed onto it, not a genuine
+    per-round confirmation.
+  - Malformed-marker excerpts now carry their 1-based line number (review
+    finding F6, mirroring `run-base`'s own `line N: ` prefix), and the
+    round-key placeholder check reuses the existing `PLACEHOLDER_KEY`
+    regex instead of a duplicate `ROUND_PLACEHOLDER_KEY`.
+  - An orphan `method-applied[<round>]` marker with no matching declared
+    `review-method[<round>]` is documented as silently ignored (there is
+    nothing to check it against); a round whose declared and recorded keys
+    merely differ in spelling (e.g. `review-method[T-003 R1]` vs
+    `method-applied[R1]`) now names the mismatched keys actually present in
+    the file in its "no matching record" reason, the same way `run-base`'s
+    own key-mismatch reason does.
+
+  Round 3 (review findings F1-F4) closes two fail-open gaps the corpus
+  recount above surfaced, corrects the corpus citation itself, and adds
+  targeted fixtures:
+
+  - **F1 (correctness):** `resolveProseMethodLine` previously accepted the
+    FIRST token after `Method:` as the record whenever it happened to name
+    one of the three words, with no check on what followed. A real corpus
+    line reads `Method: rigorous for every round except T-007 R1 and
+    T-010 R1 (adversarial); \`method_applied\` matched the briefing in all
+    32 returns.` (`quickwins-batch48`, the line immediately following its
+    packed `T-011-R1`/`R2`/`R3` declarations): the first token, `rigorous`,
+    is not a record of the round it follows, it is the first word of a
+    qualifying sentence about OTHER rounds. The trailing text after the
+    token must now be empty, end-of-sentence punctuation only, or start
+    with `(` (the template's own filled shape,
+    `Method: adversarial (briefing and return match).`); anything else is
+    a malformed record, not a silently-accepted first word.
+  - **F2 (correctness):** the prose fallback was associated with the
+    occurrence's physical LINE, so a line packing several rounds'
+    declarations together (the real authoring convention; see
+    `collectRoundMarkers`'s own docstring) let one following `Method:`
+    line clear every round packed onto it. `quickwins-batch48`'s
+    `T-011-R1`/`R2`/`R3` share exactly this shape. The fallback now applies
+    only when the declaration's own line carries exactly one well-formed
+    `review-method[...]` occurrence; a packed line falls through to the
+    existing "no matching record" (absent) reason for every round on it,
+    the same outcome as if no `Method:` line followed at all.
+  - **F3 (docs):** the round-2 corpus citation named only 5 of the 7 real
+    `05-review-findings.md` files that actually carry a marker, omitting
+    `sync-peer-file-conflict` and `review-method-axis`; the corrected
+    7-file citation is folded into the corpus-measurement paragraph above,
+    `collectRoundMarkers`'s own docstring, and README.md's corpus pointer,
+    all three now citing the same figures. Re-measured by grepping every
+    `05-review-findings.md` under this workspace's `.ai/runs/` for
+    `review-method[` and `method-applied[` occurrence and line counts (see
+    the task's implementation report for the exact command); per-file
+    breakdown is in the corpus-measurement paragraph above. Replaying the
+    round-3 built reader against scratch copies of all 7 files (isolating
+    only the review-method-axis reasons from each file's full reason list):
+    `quickwins-batch48` moves from 1 bounded reason naming 24 rounds absent
+    to 1 bounded reason naming all 27 (the `T-011` trio no longer clears
+    via the packed line's `Method:` summary, see F2); `open-pool-batch50`
+    (5 absent), `memory-sync-wipe` (5 absent),
+    `agent-dx-external-prs` (8 absent), `sync-peer-file-conflict`
+    (3 absent), `review-method-axis` (2 absent), and `quickwins-batch51`
+    (0 reasons, fully clean via its explicit `method-applied[...]`
+    markers) are unchanged by F1/F2, since none of their declaration lines
+    are immediately followed by a `Method:` line at all.
+  - **F4 (tests, docs):** added a CRLF fixture covering the method axis
+    (a `review-method[...]` marker plus its `Method:` prose fallback under
+    `\r\n` line endings) and a fixture pinning that a malformed, wrapper-less
+    `method-applied[...]` mention with NO `review-method[...]` marker
+    anywhere in the file still blocks (the malformed-marker nets run
+    unconditionally, before the "no declaration at all" backward-compatible
+    early return). README.md's backward-compatibility sentence is
+    corrected to say so explicitly: a file is unaffected only when it has
+    no well-formed marker AND no marker-shaped mention of either field.
+  - Two residuals documented rather than fixed (README.md): a fenced code
+    block sitting between a `review-method[<round>]` declaration and its
+    `Method:` line is blanked by the quoting strip and skipped over rather
+    than treated as intervening content; and only `05-review-findings.md`
+    is read at all, so a `method-applied[<round>]` recorded in
+    `03-decisions.md` or `04-implementation-summary.md` instead is
+    invisible to this check.
+
+  Round 4 (accept-with-notes lows from round 3's review) closes two more
+  fail-open shapes each of round 3's own fixes introduced, and cleans up
+  three docs residuals:
+
+  - **F1 correction (correctness):** round 3's `PROSE_METHOD_TRAILING`
+    (`/^(?:[.!?]*|\(.*)$/`) accepted anything after an opening `(`
+    verbatim, so a value followed by a parenthetical that never closes
+    (`Method: adversarial (`) or one with text appended after it DOES
+    close (`Method: adversarial (x) but actually normal`) both wrongly
+    resolved. The trailing grammar now requires a BALANCED parenthetical
+    aside followed only by end-of-sentence punctuation
+    (`/^(?:[.!?]*|\([^)]*\)[.!?]*)$/`); both shapes above are malformed
+    records now, and the template's own filled shape (`Method: adversarial
+    (briefing and return match).`) still resolves.
+  - **F2 correction (correctness):** round 3's single-occurrence-line gate
+    counted raw well-formed occurrences per line, so an AGREEING same-round
+    duplicate declared twice on one shared line (tolerated per review
+    finding F3) was wrongly treated as if two different rounds shared the
+    line, and fell through to absent. The gate now counts DISTINCT
+    lowercased rounds per line instead: a repeated agreeing declaration of
+    one round no longer spoils its own single-occurrence gate, while two
+    genuinely distinct rounds packed on one line still fall through to
+    absent as before.
+  - (docs) README's fallback-value-token sentence still said the token
+    reads "up to the first whitespace or `(`"; corrected to include the
+    end-of-sentence punctuation the code has always also stopped at
+    (`.`, `!`, `?`).
+  - (docs) the corpus-measurement paragraph's
+    `2026-09-12-agent-dx-external-prs` qualifier, "8 on 1 line, all four
+    packed together", wrongly implied 4 rounds; the line actually packs 8
+    rounds across 3 PRs (`PR-245` x1, `PR-247` x3, `PR-248` x4) onto 1
+    line, corrected accordingly. `quickwins-batch51`'s own moving figure
+    is re-measured at 14 `review-method[...]`/`method-applied[...]`
+    occurrences on 14 lines each as of this round (was 10/10 at round 3);
+    the corpus totals above are updated to match (64 on 41), still with
+    the same "measured at time of writing, not fixed" hedge since the run
+    stays open.
+  - (maintainability) the shipped template's placeholder `review-method`
+    marker literal was pinned only inline in one test fixture, with no
+    reciprocal-lockstep comment naming its agent-dx counterpart the way
+    `OW_FINDINGS_PLACEHOLDER_ROW` is. It is now also exported as
+    `OW_REVIEW_METHOD_PLACEHOLDER_MARKER`, carrying the same
+    reciprocal-lockstep comment (agent-dx's
+    `packages/orchestrator-workflow/test/template-markers.test.ts`), and
+    the fixture uses the constant instead of a bare string literal.
+
 - CI now packs this package (`npm pack`) together with its version-locked
   `@lannguyensi/*` sibling dependencies (a breadth-first walk seeded with
   this package, also scanning each discovered sibling's own exact-pinned
