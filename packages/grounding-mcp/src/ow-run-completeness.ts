@@ -1341,6 +1341,16 @@ interface RoundMarkerScan {
   malformedExcerpts: string[];
   /** Rounds (keyed by lowercased round) whose well-formed occurrences disagree on value. */
   conflicts: Map<string, RoundConflict>;
+  /**
+   * EVERY well-formed occurrence, in file order, one entry per occurrence
+   * (not deduped by round): a round packed twice on one line, or two
+   * different rounds packed on one line, each contribute their own entry.
+   * Used (review finding F2, round 3) to count how many well-formed
+   * `review-method[...]` occurrences share one physical line, since the
+   * `Method:` prose fallback below is only safe to associate with a line
+   * that declares exactly one round.
+   */
+  occurrences: RoundMarker[];
 }
 
 /**
@@ -1351,10 +1361,14 @@ interface RoundMarkerScan {
  * authored with several rounds packed onto one line
  * (`<!-- review-method[T-001-R1] = rigorous --> <!-- review-method[T-001-R2]
  * = rigorous -->`), so a whole-line requirement would misclassify that
- * legitimate shape as malformed. Anchored by a corpus measurement (5 real
- * `05-review-findings.md` files under kit 0.32.0, 50 `review-method`
- * occurrences on 27 lines, the largest packing 27 onto 11 lines; see
- * CHANGELOG [Unreleased] for the per-file figures).
+ * legitimate shape as malformed. Anchored by a corpus measurement (7 real
+ * `05-review-findings.md` files under kit 0.32.0, drawn from this workspace's
+ * `.ai/runs/` run directories, not this package's own: 60 `review-method`
+ * occurrences on 37 lines total, the largest (`quickwins-batch48`) packing 27
+ * onto 11 lines; see CHANGELOG [Unreleased] for the per-file figures. One of
+ * the 7, `quickwins-batch51`, is the very run this fix ships in, so its own
+ * count is a moving target measured at the time of writing, not a fixed
+ * corpus fact).
  *
  * Quoting (review finding F2): unlike the `run-base` grammar above, where
  * only the position-independent phrase net is quoting-aware, EVERY net here
@@ -1396,6 +1410,7 @@ function collectRoundMarkers(content: string, field: 'review-method' | 'method-a
   const seenValues = new Map<string, { round: string; values: string[] }>();
   const malformedExcerpts: string[] = [];
   const claimedRanges: Array<[number, number]> = [];
+  const occurrences: RoundMarker[] = [];
 
   let m: RegExpExecArray | null;
   while ((m = strictRe.exec(scanContent)) !== null) {
@@ -1407,12 +1422,14 @@ function collectRoundMarkers(content: string, field: 'review-method' | 'method-a
       malformedExcerpts.push(`line ${lineAt(scanContent, m.index)}: ${truncate(m[0].trim(), 80)}`);
       continue;
     }
+    const endIndex = m.index + m[0].length;
+    occurrences.push({ round, value, endIndex });
     const lowerRound = round.toLowerCase();
     const seen = seenValues.get(lowerRound) ?? { round, values: [] };
     if (!seen.values.includes(value)) seen.values.push(value);
     seenValues.set(lowerRound, seen);
     if (!markers.has(lowerRound)) {
-      markers.set(lowerRound, { round, value, endIndex: m.index + m[0].length });
+      markers.set(lowerRound, { round, value, endIndex });
     }
   }
 
@@ -1439,7 +1456,7 @@ function collectRoundMarkers(content: string, field: 'review-method' | 'method-a
   }
   for (const lowerRound of conflicts.keys()) markers.delete(lowerRound);
 
-  return { markers, malformedExcerpts, conflicts };
+  return { markers, malformedExcerpts, conflicts, occurrences };
 }
 
 /** The rest of `content`'s line starting at `index`, trimmed (for a malformed-marker excerpt). */
@@ -1470,23 +1487,47 @@ type ProseMethodLine = { kind: 'value'; value: string } | { kind: 'placeholder' 
 const PROSE_METHOD_PLACEHOLDER = /^normal\s*\|\s*rigorous\s*\|\s*adversarial\b/;
 
 /**
+ * The trailing text allowed to follow the value token on a `Method:` line for
+ * it to still count as a record (review finding F1, round 3): empty, plain
+ * end-of-sentence punctuation only (`.`, `!`, `?`, in any combination, e.g.
+ * `?!`), or an opening `(` starting the template's own explanatory aside
+ * (`Method: adversarial (briefing and return match).`). Anything else -- a
+ * qualifying clause, a second value, an unrelated sentence -- means the token
+ * was not actually naming the round's method, it was just the first word of
+ * unrelated prose (the real batch48 line this guards against: `Method:
+ * rigorous for every round except T-007 R1 and T-010 R1 (adversarial); ...`,
+ * where a bare first-token read would wrongly record `rigorous`).
+ */
+const PROSE_METHOD_TRAILING = /^(?:[.!?]*|\(.*)$/;
+
+/**
  * Resolve a trimmed line already known to start with `Method:` (case as in
  * the template) to its record. The value token is the text after `Method:`
- * up to the first whitespace or `(`, matching how the template's own filled
- * example reads (`Method: adversarial (briefing and return match).`). The
- * template's own unfilled pipe-joined legend is recognized as a WHOLE phrase
- * first (its first token, `normal`, would otherwise misread as a valid,
- * wrong value) and treated as a placeholder, not a record. Anything else that
- * does not name exactly one of the three words is a malformed record
- * (review finding F1: "a `Method:` line that names none of the three is a
- * malformed record").
+ * up to the first whitespace, `(`, or end-of-sentence punctuation (`.`, `!`,
+ * `?`), matching how the template's own filled example reads (`Method:
+ * adversarial (briefing and return match).`) while still letting a bare
+ * `Method: adversarial.` (value immediately followed by a full stop, no
+ * space) resolve rather than swallowing the period into the token (review
+ * finding F1, round 3). The template's own unfilled pipe-joined legend is
+ * recognized as a WHOLE phrase first (its first token, `normal`, would
+ * otherwise misread as a valid, wrong value) and treated as a placeholder,
+ * not a record. A token that names one of the three words only counts as a
+ * record when the text AFTER it is empty, end-of-sentence punctuation only,
+ * or an opening `(` (see `PROSE_METHOD_TRAILING`, review finding F1, round
+ * 3): a qualified or multi-clause sentence whose first word merely happens
+ * to be a valid value is a malformed record, not a silently-accepted one.
+ * Anything else -- no recognized token, or a recognized token followed by
+ * disqualifying trailing text -- is a malformed record (review finding F1:
+ * "a `Method:` line that names none of the three is a malformed record").
  */
 function resolveProseMethodLine(trimmedLine: string): ProseMethodLine {
   const rest = trimmedLine.slice('Method:'.length).trim();
   if (PROSE_METHOD_PLACEHOLDER.test(rest)) return { kind: 'placeholder' };
-  const token = /^[^\s(]+/.exec(rest)?.[0] ?? '';
-  if (REVIEW_METHOD_VALUES.has(token)) return { kind: 'value', value: token };
-  return { kind: 'malformed' };
+  const token = /^[^\s(.!?]+/.exec(rest)?.[0] ?? '';
+  if (!REVIEW_METHOD_VALUES.has(token)) return { kind: 'malformed' };
+  const trailing = rest.slice(token.length).trim();
+  if (!PROSE_METHOD_TRAILING.test(trailing)) return { kind: 'malformed' };
+  return { kind: 'value', value: token };
 }
 
 /**
@@ -1557,6 +1598,26 @@ interface ReviewMethodComplianceResult {
  * either marker still blocks, and an orphan `method-applied[<round>]` with no
  * matching declaration is silently ignored, documented rather than evaluated,
  * mirroring how a round nobody declared has nothing to check it against).
+ *
+ * The `Method:` prose fallback (round 3, review findings F1/F2) is read only
+ * when BOTH hold: (F1) the text after the recognized value token is empty,
+ * end-of-sentence punctuation only, or an opening `(` -- a qualified or
+ * multi-clause sentence whose first word merely happens to be one of the
+ * three values (`Method: rigorous for every round except ... (adversarial);
+ * ...`, the real shape found in `quickwins-batch48`) is a malformed record,
+ * not silently read as that first word; and (F2) the round's OWN declaration
+ * line carries exactly one well-formed `review-method[...]` occurrence --
+ * several rounds packed onto one shared line (also `quickwins-batch48`'s
+ * `T-011-R1`/`R2`/`R3`) never resolve via the following `Method:` line, since
+ * one prose line cannot stand for three distinct rounds' own confirmations;
+ * such a round falls through to the "no matching record" (absent) reason
+ * instead, same as if no `Method:` line followed it at all. Two residuals
+ * documented rather than fixed: a fenced code block sitting between the
+ * `review-method[<round>]` declaration and its `Method:` line is blanked by
+ * `stripQuotedMarkdownText` and so is skipped over rather than treated as
+ * intervening content, and only 05-review-findings.md is read at all, so a
+ * `method-applied[<round>]` recorded in 03-decisions.md or
+ * 04-implementation-summary.md instead is invisible to this check.
  */
 function scanReviewMethodCompliance(content: string | null): ReviewMethodComplianceResult {
   if (content === null) return { reasons: [] };
@@ -1597,8 +1658,26 @@ function scanReviewMethodCompliance(content: string | null): ReviewMethodComplia
   }
 
   // Backward compatible: no well-formed review-method marker at all → the
-  // comparison below never applies, unaffected.
+  // comparison below never applies, unaffected. (Only true in the narrow
+  // sense: the malformed/conflict reasons above already ran unconditionally,
+  // so a file with no genuine marker but a near-miss or wrapper-less mention
+  // of either field still blocks via those, not via the comparison below.)
   if (declared.markers.size === 0) return { reasons };
+
+  // review finding F2 (round 3): the `Method:` prose fallback is only safe to
+  // associate with a round when its declaration LINE carries exactly one
+  // well-formed `review-method[...]` occurrence. Real runs pack several
+  // rounds' declarations onto one line followed by a single shared `Method:`
+  // summary line (e.g. batch48's `T-011-R1`/`R2`/`R3` sharing one line and one
+  // following `Method:` line): reading that one prose line as EACH packed
+  // round's own record would let one line silently clear every round packed
+  // with it. Count well-formed occurrences per physical line from `declared`
+  // (the field the prose fallback answers for), keyed by line index.
+  const declaredOccurrencesPerLine = new Map<number, number>();
+  for (const occ of declared.occurrences) {
+    const ln = lineIndexForOffset(lineOffsets, occ.endIndex);
+    declaredOccurrencesPerLine.set(ln, (declaredOccurrencesPerLine.get(ln) ?? 0) + 1);
+  }
 
   const disagreeItems: string[] = [];
   const malformedProseItems: string[] = [];
@@ -1607,7 +1686,9 @@ function scanReviewMethodCompliance(content: string | null): ReviewMethodComplia
 
   for (const [lowerRound, decl] of declared.markers) {
     const rec = applied.markers.get(lowerRound);
-    const prose = findProseMethodRecord(lines, lineOffsets, decl.endIndex);
+    const declLine = lineIndexForOffset(lineOffsets, decl.endIndex);
+    const singleOccurrenceLine = (declaredOccurrencesPerLine.get(declLine) ?? 0) === 1;
+    const prose = singleOccurrenceLine ? findProseMethodRecord(lines, lineOffsets, decl.endIndex) : undefined;
 
     if (prose?.kind === 'malformed') {
       malformedProseItems.push(`'${decl.round}'`);
