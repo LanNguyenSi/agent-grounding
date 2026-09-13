@@ -429,6 +429,11 @@ export function readOwRunCompleteness(repoPath: string): OwRunCompleteness {
     reasons.push(formatBlocker);
   }
 
+  const methodScan = scanReviewMethodCompliance(review);
+  for (const r of methodScan.reasons) {
+    reasons.push(r);
+  }
+
   const runBaseSelection = selectRunBase(goal, repoKeys(worktreeRoot));
   for (const r of runBaseSelection.reasons) {
     reasons.push(r);
@@ -1278,6 +1283,158 @@ function findingsFormatBlocker(content: string | null): string | null {
     }
   }
   return null;
+}
+
+// Review-method axis (orchestrator-workflow kit 0.32.0, assets/templates/05-review-findings.md):
+// each review round may declare `<!-- review-method[<round>] = normal|rigorous|adversarial -->`
+// above the Findings table. The kit template has no dedicated marker for the
+// reviewer's OWN returned `method_applied` yet (it is transferred by hand into
+// free prose today); this reader defines the counterpart marker
+// `<!-- method-applied[<round>] = normal|rigorous|adversarial -->` as the
+// machine-readable grammar it requires for that field — see README/CHANGELOG.
+// Strength order used for the weaker/absent comparison below.
+const REVIEW_METHOD_STRENGTH: Record<string, number> = { normal: 0, rigorous: 1, adversarial: 2 };
+
+/** One well-formed `<field>[<round>] = <value>` marker occurrence. */
+interface RoundMarker {
+  /** The round key exactly as authored (trimmed, original case). */
+  round: string;
+  /** One of `normal`/`rigorous`/`adversarial` (enum-validated). */
+  value: string;
+}
+
+/** Result of scanning `content` for one marker field (`review-method` or `method-applied`). */
+interface RoundMarkerScan {
+  /** Well-formed markers keyed by lowercased round. First occurrence per round wins. */
+  markers: Map<string, RoundMarker>;
+  /** Short excerpts of lines that attempted the marker but did not resolve to a well-formed one. */
+  malformedExcerpts: string[];
+}
+
+/** A key/value that is itself the template's own documentation placeholder, not an authored marker. */
+const ROUND_PLACEHOLDER_KEY = /^<[^>]*>$/;
+
+/**
+ * Collect every well-formed `<!-- <field>[<round>] = <value> -->` occurrence
+ * in `content`, plus every occurrence that attempted the marker but did not
+ * resolve to one. Deliberately occurrence-scoped rather than whole-line-scoped
+ * (unlike the `run-base` keyed grammar above): the review-method note is
+ * authored with several rounds packed onto one line
+ * (`<!-- review-method[T-001-R1] = rigorous --> <!-- review-method[T-001-R2]
+ * = rigorous -->`), so a whole-line requirement would misclassify that
+ * legitimate shape as malformed. Anchored by a corpus measurement, see
+ * CHANGELOG [Unreleased].
+ *
+ * A match whose round key is placeholder-shaped (`<round>`, the template's own
+ * documentation example) is skipped entirely — not counted as present, not
+ * malformed — the same treatment `PLACEHOLDER_KEY`/`PLACEHOLDER_ROW_CELLS`
+ * give the run-base and findings-table template examples above. A match whose
+ * value is not exactly one of `normal`/`rigorous`/`adversarial` (including the
+ * template's own pipe-joined legend value used with a REAL, non-placeholder
+ * key) is malformed. A separate, case-insensitive loose net catches wrapper
+ * near-misses that never even reach the strict shape (wrong case, extra
+ * dashes, stray whitespace before the bracket) so those block too instead of
+ * being silently ignored, mirroring the run-base malformed-line discipline.
+ */
+function collectRoundMarkers(content: string, field: 'review-method' | 'method-applied'): RoundMarkerScan {
+  const strictRe = new RegExp(`<!--\\s*${field}\\[([^\\]\\n]+)\\]\\s*=\\s*(\\S+)\\s*-->`, 'g');
+  const looseRe = new RegExp(`<!--+\\s*${field}\\s*\\[`, 'gi');
+
+  const markers = new Map<string, RoundMarker>();
+  const malformedExcerpts: string[] = [];
+  const strictRanges: Array<[number, number]> = [];
+
+  let m: RegExpExecArray | null;
+  while ((m = strictRe.exec(content)) !== null) {
+    strictRanges.push([m.index, m.index + m[0].length]);
+    const round = m[1].trim();
+    const value = m[2];
+    if (ROUND_PLACEHOLDER_KEY.test(round)) continue; // documentation example, not a marker
+    if (!Object.prototype.hasOwnProperty.call(REVIEW_METHOD_STRENGTH, value)) {
+      malformedExcerpts.push(truncate(m[0].trim(), 80));
+      continue;
+    }
+    const lowerRound = round.toLowerCase();
+    if (markers.has(lowerRound)) continue; // first occurrence per round wins
+    markers.set(lowerRound, { round, value });
+  }
+
+  let lm: RegExpExecArray | null;
+  while ((lm = looseRe.exec(content)) !== null) {
+    const insideStrict = strictRanges.some(([start, end]) => lm!.index >= start && lm!.index < end);
+    if (insideStrict) continue;
+    malformedExcerpts.push(truncate(excerptFromIndex(content, lm.index), 80));
+  }
+
+  return { markers, malformedExcerpts };
+}
+
+/** The rest of `content`'s line starting at `index`, trimmed (for a malformed-marker excerpt). */
+function excerptFromIndex(content: string, index: number): string {
+  const rest = content.slice(index);
+  const newlineIdx = rest.indexOf('\n');
+  return (newlineIdx === -1 ? rest : rest.slice(0, newlineIdx)).trim();
+}
+
+interface ReviewMethodComplianceResult {
+  reasons: string[];
+}
+
+/**
+ * Fail-closed check: a round that DECLARED a `review-method[<round>]` (the
+ * `review_method` named in that round's briefing) must be matched by a
+ * `method-applied[<round>]` record (this reader's own grammar for the
+ * reviewer's returned `method_applied`, see `collectRoundMarkers`) that is AT
+ * LEAST as strong (`normal < rigorous < adversarial`). A round with no
+ * matching record, or one recording a WEAKER method, is an explicit named
+ * blocker. Backward compatible by construction: a review file with NO
+ * well-formed `review-method[...]` marker at all returns no reasons from the
+ * comparison (though a malformed near-miss of either marker still blocks —
+ * "malformed markers rejected with a reason, not silently ignored" applies
+ * regardless of whether the comparison itself is reached).
+ */
+function scanReviewMethodCompliance(content: string | null): ReviewMethodComplianceResult {
+  if (content === null) return { reasons: [] };
+
+  const declared = collectRoundMarkers(content, 'review-method');
+  const applied = collectRoundMarkers(content, 'method-applied');
+  const reasons: string[] = [];
+
+  if (declared.malformedExcerpts.length > 0) {
+    reasons.push(
+      `malformed review-method marker(s) in 05-review-findings.md: ${joinBounded(declared.malformedExcerpts, 5, ' | ')} ` +
+        "(expected '<!-- review-method[<round>] = normal|rigorous|adversarial -->' with one concrete value)",
+    );
+  }
+  if (applied.malformedExcerpts.length > 0) {
+    reasons.push(
+      `malformed method-applied marker(s) in 05-review-findings.md: ${joinBounded(applied.malformedExcerpts, 5, ' | ')} ` +
+        "(expected '<!-- method-applied[<round>] = normal|rigorous|adversarial -->' with one concrete value)",
+    );
+  }
+
+  // Backward compatible: no well-formed review-method marker at all → the
+  // comparison below never applies, unaffected.
+  if (declared.markers.size === 0) return { reasons };
+
+  for (const [lowerRound, decl] of declared.markers) {
+    const rec = applied.markers.get(lowerRound);
+    if (rec === undefined) {
+      reasons.push(
+        `round '${decl.round}' declared review-method '${decl.value}' but recorded no matching ` +
+          `method_applied (add '<!-- method-applied[${decl.round}] = ${decl.value} -->' once confirmed)`,
+      );
+      continue;
+    }
+    if (REVIEW_METHOD_STRENGTH[rec.value] < REVIEW_METHOD_STRENGTH[decl.value]) {
+      reasons.push(
+        `round '${decl.round}' declared review-method '${decl.value}' but recorded method_applied ` +
+          `'${rec.value}' is weaker`,
+      );
+    }
+  }
+
+  return { reasons };
 }
 
 /** Split a `| a | b | ... |` row into trimmed cell strings. */

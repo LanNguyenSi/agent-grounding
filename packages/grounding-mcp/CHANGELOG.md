@@ -4,6 +4,33 @@
 
 ### Added
 
+- `readOwRunCompleteness()` now parses the review-method axis the
+  orchestrator-workflow kit added in 0.32.0
+  (`<!-- review-method[<round>] = normal|rigorous|adversarial -->`, one
+  marker per reviewer round above the Findings table) and fails
+  completeness, with a named reason, when a round's recorded
+  `method_applied` is weaker than its declared `review_method`, or is
+  missing entirely. The kit template has no dedicated marker yet for the
+  reviewer's own returned `method_applied` (transferred into free prose by
+  hand today), so this reader defines the counterpart grammar it requires:
+  `<!-- method-applied[<round>] = normal|rigorous|adversarial -->`, using
+  the same round key. `normal < rigorous < adversarial`; an equal or
+  stronger recorded method passes. A review file carrying no well-formed
+  `review-method[...]` marker at all is unaffected (backward compatible).
+  Parsing is occurrence-scoped rather than whole-line-scoped, unlike the
+  `run-base` keyed grammar: real review files pack several rounds' markers
+  onto one line, and a whole-line requirement would misclassify that as
+  malformed. A near-miss occurrence (wrong wrapper case/spacing, or a
+  value that is not exactly one of the three words, including the
+  template's own pipe-joined legend value used with a real round key) is
+  reported as its own malformed-marker blocker rather than silently
+  ignored, and a key that is itself the template's own `<round>`
+  placeholder is skipped as a documentation example, mirroring the
+  existing `run-base` marker's own placeholder-key and malformed-line
+  treatment. See README.md's "Review-method axis" section. Anchored by a
+  corpus measurement (multiple review-method markers per line in real
+  review files).
+
 - CI now packs this package (`npm pack`) together with its version-locked
   `@lannguyensi/*` sibling dependencies (a breadth-first walk seeded with
   this package, also scanning each discovered sibling's own exact-pinned
