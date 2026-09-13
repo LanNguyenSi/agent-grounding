@@ -2410,7 +2410,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
 
   it('a tilde-delimited fence around a phrase-carrying bullet is exempt', () => {
     // Round 3 mutation probe (i): disabling the fence branch of
-    // stripQuotedRunBaseText turns this red (the bullet would then block).
+    // stripQuotedMarkdownText turns this red (the bullet would then block).
     const goal = ['# Goal', '~~~', '- <!-- solution-acceptance: run-base[alpha] = aaaaaaa -->', '~~~', ''].join(
       '\n',
     );
