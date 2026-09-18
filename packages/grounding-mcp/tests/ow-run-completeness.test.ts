@@ -316,16 +316,14 @@ describe('readOwRunCompleteness — run dir with only 00/05/06 present (task b35
       review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
     });
     // The reader must not require 01-plan.md .. 04-implementation-summary.md:
-    // assert they are genuinely absent so this test cannot pass on a fixture
-    // that silently writes all seven run files.
-    for (const name of [
-      '01-plan.md',
-      '02-tasks.md',
-      '03-decisions.md',
-      '04-implementation-summary.md',
-    ]) {
-      expect(fs.existsSync(path.join(dir, name))).toBe(false);
-    }
+    // assert the run dir holds ONLY the three named files, not merely that
+    // 01-04 are absent, so this test cannot pass on a fixture that silently
+    // writes an unrelated eighth file alongside 00/05/06.
+    expect(fs.readdirSync(dir).sort()).toEqual([
+      '00-goal.md',
+      '05-review-findings.md',
+      '06-handoff.md',
+    ]);
     const r = readOwRunCompleteness(repo);
     expect(r.complete).toBe(true);
     expect(r.reasons).toEqual([]);
@@ -337,6 +335,12 @@ describe('readOwRunCompleteness — run dir with only 00/05/06 present (task b35
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
     });
+    // Compute the verdict BEFORE writing 01-04 and assert it is itself
+    // complete with no reasons, so a reader that blocks in both states
+    // cannot pass this test by producing two equal blocked verdicts.
+    const before = readOwRunCompleteness(repo);
+    expect(before.complete).toBe(true);
+    expect(before.reasons).toEqual([]);
     fs.writeFileSync(path.join(dir, '01-plan.md'), '# Plan\n\nSteps.\n', 'utf8');
     fs.writeFileSync(path.join(dir, '02-tasks.md'), '# Tasks\n\nT-001\n', 'utf8');
     fs.writeFileSync(path.join(dir, '03-decisions.md'), '# Decisions\n\nNone.\n', 'utf8');
@@ -345,16 +349,10 @@ describe('readOwRunCompleteness — run dir with only 00/05/06 present (task b35
       '# Implementation Summary\n\nDone.\n',
       'utf8',
     );
-    const r = readOwRunCompleteness(repo);
-    expect(r).toEqual({
-      enforced: true,
-      complete: true,
-      reasons: [],
-      runName: '2026-06-22-run',
-      runBase: null,
-      runSource: 'scan',
-      runBaseKind: 'absent',
-    });
+    const after = readOwRunCompleteness(repo);
+    // The full verdict object must be unchanged in every field, not just
+    // `complete`, so any field a future reader derives from 01-04 also fails.
+    expect(after).toEqual(before);
   });
 });
 
