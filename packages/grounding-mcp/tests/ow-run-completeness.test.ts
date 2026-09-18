@@ -308,6 +308,56 @@ describe('readOwRunCompleteness — completeness verdict', () => {
   });
 });
 
+describe('readOwRunCompleteness — run dir with only 00/05/06 present (task b35ee391)', () => {
+  it('is judged complete with no 01-04 files on disk', () => {
+    const dir = makeRun('2026-06-22-run', {
+      goal: '# Goal\n\nDo the thing.\n',
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+    });
+    // The reader must not require 01-plan.md .. 04-implementation-summary.md:
+    // assert they are genuinely absent so this test cannot pass on a fixture
+    // that silently writes all seven run files.
+    for (const name of [
+      '01-plan.md',
+      '02-tasks.md',
+      '03-decisions.md',
+      '04-implementation-summary.md',
+    ]) {
+      expect(fs.existsSync(path.join(dir, name))).toBe(false);
+    }
+    const r = readOwRunCompleteness(repo);
+    expect(r.complete).toBe(true);
+    expect(r.reasons).toEqual([]);
+  });
+
+  it('adding 01-plan.md .. 04-implementation-summary.md does not change the verdict', () => {
+    const dir = makeRun('2026-06-22-run', {
+      goal: '# Goal\n\nDo the thing.\n',
+      handoff: handoffMarker('accepted'),
+      review: reviewDocNoFindings({ recommendationMarker: 'accept' }),
+    });
+    fs.writeFileSync(path.join(dir, '01-plan.md'), '# Plan\n\nSteps.\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '02-tasks.md'), '# Tasks\n\nT-001\n', 'utf8');
+    fs.writeFileSync(path.join(dir, '03-decisions.md'), '# Decisions\n\nNone.\n', 'utf8');
+    fs.writeFileSync(
+      path.join(dir, '04-implementation-summary.md'),
+      '# Implementation Summary\n\nDone.\n',
+      'utf8',
+    );
+    const r = readOwRunCompleteness(repo);
+    expect(r).toEqual({
+      enforced: true,
+      complete: true,
+      reasons: [],
+      runName: '2026-06-22-run',
+      runBase: null,
+      runSource: 'scan',
+      runBaseKind: 'absent',
+    });
+  });
+});
+
 describe('readOwRunCompleteness — fail-closed fallback', () => {
   it('no marker + prose enum legend → not complete (treated as unset)', () => {
     makeRun('2026-06-22-run', {
