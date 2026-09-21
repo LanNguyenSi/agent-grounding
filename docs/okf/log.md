@@ -2,6 +2,24 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-21T11:00:28Z, grounding-mcp 0.12.0 release follow-up (orchestrator): the release
+  cut bumped `packages/grounding-mcp/package.json`, and the docs commit that
+  preceded it re-pointed changelog pointers in
+  `packages/grounding-mcp/README.md` and in comments of
+  `packages/grounding-mcp/src/ow-run-completeness.ts` (comment-only, the
+  comment-stripped emit is unchanged), so `grounding-stack-overview.md` and
+  `solution-acceptance-verdict-contract.md` read STALE.
+  `grounding-stack-overview.md`: both mentions of the grounding-mcp version
+  now say `0.12.0`. Since its previous stamp only one of its sources
+  changed, `packages/grounding-mcp/package.json`, twice: the vitest pins
+  moved in the 2026-09-11 CVE sweep, and the release cut bumped the version;
+  neither touches another claim or an anchored citation (the cited `bin`
+  lines are unchanged). `solution-acceptance-verdict-contract.md`: its two pointers to the
+  package CHANGELOG's `[Unreleased]` section, which the cut emptied, now name
+  the `0.10.0` section, where the run-base corpus measurement is recorded;
+  no behavioural claim changed, since neither source edit changed behaviour.
+  Both docs re-stamped.
+
 - 2026-09-07T12:13:46Z, merge of master into the packaging-verification branch (task
   d341afd5, orchestrator): master's squash of task f31ad37f re-dated
   `CHANGELOG.md` to the merge instant, so `grounding-stack-overview.md`

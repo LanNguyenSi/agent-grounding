@@ -3,7 +3,7 @@ type: invariant
 title: Solution-acceptance verdict contract — why the marker lives outside the ledger
 description: A "done" verdict is derived from a real preflight+OW run, HEAD-pinned, and written to an XDG state marker outside the agent-writable evidence-ledger because ledger rows are forgeable via ledger_add.
 tags: [solution-acceptance, verdicts, anti-hacking, trust-boundary]
-timestamp: 2026-09-13T10:27:44Z
+timestamp: 2026-09-21T11:00:28Z
 sources:
   - packages/grounding-mcp/src/solution-verdict.ts
   - packages/grounding-mcp/src/solution-attempt-log.ts
@@ -415,7 +415,7 @@ OW run files under `<repoPath>/.ai/runs/`:
   residual: a purely QUOTED unkeyed marker that is the only occurrence of the
   marker tokens in the file is still resolved by the legacy substring matcher
   (`matchMarker`), which is not quote-aware at all. Anchored by a corpus
-  measurement, see `packages/grounding-mcp/CHANGELOG.md` `[Unreleased]`.
+  measurement, see `packages/grounding-mcp/CHANGELOG.md` `0.10.0`.
   A well-formed LEGACY UNKEYED marker line
   (`<!-- solution-acceptance: run-base = <value> -->`) is explicitly exempted
   from this check, or every ordinary unkeyed marker in the corpus, which
@@ -431,7 +431,7 @@ OW run files under `<repoPath>/.ai/runs/`:
   unkeyed marker whose value is followed by a trailing annotation resolved a
   value AND was reported malformed, regressing from `complete: true` before
   this check existed to `complete: false` (measured against the real corpus,
-  see `packages/grounding-mcp/CHANGELOG.md` `[Unreleased]`).
+  see `packages/grounding-mcp/CHANGELOG.md` `0.10.0`).
   TODO stays fail-open either way: a well-formed marker (keyed or unkeyed)
   that still carries the template's `TODO` placeholder resolves to
   `runBaseKind: 'todo'`, per the orchestrator-workflow kit's own documented
