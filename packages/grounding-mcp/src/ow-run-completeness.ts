@@ -211,7 +211,7 @@
 //     from, so a legitimately resolving annotated unkeyed marker was both
 //     used AND reported malformed; this exemption closes that gap without
 //     widening what the resolver itself accepts. Anchored by a corpus
-//     measurement, see CHANGELOG [Unreleased].
+//     measurement, see CHANGELOG 0.10.0.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -537,7 +537,7 @@ const PLACEHOLDER_KEY = /^<[^>]*>$/;
 // whole-line-only shape this replaces): an unkeyed marker whose value is
 // followed by a trailing annotation resolves a value via the same substring
 // search `matchMarker` performs and must not ALSO be reported malformed for
-// it. Anchored by a corpus measurement, see CHANGELOG [Unreleased].
+// it. Anchored by a corpus measurement, see CHANGELOG 0.10.0.
 const UNKEYED_RUN_BASE_LINE_START = /^\s*<!--\s*solution-acceptance:\s*run-base\s*=\s*\S+/;
 /**
  * True when `line` is a line the legacy unkeyed matcher (`matchMarker` with
@@ -1361,14 +1361,14 @@ interface RoundMarkerScan {
  * authored with several rounds packed onto one line
  * (`<!-- review-method[T-001-R1] = rigorous --> <!-- review-method[T-001-R2]
  * = rigorous -->`), so a whole-line requirement would misclassify that
- * legitimate shape as malformed. Anchored by a corpus measurement (7 real
- * `05-review-findings.md` files under kit 0.32.0, drawn from this workspace's
- * `.ai/runs/` run directories, not this package's own: 60 `review-method`
- * occurrences on 37 lines total, the largest (`quickwins-batch48`) packing 27
- * onto 11 lines; see CHANGELOG [Unreleased] for the per-file figures. One of
- * the 7, `quickwins-batch51`, is the very run this fix ships in, so its own
- * count is a moving target measured at the time of writing, not a fixed
- * corpus fact).
+ * legitimate shape as malformed. Anchored by a corpus measurement of real
+ * `05-review-findings.md` files authored under kit 0.32.0, the largest of
+ * which packs 27 occurrences onto 11 lines; see CHANGELOG 0.12.0 for the
+ * corpus, the totals and the per-file figures. The totals are recorded
+ * only there: one of the measured runs was still open when they were
+ * taken, so they are a measurement at the time of writing, not a fixed
+ * corpus fact, and a second copy in this comment would drift against
+ * the recorded one.
  *
  * Quoting (review finding F2): unlike the `run-base` grammar above, where
  * only the position-independent phrase net is quoting-aware, EVERY net here
