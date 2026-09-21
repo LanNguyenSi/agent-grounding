@@ -249,6 +249,23 @@
   without it, and the round that extended the derivation to a recursive
   walk).
 
+- Authoritative assessment store (`grounding-assessment-store.ts`) with its
+  frozen static policy module (`grounding-assessment-policy.ts`): a separate
+  producer evaluator whose sessions are bound to a validated challenge. It is
+  a library wired by the restricted entrypoint below; it does not discover
+  keys, import legacy sessions, or read the solver's default ledger or
+  session home.
+
+- `grounding-assessment-mcp`, a dedicated seven-tool stdio producer entrypoint
+  for that assessment store, with strict caller schemas, exact receipt
+  byte transport, and restart-safe retries. It requires an explicit trusted issuer
+  configuration and exposes no legacy execution, path, or solution tools.
+
+- Pure `grounding-receipt/v1` codec and Ed25519 verification primitive with a
+  frozen `debug-evidence-assessment/v1` policy snapshot and versioned golden
+  conformance corpus. The module is not registered as an MCP tool and makes no
+  issuer, session, or task authorization decision.
+
 ### Changed
 
 - `readPackageVersion()` now writes one `process.stderr` line naming the
@@ -269,20 +286,6 @@
   short-circuit is now read from the package's own `package.json` at
   runtime, so a release bump touches no source file and the release PR
   qualifies for the `merge-approval` label-free path (task ed06b4c8).
-
-### Added
-
-- `grounding-assessment-mcp`, a dedicated seven-tool stdio producer entrypoint
-  for the existing assessment store, with strict caller schemas, exact receipt
-  byte transport, and restart-safe retries. It requires an explicit trusted issuer
-  configuration and exposes no legacy execution, path, or solution tools.
-
-- Pure `grounding-receipt/v1` codec and Ed25519 verification primitive with a
-  frozen `debug-evidence-assessment/v1` policy snapshot and versioned golden
-  conformance corpus. The module is not registered as an MCP tool and makes no
-  issuer, session, or task authorization decision.
-
-### Changed
 
 - `MAX_LOOKUP_ID_LENGTH` renamed to `MAX_ID_FILENAME_LENGTH` (same value, same
   enforcement points on all three `solution_evaluate*` tools); affects only
