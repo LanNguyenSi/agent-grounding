@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## 0.12.0, 2026-09-21
+
 ### Added
 
 - `readOwRunCompleteness()` now parses the review-method axis the
