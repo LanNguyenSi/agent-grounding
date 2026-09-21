@@ -10,11 +10,11 @@
   comment-stripped emit is unchanged), so `grounding-stack-overview.md` and
   `solution-acceptance-verdict-contract.md` read STALE.
   `grounding-stack-overview.md`: both mentions of the grounding-mcp version
-  now say `0.12.0`; its other source changes since the last stamp (root
-  `package.json` gained the two `grounding-mcp-pack` scripts the doc already
-  cites, the package's vitest pins moved, root `CHANGELOG.md` gained entries
-  below the cited topology range) leave every claim and anchored citation
-  intact. `solution-acceptance-verdict-contract.md`: its two pointers to the
+  now say `0.12.0`. Since its previous stamp only one of its sources
+  changed, `packages/grounding-mcp/package.json`, twice: the vitest pins
+  moved in the 2026-09-11 CVE sweep, and the release cut bumped the version;
+  neither touches another claim or an anchored citation (the cited `bin`
+  lines are unchanged). `solution-acceptance-verdict-contract.md`: its two pointers to the
   package CHANGELOG's `[Unreleased]` section, which the cut emptied, now name
   the `0.10.0` section, where the run-base corpus measurement is recorded;
   no behavioural claim changed, since neither source edit changed behaviour.
