@@ -252,9 +252,9 @@
 - Authoritative assessment store (`grounding-assessment-store.ts`) with its
   frozen static policy module (`grounding-assessment-policy.ts`): a separate
   producer evaluator whose sessions are bound to a validated challenge. It is
-  a library wired by the restricted entrypoint below; it does not discover
-  keys, import legacy sessions, or read the solver's default ledger or
-  session home.
+  a library wired by the restricted `grounding-assessment-mcp` entrypoint
+  (next entry); it does not discover keys, import legacy sessions, or read
+  the solver's default ledger or session home.
 
 - `grounding-assessment-mcp`, a dedicated seven-tool stdio producer entrypoint
   for that assessment store, with strict caller schemas, exact receipt
