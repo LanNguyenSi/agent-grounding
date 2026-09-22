@@ -368,6 +368,25 @@ jobs:
         # disposable temp directories.
         run: npm run test:check-deps
 
+      - name: Package LICENSE check
+        # Asserts every publishable (private !== true) packages/*/package.json
+        # workspace member carries a LICENSE file byte-identical to the repo
+        # root LICENSE, lists it in "files" where that field is set, and
+        # actually ships it in `npm pack --dry-run --json`'s own reported
+        # file list, the ground truth for what a real publish would tarball.
+        # task ae26b625: a copied file per package, not a prepack step, so
+        # this check and the release-exception classifier below stay
+        # untouched by it.
+        run: npm run check:package-license
+
+      - name: Package LICENSE checker unit tests
+        # Fixture-based unit tests for the checker functions themselves
+        # (including negative controls); mostly in-memory/disposable-temp-dir
+        # fixtures plus a stubbed `npm pack --dry-run` for the pack-entry
+        # guard, and one real end-to-end test against the actual repo
+        # packages/* and a real `npm pack --dry-run --json` call.
+        run: npm run test:check-package-license
+
       - name: Release-exception classifier smoke check
         # scripts/release-exception.js's CLI only exercises `classify(paths)`
         # (path shape only): it has no PR base/head git ref to read file

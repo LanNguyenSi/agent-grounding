@@ -17,7 +17,8 @@
   "files": [
     "dist",
     "README.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "type": "module",
   "main": "./dist/index.js",
