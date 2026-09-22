@@ -2,6 +2,25 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-22T06:28:10Z, package LICENSE-in-tarballs check (task ae26b625):
+  adding `packages/*/LICENSE` and a `files` entry in twelve package
+  manifests plus a `check:package-license` step in `ci.yml` shifted two
+  anchored citations in `grounding-stack-overview.md` out of range: the
+  `.github/workflows/ci.yml` "grounding-mcp packed-tarball --version check"
+  step name moved from 430-446 to 449-465 (LICENSE-shipping steps and their
+  comments were inserted earlier in the job), and the
+  `dist/assessment-index.js` citation into
+  `packages/grounding-mcp/package.json` moved from 29-31 to 30-32 (one
+  `"files"` array entry added above it). Both re-pointed; every other claim
+  in that doc re-checked against `package.json`,
+  `packages/grounding-mcp/package.json`, and `.github/workflows/ci.yml` and
+  found unchanged. `claim-gate-vs-review-claim-gate.md` lists
+  `packages/claim-gate/package.json` and `packages/review-claim-gate/package.json`
+  as sources (both got the same `files`-array LICENSE entry); its version
+  and publish-status claims (`claim-gate` `0.6.0`, `review-claim-gate`
+  `0.1.6`, both `publishConfig.access: "public"`) are unaffected and
+  unchanged. Both docs re-stamped.
+
 - 2026-09-21T11:00:28Z, grounding-mcp 0.12.0 release follow-up (orchestrator): the release
   cut bumped `packages/grounding-mcp/package.json`, and the docs commit that
   preceded it re-pointed changelog pointers in
