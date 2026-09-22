@@ -328,7 +328,7 @@ test('run(): a throwing packFn (e.g. a real npm-side error against a non-workspa
   }
 });
 
-// ── loadWorkspacePackages: discovery matches the root manifest ──────────
+// ── root manifest: the workspace glob this script hardcodes ─────────────
 
 test('the repository root package.json declares exactly the "packages/*" workspace glob this script hardcodes', () => {
   // scripts/check-package-license.js (like check-pins.js and check-deps.js)
@@ -337,8 +337,12 @@ test('the repository root package.json declares exactly the "packages/*" workspa
   // red when a second glob is added, so the script gets widened instead of
   // silently skipping the new workspace root.
   const rootPkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+  // The reverse direction (the script's hardcoded directory renamed away from
+  // packages/) is covered by the real-repo end-to-end test above.
   assert.deepStrictEqual(rootPkg.workspaces, ['packages/*']);
 });
+
+// ── loadWorkspacePackages: discovery against a synthetic packages/ tree ──
 
 
 test('loadWorkspacePackages: discovers every package a synthetic manifest\'s "packages/*" glob declares', () => {
@@ -358,7 +362,7 @@ test('loadWorkspacePackages: discovers every package a synthetic manifest\'s "pa
     // (does not call loadWorkspacePackages or reuse its hardcoded
     // "packages/" path). This checks the loader against a tree the glob
     // declares; the pin that the REAL root manifest still declares only
-    // "packages/*" is the separate test below.
+    // "packages/*" is the separate test above.
     const rootPkg = JSON.parse(fs.readFileSync(path.join(tmpRoot, 'package.json'), 'utf8'));
     const expectedNames = [];
     for (const pattern of rootPkg.workspaces) {
