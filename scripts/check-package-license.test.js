@@ -330,7 +330,18 @@ test('run(): a throwing packFn (e.g. a real npm-side error against a non-workspa
 
 // ── loadWorkspacePackages: discovery matches the root manifest ──────────
 
-test('loadWorkspacePackages: discovered package set equals the root package.json "workspaces" expansion (fails if discovery drifts)', () => {
+test('the repository root package.json declares exactly the "packages/*" workspace glob this script hardcodes', () => {
+  // scripts/check-package-license.js (like check-pins.js and check-deps.js)
+  // reads packages/ directly instead of the root "workspaces" field. That is
+  // only safe while the root manifest declares nothing else; this test turns
+  // red when a second glob is added, so the script gets widened instead of
+  // silently skipping the new workspace root.
+  const rootPkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+  assert.deepStrictEqual(rootPkg.workspaces, ['packages/*']);
+});
+
+
+test('loadWorkspacePackages: discovers every package a synthetic manifest\'s "packages/*" glob declares', () => {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-license-run-workspaces-'));
   try {
     fs.writeFileSync(
@@ -343,10 +354,11 @@ test('loadWorkspacePackages: discovered package set equals the root package.json
     // both the expected expansion and discovery.
     fs.mkdirSync(path.join(tmpRoot, 'packages', 'not-a-package'), { recursive: true });
 
-    // Independent expansion of the root manifest's own "workspaces" glob
+    // Independent expansion of the synthetic manifest's "workspaces" glob
     // (does not call loadWorkspacePackages or reuse its hardcoded
-    // "packages/" path), so this test fails if discovery drifts from what
-    // the root manifest actually declares.
+    // "packages/" path). This checks the loader against a tree the glob
+    // declares; the pin that the REAL root manifest still declares only
+    // "packages/*" is the separate test below.
     const rootPkg = JSON.parse(fs.readFileSync(path.join(tmpRoot, 'package.json'), 'utf8'));
     const expectedNames = [];
     for (const pattern of rootPkg.workspaces) {
