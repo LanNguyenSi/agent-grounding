@@ -4,17 +4,16 @@
  *
  * Every publishable (`private` !== true) `packages/*` workspace member is
  * supposed to ship the repo's MIT LICENSE text inside its own published
- * tarball (decision D-005, task ae26b625: a copied file per package, not a
- * prepack step, so the merge-approval `pure_release` path, which classifies
- * a release PR purely from its changed-file list, see
- * `scripts/release-exception.js`, and the publish workflows stay untouched).
- * Nothing previously asserted that copy actually landed, or that it actually
- * ships in the packed tarball; npm auto-includes a `LICENSE` file that
- * physically exists in a package directory (it does not need to be listed in
- * `files` to be included), so the failure mode this guards is a genuinely
- * MISSING or DIVERGED file, not a `files` omission alone: the `files` check
- * below exists only because `files` documents intent and should stay
- * accurate when it's set, per the task's explicit "belt and braces" ask.
+ * tarball (task ae26b625: a copied file per package, not a prepack step, so
+ * the merge-approval `pure_release` path, which classifies a release PR
+ * purely from its changed-file list, see `scripts/release-exception.js`, and
+ * the publish workflows stay untouched). Nothing previously asserted that
+ * copy actually landed, or that it actually ships in the packed tarball; npm
+ * auto-includes a `LICENSE` file that physically exists in a package
+ * directory (it does not need to be listed in `files` to be included), so
+ * the failure mode this guards is a genuinely MISSING or DIVERGED file, not
+ * a `files` omission alone: the `files` check below exists only because
+ * `files` documents intent and must stay accurate when it's set.
  *
  * Three independent checks per publishable package:
  *
@@ -37,11 +36,36 @@
  * inspected: an unbuilt `dist/` just packs fewer files, LICENSE ships
  * either way since it lives at the package root).
  *
+ * Check 3 (the pack-entry guard) cannot fail independently of check 1 (the
+ * on-disk LICENSE guard) under this repo's npm: on npm 11, across every
+ * configuration tried (`files` set without LICENSE listed, an `.npmignore`
+ * present with LICENSE on disk, both, neither), npm force-includes an
+ * on-disk `LICENSE` in the packed file list regardless of `files` or
+ * `.npmignore` content, so check 3 never independently discriminates a
+ * violation check 1 would have missed. It stays as a pin against a future
+ * npm packaging-rule change, not as evidence of present-day discriminating
+ * power.
+ *
  * Usage: `node scripts/check-package-license.js` (wired as the
  * `check:package-license` npm script). Exits non-zero and prints one line
  * per offending package + reason on failure. Also exits non-zero (instead of
  * vacuously passing) if zero publishable workspace packages are found,
  * mirroring check-pins.js's / check-deps.js's zero-workspace guard.
+ *
+ * ── Assumption: workspaces === packages/* ─────────────────────────────────
+ *
+ * This script (like check-pins.js and check-deps.js) hardcodes `packages/`
+ * as the one and only workspace root, matching this repo's root
+ * `package.json` `workspaces: ["packages/*\/"]` today. It does not read the
+ * root `workspaces` field, so a second workspace glob added *alongside*
+ * `packages/*\/` (e.g. `apps/*\/`) would silently go unchecked here. Unlike
+ * check-deps.js, a missing `packages/` directory does NOT fail loudly with
+ * an uncaught exception: `run()` catches the read failure and reports it as
+ * a named violation (exit 1, readable message), because this check's own
+ * `node --test` suite exercises `run()` against disposable temp roots that
+ * intentionally omit `packages/`, and a real `npm pack --dry-run` call that
+ * throws (a non-workspace `rootDir`, or any other npm-side error) is caught
+ * the same way rather than crashing the process.
  */
 const fs = require('fs');
 const path = require('path');
@@ -180,7 +204,16 @@ function formatViolation(violation) {
  * matching main()'s prior behavior.
  */
 function run(rootDir = path.join(__dirname, '..'), packFn = runNpmPackDryRun) {
-  const workspaces = loadWorkspacePackages(rootDir);
+  let workspaces;
+  try {
+    workspaces = loadWorkspacePackages(rootDir);
+  } catch (err) {
+    console.error(
+      `Package LICENSE check failed: could not read the packages/ workspace directory under ${rootDir} ` +
+        `(${err.message}).`,
+    );
+    return 1;
+  }
   const publishable = workspaces.filter(isPublishable);
 
   if (publishable.length === 0) {
@@ -203,10 +236,21 @@ function run(rootDir = path.join(__dirname, '..'), packFn = runNpmPackDryRun) {
   }
   const rootLicense = fs.readFileSync(rootLicensePath);
 
+  let packEntryViolations;
+  try {
+    packEntryViolations = collectPackEntryViolations(workspaces, rootDir, packFn);
+  } catch (err) {
+    console.error(
+      `Package LICENSE check failed: \`npm pack --dry-run\` reporting failed for a publishable workspace ` +
+        `package under ${rootDir} (${err.message}).`,
+    );
+    return 1;
+  }
+
   const violations = [
     ...collectMissingOrDivergedLicenseViolations(workspaces, rootLicense),
     ...collectFilesFieldViolations(workspaces),
-    ...collectPackEntryViolations(workspaces, rootDir, packFn),
+    ...packEntryViolations,
   ];
 
   if (violations.length > 0) {

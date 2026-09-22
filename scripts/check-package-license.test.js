@@ -272,6 +272,103 @@ test('run(): negative control: a pack result missing LICENSE fails the whole run
   }
 });
 
+// ── run(): missing packages/, and a throwing packFn ──────────────────────
+
+test('run(): a temp root with no packages/ directory exits 1 with a readable message, not an uncaught exception', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-license-run-nopackages-'));
+  const originalError = console.error;
+  const errorMessages = [];
+  console.error = (...args) => errorMessages.push(args.join(' '));
+  try {
+    // Deliberately no packages/ directory under tmpRoot at all.
+    let exitCode;
+    assert.doesNotThrow(() => {
+      exitCode = run(tmpRoot, () => ({ files: [{ path: 'LICENSE' }] }));
+    });
+    assert.equal(exitCode, 1);
+    assert.ok(
+      errorMessages.some((m) => m.includes('packages/') && m.includes(tmpRoot)),
+      `expected a readable packages/-read-failure message naming ${tmpRoot}, got: ${JSON.stringify(errorMessages)}`,
+    );
+  } finally {
+    console.error = originalError;
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('run(): a throwing packFn (e.g. a real npm-side error against a non-workspace directory) exits 1, no uncaught exception', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-license-run-packthrows-'));
+  const originalError = console.error;
+  const errorMessages = [];
+  console.error = (...args) => errorMessages.push(args.join(' '));
+  try {
+    const dir = writeWorkspacePackage(tmpRoot, 'pkg-a', {
+      name: '@lannguyensi/pkg-a',
+      private: false,
+      files: ['dist', 'LICENSE'],
+    });
+    fs.writeFileSync(path.join(dir, 'LICENSE'), MIT_TEXT);
+    writeRootLicense(tmpRoot);
+
+    const throwingPackFn = () => {
+      throw new Error('npm ENOWORKSPACES simulated: not a workspace root');
+    };
+    let exitCode;
+    assert.doesNotThrow(() => {
+      exitCode = run(tmpRoot, throwingPackFn);
+    });
+    assert.equal(exitCode, 1);
+    assert.ok(
+      errorMessages.some((m) => m.includes('npm pack') && m.includes('ENOWORKSPACES simulated')),
+      `expected the packFn error to be reported, got: ${JSON.stringify(errorMessages)}`,
+    );
+  } finally {
+    console.error = originalError;
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+// ── loadWorkspacePackages: discovery matches the root manifest ──────────
+
+test('loadWorkspacePackages: discovered package set equals the root package.json "workspaces" expansion (fails if discovery drifts)', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'check-license-run-workspaces-'));
+  try {
+    fs.writeFileSync(
+      path.join(tmpRoot, 'package.json'),
+      JSON.stringify({ name: 'root', private: true, workspaces: ['packages/*'] }),
+    );
+    writeWorkspacePackage(tmpRoot, 'pkg-a', { name: '@lannguyensi/pkg-a', private: false });
+    writeWorkspacePackage(tmpRoot, 'pkg-b', { name: '@lannguyensi/pkg-b', private: true });
+    // A workspace-glob directory entry with no package.json: excluded from
+    // both the expected expansion and discovery.
+    fs.mkdirSync(path.join(tmpRoot, 'packages', 'not-a-package'), { recursive: true });
+
+    // Independent expansion of the root manifest's own "workspaces" glob
+    // (does not call loadWorkspacePackages or reuse its hardcoded
+    // "packages/" path), so this test fails if discovery drifts from what
+    // the root manifest actually declares.
+    const rootPkg = JSON.parse(fs.readFileSync(path.join(tmpRoot, 'package.json'), 'utf8'));
+    const expectedNames = [];
+    for (const pattern of rootPkg.workspaces) {
+      assert.ok(pattern.endsWith('/*'), `fixture only supports the "<dir>/*" glob form, got: ${pattern}`);
+      const baseDir = path.join(tmpRoot, pattern.slice(0, -'/*'.length));
+      for (const entry of fs.readdirSync(baseDir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        if (!fs.existsSync(path.join(baseDir, entry.name, 'package.json'))) continue;
+        expectedNames.push(entry.name);
+      }
+    }
+    expectedNames.sort();
+
+    const discoveredNames = loadWorkspacePackages(tmpRoot)
+      .map((pkg) => path.basename(pkg.dir))
+      .sort();
+    assert.deepEqual(discoveredNames, expectedNames);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
 // ── run(): real repo end-to-end (this task's actual change) ─────────────
 // Runs the real checker against the real repo root, with the real
 // `runNpmPackDryRun` (default packFn, so this one test DOES shell out to

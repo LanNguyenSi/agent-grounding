@@ -374,9 +374,9 @@ jobs:
         # root LICENSE, lists it in "files" where that field is set, and
         # actually ships it in `npm pack --dry-run --json`'s own reported
         # file list, the ground truth for what a real publish would tarball.
-        # Decision D-005 (task ae26b625): a copied file per package, not a
-        # prepack step, so this check and the release-exception classifier
-        # below stay untouched by it.
+        # task ae26b625: a copied file per package, not a prepack step, so
+        # this check and the release-exception classifier below stay
+        # untouched by it.
         run: npm run check:package-license
 
       - name: Package LICENSE checker unit tests
