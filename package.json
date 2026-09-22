@@ -27,7 +27,9 @@
     "test:check-release-exception": "node --test scripts/release-exception.test.js",
     "test:check-merge-approval-step": "node --test scripts/merge-approval-step.test.js",
     "check:grounding-mcp-pack": "node scripts/check-grounding-mcp-pack.js",
-    "test:check-grounding-mcp-pack": "node --test scripts/check-grounding-mcp-pack.test.js"
+    "test:check-grounding-mcp-pack": "node --test scripts/check-grounding-mcp-pack.test.js",
+    "check:package-license": "node scripts/check-package-license.js",
+    "test:check-package-license": "node --test scripts/check-package-license.test.js"
   },
   "overrides": {
     "js-yaml": "^4.3.1",

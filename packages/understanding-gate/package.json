@@ -18,7 +18,8 @@
     "dist",
     "README.md",
     "ROADMAP.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "type": "module",
   "bin": {
