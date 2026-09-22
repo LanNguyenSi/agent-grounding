@@ -95,7 +95,7 @@ packed-tarball --version checker unit tests" step
 ## Restricted producer entrypoint
 
 The grounding-mcp package also has a separate `grounding-assessment-mcp` bin
-(`packages/grounding-mcp/package.json:30-32#"dist/assessment-index.js"`).
+(`packages/grounding-mcp/package.json:24-26#"dist/assessment-index.js"`).
 Its composition root loads explicit issuer configuration and connects only
 the assessment server to stdio
 (`packages/grounding-mcp/src/assessment-index.ts:11-13#"StdioServerTransport"`).

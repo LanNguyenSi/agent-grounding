@@ -19,7 +19,17 @@
   as sources (both got the same `files`-array LICENSE entry); its version
   and publish-status claims (`claim-gate` `0.6.0`, `review-claim-gate`
   `0.1.6`, both `publishConfig.access: "public"`) are unaffected and
-  unchanged. Both docs re-stamped.
+  unchanged. Both docs re-stamped. Follow-up in the same change: the
+  `dist/assessment-index.js` citation had pointed at the `scripts` block
+  (the anchor occurs in the `postbuild` command too) since it was written;
+  it now cites the `bin` block, `packages/grounding-mcp/package.json:24-26`.
+  Warning composition of this change, with the CI pin okf-kit 0.10.0: the
+  two `sources-fresh` STALE warnings on `claim-gate-vs-review-claim-gate.md`
+  are resolved by the re-stamp; two citations into `.github/workflows/ci.yml`
+  in this log's merged 2026-09-07 entry (`430-455` and `457-478`) moved out
+  of range with the inserted steps and stay as written under the append-only
+  convention for merged entries; the totals before and after are equal (nine)
+  but not the same nine.
 
 - 2026-09-21T11:00:28Z, grounding-mcp 0.12.0 release follow-up (orchestrator): the release
   cut bumped `packages/grounding-mcp/package.json`, and the docs commit that
