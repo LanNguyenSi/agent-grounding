@@ -1689,13 +1689,18 @@ describe('solution_evaluate_status / solution_evaluate_result (MCP roundtrip)', 
 // describe block above) so it never shifts any other test's line number:
 // several docs/okf citations anchor to specific lines in this file.
 
-describe('ledger_summary — session-key regression (0a8645d2)', () => {
+describe('ledger_summary: session-key regression (0a8645d2)', () => {
   it('reflects an entry of every type via ledger_add, one session per type', async () => {
     // Tracker observation: ledger_add followed by ledger_summary for the
-    // same sessionId reported 0 facts. Not reproduced against this build
-    // (see scripts/repro-ledger-summary-count.mjs for the stdio-level
-    // reproduction attempt); this pins that every entry type is visible
-    // to ledger_summary under the exact sessionId ledger_add used.
+    // same sessionId reported 0 facts. Sequential add-then-await-summary
+    // calls (as this test does) never reproduced it; round 2 of this task
+    // found the real defect one level down, in concurrent/pipelined
+    // add+summary calls for the same sessionId (see the "concurrent
+    // ledger_add + ledger_summary" describe block below for that
+    // regression test, and scripts/repro-ledger-summary-count.mjs for the
+    // stdio-level reproduction). This test pins the unrelated, always-true
+    // claim that every entry type is visible to a sequential ledger_summary
+    // call under the exact sessionId ledger_add used.
     const typeToBucket = {
       fact: 'facts',
       hypothesis: 'hypotheses',
@@ -1737,5 +1742,129 @@ describe('ledger_summary — session-key regression (0a8645d2)', () => {
     });
     const result = parseToolResult(raw) as { counts: { facts: number } };
     expect(result.counts.facts).toBe(0);
+  });
+
+  it('exact sessionId match is case- and whitespace-sensitive', async () => {
+    // Pins the "case-sensitive, no normalization" sentence in both tool
+    // descriptions: a session written under a mixed-case, trailing-space
+    // id is invisible to a summary call that trims and lowercases it, and
+    // visible only to the exact same string. Kills a trim+lowercase
+    // normalization mutant that a looser (case/whitespace-insensitive)
+    // match would let survive.
+    await client.callTool({
+      name: 'ledger_add',
+      arguments: { sessionId: 'GS-Case ', type: 'fact', content: 'case/whitespace pin' },
+    });
+    const mismatched = await client.callTool({
+      name: 'ledger_summary',
+      arguments: { sessionId: 'gs-case' },
+    });
+    expect((parseToolResult(mismatched) as { counts: { facts: number } }).counts.facts).toBe(0);
+
+    const exact = await client.callTool({
+      name: 'ledger_summary',
+      arguments: { sessionId: 'GS-Case ' },
+    });
+    expect((parseToolResult(exact) as { counts: { facts: number } }).counts.facts).toBe(1);
+  });
+});
+
+// ── ledger_add + ledger_summary: concurrent/pipelined requests (0a8645d2) ──
+//
+// Round-2 finding: the sequential tests above (await ledger_add's response
+// before sending ledger_summary) never reproduce the tracker defect. The
+// real defect only shows when a ledger_add and a ledger_summary for the
+// SAME sessionId are in flight at the same time (pipelined stdio requests,
+// or two tool calls issued without awaiting the first): the MCP SDK's
+// tools/call dispatch validates each request's zod schema asynchronously
+// before invoking its handler, and ledger_add's and ledger_summary's
+// schemas resolve that validation in a different number of microtask
+// ticks, so the summary handler can run BEFORE the add handler even though
+// the add request was sent (and received) first. See the "Ledger request
+// serialization" comment above `createLedgerRequestQueue` in src/server.ts
+// for the full mechanism and the fix (a queue keyed by the JSON-RPC
+// request id, which reflects true arrival order even when handler
+// invocation order does not).
+
+describe('ledger_add + ledger_summary: concurrent requests (0a8645d2)', () => {
+  it('a summary sent without awaiting a concurrent add for the same sessionId still sees it', async () => {
+    const sessionId = 'gs-concurrent-0a8645d2';
+    // Fire both calls without awaiting the first: this is what the
+    // sequential tests above never exercise. Deterministically triggered
+    // the defect 20/20 runs on this task's base commit (fe8fa4f), both
+    // through this exact InMemoryTransport + Promise.all shape and over
+    // real pipelined stdio (scripts/repro-ledger-summary-count.mjs's
+    // pipelined case).
+    const [, summaryRaw] = await Promise.all([
+      client.callTool({
+        name: 'ledger_add',
+        arguments: { sessionId, type: 'fact', content: 'concurrent add' },
+      }),
+      client.callTool({
+        name: 'ledger_summary',
+        arguments: { sessionId },
+      }),
+    ]);
+    const result = parseToolResult(summaryRaw) as { counts: { facts: number } };
+    expect(result.counts.facts).toBe(1);
+  });
+
+  it('20 repeated concurrent add+summary pairs on fresh sessions all see the add', async () => {
+    // A single run of the test above cannot rule out a flaky pass;
+    // repeats the same shape 20 times, each on its own sessionId, to
+    // match the confidence level (20/20, 30/30) recorded in the
+    // implementer's manual repro of this fix.
+    for (let i = 0; i < 20; i++) {
+      const sessionId = `gs-concurrent-0a8645d2-${i}`;
+      const [, summaryRaw] = await Promise.all([
+        client.callTool({
+          name: 'ledger_add',
+          arguments: { sessionId, type: 'fact', content: `concurrent add ${i}` },
+        }),
+        client.callTool({
+          name: 'ledger_summary',
+          arguments: { sessionId },
+        }),
+      ]);
+      const result = parseToolResult(summaryRaw) as { counts: { facts: number } };
+      expect(result.counts.facts).toBe(1);
+    }
+  });
+});
+
+// ── ledger tools: sessionId must be non-empty (0a8645d2) ────────────────────
+//
+// Round-2 finding: `getSummary`/`listEntries` treat an empty-string
+// `session` as falsy and skip the `session = @session` filter entirely
+// (evidence-ledger's `listEntries`: `if (opts.session) { ... }`), so
+// `ledger_summary`/`claim_evaluate_from_session` called with
+// `sessionId: ''` silently returned every session's entries instead of
+// zero, the opposite of, and worse than, the documented "exact match or
+// zero" contract. `.min(1)` on each ledger-touching tool's sessionId
+// schema turns that into a clean MCP validation error instead.
+
+describe('ledger tools: sessionId must be non-empty (0a8645d2)', () => {
+  it('ledger_add rejects an empty sessionId', async () => {
+    const raw = await client.callTool({
+      name: 'ledger_add',
+      arguments: { sessionId: '', type: 'fact', content: 'whatever' },
+    });
+    expectValidationError(raw, 'ledger_add', 'sessionId');
+  });
+
+  it('ledger_summary rejects an empty sessionId', async () => {
+    const raw = await client.callTool({
+      name: 'ledger_summary',
+      arguments: { sessionId: '' },
+    });
+    expectValidationError(raw, 'ledger_summary', 'sessionId');
+  });
+
+  it('claim_evaluate_from_session rejects an empty sessionId', async () => {
+    const raw = await client.callTool({
+      name: 'claim_evaluate_from_session',
+      arguments: { sessionId: '', claim: 'whatever' },
+    });
+    expectValidationError(raw, 'claim_evaluate_from_session', 'sessionId');
   });
 });
