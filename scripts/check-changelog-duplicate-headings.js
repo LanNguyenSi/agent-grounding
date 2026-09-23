@@ -24,10 +24,9 @@
  * Also flags, separately and NOT allowlist-suppressible, any "## " heading
  * that looks version-shaped (a semver-like `X.Y.Z` token) but matches
  * neither the dated-section shape above nor the Unreleased heading (task
- * d51ae64b round 3, decision D-013): earlier rounds of this check left such
- * a heading silently unscanned, so a real duplicate ### heading inside it
- * could hide forever. See DATED_HEADING_RE's docblock for which shapes are
- * recognised vs. rejected.
+ * d51ae64b): leaving such a heading silently unscanned would let a real
+ * duplicate ### heading inside it hide forever. See DATED_HEADING_RE's
+ * docblock for which shapes are recognised vs. rejected.
  *
  * Usage: `node scripts/check-changelog-duplicate-headings.js` (wired as
  * `check:changelog-duplicate-headings`). Exits non-zero and prints one line
@@ -41,11 +40,17 @@ const path = require('path');
 
 // Matches "## 0.2.2, 2026-05-03", "## [0.2.2] - 2026-05-03", and the same
 // two shapes with an en dash (\u2013) or em dash (\u2014) in place of the
-// separator comma/hyphen (task d51ae64b round 3, decision D-013: the real
-// packages/understanding-gate/CHANGELOG.md uses an em dash, e.g.
-// "## 0.2.0 \u2014 2026-05-02"; a dash glyph is still an unambiguous
-// separator, so it is recognised and scanned rather than silently
-// skipped).
+// separator comma/hyphen (task d51ae64b). The plain ASCII hyphen was
+// already matched as a separator before this check widened the class;
+// en dash (\u2013) and em dash (\u2014) were not, so the lazy
+// version-capture group ([^\],]+?) did not stop before one and absorbed
+// it into the version key instead, e.g. "0.2.0" followed by the dash
+// glyph rather than a clean "0.2.0" -- this broke ALLOWLIST version-key
+// comparisons for the real packages/understanding-gate/CHANGELOG.md
+// heading "## 0.2.0 \u2014 2026-05-02". Widening the separator character
+// class to explicitly include \u2013/\u2014 lets the version capture stop
+// cleanly before the dash glyph, so the version key comes out clean
+// ("0.2.0").
 const DATED_HEADING_RE = /^##\s+\[?([^\],]+?)\]?[,\s\u2013\u2014-]+\s*(\d{4}-\d{2}-\d{2})\s*$/;
 const SUBSECTION_HEADING_RE = /^###\s+(.+?)\s*$/;
 const ANY_TOP_HEADING_RE = /^##\s/;
@@ -54,7 +59,7 @@ const UNRELEASED_HEADING_RE = /^##\s*\[?unreleased\]?\s*$/i;
 // matches neither DATED_HEADING_RE nor the Unreleased heading is ambiguous:
 // it looks like a release section, but this check cannot tell which
 // version/date it names, so any duplicate ### heading inside it would go
-// unscanned. Decision (task d51ae64b round 3, D-013): fail visibly instead
+// unscanned. Decision (task d51ae64b): fail visibly instead
 // of silently skipping it -- a release cut can trivially reformat the
 // heading into one of the two supported shapes, whereas a silent skip lets
 // a real duplicate hide forever. Only a parenthesised date
@@ -158,7 +163,7 @@ function findAmbiguousHeadings(text) {
  * raw text). Returns two kinds of violation, both fatal to the check:
  * `{ type: 'duplicate-heading', file, version, kind, count }` for a
  * duplicated ### <Kind> heading not covered by `allowlist` (default: the
- * module-level ALLOWLIST, injectable for tests -- decision D-013), and
+ * module-level ALLOWLIST, injectable for tests), and
  * `{ type: 'ambiguous-dated-heading', file, heading }` for a version-shaped
  * "## " heading DATED_HEADING_RE cannot parse (see findAmbiguousHeadings;
  * not allowlist-suppressible, since the fix is to reformat the heading,
