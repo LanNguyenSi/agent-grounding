@@ -283,7 +283,7 @@ export function createServer(
 
   server.tool(
     'ledger_add',
-    'Append an entry to the evidence ledger for a session. Types: fact (verified), hypothesis (unverified), rejected (disproven), unknown (open question), policy_decision (Phase 5 #4 audit row, kept in a separate bucket from evidence types).',
+    'Append an entry to the evidence ledger for a session. Types: fact (verified), hypothesis (unverified), rejected (disproven), unknown (open question), policy_decision (Phase 5 #4 audit row, kept in a separate bucket from evidence types). A later ledger_summary call only sees this entry if it is given this exact sessionId string (case-sensitive, no normalization).',
     {
       sessionId: z.string().describe('Session id — used as the ledger session namespace.'),
       type: z.enum(['fact', 'hypothesis', 'rejected', 'unknown', 'policy_decision']),
@@ -305,7 +305,7 @@ export function createServer(
 
   server.tool(
     'ledger_summary',
-    'Return facts/hypotheses/rejected/unknowns for a session. Use to brief a follow-up agent or before claim-gate evaluation. Phase 5 #5: optional server-side filters.',
+    'Return facts/hypotheses/rejected/unknowns for a session. Use to brief a follow-up agent or before claim-gate evaluation. Phase 5 #5: optional server-side filters. Counts are zero, not an error, when this sessionId does not exactly match the string an earlier ledger_add used (case-sensitive, no normalization).',
     {
       sessionId: z.string(),
       sinceIso: z

@@ -397,6 +397,55 @@ describe('ledger_summary — MCP roundtrip', () => {
     expect(result.counts.rejected).toBe(0);
   });
 
+  it('regression (0a8645d2): reflects an entry of every type via ledger_add, one session per type', async () => {
+    // Tracker observation: ledger_add followed by ledger_summary for the
+    // same sessionId reported 0 facts. Not reproduced against this build
+    // (see scripts/repro-ledger-summary-count.mjs for the stdio-level
+    // reproduction attempt); this pins that every entry type is visible
+    // to ledger_summary under the exact sessionId ledger_add used.
+    const typeToBucket = {
+      fact: 'facts',
+      hypothesis: 'hypotheses',
+      rejected: 'rejected',
+      unknown: 'unknowns',
+      policy_decision: 'policyDecisions',
+    } as const;
+
+    for (const [type, bucket] of Object.entries(typeToBucket)) {
+      const sessionId = `gs-regression-0a8645d2-${type}`;
+      await client.callTool({
+        name: 'ledger_add',
+        arguments: { sessionId, type, content: `regression entry of type ${type}` },
+      });
+      const raw = await client.callTool({
+        name: 'ledger_summary',
+        arguments: { sessionId },
+      });
+      const result = parseToolResult(raw) as {
+        counts: Record<string, number>;
+      };
+      expect(result.counts[bucket]).toBe(1);
+    }
+  });
+
+  it('regression (0a8645d2): a sessionId that does not exactly match ledger_add is legitimately zero', async () => {
+    // Documents the intended, strict-equality behavior described in
+    // docs/okf/evidence-ledger-session-key-shapes.md: two different
+    // sessionId strings never see each other's rows. This is not the
+    // tracker defect (that would be the SAME sessionId losing the
+    // entry), it is the expected disagreement case.
+    await client.callTool({
+      name: 'ledger_add',
+      arguments: { sessionId: 'gs-agent-grounding-abc123', type: 'fact', content: 'added under a gs-* id' },
+    });
+    const raw = await client.callTool({
+      name: 'ledger_summary',
+      arguments: { sessionId: 'fix/0a8645d2-ledger-summary-count' },
+    });
+    const result = parseToolResult(raw) as { counts: { facts: number } };
+    expect(result.counts.facts).toBe(0);
+  });
+
   it('contentPrefix filter returns only matching entries', async () => {
     const sessionId = 'gs-summary-filter';
     await client.callTool({
