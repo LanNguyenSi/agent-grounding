@@ -1868,3 +1868,172 @@ describe('ledger tools: sessionId must be non-empty (0a8645d2)', () => {
     expectValidationError(raw, 'claim_evaluate_from_session', 'sessionId');
   });
 });
+
+// ── ledger tools: true arrival order at the transport (task 0a8645d2) ───────
+//
+// An earlier fix for this task keyed the queue's sort order by the
+// JSON-RPC request id's own VALUE (falling back to enqueue-call order for
+// a non-numeric id). Both are wrong for an id shape a real client is free
+// to use: a string id, a UUID, or a client that hands out falling numeric
+// ids. The tests below send raw JSON-RPC frames directly over the
+// InMemoryTransport (bypassing the SDK Client's own auto-incrementing
+// numeric request ids, the one id shape the earlier value-sort happened
+// to get right) so the id shape is fully controlled.
+// `InMemoryTransport#send` delivers synchronously to the peer's `onmessage`
+// inside the `send()` call itself
+// (see node_modules/@modelcontextprotocol/sdk/dist/esm/inMemory.js): two
+// `send()` calls made back-to-back, with nothing awaited between them,
+// are therefore guaranteed to arrive at the server in that exact call
+// order, which is what makes these tests deterministic rather than a race.
+
+// A minimal raw JSON-RPC layer over an already-initialized InMemoryTransport
+// client-side leg: composes with (does not replace) the SDK Client's own
+// `onmessage`, so the same transport pair keeps working for ordinary
+// `client.callTool` calls elsewhere in this file. Only resolves an id this
+// layer itself sent; anything else falls through to the prior handler.
+function createRawFrameCaller(clientTransport: InMemoryTransport): (
+  id: string | number,
+  name: string,
+  args: Record<string, unknown>,
+) => Promise<unknown> {
+  const pending = new Map<string | number, { resolve: (value: unknown) => void; reject: (err: unknown) => void }>();
+  const priorOnMessage = clientTransport.onmessage;
+  clientTransport.onmessage = (message, extra) => {
+    const asResponse = message as { id?: string | number; result?: unknown; error?: unknown };
+    if (asResponse && typeof asResponse === 'object' && asResponse.id !== undefined && pending.has(asResponse.id)) {
+      const waiter = pending.get(asResponse.id) as { resolve: (value: unknown) => void; reject: (err: unknown) => void };
+      pending.delete(asResponse.id);
+      if ('error' in asResponse && asResponse.error !== undefined) waiter.reject(asResponse.error);
+      else waiter.resolve(asResponse.result);
+      return;
+    }
+    priorOnMessage?.(message, extra);
+  };
+  return function callToolRaw(id, name, args) {
+    return new Promise((resolve, reject) => {
+      pending.set(id, { resolve, reject });
+      void clientTransport.send({
+        jsonrpc: '2.0',
+        id,
+        method: 'tools/call',
+        params: { name, arguments: args },
+      } as Parameters<InMemoryTransport['send']>[0]);
+    });
+  };
+}
+
+describe('ledger tools: true arrival order at the transport (0a8645d2)', () => {
+  let rfTmpRoot: string;
+  let prevRfSessionsDir: string | undefined;
+  let prevRfLedgerDb: string | undefined;
+  let rfHarnessHomeTmp: string;
+  let prevRfHarnessHome: string | undefined;
+  let rfClient: Client;
+  let rfServer: ReturnType<typeof createServer>;
+  let callToolRaw: ReturnType<typeof createRawFrameCaller>;
+
+  beforeEach(async () => {
+    rfTmpRoot = mkdtempSync(join(tmpdir(), 'grounding-mcp-arrival-'));
+    prevRfSessionsDir = process.env.GROUNDING_MCP_SESSIONS_DIR;
+    prevRfLedgerDb = process.env.EVIDENCE_LEDGER_DB;
+    process.env.GROUNDING_MCP_SESSIONS_DIR = join(rfTmpRoot, 'sessions');
+    process.env.EVIDENCE_LEDGER_DB = join(rfTmpRoot, 'ledger.db');
+    prevRfHarnessHome = process.env.HARNESS_HOME;
+    rfHarnessHomeTmp = mkdtempSync(join(tmpdir(), 'grounding-mcp-arrival-harness-home-'));
+    process.env.HARNESS_HOME = rfHarnessHomeTmp;
+
+    resetLedgerDb();
+    resetStores();
+
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    rfServer = createServer();
+    await rfServer.connect(serverTransport);
+    rfClient = new Client({ name: 'arrival-order-test', version: '0.0.0' });
+    await rfClient.connect(clientTransport);
+    callToolRaw = createRawFrameCaller(clientTransport);
+  });
+
+  afterEach(async () => {
+    await rfClient.close();
+    await rfServer.close();
+    resetLedgerDb();
+    resetStores();
+    if (prevRfSessionsDir === undefined) delete process.env.GROUNDING_MCP_SESSIONS_DIR;
+    else process.env.GROUNDING_MCP_SESSIONS_DIR = prevRfSessionsDir;
+    if (prevRfLedgerDb === undefined) delete process.env.EVIDENCE_LEDGER_DB;
+    else process.env.EVIDENCE_LEDGER_DB = prevRfLedgerDb;
+    if (prevRfHarnessHome === undefined) delete process.env.HARNESS_HOME;
+    else process.env.HARNESS_HOME = prevRfHarnessHome;
+    rmSync(rfTmpRoot, { recursive: true, force: true });
+    rmSync(rfHarnessHomeTmp, { recursive: true, force: true });
+  });
+
+  it('pipelined ledger_add then ledger_summary with STRING request ids still sees the add', async () => {
+    const sessionId = 'gs-arrival-string-ids';
+    const addPromise = callToolRaw('s-0', 'ledger_add', { sessionId, type: 'fact', content: 'string-id add' });
+    const summaryPromise = callToolRaw('s-1', 'ledger_summary', { sessionId });
+    const [, summaryRaw] = await Promise.all([addPromise, summaryPromise]);
+    const result = parseToolResult(summaryRaw) as { counts: { facts: number } };
+    expect(result.counts.facts).toBe(1);
+  });
+
+  it('pipelined ledger_add then ledger_summary with FALLING numeric request ids still sees the add', async () => {
+    // ledger_add arrives first (sent first) but carries the numerically
+    // LARGER id; ledger_summary arrives second but carries the numerically
+    // SMALLER id. A queue that sorts by id value would run ledger_summary
+    // first and see 0 facts.
+    const sessionId = 'gs-arrival-falling-ids';
+    const addPromise = callToolRaw(9000, 'ledger_add', { sessionId, type: 'fact', content: 'falling-id add' });
+    const summaryPromise = callToolRaw(7, 'ledger_summary', { sessionId });
+    const [, summaryRaw] = await Promise.all([addPromise, summaryPromise]);
+    const result = parseToolResult(summaryRaw) as { counts: { facts: number } };
+    expect(result.counts.facts).toBe(1);
+  });
+
+  it('pipelined ledger_add then ledger_summary with UUID request ids still sees the add', async () => {
+    const sessionId = 'gs-arrival-uuid-ids';
+    const addPromise = callToolRaw(crypto.randomUUID(), 'ledger_add', { sessionId, type: 'fact', content: 'uuid add' });
+    const summaryPromise = callToolRaw(crypto.randomUUID(), 'ledger_summary', { sessionId });
+    const [, summaryRaw] = await Promise.all([addPromise, summaryPromise]);
+    const result = parseToolResult(summaryRaw) as { counts: { facts: number } };
+    expect(result.counts.facts).toBe(1);
+  });
+
+  it('a pipelined ledger_add + claim_evaluate_from_session sees the add as evidence (queue routing, not bypassed)', async () => {
+    // claim_evaluate_from_session's loadSession() requires a real session
+    // file, so grounding_start's own minted gs-* id is the sessionId used
+    // for the ledger add below, not a hand-picked string.
+    const startRaw = await rfClient.callTool({
+      name: 'grounding_start',
+      arguments: { keyword: 'agent-tasks', problem: 'arrival-order claim routing check' },
+    });
+    const { sessionId } = parseToolResult(startRaw) as { sessionId: string };
+    const [, claimRaw] = await Promise.all([
+      rfClient.callTool({
+        name: 'ledger_add',
+        arguments: { sessionId, type: 'fact', content: 'evidence for claim routing' },
+      }),
+      rfClient.callTool({
+        name: 'claim_evaluate_from_session',
+        arguments: { sessionId, claim: 'the root cause is a missing env var', type: 'root_cause' },
+      }),
+    ]);
+    const result = parseToolResult(claimRaw) as { derivedContext: { has_evidence: boolean } };
+    expect(result.derivedContext.has_evidence).toBe(true);
+  });
+
+  it('a pipelined ledger_add + ledger_status reflects the add in entryCount (queue routing, not bypassed)', async () => {
+    const before = await rfClient.callTool({ name: 'ledger_status', arguments: {} });
+    const beforeCount = (parseToolResult(before) as { entryCount: number }).entryCount;
+    const sessionId = 'gs-arrival-status-routing';
+    const [, statusRaw] = await Promise.all([
+      rfClient.callTool({
+        name: 'ledger_add',
+        arguments: { sessionId, type: 'fact', content: 'evidence for status routing' },
+      }),
+      rfClient.callTool({ name: 'ledger_status', arguments: {} }),
+    ]);
+    const afterCount = (parseToolResult(statusRaw) as { entryCount: number }).entryCount;
+    expect(afterCount).toBe(beforeCount + 1);
+  });
+});
