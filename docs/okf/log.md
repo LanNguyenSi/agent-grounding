@@ -2,6 +2,63 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-23T08:18:16Z, ledger request ordering: sort keys and stamp
+  lifetime (task 0a8645d2, follow-up to the entry below): the
+  arrival-stamp fix in the entry below had two defects. First, the queue
+  read and deleted each entry's arrival stamp inside the sort comparator.
+  A comparator is called more than once per element, so in a batch of
+  three or more ledger requests an entry could lose its stamp mid-sort,
+  drop to the missing-stamp tier and be misordered: with the SDK Client's
+  own ids, `Promise.all([ledger_add, ledger_summary, ledger_summary])`
+  returned 0 facts to a summary that arrived after the add. `drain` now
+  computes every entry's [tier, key] once, reading the stamp without
+  removing it, and sorts the precomputed pairs. Second, the stamp map
+  gained an entry for every JSON-RPC request and lost one only when the
+  sort comparator looked up a ledger request's stamp, so it grew without
+  bound. `trackLedgerRequests` (formerly `stampLedgerRequestArrival`)
+  now stamps only a `tools/call` whose `params.name` is one of the four
+  ledger tools, and releases the stamp when the server sends the response for that id (a `transport.send`
+  wrapper, which covers a ledger call that fails input validation and
+  never reaches the queue) or when the request's queued run settles (a
+  cancelled request, whose response the SDK suppresses). A cap of 1024
+  stamps (`createServer`'s test-oriented `ledgerArrivalCap` option)
+  evicts the oldest stamp for whatever neither release reaches; an entry
+  without a stamp is logged with `console.error` and runs after the
+  stamped entries of its batch. A test-only export,
+  `ledgerArrivalStampCount`, reads the map's size. New tests in the
+  roundtrip test file's "batches, stamp lifetime and missing stamps"
+  block: batches of three (SDK Client ids: add, summary, summary and add,
+  summary, status; raw frames: add, summary, add), four and twelve
+  requests, all of which failed against the previous revision of this
+  change and pass now; the stamp lifetime across in-flight, sequential,
+  validation-failure, throwing-handler and cancelled requests; eviction
+  by a cap of 2 with the missing-stamp fallback; the default cap of 1024;
+  invalid cap values. The reproduction script gained Case 5 (three
+  pipelined stdio frames, exact counts), and Case 3 now counts an
+  unexpected non-zero as a failure. `ledger_add`'s tool description, its
+  README row, the CHANGELOG and the entry below now state the in-flight
+  bound and no longer describe stamps as deleted on use.
+
+  `server.ts` grew by 46 lines (987 to 1033), all of them before the
+  `ledger_add` registration, so every anchored citation into it from that
+  registration on was re-pointed by +46 (13 in
+  `hypothesis-tracker-persistence-split.md`, 2 in
+  `solution-acceptance-verdict-contract.md`, 4 in
+  `evidence-ledger-session-key-shapes.md`, 30 in this log's history),
+  anchor text unchanged and checked to resolve at the new line. The three
+  `session: sessionId,` write-through citations, narrowed to a single
+  line by an earlier revision of this change, again span the `addEntry`
+  call as they did on master. The three docs that list `server.ts` as a
+  source (and, for the verdict contract, the README) were re-verified:
+  none of them makes an ordering claim, and each cited line still says
+  what the doc says it does; all three re-stamped. The
+  2026-09-22T06:28:10Z entry below is restored byte-identical to master
+  (a merge had split one of its sentences with a blank line), and the
+  blank line the same merge added between the 05:50:39Z and 05:22:43Z
+  entries is removed. `okf-kit@0.10.0 check --json docs/okf` on the
+  committed tree: 0 errors, 8 warnings, 0 notices, each of the 8 also a
+  finding of master 71a4dc8 (0/9/0).
+
 - 2026-09-23T07:23:00Z, ledger_add/ledger_summary true arrival order at
   the transport (task 0a8645d2, follow-up to the two entries below): the
   entry directly below fixed the pipelined add+summary reorder for the
@@ -29,11 +86,12 @@
   (the SDK preserves and synchronously invokes any existing
   `transport.onmessage` first, before its own async per-request routing
   that reorders invocation), stamping each JSON-RPC request's arrival
-  into a map keyed by request id, deleted on use. The queue now sorts by
-  that stamp; a request with no recorded stamp (bypassing the wrapped
-  transport, for example a test calling a handler directly) falls back
-  to enqueue-call order and logs loudly (`console.error`) instead of
-  silently. Every ledger-touching handler (`ledger_add`, `ledger_summary`,
+  into a map keyed by request id. The queue now sorts by that stamp; a
+  request with no recorded stamp falls back to enqueue-call order and
+  logs (`console.error`) instead of silently. That version stamped every
+  JSON-RPC request, not only ledger calls, and read and deleted each
+  stamp inside the sort comparator; the entry above records how both
+  were corrected. Every ledger-touching handler (`ledger_add`, `ledger_summary`,
   `claim_evaluate_from_session`, `ledger_status`) goes through this
   mechanism; two more new tests pin that `claim_evaluate_from_session`
   and `ledger_status` are actually routed through it rather than
@@ -190,7 +248,6 @@
   reference remains a prose pointer to the "Cutting a release" section, not
   line-anchored, unaffected by the reworded step-5 sentence. Both docs
   re-stamped.
-
 - 2026-09-23T05:22:43Z, release-guard checks (task d51ae64b): adding three
   new `ci.yml` steps (`check:changelog-duplicate-headings`,
   `check:grounding-mcp-pack-shape`, and `check:shipped-unreleased-pointer`,
@@ -254,7 +311,6 @@
   adding `packages/*/LICENSE` and a `files` entry in twelve package
   manifests plus a `check:package-license` step in `ci.yml` shifted two
   anchored citations in `grounding-stack-overview.md` out of range: the
-
   `.github/workflows/ci.yml` "grounding-mcp packed-tarball --version check"
   step name moved from 430-446 to 449-465 (LICENSE-shipping steps and their
   comments were inserted earlier in the job), and the
@@ -1420,22 +1476,22 @@
   citation at or after line 368 as the file stood after round 2 (the
   `solution_evaluate` registration's line at that point) by +11, uniformly, all the
   way to the end of the file: re-pointed to
-  `packages/grounding-mcp/src/server.ts:648#"'solution_evaluate'"` and
-  `packages/grounding-mcp/src/server.ts:723#"'solution_gate'"` in
+  `packages/grounding-mcp/src/server.ts:694#"'solution_evaluate'"` and
+  `packages/grounding-mcp/src/server.ts:769#"'solution_gate'"` in
   `solution-acceptance-verdict-contract.md`, and to
-  `packages/grounding-mcp/src/server.ts:768#"'hypothesis_record',"`,
-  `packages/grounding-mcp/src/server.ts:782#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:788#"'hypothesis_list',"`,
-  `packages/grounding-mcp/src/server.ts:811#"'hypothesis_evidence',"`,
+  `packages/grounding-mcp/src/server.ts:814#"'hypothesis_record',"`,
   `packages/grounding-mcp/src/server.ts:828#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:834#"'hypothesis_check_done',"`,
-  `packages/grounding-mcp/src/server.ts:860#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:866#"'hypothesis_reject',"`,
-  `packages/grounding-mcp/src/server.ts:882#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:888#"'hypothesis_support',"`,
-  `packages/grounding-mcp/src/server.ts:904#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
-  `packages/grounding-mcp/src/server.ts:909#"saveStore(sessionId, store);"` and
-  `packages/grounding-mcp/src/server.ts:915#"'hypothesis_reset',"` in
+  `packages/grounding-mcp/src/server.ts:834#"'hypothesis_list',"`,
+  `packages/grounding-mcp/src/server.ts:857#"'hypothesis_evidence',"`,
+  `packages/grounding-mcp/src/server.ts:874#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:880#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:906#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:912#"'hypothesis_reject',"`,
+  `packages/grounding-mcp/src/server.ts:928#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:934#"'hypothesis_support',"`,
+  `packages/grounding-mcp/src/server.ts:950#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
+  `packages/grounding-mcp/src/server.ts:955#"saveStore(sessionId, store);"` and
+  `packages/grounding-mcp/src/server.ts:961#"'hypothesis_reset',"` in
   `hypothesis-tracker-persistence-split.md`. `evidence-ledger-session-key-shapes.md`'s
   own citations sit entirely before line 368 (`server.ts:244`, `server.ts:251-256/257`,
   as the file stood then) and did not move, but the file is re-stamped anyway: it declares `server.ts` as a
@@ -1497,8 +1553,8 @@
   `server.ts` edits (the import swap, the spelled-out `createServer` option
   type, the comment above the two lookup registrations, and the two widened `id`
   schemas) shifted the citations below them by +9 as far as
-  `packages/grounding-mcp/src/server.ts:648#"'solution_evaluate'"`, and by +23
-  from `packages/grounding-mcp/src/server.ts:723#"'solution_gate'"` onward. The
+  `packages/grounding-mcp/src/server.ts:694#"'solution_evaluate'"`, and by +23
+  from `packages/grounding-mcp/src/server.ts:769#"'solution_gate'"` onward. The
   new README paragraph shifted
   `packages/grounding-mcp/README.md:214#"the root cause is the backend container's missing OPENAI_API_KEY env var"`
   by +2, and the one new import in the roundtrip test shifted
@@ -1569,21 +1625,21 @@
   ed06b4c8)
   (`packages/grounding-mcp/src/server.ts:104#"const PACKAGE_VERSION = readPackageVersion();"`), by +26
   through the `ledger_add` handler
-  (`packages/grounding-mcp/src/server.ts:511#"Session id"`,
-  `packages/grounding-mcp/src/server.ts:524#"session: sessionId,"`), by +26 at
+  (`packages/grounding-mcp/src/server.ts:557#"Session id"`,
+  `packages/grounding-mcp/src/server.ts:565-572#"session: sessionId,"`), by +26 at
   the `solution_evaluate` registration
-  (`packages/grounding-mcp/src/server.ts:648#"'solution_evaluate'"`), and by +63
-  from `solution_gate` (`packages/grounding-mcp/src/server.ts:723#"'solution_gate'"`)
+  (`packages/grounding-mcp/src/server.ts:694#"'solution_evaluate'"`), and by +63
+  from `solution_gate` (`packages/grounding-mcp/src/server.ts:769#"'solution_gate'"`)
   through every `hypothesis_*` tool below it
-  (`packages/grounding-mcp/src/server.ts:768#"'hypothesis_record',"`,
-  `packages/grounding-mcp/src/server.ts:782#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:788#"'hypothesis_list',"`,
-  `packages/grounding-mcp/src/server.ts:811#"'hypothesis_evidence',"`,
-  `packages/grounding-mcp/src/server.ts:834#"'hypothesis_check_done',"`,
-  `packages/grounding-mcp/src/server.ts:866#"'hypothesis_reject',"`,
-  `packages/grounding-mcp/src/server.ts:888#"'hypothesis_support',"`,
-  `packages/grounding-mcp/src/server.ts:904#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
-  `packages/grounding-mcp/src/server.ts:915#"'hypothesis_reset',"`), since the two
+  (`packages/grounding-mcp/src/server.ts:814#"'hypothesis_record',"`,
+  `packages/grounding-mcp/src/server.ts:828#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:834#"'hypothesis_list',"`,
+  `packages/grounding-mcp/src/server.ts:857#"'hypothesis_evidence',"`,
+  `packages/grounding-mcp/src/server.ts:880#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:912#"'hypothesis_reject',"`,
+  `packages/grounding-mcp/src/server.ts:934#"'hypothesis_support',"`,
+  `packages/grounding-mcp/src/server.ts:950#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
+  `packages/grounding-mcp/src/server.ts:961#"'hypothesis_reset',"`), since the two
   new tool registrations sit between those two anchors. The `preWriteGuard` block
   moved the marker-write anchor's range end only
   (`packages/grounding-mcp/src/solution-verdict.ts:746-803#"const markerPath = writeVerdict(verdict);"`),
