@@ -15,13 +15,19 @@
   silently shifts the window whenever the caller's wall-clock zone is
   not UTC. `sinceIso` is now validated at the tool's zod schema boundary
   to be an ISO-8601 date (`"2026-05-01"`) or a datetime carrying an
-  explicit `Z` or numeric offset (`"2026-05-01T08:00:00Z"`,
-  `"2026-05-01T10:00:00+02:00"`); anything else is rejected with a
-  validation error naming the `sinceIso` field before the query ever
-  runs. SQLite's `datetime()` already normalizes an explicit numeric
-  offset to UTC correctly for the comparison, confirmed against
-  better-sqlite3 directly, so no change was needed on the query side
-  (evidence-ledger's SQL is unchanged). `claim_evaluate_from_session` and
+  explicit `Z`/`z` or numeric offset, with a `T` or space separator,
+  optional seconds and any number of fraction digits (e.g.
+  `"2026-05-01T08:00:00Z"`, `"2026-05-01T10:00:00+02:00"`,
+  `"2026-05-01T08:00:00.123456+00:00"`, `"2026-05-01T08:00z"`,
+  `"2026-05-01 08:00:00Z"`);
+  anything else, and anything `Date.parse` itself rejects (an
+  out-of-range month, day or hour), is rejected with a validation error
+  naming the `sinceIso` field before the query ever runs. Every accepted
+  datetime is normalized to a UTC `Z` instant via
+  `new Date(v).toISOString()` before it reaches evidence-ledger's SQL
+  (a date-only value is passed through unchanged), so an offset SQLite's
+  own `datetime()` cannot represent (hour 15..23, e.g. `"+15:00"`) no
+  longer silently excludes every row. `claim_evaluate_from_session` and
   `ledger_status` do not take a `sinceIso` argument and are unaffected;
   `evidence-ledger`'s own CLI/API `sinceIso` parameter is unchanged and
   out of scope for this fix.
