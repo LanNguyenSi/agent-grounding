@@ -2,6 +2,14 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-23, task dde2ba58: `isValidSinceIso` also rejects a datetime whose
+  UTC normalization falls outside a four-digit year, and the `sinceIso`
+  validation message and description were reworded; no `server.ts` line
+  moved, so no citation changed. `evidence-ledger-session-key-shapes.md`,
+  `hypothesis-tracker-persistence-split.md` and
+  `solution-acceptance-verdict-contract.md` were re-checked (their cited
+  lines are outside the edit) and re-stamped.
+
 - 2026-09-23, `ledger_summary`'s `sinceIso` filter validation, round 2
   (task dde2ba58, follow-up to the entry below fixing a round-1 review
   finding): widened `SINCE_ISO_PATTERN` to admit a `T`, `t` or space
