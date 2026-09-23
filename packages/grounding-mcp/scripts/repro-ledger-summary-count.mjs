@@ -46,43 +46,71 @@
 // automatically here (no network dependency baked into a committed
 // script); the exact commands above reproduce them.
 //
-// Findings (2026-09-23, against this repo's grounding-mcp 0.12.0):
+// Findings (sequential-only investigation, 2026-09-23, against this
+// repo's grounding-mcp 0.12.0, Cases 1/1b/2/3 below: every one
+// SEQUENTIAL, i.e. it awaits ledger_add's response before sending
+// ledger_summary):
 //   - For every entry type (fact, hypothesis, rejected, unknown,
 //     policy_decision), ledger_summary called with the SAME sessionId
 //     string ledger_add used reports a non-zero count for that type,
 //     both within one server process and across two separate server
 //     process invocations (same scratch HOME).
-//   - The same holds for a range of sessionId shapes: a `gs-*` id, a
-//     branch-name-shaped id with a slash, leading/trailing whitespace,
-//     uppercase, "default", and a 300-char id.
-//   - The ONLY way ledger_summary reports 0 for an entry that was
-//     actually added is calling it with a DIFFERENT sessionId string
-//     than the one ledger_add used (see the mismatched-session case
-//     below). That is documented as intended, strict-equality behavior
-//     of the shared evidence-ledger `session` column (see
-//     docs/okf/evidence-ledger-session-key-shapes.md), not a defect at
-//     the ledger_add / ledger_summary MCP-tool level.
+//   - The same holds for a range of sessionId shapes (Case 1b): a
+//     `gs-*` id, a branch-name-shaped id with a slash,
+//     leading/trailing whitespace, uppercase, "default", and a
+//     300-char id.
+//   - A mismatched sessionId (Case 3) reports 0 for the mismatched
+//     call, as documented: intended, strict-equality behavior of the
+//     shared evidence-ledger `session` column (see
+//     docs/okf/evidence-ledger-session-key-shapes.md), not a defect.
 //   - Ran all four configurations above (workspace-build,
 //     tarball+registry with evidence-ledger 0.6.0 confirmed resolved
 //     from the registry via `npm ls`, registry @0.12.0, registry
-//     @0.11.0): every configuration showed the same result, no defect
-//     reproduced in any of them. The published evidence-ledger 0.6.0's
-//     db.ts (getDbPath: `join(homedir(), ".evidence-ledger")`, file
-//     name "ledger.db") is byte-for-byte the same session-handling and
+//     @0.11.0): every configuration showed the same result in every
+//     SEQUENTIAL case. The published evidence-ledger 0.6.0's db.ts
+//     (getDbPath: `join(homedir(), ".evidence-ledger")`, file name
+//     "ledger.db") is byte-for-byte the same session-handling and
 //     DB-path logic as this workspace's source; grounding-mcp's
 //     ledger-bridge.ts calls the SAME evidence-ledger `getDb()`
 //     singleton for both `ledger_add` and `ledger_summary` inside one
 //     process, so there is no place a write could resolve one DB path
 //     and a read another, in the packed/published builds any more than
 //     in the workspace build.
-//   - No defect was found at the MCP tool level, in any tested
-//     configuration. This script is the record of that negative
-//     reproduction attempt; see tests/grounding-gate-mcp-roundtrip.test.ts
-//     for the same cases pinned as automated regression tests (against
-//     the workspace build, run by `npm test`).
+//   - The sequential-only investigation concluded (WRONG, see the
+//     pipelined investigation below) that no defect existed at the MCP
+//     tool level. That conclusion held only because it never tried a
+//     concurrent/pipelined add+summary pair.
+//
+// Findings (pipelined investigation, 2026-09-23, against this repo's
+// grounding-mcp, base commit fe8fa4f, Case 4 below, PIPELINED: the
+// ledger_summary request is sent immediately after ledger_add, WITHOUT
+// awaiting ledger_add's response first):
+//   - The defect IS real: 20/20 runs of Case 4 against base fe8fa4f
+//     reported counts.facts=0 for a ledger_summary that raced a
+//     ledger_add on the same sessionId. Cause: the MCP SDK's
+//     `tools/call` dispatch validates each request's zod input schema
+//     asynchronously before invoking its handler, and ledger_add's
+//     (5-key object) and ledger_summary's (3-key object) schemas
+//     resolve that validation in a different number of microtask
+//     ticks, so the summary handler can be INVOKED before the add
+//     handler even though the add request was sent, and received,
+//     first, confirmed by an instrumented trace, not just by output
+//     timing (see the "Ledger request serialization" comment above
+//     `createLedgerRequestQueue` in src/server.ts for the full
+//     mechanism).
+//   - Fixed by serializing every ledger-touching handler (ledger_add,
+//     ledger_summary, claim_evaluate_from_session, ledger_status)
+//     through one queue keyed by JSON-RPC request id, which reflects
+//     true arrival order even when handler invocation order does not.
+//     Case 4 now passes (0/20 zero-count runs) against the fixed build.
+//   - This script is the reproduction record for BOTH rounds; see
+//     tests/grounding-gate-mcp-roundtrip.test.ts for the same cases
+//     (including the pipelined one, as a `Promise.all` over
+//     InMemoryTransport) pinned as automated regression tests against
+//     the workspace build, run by `npm test`.
 
 import { spawn } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -100,9 +128,25 @@ const configs =
       })
     : [{ label: 'workspace-build', serverPath: join(__dirname, '..', 'dist', 'server.js') }];
 
+// Scratch dirs made by every case below, removed in `main`'s `finally` so a
+// run that fails partway still cleans up instead of leaking tempdirs.
+const scratchDirs = [];
+
+function makeScratchHome(prefix) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  scratchDirs.push(dir);
+  return dir;
+}
+
 function startServer(serverPath, scratchHome) {
+  // Drop EVIDENCE_LEDGER_DB from the child's env even when it is set in
+  // THIS process's own env (a leftover from a manual invocation, or a
+  // parent test run): otherwise the child ignores the scratch HOME below
+  // and writes to whatever path that variable names, defeating the
+  // isolation this script exists to guarantee.
+  const { EVIDENCE_LEDGER_DB: _unused, ...restEnv } = process.env;
   const child = spawn('node', [serverPath], {
-    env: { ...process.env, HOME: scratchHome, PATH: process.env.PATH },
+    env: { ...restEnv, HOME: scratchHome, PATH: process.env.PATH },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   let buf = '';
@@ -129,15 +173,26 @@ function startServer(serverPath, scratchHome) {
   });
   child.stderr.on('data', (d) => process.stderr.write(`[stderr] ${d}`));
 
-  function send(method, params) {
+  // `sendRaw` writes the request and returns immediately with the pending
+  // response promise, WITHOUT awaiting it: the caller decides whether to
+  // await right away (the sequential cases below) or fire a second
+  // request first (the pipelined case, which is the one that actually
+  // reproduces the tracker defect; see `send`/`callTool`, which both
+  // await, for why the sequential cases above never do).
+  function sendRaw(method, params) {
     const id = nextId++;
-    return new Promise((resolve) => {
-      pending.set(id, resolve);
-      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
-    });
+    const promise = new Promise((resolve) => pending.set(id, resolve));
+    child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
+    return { id, promise };
+  }
+  function send(method, params) {
+    return sendRaw(method, params).promise;
   }
   function callTool(name, args) {
     return send('tools/call', { name, arguments: args });
+  }
+  function callToolRaw(name, args) {
+    return sendRaw('tools/call', { name, arguments: args });
   }
   async function init() {
     await send('initialize', {
@@ -151,7 +206,7 @@ function startServer(serverPath, scratchHome) {
     child.stdin.end();
     child.kill();
   }
-  return { callTool, init, stop };
+  return { callTool, callToolRaw, init, stop };
 }
 
 function factsCount(summaryRaw) {
@@ -163,13 +218,27 @@ function factsCount(summaryRaw) {
   }
 }
 
+// Session id shapes actually exercised by Case 1b below. Every entry here
+// is expected to be non-zero when ledger_summary is called with the exact
+// same string ledger_add used: the header's shape claim is backed by
+// this array, not by prose alone.
+const SESSION_ID_SHAPES = [
+  'gs-repro-shape-basic',
+  'fix/0a8645d2-ledger-summary-count', // branch-name-shaped, contains a slash
+  '  gs-repro-shape-padded  ', // leading/trailing whitespace
+  'GS-REPRO-SHAPE-UPPER', // uppercase
+  'default',
+  'g'.repeat(300), // 300-char id
+];
+
 async function runConfig({ label, serverPath }) {
   console.log(`\n=== configuration: ${label} (${serverPath}) ===`);
   let failures = 0;
 
-  // Case 1: same sessionId, every entry type, same process.
+  // Case 1: same sessionId, every entry type, same process, sequential
+  // (ledger_add's response is awaited before ledger_summary is sent).
   {
-    const scratchHome = mkdtempSync(join(tmpdir(), 'ledger-repro-'));
+    const scratchHome = makeScratchHome('ledger-repro-');
     const server = startServer(serverPath, scratchHome);
     await server.init();
     const sessionId = 'gs-repro-session-abc123';
@@ -185,9 +254,29 @@ async function runConfig({ label, serverPath }) {
     server.stop();
   }
 
+  // Case 1b: a range of sessionId shapes, sequential add-then-summary,
+  // each on its own fresh session so the shapes cannot collide with each
+  // other. Backs the header's "a range of sessionId shapes" claim with an
+  // actual run instead of prose only (round-2 finding: the header used to
+  // claim these shapes were tested without a corresponding case).
+  {
+    const scratchHome = makeScratchHome('ledger-repro-shapes-');
+    const server = startServer(serverPath, scratchHome);
+    await server.init();
+    for (const sessionId of SESSION_ID_SHAPES) {
+      await server.callTool('ledger_add', { sessionId, type: 'fact', content: 'shape pin', confidence: 'high' });
+      const summary = await server.callTool('ledger_summary', { sessionId });
+      const counts = factsCount(summary);
+      const ok = counts && counts.facts >= 1;
+      console.log(`[${label}] [sessionId shape=${JSON.stringify(sessionId)}] counts.facts=${counts?.facts} -> ${ok ? 'OK (non-zero)' : 'UNEXPECTED ZERO'}`);
+      if (!ok) failures++;
+    }
+    server.stop();
+  }
+
   // Case 2: same sessionId, across two separate process invocations.
   {
-    const scratchHome = mkdtempSync(join(tmpdir(), 'ledger-repro-cross-'));
+    const scratchHome = makeScratchHome('ledger-repro-cross-');
     const sessionId = 'gs-repro-cross-proc-xyz789';
     const s1 = startServer(serverPath, scratchHome);
     await s1.init();
@@ -205,7 +294,7 @@ async function runConfig({ label, serverPath }) {
 
   // Case 3: mismatched sessionId (documented, intended zero).
   {
-    const scratchHome = mkdtempSync(join(tmpdir(), 'ledger-repro-mismatch-'));
+    const scratchHome = makeScratchHome('ledger-repro-mismatch-');
     const server = startServer(serverPath, scratchHome);
     await server.init();
     await server.callTool('ledger_add', { sessionId: 'gs-agent-grounding-abc123', type: 'fact', content: 'added under gs-* id', confidence: 'high' });
@@ -216,20 +305,54 @@ async function runConfig({ label, serverPath }) {
     server.stop();
   }
 
+  // Case 4: PIPELINED add+summary for the same sessionId, the exact
+  // shape that actually reproduces the tracker defect (the sequential
+  // cases above never do). The ledger_add request is sent, then the
+  // ledger_summary request is sent immediately after WITHOUT awaiting
+  // ledger_add's response first; both responses are then awaited
+  // together. Fails 20/20 runs against this task's base commit (fe8fa4f):
+  // the MCP SDK validates each request's zod schema asynchronously before
+  // invoking its handler, and ledger_add's and ledger_summary's schemas
+  // (different field counts) resolve that validation in a different
+  // number of microtask ticks, so the summary handler can run before the
+  // add handler even though its request was sent second. Fixed by
+  // serializing ledger-touching handlers in JSON-RPC request-id order
+  // (see the "Ledger request serialization" comment in src/server.ts).
+  {
+    const scratchHome = makeScratchHome('ledger-repro-pipelined-');
+    const server = startServer(serverPath, scratchHome);
+    await server.init();
+    const sessionId = 'gs-repro-pipelined-abc123';
+    const addPending = server.callToolRaw('ledger_add', { sessionId, type: 'fact', content: 'pipelined add', confidence: 'high' });
+    const summaryPending = server.callToolRaw('ledger_summary', { sessionId });
+    const [, summaryRaw] = await Promise.all([addPending.promise, summaryPending.promise]);
+    const counts = factsCount(summaryRaw);
+    const ok = counts && counts.facts >= 1;
+    console.log(`[${label}] [pipelined add(id=${addPending.id})+summary(id=${summaryPending.id}), same sessionId] counts.facts=${counts?.facts} -> ${ok ? 'OK (non-zero)' : 'UNEXPECTED ZERO'}`);
+    if (!ok) failures++;
+    server.stop();
+  }
+
   return failures;
 }
 
 async function main() {
   let totalFailures = 0;
-  for (const config of configs) {
-    totalFailures += await runConfig(config);
+  try {
+    for (const config of configs) {
+      totalFailures += await runConfig(config);
+    }
+  } finally {
+    for (const dir of scratchDirs) {
+      rmSync(dir, { recursive: true, force: true });
+    }
   }
 
   if (totalFailures > 0) {
     console.error(`\n${totalFailures} case(s), across ${configs.length} configuration(s), showed an unexpected zero count for a same-sessionId add+summary pair.`);
     process.exit(1);
   }
-  console.log(`\nNo defect reproduced in any of ${configs.length} configuration(s): ledger_summary always reflects a prior ledger_add under the same exact sessionId.`);
+  console.log(`\nNo defect reproduced in any of ${configs.length} configuration(s): ledger_summary always reflects a prior ledger_add under the same exact sessionId, sequential OR pipelined.`);
 }
 
 main();
