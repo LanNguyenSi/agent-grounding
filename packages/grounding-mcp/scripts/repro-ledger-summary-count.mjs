@@ -123,11 +123,22 @@
 //     mechanism). Every Case 4 sub-case (every entry type, default ids,
 //     string ids, falling numeric ids) now passes against the fixed
 //     build.
+//   - The first arrival-stamp build read and deleted each stamp inside
+//     the queue's sort comparator. A comparator runs more than once per
+//     element, so with three or more ledger requests in one batch an entry
+//     could lose its stamp mid-sort and be misordered: Case 5 below (three
+//     pipelined frames, default ids) reported a wrong count in some of its
+//     iterations against that build (over stdio the three frames do not
+//     always arrive in one read, so not every iteration puts all three in
+//     one batch; the in-process tests, which send them synchronously,
+//     failed against it). The fixed build computes every sort key once
+//     before sorting; every Case 5 iteration passes against it.
 //   - This script is the reproduction record for the full investigation;
 //     see tests/grounding-gate-mcp-roundtrip.test.ts for the same cases
-//     (including pipelined string/falling/UUID ids, as raw JSON-RPC
-//     frames over InMemoryTransport) pinned as automated regression
-//     tests against the workspace build, run by `npm test`.
+//     (including pipelined string/falling/UUID ids and batches of three,
+//     four and twelve requests, as raw JSON-RPC frames over
+//     InMemoryTransport) pinned as automated regression tests against the
+//     workspace build, run by `npm test`.
 
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -325,6 +336,7 @@ async function runConfig({ label, serverPath }) {
     const counts = factsCount(summary);
     const isZero = counts && counts.facts === 0;
     console.log(`[${label}] [mismatched sessionId, intended] counts.facts=${counts?.facts} -> ${isZero ? 'OK (zero, as documented)' : 'UNEXPECTED NON-ZERO'}`);
+    if (!isZero) failures++;
     server.stop();
   }
 
@@ -421,6 +433,49 @@ async function runConfig({ label, serverPath }) {
     }
   }
 
+  // Case 5: THREE pipelined frames for the same sessionId, sent back to
+  // back without awaiting any response, default rising-integer request
+  // ids. A pair (Case 4) holds two ledger requests in one batch; three or
+  // more exercise the queue's sort itself. Two shapes, five fresh
+  // sessionIds each, one server process:
+  //   - ledger_add, ledger_summary, ledger_add: the summary must see
+  //     exactly 1 fact (the first add, not the second);
+  //   - ledger_add, ledger_summary, ledger_summary: both summaries must
+  //     see exactly 1 fact.
+  {
+    const scratchHome = makeScratchHome('ledger-repro-pipelined-three-');
+    const server = startServer(serverPath, scratchHome);
+    await server.init();
+    for (let i = 0; i < 5; i++) {
+      const sessionId = `gs-repro-three-add-sum-add-${i}`;
+      const add1 = server.callToolRaw('ledger_add', { sessionId, type: 'fact', content: 'first add', confidence: 'high' });
+      const summary = server.callToolRaw('ledger_summary', { sessionId });
+      const add2 = server.callToolRaw('ledger_add', { sessionId, type: 'fact', content: 'second add', confidence: 'high' });
+      const [, summaryRaw] = await Promise.all([add1.promise, summary.promise, add2.promise]);
+      const counts = factsCount(summaryRaw);
+      const ok = counts && counts.facts === 1;
+      console.log(
+        `[${label}] [pipelined add(id=${add1.id}), summary(id=${summary.id}), add(id=${add2.id}), same sessionId] counts.facts=${counts?.facts} -> ${ok ? 'OK (exactly 1)' : 'UNEXPECTED COUNT (expected exactly 1)'}`,
+      );
+      if (!ok) failures++;
+    }
+    for (let i = 0; i < 5; i++) {
+      const sessionId = `gs-repro-three-add-sum-sum-${i}`;
+      const add = server.callToolRaw('ledger_add', { sessionId, type: 'fact', content: 'only add', confidence: 'high' });
+      const summary1 = server.callToolRaw('ledger_summary', { sessionId });
+      const summary2 = server.callToolRaw('ledger_summary', { sessionId });
+      const [, firstRaw, secondRaw] = await Promise.all([add.promise, summary1.promise, summary2.promise]);
+      const first = factsCount(firstRaw);
+      const second = factsCount(secondRaw);
+      const ok = first && second && first.facts === 1 && second.facts === 1;
+      console.log(
+        `[${label}] [pipelined add(id=${add.id}), summary(id=${summary1.id}), summary(id=${summary2.id}), same sessionId] counts.facts=${first?.facts},${second?.facts} -> ${ok ? 'OK (1 and 1)' : 'UNEXPECTED COUNT (expected 1 and 1)'}`,
+      );
+      if (!ok) failures++;
+    }
+    server.stop();
+  }
+
   return failures;
 }
 
@@ -437,18 +492,19 @@ async function main() {
   }
 
   if (totalFailures > 0) {
-    console.error(`\n${totalFailures} case(s), across ${configs.length} configuration(s), showed an unexpected zero count for a same-sessionId add+summary pair.`);
+    console.error(`\n${totalFailures} case(s), across ${configs.length} configuration(s), showed an unexpected count (a zero after a same-sessionId add, a non-zero for a mismatched sessionId, or a three-frame batch off its expected count).`);
     process.exit(1);
   }
   // States only what THIS run exercised: Cases 1/1b/2/3 (sequential, every
-  // entry type, a range of sessionId shapes, cross-process) and Case 4
-  // (pipelined, every entry type, default rising-integer / string /
-  // falling-numeric request ids), against the ${configs.length}
-  // configuration(s) passed on the command line. It does not claim
-  // anything about a configuration not passed, or about hypothesis_*
-  // tools (a separate store, out of scope for this task).
+  // entry type, a range of sessionId shapes, cross-process, a mismatched
+  // sessionId), Case 4 (pipelined pairs, every entry type, default
+  // rising-integer / string / falling-numeric request ids) and Case 5
+  // (three pipelined frames, default ids), against the configuration(s)
+  // passed on the command line. It does not claim anything about a
+  // configuration not passed, or about hypothesis_* tools (a separate
+  // store, out of scope for this task).
   console.log(
-    `\nNo unexpected zero count in any of ${configs.length} configuration(s): ledger_summary always reflected a prior ledger_add under the same exact sessionId, across every entry type, sequential and pipelined, including STRING and FALLING-numeric pipelined request ids.`,
+    `\nNo unexpected count in any of ${configs.length} configuration(s): in every case run, ledger_summary reflected each earlier ledger_add under the same exact sessionId (every entry type, sequential and pipelined, STRING and FALLING-numeric pipelined request ids, three-frame pipelined batches), and a mismatched sessionId read 0.`,
   );
 }
 
