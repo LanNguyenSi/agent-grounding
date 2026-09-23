@@ -2,8 +2,11 @@
 
 ## [Unreleased]
 
+## 0.13.0, 2026-09-23
+
 ### Fixed
 
+- The published tarball now ships the MIT `LICENSE` file (#240).
 - `ledger_summary`'s `sinceIso` filter now rejects a value it cannot
   compare instead of silently matching nothing (task dde2ba58). Cause:
   the filter reaches evidence-ledger's
