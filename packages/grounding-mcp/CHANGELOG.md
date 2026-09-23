@@ -15,18 +15,27 @@
   even though the add request arrived first. Every handler that reads or
   writes the ledger (`ledger_add`, `ledger_summary`,
   `claim_evaluate_from_session`, `ledger_status`) now serializes through
-  one queue keyed by JSON-RPC request id, which reflects true arrival
-  order even when handler invocation order does not (see the "Ledger
-  request serialization" comment above `createLedgerRequestQueue` in
-  `src/server.ts` for the full mechanism). A first investigation of this
-  tracker report tested only sequential add-then-summary calls (every
-  entry type, a range of sessionId shapes, in-process and across separate
-  server processes, and four configurations including a packed tarball
-  with evidence-ledger 0.6.0 and the published `0.12.0`/`0.11.0`) and
-  never reproduced it; the real defect surfaced only once a
-  concurrent/pipelined pair was tried (see
+  one queue that orders each request by its TRUE arrival order at the
+  transport: `createServer` wraps `server.connect` to install an
+  `onmessage` wrapper on the transport before the SDK's own
+  `Protocol#connect` runs, stamping each JSON-RPC request's arrival
+  synchronously, before any request's async zod validation can reorder
+  which handler is invoked first (see the "Ledger request serialization"
+  comment above `createLedgerRequestQueue` in `src/server.ts` for the
+  full mechanism, including why sorting by the request id's own VALUE, an
+  approach tried and found insufficient during this same investigation,
+  is wrong for a string id, a UUID, or a client that hands out falling
+  numeric ids). `hypothesis_*` tools read/write a separate store through
+  the same kind of SDK dispatch and are NOT serialized by this or any
+  other mechanism; tracked as a follow-up task. A first investigation of
+  this tracker report tested only sequential add-then-summary calls
+  (every entry type, a range of sessionId shapes, in-process and across
+  separate server processes, and four configurations including a packed
+  tarball with evidence-ledger 0.6.0 and the published
+  `0.12.0`/`0.11.0`) and never reproduced it; the real defect surfaced
+  only once a concurrent/pipelined pair was tried (see
   `scripts/repro-ledger-summary-count.mjs`'s pipelined case and the
-  "concurrent requests" tests in
+  "concurrent requests" / "true arrival order at the transport" tests in
   `tests/grounding-gate-mcp-roundtrip.test.ts`).
 - `sessionId` now requires at least 1 character (zod `.min(1)`) on
   `ledger_add`, `ledger_summary`, and `claim_evaluate_from_session`: an
@@ -37,15 +46,18 @@
 
 ### Changed
 
-- `ledger_add` and `ledger_summary` tool descriptions, and the README
-  tool catalog, state in one sentence each that a session's entries are
-  only visible to a `ledger_summary` call using the exact sessionId
-  string `ledger_add` used (case-sensitive, no normalization), and that
-  a concurrent/pipelined pair is serialized in request-arrival order.
-  `ledger_summary`'s description and README row now describe a zero
-  count as non-exhaustive (also caused by a `sinceIso`/`contentPrefix`
-  filter that excludes every row) instead of naming a mismatched
-  sessionId as the only cause.
+- `ledger_add`, `ledger_summary`, `claim_evaluate_from_session`, and
+  `ledger_status` tool descriptions, and the README tool catalog, state
+  precisely which tools order a concurrent/pipelined ledger access by
+  arrival at the transport (those four) and which do not
+  (`hypothesis_*`, a separate store, tracked as a follow-up).
+  `ledger_add`'s and `ledger_summary`'s descriptions also state in one
+  sentence each that a session's entries are only visible to a
+  `ledger_summary` call using the exact sessionId string `ledger_add`
+  used (case-sensitive, no normalization). `ledger_summary`'s description
+  and README row describe a zero count as non-exhaustive (also caused by
+  a `sinceIso`/`contentPrefix` filter that excludes every row) instead of
+  naming a mismatched sessionId as the only cause.
 
 ## 0.12.0, 2026-09-21
 
