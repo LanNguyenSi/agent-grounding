@@ -42,7 +42,7 @@ test('parseDatedSections: "## [X] - DATE" shape', () => {
   assert.deepEqual(sections[0].kinds, ['Added']);
 });
 
-test('parseDatedSections: "## X \u2014 DATE" (em dash) shape is recognized (decision D-013: real packages/understanding-gate/CHANGELOG.md uses this)', () => {
+test('parseDatedSections: "## X \u2014 DATE" (em dash) shape is recognized (real packages/understanding-gate/CHANGELOG.md uses this)', () => {
   const text = '# Changelog\n\n## 0.2.0 \u2014 2026-05-02\n\n### Added\n\n- a\n';
   const sections = parseDatedSections(text);
   assert.equal(sections.length, 1);
@@ -85,7 +85,7 @@ test('collectFileViolations: a non-dated "## Notes" section holding a repeated #
   assert.deepEqual(collectFileViolations('packages/x/CHANGELOG.md', text), []);
 });
 
-// ── findAmbiguousHeadings / the three example shapes (decision D-013) ──
+// ── findAmbiguousHeadings / the three example shapes ──
 
 test('findAmbiguousHeadings: "## X.Y.Z (DATE)" (parenthesised date) does NOT match DATED_HEADING_RE and is reported as ambiguous (FAIL visibly, not silently skipped)', () => {
   const text = '# Changelog\n\n## 0.13.0 (2026-10-01)\n\n### Added\n\n- a\n\n### Added\n\n- b\n';
@@ -153,7 +153,7 @@ test('findDuplicateKinds: negative control -- distinct kinds, no duplicate', () 
   assert.deepEqual(dupes, []);
 });
 
-// ── isAllowlisted / collectFileViolations (injectable allowlist, decision D-013) ──
+// ── isAllowlisted / collectFileViolations (injectable allowlist) ──
 
 test('isAllowlisted: false when ALLOWLIST is empty (today\'s real state)', () => {
   assert.equal(isAllowlisted('CHANGELOG.md', '0.1.0', 'Added'), false);
@@ -274,7 +274,7 @@ test('run: fails loudly on zero CHANGELOG.md files found (vacuous-pass guard)', 
   }
 });
 
-test('run: real repo sanity check -- clean today (no pre-existing duplicate or ambiguous heading survives, verified when this check was introduced and again at round 3, decision D-013)', () => {
+test('run: real repo sanity check -- clean today (no pre-existing duplicate or ambiguous heading survives, task d51ae64b)', () => {
   const rootDir = path.join(__dirname, '..');
   assert.equal(run(rootDir), 0);
 });

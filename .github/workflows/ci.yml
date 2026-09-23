@@ -430,8 +430,8 @@ jobs:
         # Asserts no dated CHANGELOG section (## X, DATE or ## [X] - DATE)
         # carries the same ### <Kind> heading twice (task d51ae64b: the
         # grounding-mcp 0.12.0 cut did this for ### Added and ### Changed,
-        # nothing mechanical caught it). Pure text parsing, no build needed,
-        # so this runs alongside the other pre-Build checks.
+        # and nothing mechanical caught it). Pure text parsing, no build
+        # needed, so this runs alongside the other pre-Build checks.
         run: npm run check:changelog-duplicate-headings
 
       - name: CHANGELOG duplicate-heading checker unit tests
@@ -522,12 +522,12 @@ jobs:
         # `npm pack --dry-run` file list, minus package.json, LICENSE*, and
         # a small binary-extension exclusion -- not an allowlist of known
         # kinds) pointing at CHANGELOG.md's [Unreleased] section while that
-        # section is empty (task d51ae64b round 3, decision D-013: round 1
-        # and round 2 chased README/CHANGELOG/dist one kind at a time and
-        # kept missing a next one, e.g. a shipped ROADMAP.md; round 3 drops
-        # the per-kind allowlist and adds a coverage invariant so an empty
-        # or malformed `npm pack` result fails loudly instead of passing
-        # vacuously). Runs after Build: the dist/**/* comment scan needs
+        # section is empty (task d51ae64b: chasing README/CHANGELOG/dist one
+        # kind at a time kept missing a next one, e.g. a shipped
+        # ROADMAP.md, so this check drops the per-kind allowlist entirely
+        # and adds a coverage invariant so an empty or malformed
+        # `npm pack` result fails loudly instead of passing vacuously).
+        # Runs after Build: the dist/**/* comment scan needs
         # real built output, not source. See
         # scripts/check-shipped-unreleased-pointer.js's own docblock for
         # the full scan rule.
