@@ -98,16 +98,36 @@
 //     timing (see the "Ledger request serialization" comment above
 //     `createLedgerRequestQueue` in src/server.ts for the full
 //     mechanism).
-//   - Fixed by serializing every ledger-touching handler (ledger_add,
+//   - An earlier fix serialized every ledger-touching handler (ledger_add,
 //     ledger_summary, claim_evaluate_from_session, ledger_status)
-//     through one queue keyed by JSON-RPC request id, which reflects
-//     true arrival order even when handler invocation order does not.
-//     Case 4 now passes (0/20 zero-count runs) against the fixed build.
-//   - This script is the reproduction record for BOTH rounds; see
-//     tests/grounding-gate-mcp-roundtrip.test.ts for the same cases
-//     (including the pipelined one, as a `Promise.all` over
-//     InMemoryTransport) pinned as automated regression tests against
-//     the workspace build, run by `npm test`.
+//     through one queue keyed by the JSON-RPC request id's own VALUE
+//     (falling back to enqueue-call order for a non-numeric id). Case 4's
+//     default rising-integer-id sub-case passed against that fix.
+//
+// Findings (arrival-stamp investigation, 2026-09-23, against this repo's
+// grounding-mcp, same base commit fe8fa4f, Case 4's STRING-id and
+// FALLING-numeric-id sub-cases below): the id-VALUE-sorting fix above was
+// still wrong for an id shape a real client is free to use.
+//   - Sorting by id VALUE assumes a rising numeric sequence, which
+//     JSON-RPC does not require: Case 4's string-id and falling-id
+//     sub-cases both reproduced the original defect (counts.facts=0)
+//     against the id-VALUE-sorting fix, exactly like the unfixed base.
+//   - The enqueue-call-order fallback for a non-numeric id has the same
+//     flaw the original bug did: it observes the SDK's already-reordered
+//     invocation order, not the real arrival order, for the same reason
+//     the original bug existed.
+//   - Fixed by stamping true arrival order at the transport instead
+//     (`stampLedgerRequestArrival`, installed by wrapping `server.connect`
+//     in `createServer`; see the "Ledger request serialization" comment
+//     above `createLedgerRequestQueue` in src/server.ts for the full
+//     mechanism). Every Case 4 sub-case (every entry type, default ids,
+//     string ids, falling numeric ids) now passes against the fixed
+//     build.
+//   - This script is the reproduction record for the full investigation;
+//     see tests/grounding-gate-mcp-roundtrip.test.ts for the same cases
+//     (including pipelined string/falling/UUID ids, as raw JSON-RPC
+//     frames over InMemoryTransport) pinned as automated regression
+//     tests against the workspace build, run by `npm test`.
 
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -179,8 +199,11 @@ function startServer(serverPath, scratchHome) {
   // request first (the pipelined case, which is the one that actually
   // reproduces the tracker defect; see `send`/`callTool`, which both
   // await, for why the sequential cases above never do).
-  function sendRaw(method, params) {
-    const id = nextId++;
+  // `id` is optional: defaults to the next auto-incrementing integer, or
+  // pass an explicit string/number to control the exact JSON-RPC request
+  // id (used by Case 4's string-id and falling-id sub-cases below, which
+  // need ids the default rising-integer counter never produces).
+  function sendRaw(method, params, id = nextId++) {
     const promise = new Promise((resolve) => pending.set(id, resolve));
     child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
     return { id, promise };
@@ -191,8 +214,8 @@ function startServer(serverPath, scratchHome) {
   function callTool(name, args) {
     return send('tools/call', { name, arguments: args });
   }
-  function callToolRaw(name, args) {
-    return sendRaw('tools/call', { name, arguments: args });
+  function callToolRaw(name, args, id) {
+    return sendRaw('tools/call', { name, arguments: args }, id);
   }
   async function init() {
     await send('initialize', {
@@ -307,30 +330,95 @@ async function runConfig({ label, serverPath }) {
 
   // Case 4: PIPELINED add+summary for the same sessionId, the exact
   // shape that actually reproduces the tracker defect (the sequential
-  // cases above never do). The ledger_add request is sent, then the
-  // ledger_summary request is sent immediately after WITHOUT awaiting
-  // ledger_add's response first; both responses are then awaited
-  // together. Fails 20/20 runs against this task's base commit (fe8fa4f):
-  // the MCP SDK validates each request's zod schema asynchronously before
-  // invoking its handler, and ledger_add's and ledger_summary's schemas
-  // (different field counts) resolve that validation in a different
-  // number of microtask ticks, so the summary handler can run before the
-  // add handler even though its request was sent second. Fixed by
-  // serializing ledger-touching handlers in JSON-RPC request-id order
+  // cases above never do): a ledger_add request is sent, then a second
+  // request is sent immediately after WITHOUT awaiting ledger_add's
+  // response first; both responses are then awaited together. Three
+  // sub-cases:
+  //   - every entry type (fact, hypothesis, rejected, unknown,
+  //     policy_decision), one pipelined add+summary pair per type, each
+  //     on its own sessionId, default rising-integer request ids;
+  //   - STRING request ids ('s-add'/'s-summary'): an id has no numeric
+  //     value a rising-integer-id-shaped fix can sort by;
+  //   - FALLING numeric request ids (add's id numerically LARGER than
+  //     summary's, even though add is sent, and arrives, first): a fix
+  //     that sorts by id VALUE runs summary before add here.
+  // Failed 20/20 runs of the default-ids sub-case against this task's
+  // base commit (fe8fa4f, no queue at all): the MCP SDK validates each
+  // request's zod schema asynchronously before invoking its handler, and
+  // ledger_add's and ledger_summary's schemas (different field counts)
+  // resolve that validation in a different number of microtask ticks, so
+  // the summary handler can run before the add handler even though its
+  // request was sent second. An earlier fix for this task serialized
+  // ledger-touching handlers by sorting the JSON-RPC request id's own
+  // VALUE: that fixed the default rising-integer-id sub-case but not the
+  // string-id or falling-id sub-cases below, since neither id shape has
+  // a value a rising-sequence sort can rely on. The fix that closes all
+  // three sub-cases stamps true arrival order at the transport instead
   // (see the "Ledger request serialization" comment in src/server.ts).
   {
-    const scratchHome = makeScratchHome('ledger-repro-pipelined-');
-    const server = startServer(serverPath, scratchHome);
-    await server.init();
-    const sessionId = 'gs-repro-pipelined-abc123';
-    const addPending = server.callToolRaw('ledger_add', { sessionId, type: 'fact', content: 'pipelined add', confidence: 'high' });
-    const summaryPending = server.callToolRaw('ledger_summary', { sessionId });
-    const [, summaryRaw] = await Promise.all([addPending.promise, summaryPending.promise]);
-    const counts = factsCount(summaryRaw);
-    const ok = counts && counts.facts >= 1;
-    console.log(`[${label}] [pipelined add(id=${addPending.id})+summary(id=${summaryPending.id}), same sessionId] counts.facts=${counts?.facts} -> ${ok ? 'OK (non-zero)' : 'UNEXPECTED ZERO'}`);
-    if (!ok) failures++;
-    server.stop();
+    const entryTypeToKey = {
+      fact: 'facts',
+      hypothesis: 'hypotheses',
+      rejected: 'rejected',
+      unknown: 'unknowns',
+      policy_decision: 'policyDecisions',
+    };
+    for (const [type, key] of Object.entries(entryTypeToKey)) {
+      const scratchHome = makeScratchHome('ledger-repro-pipelined-type-');
+      const server = startServer(serverPath, scratchHome);
+      await server.init();
+      const sessionId = `gs-repro-pipelined-${type}`;
+      const addPending = server.callToolRaw('ledger_add', { sessionId, type, content: `pipelined add type=${type}`, confidence: 'high' });
+      const summaryPending = server.callToolRaw('ledger_summary', { sessionId });
+      const [, summaryRaw] = await Promise.all([addPending.promise, summaryPending.promise]);
+      const counts = factsCount(summaryRaw);
+      const ok = counts && counts[key] >= 1;
+      console.log(`[${label}] [pipelined add(id=${addPending.id})+summary(id=${summaryPending.id}), type=${type}, same sessionId] counts.${key}=${counts?.[key]} -> ${ok ? 'OK (non-zero)' : 'UNEXPECTED ZERO'}`);
+      if (!ok) failures++;
+      server.stop();
+    }
+
+    {
+      const scratchHome = makeScratchHome('ledger-repro-pipelined-string-id-');
+      const server = startServer(serverPath, scratchHome);
+      await server.init();
+      const sessionId = 'gs-repro-pipelined-string-id';
+      const addPending = server.callToolRaw(
+        'ledger_add',
+        { sessionId, type: 'fact', content: 'pipelined add, string id', confidence: 'high' },
+        's-add',
+      );
+      const summaryPending = server.callToolRaw('ledger_summary', { sessionId }, 's-summary');
+      const [, summaryRaw] = await Promise.all([addPending.promise, summaryPending.promise]);
+      const counts = factsCount(summaryRaw);
+      const ok = counts && counts.facts >= 1;
+      console.log(
+        `[${label}] [pipelined add(id=${JSON.stringify(addPending.id)})+summary(id=${JSON.stringify(summaryPending.id)}), STRING ids, same sessionId] counts.facts=${counts?.facts} -> ${ok ? 'OK (non-zero)' : 'UNEXPECTED ZERO'}`,
+      );
+      if (!ok) failures++;
+      server.stop();
+    }
+
+    {
+      const scratchHome = makeScratchHome('ledger-repro-pipelined-falling-id-');
+      const server = startServer(serverPath, scratchHome);
+      await server.init();
+      const sessionId = 'gs-repro-pipelined-falling-id';
+      const addPending = server.callToolRaw(
+        'ledger_add',
+        { sessionId, type: 'fact', content: 'pipelined add, falling id', confidence: 'high' },
+        9000,
+      );
+      const summaryPending = server.callToolRaw('ledger_summary', { sessionId }, 7);
+      const [, summaryRaw] = await Promise.all([addPending.promise, summaryPending.promise]);
+      const counts = factsCount(summaryRaw);
+      const ok = counts && counts.facts >= 1;
+      console.log(
+        `[${label}] [pipelined add(id=${addPending.id})+summary(id=${summaryPending.id}), FALLING numeric ids, same sessionId] counts.facts=${counts?.facts} -> ${ok ? 'OK (non-zero)' : 'UNEXPECTED ZERO'}`,
+      );
+      if (!ok) failures++;
+      server.stop();
+    }
   }
 
   return failures;
@@ -352,7 +440,16 @@ async function main() {
     console.error(`\n${totalFailures} case(s), across ${configs.length} configuration(s), showed an unexpected zero count for a same-sessionId add+summary pair.`);
     process.exit(1);
   }
-  console.log(`\nNo defect reproduced in any of ${configs.length} configuration(s): ledger_summary always reflects a prior ledger_add under the same exact sessionId, sequential OR pipelined.`);
+  // States only what THIS run exercised: Cases 1/1b/2/3 (sequential, every
+  // entry type, a range of sessionId shapes, cross-process) and Case 4
+  // (pipelined, every entry type, default rising-integer / string /
+  // falling-numeric request ids), against the ${configs.length}
+  // configuration(s) passed on the command line. It does not claim
+  // anything about a configuration not passed, or about hypothesis_*
+  // tools (a separate store, out of scope for this task).
+  console.log(
+    `\nNo unexpected zero count in any of ${configs.length} configuration(s): ledger_summary always reflected a prior ledger_add under the same exact sessionId, across every entry type, sequential and pipelined, including STRING and FALLING-numeric pipelined request ids.`,
+  );
 }
 
 main();
