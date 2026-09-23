@@ -4,6 +4,33 @@
 
 ### Fixed
 
+- `ledger_summary`'s `sinceIso` filter now rejects a value it cannot
+  compare instead of silently matching nothing (task dde2ba58). Cause:
+  the filter reaches evidence-ledger's
+  `datetime(created_at) >= datetime(@sinceIso)` SQL comparison, and
+  SQLite's `datetime()` returns `NULL` (never an error) for `''`, `"1h"`,
+  `"24h"`, `"yesterday"`, an epoch-seconds or epoch-milliseconds string,
+  and `Date.toString()` output, which makes the comparison false for
+  every row; a local datetime with no zone parses without error but
+  silently shifts the window whenever the caller's wall-clock zone is
+  not UTC. `sinceIso` is now validated at the tool's zod schema boundary
+  to be an ISO-8601 date (`"2026-05-01"`) or a datetime carrying an
+  explicit `Z`/`z` or numeric offset, with a `T`, `t` or space separator,
+  optional seconds and any number of fraction digits (e.g.
+  `"2026-05-01T08:00:00Z"`, `"2026-05-01T10:00:00+02:00"`,
+  `"2026-05-01T08:00:00.123456+00:00"`, `"2026-05-01T08:00z"`,
+  `"2026-05-01 08:00:00Z"`);
+  anything else, and anything `Date.parse` itself rejects (an
+  out-of-range month, day or hour), is rejected with a validation error
+  naming the `sinceIso` field before the query ever runs. Every accepted
+  datetime is normalized to a UTC `Z` instant via
+  `new Date(v).toISOString()` before it reaches evidence-ledger's SQL
+  (a date-only value is passed through unchanged), so an offset SQLite's
+  own `datetime()` cannot represent (hour 15..23, e.g. `"+15:00"`) no
+  longer silently excludes every row. `claim_evaluate_from_session` and
+  `ledger_status` do not take a `sinceIso` argument and are unaffected;
+  `evidence-ledger`'s own CLI/API `sinceIso` parameter is unchanged and
+  out of scope for this fix.
 - `ledger_add` followed by `ledger_summary` for the same sessionId could
   report 0 facts when the two calls were concurrent or pipelined (their
   JSON-RPC requests both in flight, neither awaited before the next was

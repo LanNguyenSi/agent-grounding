@@ -2341,3 +2341,140 @@ describe('ledger tools: batches, stamp lifetime and missing stamps (0a8645d2)', 
     expect(errorSpy).not.toHaveBeenCalled();
   });
 });
+
+// ── ledger_summary: sinceIso validation (task dde2ba58) ─────────────────────
+//
+// evidence-ledger's SQL compares via `datetime(created_at) >= datetime(@sinceIso)`.
+// SQLite's `datetime()` returns NULL (never an error) for input it cannot
+// parse, which makes that comparison false for every row -- a caller passing
+// '', a relative shorthand, an epoch number, or `Date.toString()` output gets
+// a silent zero back instead of a validation error. A local datetime with no
+// zone parses without error but silently shifts the window whenever the
+// caller's wall-clock zone is not UTC. `sinceIso` must now be an ISO-8601
+// date or a datetime carrying an explicit Z or numeric offset.
+
+describe('ledger_summary: sinceIso validation (dde2ba58)', () => {
+  it.each([
+    ['empty string', ''],
+    ['relative shorthand "1h"', '1h'],
+    ['relative shorthand "24h"', '24h'],
+    ['relative shorthand "yesterday"', 'yesterday'],
+    ['epoch seconds', '1780000000'],
+    ['epoch milliseconds', '1780000000000'],
+    ['Date.toString() output', new Date('2026-05-01T08:00:00Z').toString()],
+    ['local datetime without a zone', '2026-05-01T08:00:00'],
+    ['out-of-range month', '2026-13-01'],
+    ['year that normalizes below four digits', '0000-01-01T00:00:00+01:00'],
+    ['year that normalizes above four digits', '9999-12-31T23:30:00-01:00'],
+    ['out-of-range hour', '2026-05-01T25:00:00Z'],
+  ])('rejects sinceIso = %s (%s)', async (_label, sinceIso) => {
+    const raw = await client.callTool({
+      name: 'ledger_summary',
+      arguments: { sessionId: 'gs-since-invalid', sinceIso },
+    });
+    expectValidationError(raw, 'ledger_summary', 'sinceIso');
+  });
+
+  it('a Z datetime, its equivalent numeric-offset datetime, and a date-only cutoff all still filter correctly', async () => {
+    const sessionId = 'gs-since-filter';
+    const added = await client.callTool({
+      name: 'ledger_add',
+      arguments: { sessionId, type: 'fact', content: 'the only fact' },
+    });
+    const { createdAt } = parseToolResult(added) as { createdAt: string };
+
+    // evidence-ledger stores `created_at` as SQLite's `datetime('now')`
+    // form: "YYYY-MM-DD HH:MM:SS" (space-separated, UTC, second precision).
+    const createdAtInstant = new Date(`${createdAt.replace(' ', 'T')}Z`);
+    expect(Number.isNaN(createdAtInstant.getTime())).toBe(false);
+
+    const zCutoff = `${createdAt.replace(' ', 'T')}Z`;
+    // Same instant as zCutoff, expressed with an explicit +02:00 offset
+    // instead of Z: wall-clock time shifted 2h later, offset suffix +02:00.
+    const offsetInstant = new Date(createdAtInstant.getTime() + 2 * 60 * 60 * 1000);
+    const offsetCutoff = `${offsetInstant.toISOString().replace(/\.\d{3}Z$/, '')}+02:00`;
+    const dateOnlyCutoff = createdAt.slice(0, 'YYYY-MM-DD'.length);
+    const futureCutoff = `${new Date(createdAtInstant.getTime() + 24 * 60 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, '')}Z`;
+
+    async function factsWithSince(sinceIso: string): Promise<number> {
+      const raw = await client.callTool({
+        name: 'ledger_summary',
+        arguments: { sessionId, sinceIso },
+      });
+      const result = parseToolResult(raw) as { counts: { facts: number } };
+      return result.counts.facts;
+    }
+
+    expect(await factsWithSince(zCutoff)).toBe(1);
+    expect(await factsWithSince(offsetCutoff)).toBe(1);
+    expect(await factsWithSince(dateOnlyCutoff)).toBe(1);
+    expect(await factsWithSince(futureCutoff)).toBe(0);
+  });
+
+  // Accepted shapes: the pattern admits shapes that worked before validation
+  // was added (fractional seconds of any length, HH:MM without
+  // seconds, lowercase "z", a space separator) and every accepted datetime
+  // is normalized to a UTC "Z" instant via `new Date(v).toISOString()`
+  // before it reaches evidence-ledger's SQL, so an offset SQLite's own
+  // `datetime()` cannot represent (hour 15..23, e.g. "+15:00") no longer
+  // silently excludes every row.
+  it('widened shapes (fractional seconds, HH:MM, lowercase z, space separator) and wide offsets all filter correctly', async () => {
+    const sessionId = 'gs-since-widened';
+    const added = await client.callTool({
+      name: 'ledger_add',
+      arguments: { sessionId, type: 'fact', content: 'the only fact' },
+    });
+    const { createdAt } = parseToolResult(added) as { createdAt: string };
+    const createdAtInstant = new Date(`${createdAt.replace(' ', 'T')}Z`);
+    expect(Number.isNaN(createdAtInstant.getTime())).toBe(false);
+
+    // One hour before the fact's own created_at: every cutoff below is
+    // built from this earlier instant, so a correctly-normalized cutoff
+    // must include the fact (facts === 1).
+    const earlier = new Date(createdAtInstant.getTime() - 60 * 60 * 1000);
+    const earlierBase = earlier.toISOString().replace(/\.\d{3}Z$/, ''); // "YYYY-MM-DDTHH:MM:SS"
+
+    async function factsWithSince(sinceIso: string): Promise<number> {
+      const raw = await client.callTool({
+        name: 'ledger_summary',
+        arguments: { sessionId, sinceIso },
+      });
+      const result = parseToolResult(raw) as { counts: { facts: number } };
+      return result.counts.facts;
+    }
+
+    // '.123Z' (toISOString()'s own 3-digit fraction form).
+    expect(await factsWithSince(`${earlierBase}.123Z`)).toBe(1);
+    // 6-digit fraction with an explicit +00:00 offset instead of Z.
+    expect(await factsWithSince(`${earlierBase}.123456+00:00`)).toBe(1);
+    // HH:MM with no seconds, and separately a lowercase 'z'.
+    expect(await factsWithSince(`${earlierBase.slice(0, 'YYYY-MM-DDTHH:MM'.length)}Z`)).toBe(1);
+    expect(await factsWithSince(`${earlierBase}z`)).toBe(1);
+    // Space separator, and lowercase 't', instead of 'T'.
+    expect(await factsWithSince(`${earlierBase.replace('T', ' ')}Z`)).toBe(1);
+    expect(await factsWithSince(`${earlierBase.replace('T', 't')}Z`)).toBe(1);
+
+    // -05:00: same instant expressed with a negative offset (facts === 1,
+    // cutoff equal to the fact's own instant), and one hour later still in
+    // -05:00 (facts === 0, cutoff now after the fact's instant).
+    const minus5Equal = new Date(createdAtInstant.getTime() - 5 * 60 * 60 * 1000);
+    const minus5Cutoff = `${minus5Equal.toISOString().replace(/\.\d{3}Z$/, '')}-05:00`;
+    expect(await factsWithSince(minus5Cutoff)).toBe(1);
+    const minus5Later = new Date(minus5Equal.getTime() + 60 * 60 * 1000);
+    const minus5LaterCutoff = `${minus5Later.toISOString().replace(/\.\d{3}Z$/, '')}-05:00`;
+    expect(await factsWithSince(minus5LaterCutoff)).toBe(0);
+
+    // +15:00: an offset hour SQLite's own datetime() cannot represent (before
+    // normalization this silently returned 0). Same
+    // instant as the fact's own created_at, expressed with a +15:00 offset;
+    // now normalized before the query, so it must match.
+    const plus15Equal = new Date(createdAtInstant.getTime() + 15 * 60 * 60 * 1000);
+    const plus15Cutoff = `${plus15Equal.toISOString().replace(/\.\d{3}Z$/, '')}+15:00`;
+    expect(await factsWithSince(plus15Cutoff)).toBe(1);
+
+    // Date-only cutoff for the day AFTER the fact's own date excludes it.
+    const nextDay = new Date(createdAtInstant.getTime() + 24 * 60 * 60 * 1000);
+    const nextDayCutoff = nextDay.toISOString().slice(0, 'YYYY-MM-DD'.length);
+    expect(await factsWithSince(nextDayCutoff)).toBe(0);
+  });
+});

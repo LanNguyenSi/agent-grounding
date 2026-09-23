@@ -164,6 +164,44 @@ const hypothesisIdSchema = z
   .max(64)
   .describe('Hypothesis id returned by hypothesis_record.');
 
+// ledger_summary's sinceIso filter is passed straight into evidence-ledger's
+// `datetime(created_at) >= datetime(@sinceIso)` SQL comparison. SQLite's
+// datetime() silently returns NULL for anything it cannot parse, which makes
+// the comparison false for every row rather than erroring -- a caller who
+// passes '', a relative shorthand ('1h', '24h', 'yesterday'), an epoch
+// number, or `Date.toString()` output gets a quiet 0 back, indistinguishable
+// from "nothing established yet". A local datetime with no zone is a
+// different failure: SQLite parses it without error, but it silently shifts
+// the window whenever the caller's wall-clock zone is not UTC (see the
+// CHANGELOG entry for task dde2ba58 for details). Reject both
+// classes at the schema boundary, before either reaches SQL, and normalize
+// every accepted datetime to a UTC `Z` instant via `new Date(v).toISOString()`
+// before it reaches the query, so SQLite always compares against a value it
+// can parse regardless of the offset's magnitude (an offset SQLite's own
+// `datetime()` cannot represent, such as +15:00, would otherwise silently
+// exclude every row too). An accepted date-only value is passed through
+// unchanged: it has no time-of-day component to normalize.
+const SINCE_ISO_PATTERN =
+  /^\d{4}-\d{2}-\d{2}([Tt ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|z|[+-]\d{2}:\d{2}))?$/;
+
+const SINCE_ISO_DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function isValidSinceIso(value: string): boolean {
+  return SINCE_ISO_PATTERN.test(value) && !Number.isNaN(Date.parse(value)) && /^\d{4}-/.test(new Date(value).toISOString());
+}
+
+// Precondition: `value` already passed `isValidSinceIso`. A date-only value
+// is returned unchanged (it filters correctly as-is and has no zone to
+// normalize); a datetime is normalized to a UTC `Z` instant so SQLite's
+// `datetime()` always receives an offset it can parse.
+function normalizeSinceIso(value: string): string {
+  if (SINCE_ISO_DATE_ONLY_PATTERN.test(value)) return value;
+  return new Date(value).toISOString();
+}
+
+const SINCE_ISO_VALIDATION_MESSAGE =
+  'sinceIso must be an ISO-8601 date (e.g. "2026-05-01") or a datetime with separator T, t or space and an explicit Z or numeric offset (e.g. "2026-05-01T08:00:00Z" or "2026-05-01T10:00:00+02:00"); an empty string, relative shorthand ("1h", "24h", "yesterday"), epoch seconds/milliseconds, Date.toString() output and out-of-range values are rejected because SQLite cannot parse them (every row would be silently excluded), and a local datetime without a zone is rejected because it would silently shift the filter window';
+
 const hypothesisTextSchema = z
   .string()
   .min(1)
@@ -576,14 +614,15 @@ export function createServer(
 
   server.tool(
     'ledger_summary',
-    'Return facts/hypotheses/rejected/unknowns for a session. Use to brief a follow-up agent or before claim-gate evaluation. Phase 5 #5: optional server-side filters. A zero count is not necessarily an error: causes include (not an exhaustive list) no entries yet, a sessionId that does not exactly match the string an earlier ledger_add used (case-sensitive, no normalization), or a sinceIso/contentPrefix filter that excludes every matching row (for example a sinceIso value SQLite cannot parse silently excludes rows rather than erroring). Ordered by arrival at the transport relative to a concurrent/pipelined ledger_add for the same sessionId, see the ledger_add description.',
+    'Return facts/hypotheses/rejected/unknowns for a session. Use to brief a follow-up agent or before claim-gate evaluation. Phase 5 #5: optional server-side filters. A zero count is not necessarily an error: causes include (not an exhaustive list) no entries yet, a sessionId that does not exactly match the string an earlier ledger_add used (case-sensitive, no normalization), or a contentPrefix filter that excludes every matching row; an invalid sinceIso is rejected with a validation error rather than silently returning zero. Ordered by arrival at the transport relative to a concurrent/pipelined ledger_add for the same sessionId, see the ledger_add description.',
     {
       sessionId: z.string().min(1),
       sinceIso: z
         .string()
+        .refine(isValidSinceIso, { message: SINCE_ISO_VALIDATION_MESSAGE })
         .optional()
         .describe(
-          'Optional ISO-8601 UTC cutoff (e.g. "2026-05-01T08:00:00Z"). Rows with `created_at` earlier than this are excluded server-side.',
+          'Optional ISO-8601 cutoff: a date ("2026-05-01") or a datetime with separator T, t or space, optional seconds and fraction, and an explicit Z or numeric offset (e.g. "2026-05-01T08:00:00Z" or "2026-05-01T10:00:00+02:00"); datetimes are normalized to UTC before filtering. Rows with `created_at` earlier than this are excluded server-side. Rejected (not silently ignored) if it is empty, a relative shorthand ("1h", "24h", "yesterday"), an epoch number, Date.toString() output, out of range, or a local datetime without a zone.',
         ),
       contentPrefix: z
         .string()
@@ -594,7 +633,7 @@ export function createServer(
     },
     async ({ sessionId, sinceIso, contentPrefix }, extra) => {
       const filters: { sinceIso?: string; contentPrefix?: string } = {};
-      if (sinceIso !== undefined) filters.sinceIso = sinceIso;
+      if (sinceIso !== undefined) filters.sinceIso = normalizeSinceIso(sinceIso);
       if (contentPrefix !== undefined) filters.contentPrefix = contentPrefix;
       const summary = await enqueueLedgerRequest(extra.requestId, () => getSummary(ledgerDb(), sessionId, filters));
       return jsonResponse({
