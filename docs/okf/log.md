@@ -2,6 +2,36 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-23T06:31:53Z, release-guard checks, review round 4 note-closing
+  (task d51ae64b): `check-shipped-unreleased-pointer.js` gained a
+  `isLicenseFile` helper anchoring the LICENSE exclusion to real license
+  filenames (a shipped `dist/license-policy.js`-style script is no longer
+  swallowed by the old `/^licen[cs]e/i` prefix match) and a files-field
+  coverage check in `loadPackedFileList` requiring each literal
+  package.json `files` entry to appear in the resolved pack listing (an
+  unbuilt package now fails loudly with a named coverage-invariant error
+  instead of silently under-scanning); its test file gained fixtures
+  isolating the CHANGELOG-only heading/link-ref exclusion scoping and an
+  assertion on the exact per-package success-line text.
+  `check-changelog-duplicate-headings.js`'s dash-separator comment was
+  reworded for accuracy (the ASCII hyphen separator already matched; the
+  actual prior bug was the lazy version-capture group absorbing an en/em
+  dash glyph into the version key). Run-local identifiers (decision ids,
+  round numbers, mutant ids) were removed from scripts/*.js,
+  scripts/*.test.js, and `.github/workflows/ci.yml` comments, keeping
+  "task d51ae64b" as the single pointer; `docs/okf/log.md` itself keeps
+  its own decision references, since it is the run's own record, not
+  shipped source. `ci.yml`'s two edited comment blocks (the
+  CHANGELOG duplicate-heading step and the Shipped [Unreleased] pointer
+  step) are both net-zero-line rewords, so the "grounding-mcp
+  packed-tarball --version check" step's citation range
+  (`.github/workflows/ci.yml:463-479`) in `grounding-stack-overview.md`
+  did not shift; re-verified the anchor text
+  `"npm run check:grounding-mcp-pack"` still occurs in that range and
+  re-stamped that doc's timestamp only because it lists `ci.yml` as a
+  source and `ci.yml`'s content changed (comments only, no claim in the
+  doc affected).
+
 - 2026-09-23T05:50:39Z, release-guard checks, structural redesign (task
   d51ae64b, decision D-013): `check-shipped-unreleased-pointer.js`
   (scans every shipped text file except `package.json`, `LICENSE*`/`LICENCE*`,
