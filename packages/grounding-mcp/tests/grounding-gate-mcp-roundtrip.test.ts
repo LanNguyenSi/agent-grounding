@@ -2364,7 +2364,8 @@ describe('ledger_summary: sinceIso validation (dde2ba58)', () => {
     ['Date.toString() output', new Date('2026-05-01T08:00:00Z').toString()],
     ['local datetime without a zone', '2026-05-01T08:00:00'],
     ['out-of-range month', '2026-13-01'],
-    ['year that normalizes outside four digits', '0000-01-01T00:00:00+01:00'],
+    ['year that normalizes below four digits', '0000-01-01T00:00:00+01:00'],
+    ['year that normalizes above four digits', '9999-12-31T23:30:00-01:00'],
     ['out-of-range hour', '2026-05-01T25:00:00Z'],
   ])('rejects sinceIso = %s (%s)', async (_label, sinceIso) => {
     const raw = await client.callTool({
