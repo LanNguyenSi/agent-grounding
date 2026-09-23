@@ -2,25 +2,50 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `ledger_add` followed by `ledger_summary` for the same sessionId could
+  report 0 facts when the two calls were concurrent or pipelined (their
+  JSON-RPC requests both in flight, neither awaited before the next was
+  sent). Cause: the MCP SDK's `tools/call` dispatch validates each
+  request's zod input schema asynchronously before invoking its handler,
+  and `ledger_add`'s (5-key object) and `ledger_summary`'s (3-key object)
+  schemas resolve that validation in a different number of microtask
+  ticks, so the summary handler could be invoked before the add handler
+  even though the add request arrived first. Every handler that reads or
+  writes the ledger (`ledger_add`, `ledger_summary`,
+  `claim_evaluate_from_session`, `ledger_status`) now serializes through
+  one queue keyed by JSON-RPC request id, which reflects true arrival
+  order even when handler invocation order does not (see the "Ledger
+  request serialization" comment above `createLedgerRequestQueue` in
+  `src/server.ts` for the full mechanism). A first investigation of this
+  tracker report tested only sequential add-then-summary calls (every
+  entry type, a range of sessionId shapes, in-process and across separate
+  server processes, and four configurations including a packed tarball
+  with evidence-ledger 0.6.0 and the published `0.12.0`/`0.11.0`) and
+  never reproduced it; the real defect surfaced only once a
+  concurrent/pipelined pair was tried (see
+  `scripts/repro-ledger-summary-count.mjs`'s pipelined case and the
+  "concurrent requests" tests in
+  `tests/grounding-gate-mcp-roundtrip.test.ts`).
+- `sessionId` now requires at least 1 character (zod `.min(1)`) on
+  `ledger_add`, `ledger_summary`, and `claim_evaluate_from_session`: an
+  empty string previously bypassed evidence-ledger's session filter
+  entirely (`listEntries`'s `if (opts.session) { ... }` treats `""` as
+  falsy and skips the filter), silently returning every session's
+  entries instead of the documented zero-or-exact-match behavior.
+
 ### Changed
 
-- `ledger_add` and `ledger_summary` tool descriptions, and the README tool
-  catalog, now state in one sentence each that a session's entries are
+- `ledger_add` and `ledger_summary` tool descriptions, and the README
+  tool catalog, state in one sentence each that a session's entries are
   only visible to a `ledger_summary` call using the exact sessionId
-  string `ledger_add` used (case-sensitive, no normalization). Written
-  after investigating a tracker report that `ledger_add` followed by
-  `ledger_summary` for the same sessionId returned 0 facts: not
-  reproduced at the MCP tool level across every entry type and a range
-  of sessionId shapes, in-process and across separate server process
-  invocations, and across four configurations: this repo's workspace
-  build, a packed tarball installed into a scratch npm prefix with
-  evidence-ledger 0.6.0 resolved from the registry (the exact shape of
-  the original tracker observation, confirmed via `npm ls --prefix`),
-  and the published `@lannguyensi/grounding-mcp` `0.12.0` and `0.11.0`
-  from the registry (see `scripts/repro-ledger-summary-count.mjs`); the
-  only zero-count case is a mismatched sessionId, which this change
-  documents and two new regression tests in
-  `tests/grounding-gate-mcp-roundtrip.test.ts` pin.
+  string `ledger_add` used (case-sensitive, no normalization), and that
+  a concurrent/pipelined pair is serialized in request-arrival order.
+  `ledger_summary`'s description and README row now describe a zero
+  count as non-exhaustive (also caused by a `sinceIso`/`contentPrefix`
+  filter that excludes every row) instead of naming a mismatched
+  sessionId as the only cause.
 
 ## 0.12.0, 2026-09-21
 
