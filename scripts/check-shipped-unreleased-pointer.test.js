@@ -5,7 +5,7 @@
  * repo's actual packages/, except two real end-to-end reads at the bottom
  * that only read and assert), one fixture per shipped-file kind (README.md,
  * CHANGELOG.md prose, dist/*.js, dist/*.d.ts, and a third *.md kind that
- * proves the scan is not an allowlist of known kinds -- decision D-013)
+ * proves the scan is not an allowlist of known kinds)
  * plus a negative control (a non-empty Unreleased section still carrying
  * pointer text is NOT a violation). Uses Node's built-in test runner. The
  * shipped-file set is always resolved through an injected `packFn` stub,
@@ -22,6 +22,7 @@ const {
   readUnreleasedSectionState,
   isUnreleasedEffectivelyEmpty,
   runNpmPackDryRun,
+  readLiteralFilesFieldEntries,
   loadPackedFileList,
   resolveShippedFiles,
   isExcludedShippedFile,
@@ -152,14 +153,14 @@ test('isUnreleasedEffectivelyEmpty: negative control -- non-empty heading -> not
   }
 });
 
-// ── loadPackedFileList / coverage invariant (decision D-013) ───────────
+// ── loadPackedFileList / coverage invariant ───────────────────────────
 
 test('loadPackedFileList: negative control -- a valid pack result (package.json + README.md present) passes through unchanged', () => {
   const relPaths = loadPackedFileList({ name: '@x/pkg' }, '/root', stubPackFn(['package.json', 'README.md', 'dist/index.js']));
   assert.deepEqual(relPaths, ['package.json', 'README.md', 'dist/index.js']);
 });
 
-test('loadPackedFileList: throws CoverageInvariantError when the pack result is empty (round-2 vacuous-pass regression)', () => {
+test('loadPackedFileList: throws CoverageInvariantError when the pack result is empty (vacuous-pass regression)', () => {
   assert.throws(
     () => loadPackedFileList({ name: '@x/pkg' }, '/root', stubPackFn([])),
     (err) => err instanceof CoverageInvariantError && /is empty/.test(err.message),
@@ -208,6 +209,91 @@ test('loadPackedFileList: error message never includes a stack trace (formatted,
   }
 });
 
+test('loadPackedFileList: throws CoverageInvariantError when a literal package.json "files" entry (dist) is missing from the pack result (unbuilt package)', () => {
+  const tmpRoot = tmp('files-field-unbuilt');
+  try {
+    const pkgDir = writePkg(tmpRoot, 'pkg', {
+      'package.json': JSON.stringify({ name: '@x/pkg', files: ['dist', 'README.md'] }),
+    });
+    const pkg = { name: '@x/pkg', dir: pkgDir };
+    // No dist/ was ever built, so the pack result cannot include it, even
+    // though package.json declares it as a shipped entry.
+    const packFn = stubPackFn(['package.json', 'README.md']);
+    assert.throws(
+      () => loadPackedFileList(pkg, tmpRoot, packFn),
+      (err) =>
+        err instanceof CoverageInvariantError
+        && /does not include its package\.json "files" entry "dist"/.test(err.message)
+        && /build the package/.test(err.message),
+    );
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('loadPackedFileList: passes when a literal "files" entry (dist) is present as a directory prefix in the pack result (built package)', () => {
+  const tmpRoot = tmp('files-field-built');
+  try {
+    const pkgDir = writePkg(tmpRoot, 'pkg', {
+      'package.json': JSON.stringify({ name: '@x/pkg', files: ['dist', 'README.md'] }),
+    });
+    const pkg = { name: '@x/pkg', dir: pkgDir };
+    const packFn = stubPackFn(['package.json', 'README.md', 'dist/index.js', 'dist/index.d.ts']);
+    const relPaths = loadPackedFileList(pkg, tmpRoot, packFn);
+    assert.deepEqual(relPaths, ['package.json', 'README.md', 'dist/index.js', 'dist/index.d.ts']);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('loadPackedFileList: glob and negated "files" entries are not required as literal matches', () => {
+  const tmpRoot = tmp('files-field-glob');
+  try {
+    const pkgDir = writePkg(tmpRoot, 'pkg', {
+      'package.json': JSON.stringify({ name: '@x/pkg', files: ['dist/**/*.js', '!dist/**/*.test.js', 'README.md'] }),
+    });
+    const pkg = { name: '@x/pkg', dir: pkgDir };
+    const packFn = stubPackFn(['package.json', 'README.md', 'dist/index.js']);
+    // Neither the glob entry nor the negated entry is checked as a literal
+    // path; only 'README.md' is, and it is present.
+    assert.doesNotThrow(() => loadPackedFileList(pkg, tmpRoot, packFn));
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('loadPackedFileList: no pkg.dir (older call sites) skips the files-field check entirely', () => {
+  const relPaths = loadPackedFileList({ name: '@x/pkg' }, '/root', stubPackFn(['package.json', 'README.md']));
+  assert.deepEqual(relPaths, ['package.json', 'README.md']);
+});
+
+test('readLiteralFilesFieldEntries: filters out globs and negations, keeps literal entries', () => {
+  const tmpRoot = tmp('literal-entries');
+  try {
+    const pkgDir = writePkg(tmpRoot, 'pkg', {
+      'package.json': JSON.stringify({
+        name: '@x/pkg',
+        files: ['dist', 'README.md', 'assets/*.png', '!dist/**/*.test.js', 'bin/cli.js'],
+      }),
+    });
+    assert.deepEqual(readLiteralFilesFieldEntries({ dir: pkgDir }), ['dist', 'README.md', 'bin/cli.js']);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('loadPackedFileList: real built repo package still passes the files-field coverage check', () => {
+  const rootDir = path.join(__dirname, '..');
+  const pkgDir = path.join(rootDir, 'packages', 'grounding-mcp');
+  const pkgJson = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'));
+  if (!Array.isArray(pkgJson.files) || !fs.existsSync(path.join(pkgDir, 'dist'))) {
+    console.log('skip: grounding-mcp is not built (no dist/) or declares no files field');
+    return;
+  }
+  const relPaths = loadPackedFileList({ name: pkgJson.name, dir: pkgDir }, rootDir, runNpmPackDryRun);
+  assert.ok(relPaths.includes('package.json'));
+});
+
 // ── resolveShippedFiles ─────────────────────────────────────────────────
 
 test('resolveShippedFiles: uses the injected packFn result, not a hard-coded list', () => {
@@ -244,7 +330,7 @@ test('resolveShippedFiles: a pack-reported path that no longer exists on disk is
   }
 });
 
-// ── isExcludedShippedFile (decision D-013: exclusion list, not an allowlist of kinds) ──
+// ── isExcludedShippedFile (exclusion list, not an allowlist of kinds) ──
 
 test('isExcludedShippedFile: package.json and LICENSE*/LICENCE* are excluded; everything else text-shaped is scanned', () => {
   const pkgDir = '/pkg';
@@ -252,6 +338,13 @@ test('isExcludedShippedFile: package.json and LICENSE*/LICENCE* are excluded; ev
   assert.equal(isExcludedShippedFile('/pkg/LICENSE'), true);
   assert.equal(isExcludedShippedFile('/pkg/LICENSE.md'), true);
   assert.equal(isExcludedShippedFile('/pkg/LICENCE'), true);
+  assert.equal(isExcludedShippedFile('/pkg/LICENSE.txt'), true);
+  assert.equal(isExcludedShippedFile('/pkg/LICENSE-MIT'), true, 'a LICENSE-MIT style variant with no code extension is still a license file');
+  assert.equal(
+    isExcludedShippedFile(path.join(pkgDir, 'dist/license-policy.js')),
+    false,
+    'a real shipped script whose basename merely starts with the word license must still be scanned (LICENSE prefix regex was too broad)',
+  );
   assert.equal(isExcludedShippedFile('/pkg/README.md'), false);
   assert.equal(isExcludedShippedFile('/pkg/CHANGELOG.md'), false);
   assert.equal(isExcludedShippedFile('/pkg/ROADMAP.md'), false, 'a third *.md kind must be scanned, not allowlisted away');
@@ -364,6 +457,37 @@ test('findPointerHit: a non-CHANGELOG.md shipped file is not subject to the CHAN
   }
 });
 
+// The two tests above always have extra prose on top of the heading/link-ref
+// line, so they still hit even if the CHANGELOG-only exclusions were
+// mistakenly applied to every shipped file (the isChangelog scoping bug this
+// check exists to avoid): the prose line alone still matches. These two
+// fixtures isolate the exclusion-shaped line itself, with nothing else in
+// the file, so a README whose ENTIRE content is a heading-only or
+// link-ref-only line still has to register as a hit -- proving the
+// CHANGELOG-only exclusions are actually scoped to CHANGELOG.md and are not
+// silently stripping the same lines out of every shipped file.
+test('findPointerHit: README.md whose ONLY content is the [Unreleased] heading line is still a hit (exclusion scoping)', () => {
+  const tmpRoot = tmp('hit-readme-headingonly');
+  try {
+    const p = path.join(tmpRoot, 'README.md');
+    fs.writeFileSync(p, '## [Unreleased]\n');
+    assert.equal(findPointerHit(p), true);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('findPointerHit: README.md whose ONLY content is a keep-a-changelog link-reference line is still a hit (exclusion scoping)', () => {
+  const tmpRoot = tmp('hit-readme-linkrefonly');
+  try {
+    const p = path.join(tmpRoot, 'README.md');
+    fs.writeFileSync(p, '[Unreleased]: https://example.com/compare/v1...HEAD\n');
+    assert.equal(findPointerHit(p), true);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
 test('findPointerHit: CHANGELOG.md prose pointer elsewhere IS a hit (negative control for the heading/link-ref exclusion)', () => {
   const tmpRoot = tmp('hit-prose');
   try {
@@ -444,7 +568,7 @@ test('findPointerHit: dist/*.d.ts comment pointer is a hit', () => {
   }
 });
 
-test('findPointerHit: a shipped ROADMAP.md comment pointer is a hit (decision D-013: not an allowlist of kinds)', () => {
+test('findPointerHit: a shipped ROADMAP.md comment pointer is a hit (not an allowlist of kinds)', () => {
   const tmpRoot = tmp('hit-roadmap');
   try {
     const p = path.join(tmpRoot, 'ROADMAP.md');
@@ -529,7 +653,7 @@ test('collectPackageViolations: dist/*.d.ts fixture, empty Unreleased -> violati
   }
 });
 
-test('collectPackageViolations: shipped ROADMAP.md fixture, empty Unreleased -> violation (decision D-013: widened scan catches a fourth file kind with no code change)', () => {
+test('collectPackageViolations: shipped ROADMAP.md fixture, empty Unreleased -> violation (widened scan catches a fourth file kind with no code change)', () => {
   const tmpRoot = tmp('pkg-roadmap');
   try {
     const pkgDir = writePkg(tmpRoot, 'pkg', {
@@ -541,6 +665,45 @@ test('collectPackageViolations: shipped ROADMAP.md fixture, empty Unreleased -> 
     const result = collectPackageViolations(pkg, tmpRoot, packFn);
     assert.equal(result.violations.length, 1);
     assert.equal(result.violations[0].file, 'ROADMAP.md');
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('collectPackageViolations: shipped dist/license-policy.js with a pointer -> violation (LICENSE-prefix exclusion must not swallow real scripts)', () => {
+  const tmpRoot = tmp('pkg-license-script');
+  try {
+    const pkgDir = writePkg(tmpRoot, 'pkg', {
+      'CHANGELOG.md': CHANGELOG_EMPTY,
+      'dist/license-policy.js': '// see CHANGELOG.md [Unreleased] for the current policy notes\n',
+    });
+    const pkg = { name: '@x/pkg', dir: pkgDir };
+    const packFn = stubPackFn([...BASE_SHIPPED, 'CHANGELOG.md', 'dist/license-policy.js']);
+    const result = collectPackageViolations(pkg, tmpRoot, packFn);
+    assert.equal(result.violations.length, 1);
+    assert.equal(result.violations[0].file, 'dist/license-policy.js');
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('collectPackageViolations: shipped LICENSE and LICENSE.md are excluded from the scan even with pointer text', () => {
+  const tmpRoot = tmp('pkg-license-excluded');
+  try {
+    const pkgDir = writePkg(tmpRoot, 'pkg', {
+      'CHANGELOG.md': CHANGELOG_EMPTY,
+      LICENSE: 'MIT, see CHANGELOG.md [Unreleased] for details.\n',
+      'LICENSE.md': 'MIT, see CHANGELOG.md [Unreleased] for details.\n',
+    });
+    const pkg = { name: '@x/pkg', dir: pkgDir };
+    const packFn = stubPackFn([...BASE_SHIPPED, 'CHANGELOG.md', 'LICENSE', 'LICENSE.md']);
+    const result = collectPackageViolations(pkg, tmpRoot, packFn);
+    assert.equal(result.violations.length, 0);
+    assert.equal(
+      result.scannedCount,
+      1,
+      'only CHANGELOG.md itself is scanned (its own heading is stripped); LICENSE and LICENSE.md are excluded and never counted',
+    );
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -663,7 +826,7 @@ test('run: red on a seeded violation, green after removing the pointer (fix-or-a
   }
 });
 
-test('run: coverage invariant violation (empty pack result) fails the whole check with a named, non-stack-trace error (decision D-013)', () => {
+test('run: coverage invariant violation (empty pack result) fails the whole check with a named, non-stack-trace error', () => {
   const tmpRoot = tmp('run-invariant');
   try {
     writePkg(tmpRoot, 'pkg', { 'CHANGELOG.md': CHANGELOG_EMPTY, 'README.md': 'fine' });
@@ -677,7 +840,7 @@ test('run: coverage invariant violation (empty pack result) fails the whole chec
   }
 });
 
-test('run: a private package with a shipped pointer next to a scanned, clean public package exits 0, and packFn is never called for the private package (round-2 finding: run()-level private filter untested, mutant ptr:231 survived)', () => {
+test('run: a private package with a shipped pointer next to a scanned, clean public package exits 0, and packFn is never called for the private package (asserts the run()-level private filter, not just isPublishable in isolation)', () => {
   const tmpRoot = tmp('run-private');
   try {
     writePkg(tmpRoot, 'priv', {
@@ -707,6 +870,70 @@ test('run: a private package with a shipped pointer next to a scanned, clean pub
     assert.equal(run(tmpRoot, packFn), 0);
     assert.equal(calledWith.includes('@x/priv'), false, 'packFn must not be called for the private package');
     assert.equal(calledWith.includes('@x/pub'), true, 'packFn must be called for the scanned public package');
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('run: success line reports "<pkg>: N file(s) scanned" with the expected N, omits a package that needed no scanning, and omits the private package', () => {
+  const tmpRoot = tmp('run-success-line');
+  try {
+    // A private package: filtered out before the loop entirely, must never
+    // appear in the summary.
+    writePkg(tmpRoot, 'priv', {
+      'CHANGELOG.md': CHANGELOG_EMPTY,
+      'README.md': 'See CHANGELOG.md [Unreleased] for what is next.\n',
+    });
+    fs.writeFileSync(
+      path.join(tmpRoot, 'packages', 'priv', 'package.json'),
+      JSON.stringify({ name: '@x/priv', private: true }),
+    );
+    // A publishable package whose Unreleased section already has content:
+    // scannedCount stays 0 (never even resolves a pack listing), so the
+    // un-mutated code never pushes it into scannedCounts.
+    writePkg(tmpRoot, 'clean', { 'CHANGELOG.md': CHANGELOG_NONEMPTY });
+    fs.writeFileSync(
+      path.join(tmpRoot, 'packages', 'clean', 'package.json'),
+      JSON.stringify({ name: '@x/clean', private: false }),
+    );
+    // A publishable package that actually gets scanned: 3 shipped files
+    // (README.md, CHANGELOG.md, ROADMAP.md; package.json is excluded).
+    writePkg(tmpRoot, 'pub', {
+      'CHANGELOG.md': CHANGELOG_EMPTY,
+      'README.md': 'Nothing dangling here.\n',
+      'ROADMAP.md': 'Nothing dangling here either.\n',
+    });
+    fs.writeFileSync(
+      path.join(tmpRoot, 'packages', 'pub', 'package.json'),
+      JSON.stringify({ name: '@x/pub', private: false }),
+    );
+
+    const packFn = (pkgName) => {
+      if (pkgName === '@x/clean') {
+        throw new Error('packFn must never be called for a package whose Unreleased section already has content');
+      }
+      return [...BASE_SHIPPED, 'CHANGELOG.md', 'ROADMAP.md'];
+    };
+
+    const originalLog = console.log;
+    const logged = [];
+    console.log = (msg) => logged.push(msg);
+    let exitCode;
+    try {
+      exitCode = run(tmpRoot, packFn);
+    } finally {
+      console.log = originalLog;
+    }
+
+    assert.equal(exitCode, 0);
+    assert.equal(logged.length, 1, 'exactly one summary line is printed on success');
+    assert.match(logged[0], /@x\/pub: 3 file\(s\) scanned/);
+    assert.doesNotMatch(logged[0], /@x\/priv/, 'the private package must never appear in the summary');
+    assert.doesNotMatch(
+      logged[0],
+      /0 file\(s\) scanned/,
+      'a package that needed no scanning (scannedCount 0) must not be listed at all',
+    );
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }

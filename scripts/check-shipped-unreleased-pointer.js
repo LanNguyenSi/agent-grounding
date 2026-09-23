@@ -5,18 +5,17 @@
  * A release cut moves the `## [Unreleased]` section's notes under a new
  * dated heading and leaves `## [Unreleased]` empty. Any file that SHIPS in
  * the package's npm tarball and still says something like "see CHANGELOG
- * [Unreleased]" now points at nothing. Task d51ae64b found this three
- * different ways in one cut: the README, a comment in
- * `dist/ow-run-completeness.js` (carried over from a source comment --
- * tsc keeps comments in emitted JS/d.ts), and, in round 2 of this same
- * check's own build-out, a package's ROADMAP.md that shipped alongside its
- * README and CHANGELOG. Round 1 and round 2 of this check chased each kind
- * one at a time (README, then dist/*.js and dist/*.d.ts, then more dist
- * extensions); a shipped file of yet another kind (ROADMAP.md, a shipped
- * docs/*.md, ...) always stayed invisible to a per-kind allowlist. Round 3
- * (task d51ae64b, decision D-013) drops the per-kind allowlist entirely:
- * this check now scans every shipped TEXT file, so a new file kind cannot
- * silently opt out of scanning by not yet being named here.
+ * [Unreleased]" now points at nothing. Task d51ae64b found this several
+ * ways across one cut and this check's own build-out: the README, a
+ * comment in `dist/ow-run-completeness.js` (carried over from a source
+ * comment -- tsc keeps comments in emitted JS/d.ts), and a package's
+ * ROADMAP.md that shipped alongside its README and CHANGELOG. Chasing
+ * each kind one at a time (README, then dist/*.js and dist/*.d.ts, then
+ * more dist extensions) kept missing the next one -- a shipped file of
+ * yet another kind (ROADMAP.md, a shipped docs/*.md, ...) always stayed
+ * invisible to a per-kind allowlist -- so this check drops the per-kind
+ * allowlist entirely: it now scans every shipped TEXT file, so a new file
+ * kind cannot silently opt out of scanning by not yet being named here.
  *
  * For every publishable (`private` !== true) `packages/*` workspace member:
  *
@@ -40,8 +39,8 @@
  *      `package.json` or `README.md`, packFn throwing, or packFn returning
  *      something that is not a file-path array all fail the check loudly
  *      and by name, rather than being silently treated as "nothing to
- *      scan" (a coverage-shrinkage bug this check had in round 2: a
- *      malformed/empty pack result passed vacuously).
+ *      scan" (a coverage-shrinkage bug an earlier build-out of this check
+ *      had: a malformed/empty pack result passed vacuously).
  *   3. Within that shipped set, scan every file EXCEPT `package.json`,
  *      `LICENSE*`/`LICENCE*`, and a fixed, explicit list of binary
  *      extensions (images, fonts, archives, `.node`, `.wasm` -- see
@@ -89,8 +88,8 @@ const LINK_REF_RE = /^\[Unreleased\]:\s*(https?:\/\/|\.{0,2}\/)\S*/i;
 const BRACKETED_POINTER_RE = /\[Unreleased\]/;
 const BAREWORD_POINTER_RE = /\bUnreleased\b/;
 
-// Explicit, small binary-extension exclusion (task d51ae64b round 3,
-// decision D-013): everything else shipped is treated as scannable text.
+// Explicit, small binary-extension exclusion (task d51ae64b):
+// everything else shipped is treated as scannable text.
 // Kept deliberately short -- this repo's packages ship JS/TS build output
 // and docs, not media -- rather than trying to be an exhaustive MIME table.
 const BINARY_EXTENSIONS = new Set([
@@ -205,9 +204,37 @@ function runNpmPackDryRun(pkgName, rootDir) {
   return result.files.map((f) => f.path);
 }
 
+/** Reads the literal (non-glob, non-negated) entries of `pkg`'s own
+ * package.json `files` field: no `*`, `?`, `[`, `{` glob characters, and
+ * not prefixed with `!` (a negation narrows what a glob already selected,
+ * it is not a coverage requirement of its own). Returns `[]` -- meaning
+ * "nothing more to require" -- when `pkg.dir` is unset, its package.json
+ * cannot be read or parsed, or it has no `files` field at all: this
+ * function only ever ADDS a stricter coverage check on top of the
+ * package.json/README.md check above, never replaces it. */
+function readLiteralFilesFieldEntries(pkg) {
+  if (!pkg || !pkg.dir) return [];
+  let raw;
+  try {
+    raw = fs.readFileSync(path.join(pkg.dir, 'package.json'), 'utf8');
+  } catch {
+    return [];
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  const files = Array.isArray(parsed.files) ? parsed.files : [];
+  return files.filter(
+    (entry) => typeof entry === 'string' && !entry.startsWith('!') && !/[*?[{]/.test(entry),
+  );
+}
+
 /** Resolves and validates `pkg`'s packed file-path list via `packFn`
  * (default: real `npm pack --dry-run --json`, injectable for tests).
- * Enforces the coverage invariant (decision D-013): a publishable
+ * Enforces the coverage invariant: a publishable
  * package's shipped-file scan must never silently shrink to "nothing to
  * check". Throws `CoverageInvariantError` (message has no stack trace
  * attached by the caller) when `packFn` throws, returns something that is
@@ -239,6 +266,16 @@ function loadPackedFileList(pkg, rootDir, packFn) {
   if (!relPaths.includes('README.md')) {
     throw new CoverageInvariantError(`pack listing for ${pkg.name} does not include README.md`);
   }
+  for (const entry of readLiteralFilesFieldEntries(pkg)) {
+    const normalized = entry.replace(/\/+$/, '');
+    const matched = relPaths.some((p) => p === normalized || p.startsWith(`${normalized}/`));
+    if (!matched) {
+      throw new CoverageInvariantError(
+        `pack listing for ${pkg.name} does not include its package.json "files" entry "${entry}" ` +
+          `(expected "${normalized}" or "${normalized}/..."); build the package before running this check`,
+      );
+    }
+  }
   return relPaths;
 }
 
@@ -257,15 +294,40 @@ function resolveShippedFiles(pkg, rootDir, packFn = runNpmPackDryRun) {
   return out;
 }
 
+// Exact license filenames (any casing, US/UK spelling, .md/.txt or bare):
+// LICENSE, LICENCE, LICENSE.md, LICENSE.txt, and so on.
+const LICENSE_FILE_RE = /^licen[cs]e(\.(md|txt))?$/i;
+// LICENSE-MIT / LICENSE.MIT style variants: a license basename followed by a
+// `-` or `.` separator and more characters. This alone is too broad -- it
+// would also match a real shipped script like `license-policy.js` -- so it
+// only counts as a license file below when its extension is not one of the
+// code extensions this check actually cares about scanning.
+const LICENSE_VARIANT_RE = /^licen[cs]e[-.][a-z0-9.-]*$/i;
+const CODE_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.ts', '.jsx', '.tsx']);
+
+/** True when `basename` is a real license file: an exact LICENSE/LICENCE
+ * name (optionally `.md`/`.txt`), or a LICENSE-MIT-style variant whose
+ * extension is not a code extension. A basename like `license-policy.js`
+ * is NOT a license file by this rule -- it is a real shipped script that
+ * merely starts with the word "license" -- and IS still scanned. */
+function isLicenseFile(basename) {
+  if (LICENSE_FILE_RE.test(basename)) return true;
+  if (LICENSE_VARIANT_RE.test(basename)) {
+    const ext = path.extname(basename).toLowerCase();
+    if (!CODE_EXTENSIONS.has(ext)) return true;
+  }
+  return false;
+}
+
 /** True when `absPath` is excluded from the shipped-text scan:
- * `package.json`, `LICENSE*`/`LICENCE*` (any casing/extension), or a
- * binary extension (see `BINARY_EXTENSIONS`). Everything else shipped is
+ * `package.json`, a real license file (see `isLicenseFile`), or a binary
+ * extension (see `BINARY_EXTENSIONS`). Everything else shipped is
  * scanned -- this is deliberately NOT an allowlist of known-good kinds
- * (see this file's docblock, decision D-013). */
+ * (see this file's docblock). */
 function isExcludedShippedFile(absPath) {
   const basename = path.basename(absPath);
   if (basename === 'package.json') return true;
-  if (/^licen[cs]e/i.test(basename)) return true;
+  if (isLicenseFile(basename)) return true;
   const ext = path.extname(absPath).toLowerCase();
   return BINARY_EXTENSIONS.has(ext);
 }
@@ -388,6 +450,7 @@ module.exports = {
   readUnreleasedSectionState,
   isUnreleasedEffectivelyEmpty,
   runNpmPackDryRun,
+  readLiteralFilesFieldEntries,
   loadPackedFileList,
   resolveShippedFiles,
   isExcludedShippedFile,
