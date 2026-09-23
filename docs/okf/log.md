@@ -3,47 +3,41 @@
 <!-- Add new entries at the top, newest first. -->
 
 - 2026-09-23T05:02:00Z, ledger_summary session-key equality pin (task
-  0a8645d2): `evidence-ledger-session-key-shapes.md` lists
-  `packages/grounding-mcp/src/server.ts` and `packages/grounding-wrapper/src/lib.ts`
-  as sources; a batch-61 task touched `packages/grounding-mcp/src/server.ts`
-  (added one sentence to the `ledger_add` and `ledger_summary` tool
+  0a8645d2): evidence-ledger-session-key-shapes.md lists
+  packages/grounding-mcp/src/server.ts and packages/grounding-wrapper/src/lib.ts
+  as sources; a batch-61 task touched packages/grounding-mcp/src/server.ts
+  (added one sentence to the ledger_add and ledger_summary tool
   descriptions, on lines adjacent to but not overlapping the anchored
-  citations) while investigating a reported `ledger_add` +
-  `ledger_summary` fact-loss bug. Re-verified both anchored citations to
-  that file (`server.ts:288#"Session id — used as the ledger session
-  namespace."` and `server.ts:295-300#"session: sessionId,"` /
-  `server.ts:295-301#"session: sessionId,"`): both lines and quoted text
-  unchanged, no re-point needed. The investigation itself found no
-  defect: `ledger_add` followed by `ledger_summary` under the exact same
-  sessionId string reflects the entry for every entry type and every
-  sessionId shape tried, both in-process and across separate server
-  process invocations; the only zero-count case is a different sessionId
-  string, which matches this doc's documented strict-equality
-  invariant. Timestamp re-stamped; no other claim in this doc changed.
-  The same task also added two regression tests to
-  `packages/grounding-mcp/tests/grounding-gate-mcp-roundtrip.test.ts`
-  before the existing `it('not-ready preflight: ...')` block, shifting
-  it from 671-685 to 720-733; this doc's "Out-of-repo boundary" section
-  cites that block's `blockers).toContain('test: 2 failing')` line as
-  the sole incidental appearance of the string `preflight:` in this
-  repo, re-pointed to the new range (content unchanged, still the same
-  `it(...)` block). `okf-kit check --json docs/okf` run against the
-  committed tree afterward: 0 errors; the doc's own citation clean;
-  remaining warnings/notices are pre-existing `log.md` historical
-  citations (this file's own past entries, never re-pointed) and this
-  same test-file line shift as it appears a second and third time in
-  two other `log.md` historical entries, left as-is per this bundle's
-  convention that `log.md`'s own history is not re-anchored.
-  `hypothesis-tracker-persistence-split.md` and
-  `solution-acceptance-verdict-contract.md` also list
-  `packages/grounding-mcp/src/server.ts` as a source (the latter also
-  lists `packages/grounding-mcp/README.md`, touched by the same task for
-  the `ledger_add`/`ledger_summary` README rows); both docs' anchored
-  citations checked against the current file content: unchanged (the
-  `server.ts` edit was a same-line text replace on two lines, adding no
-  lines; the `README.md` edit likewise replaced two existing table-row
-  lines in place). Both timestamps re-stamped; no other claim in either
-  doc changed.
+  citations) while investigating a reported ledger_add plus
+  ledger_summary fact-loss bug. Re-verified both anchored citations to
+  that file (server.ts line 288, the sessionId param description; and
+  server.ts lines 295-301, the addEntry write-through): both lines and
+  quoted text unchanged, no re-point needed. The investigation itself
+  found no defect: ledger_add followed by ledger_summary under the
+  exact same sessionId string reflects the entry for every entry type
+  and every sessionId shape tried, both in-process and across separate
+  server process invocations; the only zero-count case is a different
+  sessionId string, which matches this doc's documented
+  strict-equality invariant. Timestamp re-stamped; no other claim in
+  this doc changed. The same task's two new regression tests in
+  packages/grounding-mcp/tests/grounding-gate-mcp-roundtrip.test.ts
+  were appended as a new describe block at the end of that file
+  (rather than inlined earlier in it), specifically so this doc's
+  Out-of-repo-boundary citation into that file's not-ready-preflight
+  test block keeps its existing line range; that citation was checked
+  after the append and still resolves unchanged. hypothesis-tracker-
+  persistence-split.md and solution-acceptance-verdict-contract.md
+  also list packages/grounding-mcp/src/server.ts as a source (the
+  latter also lists packages/grounding-mcp/README.md, touched by the
+  same task for the ledger_add/ledger_summary README rows); both docs'
+  anchored citations checked against the current file content:
+  unchanged (the server.ts edit was a same-line text replace on two
+  lines, adding no lines; the README.md edit likewise replaced two
+  existing table-row lines in place). Both timestamps re-stamped; no
+  other claim in either doc changed. okf-kit check --json docs/okf run
+  against the committed tree: identical summary to the pre-task base
+  (0 errors, 9 warnings, 0 notices); the remaining warnings are
+  pre-existing log.md historical citations, unrelated to this task.
 
 - 2026-09-22T06:28:10Z, package LICENSE-in-tarballs check (task ae26b625):
   adding `packages/*/LICENSE` and a `files` entry in twelve package
