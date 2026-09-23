@@ -30,6 +30,14 @@ const fs = require('fs');
 const path = require('path');
 
 // Matches "## 0.2.2, 2026-05-03" and "## [0.2.2] - 2026-05-03" shapes.
+// Decision (task d51ae64b): a "## " heading that looks
+// version-shaped but carries no parseable date (e.g. "## 0.2.2 - draft")
+// does NOT match this and is therefore not treated as a dated section --
+// it falls through to ANY_TOP_HEADING_RE below like any other non-dated
+// heading (## [Unreleased], ## Notes, ...), so duplicate ### headings
+// inside it are silently unscanned rather than flagged. This is a
+// documented gap, not a silent one: see the parseDatedSections test for a
+// version-shaped-but-undated heading.
 const DATED_HEADING_RE = /^##\s+\[?([^\],]+?)\]?[, ]+-?\s*(\d{4}-\d{2}-\d{2})\s*$/;
 const SUBSECTION_HEADING_RE = /^###\s+(.+?)\s*$/;
 const ANY_TOP_HEADING_RE = /^##\s/;

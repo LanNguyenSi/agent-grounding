@@ -55,6 +55,25 @@ test('parseDatedSections: kinds do not leak across sections', () => {
   assert.deepEqual(sections[1].kinds, ['Added']);
 });
 
+test('parseDatedSections: a non-dated "## Notes" section after a dated one does not leak repeated ### headings into it (finding 5)', () => {
+  const text =
+    '# Changelog\n\n## 0.1.0, 2026-01-01\n\n### Added\n\n- a\n\n## Notes\n\n### Added\n\n- x\n\n### Added\n\n- y\n';
+  const sections = parseDatedSections(text);
+  assert.equal(sections.length, 1);
+  assert.deepEqual(sections[0].kinds, ['Added']);
+});
+
+test('collectFileViolations: a non-dated "## Notes" section holding a repeated ### heading after a dated section -> no violation (finding 5, kills the ANY_TOP_HEADING_RE survivor)', () => {
+  const text =
+    '# Changelog\n\n## [Unreleased]\n\n## 0.1.0, 2026-01-01\n\n### Added\n\n- a\n\n## Notes\n\n### Added\n\n- x\n\n### Added\n\n- y\n';
+  assert.deepEqual(collectFileViolations('packages/x/CHANGELOG.md', text), []);
+});
+
+test('parseDatedSections: a version-shaped "## " heading with no parseable date is not treated as a dated section (documented gap: its own ### headings, duplicated or not, are silently unscanned -- see DATED_HEADING_RE\'s docblock)', () => {
+  const text = '# Changelog\n\n## 0.2.2 - draft\n\n### Added\n\n- a\n\n### Added\n\n- b\n';
+  assert.deepEqual(parseDatedSections(text), []);
+});
+
 // ── findDuplicateKinds ──────────────────────────────────────────────────
 
 test('findDuplicateKinds: flags a kind occurring twice in one section', () => {

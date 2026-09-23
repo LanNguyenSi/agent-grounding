@@ -6,16 +6,22 @@
  * tarball's served `--version` output matches its own package.json -- a
  * behavioral check). This one asserts a purely structural property of the
  * SAME tarball: it ships exactly `package.json`, `README.md`,
- * `CHANGELOG.md`, and its built `dist/` output, and nothing under `src/`
- * and no test file (a name containing `.test.` or `.spec.`, or living under
- * a `test/`/`tests/` directory). Nothing previously asserted this: a
- * `files` regression (e.g. accidentally adding `"src"`) would ship the
- * package's TypeScript sources in the published npm tarball unnoticed.
+ * `CHANGELOG.md`, optionally `LICENSE`, and its built `dist/` output (at
+ * least one entry required), and nothing else at the top level, nothing
+ * under `src/`, and no test file (a name containing `.test.` or `.spec.`,
+ * living under a `test/`/`tests/`/`__tests__/` directory). Nothing
+ * previously asserted this: a `files` regression (e.g. accidentally adding
+ * `"src"`, or a build that silently stopped emitting `dist/`) would ship
+ * the wrong tarball unnoticed.
  *
  * Uses `npm pack --dry-run --json -w @lannguyensi/grounding-mcp` (like
  * `check-package-license.js`'s pack-entry guard): reports the real file
- * list a publish would ship, without requiring a build or leaving a
- * tarball on disk.
+ * list a publish would ship, without leaving a tarball on disk. This CLI
+ * call itself does not require a prior build (`npm pack --dry-run` reports
+ * whatever `dist/` currently contains, including nothing), but the shape
+ * assertions below DO require one: the "at least one dist/ entry" check
+ * fails red when `dist/` is empty or missing, which is why this check runs
+ * after the CI job's Build step (see its own ci.yml step comment).
  *
  * Usage: `node scripts/check-grounding-mcp-pack-shape.js` (wired as
  * `check:grounding-mcp-pack-shape`). Exits non-zero and prints the
@@ -27,6 +33,9 @@ const { execFileSync } = require('child_process');
 
 const PACKAGE_NAME = '@lannguyensi/grounding-mcp';
 const REQUIRED_ENTRIES = ['package.json', 'README.md', 'CHANGELOG.md'];
+// Top-level entries this tarball is allowed to ship, beyond `dist/**`
+// (checked separately: at least one dist/ entry is required below).
+const ALLOWED_TOP_LEVEL_ENTRIES = ['package.json', 'README.md', 'CHANGELOG.md', 'LICENSE'];
 
 /** Real `packFn`: runs `npm pack --dry-run --json -w <name>` from
  * `rootDir` and returns the parsed single-package result object. */
@@ -44,7 +53,7 @@ function runNpmPackDryRun(pkgName, rootDir) {
  * `test/`/`tests/` directory anywhere in the path. */
 function isTestFilePath(entryPath) {
   const segments = entryPath.split('/');
-  if (segments.includes('test') || segments.includes('tests')) return true;
+  if (segments.includes('test') || segments.includes('tests') || segments.includes('__tests__')) return true;
   const basename = segments[segments.length - 1];
   return /\.(test|spec)\./.test(basename);
 }
@@ -59,13 +68,26 @@ function evaluatePackShape(paths) {
   for (const required of REQUIRED_ENTRIES) {
     if (!paths.includes(required)) violations.push(`missing required entry "${required}"`);
   }
+  let hasDistEntry = false;
   for (const entryPath of paths) {
-    if (entryPath === 'src' || entryPath.startsWith('src/')) {
+    const isSrc = entryPath === 'src' || entryPath.startsWith('src/');
+    const isDist = entryPath === 'dist' || entryPath.startsWith('dist/');
+    if (isSrc) {
       violations.push(`ships source entry "${entryPath}" (src/ must not be published)`);
     }
     if (isTestFilePath(entryPath)) {
       violations.push(`ships test entry "${entryPath}"`);
     }
+    if (isDist) {
+      hasDistEntry = true;
+    } else if (!isSrc && !ALLOWED_TOP_LEVEL_ENTRIES.includes(entryPath)) {
+      violations.push(
+        `ships unexpected top-level entry "${entryPath}" (allowed: ${ALLOWED_TOP_LEVEL_ENTRIES.join(', ')}, dist/**)`,
+      );
+    }
+  }
+  if (!hasDistEntry) {
+    violations.push('ships no dist/ entry (built output missing: run the build before packing)');
   }
   return { ok: violations.length === 0, violations };
 }

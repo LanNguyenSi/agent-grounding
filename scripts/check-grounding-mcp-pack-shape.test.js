@@ -29,6 +29,10 @@ test('isTestFilePath: under a test/ or tests/ directory', () => {
   assert.equal(isTestFilePath('dist/tests/a.js'), true);
 });
 
+test('isTestFilePath: under a __tests__ directory (finding 8)', () => {
+  assert.equal(isTestFilePath('dist/__tests__/a.js'), true);
+});
+
 test('isTestFilePath: negative control -- an ordinary dist file is not a test file', () => {
   assert.equal(isTestFilePath('dist/server.js'), false);
   assert.equal(isTestFilePath('dist/latest.js'), false); // contains "test" as a substring, not a segment/suffix
@@ -68,6 +72,24 @@ test('evaluatePackShape: a shipped test file is a violation', () => {
   const result = evaluatePackShape(['package.json', 'README.md', 'CHANGELOG.md', 'dist/server.test.js']);
   assert.equal(result.ok, false);
   assert.ok(result.violations.some((v) => v.includes('dist/server.test.js')));
+});
+
+test('evaluatePackShape: no dist/ entry at all is a violation (finding 8: dist-presence assertion)', () => {
+  const result = evaluatePackShape(['package.json', 'README.md', 'CHANGELOG.md']);
+  assert.equal(result.ok, false);
+  assert.ok(result.violations.some((v) => v.includes('no dist/ entry')));
+});
+
+test('evaluatePackShape: an unexpected top-level entry is a violation (finding 8: allow-list)', () => {
+  const result = evaluatePackShape(['package.json', 'README.md', 'CHANGELOG.md', 'dist/server.js', 'NOTES.txt']);
+  assert.equal(result.ok, false);
+  assert.ok(result.violations.some((v) => v.includes('NOTES.txt')));
+});
+
+test('evaluatePackShape: negative control -- LICENSE at the top level is allowed', () => {
+  const result = evaluatePackShape(['package.json', 'README.md', 'CHANGELOG.md', 'LICENSE', 'dist/server.js']);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.violations, []);
 });
 
 assert.deepEqual(REQUIRED_ENTRIES, ['package.json', 'README.md', 'CHANGELOG.md']);
