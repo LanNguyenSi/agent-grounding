@@ -2,6 +2,58 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-23, `ledger_summary`'s `sinceIso` filter validation (task
+  dde2ba58): added a module-level `SINCE_ISO_PATTERN` regex, an
+  `isValidSinceIso` helper, and a `.refine(isValidSinceIso, …)` on the
+  `sinceIso` zod field (the latter adding one more line to that field's
+  own chain), so `ledger_summary` now rejects a `sinceIso` it cannot
+  compare (empty string, relative shorthand, epoch seconds/ms,
+  `Date.toString()` output, a local datetime without a zone) instead of
+  silently matching zero rows through evidence-ledger's `datetime()` SQL
+  comparison; a Z datetime, a numeric-offset datetime, and a date-only
+  value are still accepted and still filter. No evidence-ledger SQL
+  changed: probing better-sqlite3's `datetime()` directly confirmed it
+  already normalizes an explicit numeric offset to UTC correctly for the
+  comparison. `packages/grounding-mcp/src/server.ts` grew net +25 lines
+  (the pattern/helper/message block, inserted before the existing
+  `hypothesisIdSchema` declaration, plus the one-line `.refine()` further
+  down), so every anchored citation into it from that insertion point
+  onward shifted by +25. Three bundle docs cited a line past that point
+  and were re-pointed: `evidence-ledger-session-key-shapes.md`'s
+  `ledger_add` `sessionId` param doc and its `addEntry` write-through, now
+  `packages/grounding-mcp/src/server.ts:581#"Session id: used as the ledger session namespace."`
+  and
+  `packages/grounding-mcp/src/server.ts:589-595#"session: sessionId,"`;
+  `hypothesis-tracker-persistence-split.md`'s seven `hypothesis_*` tool
+  registrations and five `saveStore` calls, now
+  `packages/grounding-mcp/src/server.ts:839#"'hypothesis_record',"`,
+  `packages/grounding-mcp/src/server.ts:859#"'hypothesis_list',"`,
+  `packages/grounding-mcp/src/server.ts:882#"'hypothesis_evidence',"`,
+  `packages/grounding-mcp/src/server.ts:905#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:937#"'hypothesis_reject',"`,
+  `packages/grounding-mcp/src/server.ts:959#"'hypothesis_support',"`,
+  `packages/grounding-mcp/src/server.ts:975#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
+  `packages/grounding-mcp/src/server.ts:986#"'hypothesis_reset',"`,
+  `packages/grounding-mcp/src/server.ts:853#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:899#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:931#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:953#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:980#"saveStore(sessionId, store);"`;
+  and `solution-acceptance-verdict-contract.md`'s two tool registrations,
+  now `packages/grounding-mcp/src/server.ts:719#"'solution_evaluate'"` and
+  `packages/grounding-mcp/src/server.ts:794#"'solution_gate'"` (its
+  package-version citation at line 104 sits before the insertion and did
+  not move). Every re-pointed citation was checked to still resolve to
+  its quoted anchor text at the new line before re-stamping; each doc's
+  other sources were not touched by this change.
+  `grounding-stack-overview.md`'s only match against the shifted filename
+  is actually into `assessment-server.ts` (a different file, unaffected),
+  and `grounding-receipt-contract.md`'s citation into this file sits
+  before the insertion point, so neither needed a re-point or a re-stamp.
+  This entry deliberately does not restate the prior (now superseded)
+  line numbers, since those bare numbers would themselves misparse as
+  dangling citations once written down here.
+
 - 2026-09-23T08:18:16Z, ledger request ordering: sort keys and stamp
   lifetime (task 0a8645d2, follow-up to the entry below): the
   arrival-stamp fix in the entry below had two defects. First, the queue
@@ -1476,22 +1528,22 @@
   citation at or after line 368 as the file stood after round 2 (the
   `solution_evaluate` registration's line at that point) by +11, uniformly, all the
   way to the end of the file: re-pointed to
-  `packages/grounding-mcp/src/server.ts:694#"'solution_evaluate'"` and
-  `packages/grounding-mcp/src/server.ts:769#"'solution_gate'"` in
+  `packages/grounding-mcp/src/server.ts:719#"'solution_evaluate'"` and
+  `packages/grounding-mcp/src/server.ts:794#"'solution_gate'"` in
   `solution-acceptance-verdict-contract.md`, and to
-  `packages/grounding-mcp/src/server.ts:814#"'hypothesis_record',"`,
-  `packages/grounding-mcp/src/server.ts:828#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:834#"'hypothesis_list',"`,
-  `packages/grounding-mcp/src/server.ts:857#"'hypothesis_evidence',"`,
-  `packages/grounding-mcp/src/server.ts:874#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:880#"'hypothesis_check_done',"`,
-  `packages/grounding-mcp/src/server.ts:906#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:912#"'hypothesis_reject',"`,
-  `packages/grounding-mcp/src/server.ts:928#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:934#"'hypothesis_support',"`,
-  `packages/grounding-mcp/src/server.ts:950#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
-  `packages/grounding-mcp/src/server.ts:955#"saveStore(sessionId, store);"` and
-  `packages/grounding-mcp/src/server.ts:961#"'hypothesis_reset',"` in
+  `packages/grounding-mcp/src/server.ts:839#"'hypothesis_record',"`,
+  `packages/grounding-mcp/src/server.ts:853#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:859#"'hypothesis_list',"`,
+  `packages/grounding-mcp/src/server.ts:882#"'hypothesis_evidence',"`,
+  `packages/grounding-mcp/src/server.ts:899#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:905#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:931#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:937#"'hypothesis_reject',"`,
+  `packages/grounding-mcp/src/server.ts:953#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:959#"'hypothesis_support',"`,
+  `packages/grounding-mcp/src/server.ts:975#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
+  `packages/grounding-mcp/src/server.ts:980#"saveStore(sessionId, store);"` and
+  `packages/grounding-mcp/src/server.ts:986#"'hypothesis_reset',"` in
   `hypothesis-tracker-persistence-split.md`. `evidence-ledger-session-key-shapes.md`'s
   own citations sit entirely before line 368 (`server.ts:244`, `server.ts:251-256/257`,
   as the file stood then) and did not move, but the file is re-stamped anyway: it declares `server.ts` as a
@@ -1553,8 +1605,8 @@
   `server.ts` edits (the import swap, the spelled-out `createServer` option
   type, the comment above the two lookup registrations, and the two widened `id`
   schemas) shifted the citations below them by +9 as far as
-  `packages/grounding-mcp/src/server.ts:694#"'solution_evaluate'"`, and by +23
-  from `packages/grounding-mcp/src/server.ts:769#"'solution_gate'"` onward. The
+  `packages/grounding-mcp/src/server.ts:719#"'solution_evaluate'"`, and by +23
+  from `packages/grounding-mcp/src/server.ts:794#"'solution_gate'"` onward. The
   new README paragraph shifted
   `packages/grounding-mcp/README.md:214#"the root cause is the backend container's missing OPENAI_API_KEY env var"`
   by +2, and the one new import in the roundtrip test shifted
@@ -1625,21 +1677,21 @@
   ed06b4c8)
   (`packages/grounding-mcp/src/server.ts:104#"const PACKAGE_VERSION = readPackageVersion();"`), by +26
   through the `ledger_add` handler
-  (`packages/grounding-mcp/src/server.ts:557#"Session id"`,
-  `packages/grounding-mcp/src/server.ts:565-572#"session: sessionId,"`), by +26 at
+  (`packages/grounding-mcp/src/server.ts:581#"Session id"`,
+  `packages/grounding-mcp/src/server.ts:589-595#"session: sessionId,"`), by +26 at
   the `solution_evaluate` registration
-  (`packages/grounding-mcp/src/server.ts:694#"'solution_evaluate'"`), and by +63
-  from `solution_gate` (`packages/grounding-mcp/src/server.ts:769#"'solution_gate'"`)
+  (`packages/grounding-mcp/src/server.ts:719#"'solution_evaluate'"`), and by +63
+  from `solution_gate` (`packages/grounding-mcp/src/server.ts:794#"'solution_gate'"`)
   through every `hypothesis_*` tool below it
-  (`packages/grounding-mcp/src/server.ts:814#"'hypothesis_record',"`,
-  `packages/grounding-mcp/src/server.ts:828#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:834#"'hypothesis_list',"`,
-  `packages/grounding-mcp/src/server.ts:857#"'hypothesis_evidence',"`,
-  `packages/grounding-mcp/src/server.ts:880#"'hypothesis_check_done',"`,
-  `packages/grounding-mcp/src/server.ts:912#"'hypothesis_reject',"`,
-  `packages/grounding-mcp/src/server.ts:934#"'hypothesis_support',"`,
-  `packages/grounding-mcp/src/server.ts:950#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
-  `packages/grounding-mcp/src/server.ts:961#"'hypothesis_reset',"`), since the two
+  (`packages/grounding-mcp/src/server.ts:839#"'hypothesis_record',"`,
+  `packages/grounding-mcp/src/server.ts:853#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:859#"'hypothesis_list',"`,
+  `packages/grounding-mcp/src/server.ts:882#"'hypothesis_evidence',"`,
+  `packages/grounding-mcp/src/server.ts:905#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:937#"'hypothesis_reject',"`,
+  `packages/grounding-mcp/src/server.ts:959#"'hypothesis_support',"`,
+  `packages/grounding-mcp/src/server.ts:975#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
+  `packages/grounding-mcp/src/server.ts:986#"'hypothesis_reset',"`), since the two
   new tool registrations sit between those two anchors. The `preWriteGuard` block
   moved the marker-write anchor's range end only
   (`packages/grounding-mcp/src/solution-verdict.ts:746-803#"const markerPath = writeVerdict(verdict);"`),
