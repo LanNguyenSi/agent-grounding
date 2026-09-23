@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `ledger_add` and `ledger_summary` tool descriptions, and the README tool
+  catalog, now state in one sentence each that a session's entries are
+  only visible to a `ledger_summary` call using the exact sessionId
+  string `ledger_add` used (case-sensitive, no normalization). Written
+  after investigating a tracker report that `ledger_add` followed by
+  `ledger_summary` for the same sessionId returned 0 facts: not
+  reproduced at the MCP tool level across every entry type and a range
+  of sessionId shapes, in-process and across separate server process
+  invocations (see `scripts/repro-ledger-summary-count.mjs`); the only
+  zero-count case is a mismatched sessionId, which this change documents
+  and two new regression tests in
+  `tests/grounding-gate-mcp-roundtrip.test.ts` pin.
+
 ## 0.12.0, 2026-09-21
 
 ### Added
