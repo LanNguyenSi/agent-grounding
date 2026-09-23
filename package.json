@@ -29,7 +29,13 @@
     "check:grounding-mcp-pack": "node scripts/check-grounding-mcp-pack.js",
     "test:check-grounding-mcp-pack": "node --test scripts/check-grounding-mcp-pack.test.js",
     "check:package-license": "node scripts/check-package-license.js",
-    "test:check-package-license": "node --test scripts/check-package-license.test.js"
+    "test:check-package-license": "node --test scripts/check-package-license.test.js",
+    "check:shipped-unreleased-pointer": "node scripts/check-shipped-unreleased-pointer.js",
+    "test:check-shipped-unreleased-pointer": "node --test scripts/check-shipped-unreleased-pointer.test.js",
+    "check:changelog-duplicate-headings": "node scripts/check-changelog-duplicate-headings.js",
+    "test:check-changelog-duplicate-headings": "node --test scripts/check-changelog-duplicate-headings.test.js",
+    "check:grounding-mcp-pack-shape": "node scripts/check-grounding-mcp-pack-shape.js",
+    "test:check-grounding-mcp-pack-shape": "node --test scripts/check-grounding-mcp-pack-shape.test.js"
   },
   "overrides": {
     "js-yaml": "^4.3.1",
