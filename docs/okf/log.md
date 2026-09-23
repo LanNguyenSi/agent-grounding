@@ -20,6 +20,30 @@
   process invocations; the only zero-count case is a different sessionId
   string, which matches this doc's documented strict-equality
   invariant. Timestamp re-stamped; no other claim in this doc changed.
+  The same task also added two regression tests to
+  `packages/grounding-mcp/tests/grounding-gate-mcp-roundtrip.test.ts`
+  before the existing `it('not-ready preflight: ...')` block, shifting
+  it from 671-685 to 720-733; this doc's "Out-of-repo boundary" section
+  cites that block's `blockers).toContain('test: 2 failing')` line as
+  the sole incidental appearance of the string `preflight:` in this
+  repo, re-pointed to the new range (content unchanged, still the same
+  `it(...)` block). `okf-kit check --json docs/okf` run against the
+  committed tree afterward: 0 errors; the doc's own citation clean;
+  remaining warnings/notices are pre-existing `log.md` historical
+  citations (this file's own past entries, never re-pointed) and this
+  same test-file line shift as it appears a second and third time in
+  two other `log.md` historical entries, left as-is per this bundle's
+  convention that `log.md`'s own history is not re-anchored.
+  `hypothesis-tracker-persistence-split.md` and
+  `solution-acceptance-verdict-contract.md` also list
+  `packages/grounding-mcp/src/server.ts` as a source (the latter also
+  lists `packages/grounding-mcp/README.md`, touched by the same task for
+  the `ledger_add`/`ledger_summary` README rows); both docs' anchored
+  citations checked against the current file content: unchanged (the
+  `server.ts` edit was a same-line text replace on two lines, adding no
+  lines; the `README.md` edit likewise replaced two existing table-row
+  lines in place). Both timestamps re-stamped; no other claim in either
+  doc changed.
 
 - 2026-09-22T06:28:10Z, package LICENSE-in-tarballs check (task ae26b625):
   adding `packages/*/LICENSE` and a `files` entry in twelve package
