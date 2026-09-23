@@ -2,7 +2,7 @@
 
 <!-- Add new entries at the top, newest first. -->
 
-- 2026-09-23T06:31:53Z, release-guard checks, review round 4 note-closing
+- 2026-09-23T06:31:53Z, release-guard checks, follow-up fixes
   (task d51ae64b): `check-shipped-unreleased-pointer.js` gained a
   `isLicenseFile` helper anchoring the LICENSE exclusion to real license
   filenames (a shipped `dist/license-policy.js`-style script is no longer
@@ -16,12 +16,9 @@
   `check-changelog-duplicate-headings.js`'s dash-separator comment was
   reworded for accuracy (the ASCII hyphen separator already matched; the
   actual prior bug was the lazy version-capture group absorbing an en/em
-  dash glyph into the version key). Run-local identifiers (decision ids,
-  round numbers, mutant ids) were removed from scripts/*.js,
+  dash glyph into the version key). Workflow-internal identifiers were removed from scripts/*.js,
   scripts/*.test.js, and `.github/workflows/ci.yml` comments, keeping
-  "task d51ae64b" as the single pointer; `docs/okf/log.md` itself keeps
-  its own decision references, since it is the run's own record, not
-  shipped source. `ci.yml`'s two edited comment blocks (the
+  "task d51ae64b" as the single pointer. `ci.yml`'s two edited comment blocks (the
   CHANGELOG duplicate-heading step and the Shipped [Unreleased] pointer
   step) are both net-zero-line rewords, so the "grounding-mcp
   packed-tarball --version check" step's citation range
@@ -33,7 +30,7 @@
   doc affected).
 
 - 2026-09-23T05:50:39Z, release-guard checks, structural redesign (task
-  d51ae64b, decision D-013): `check-shipped-unreleased-pointer.js`
+  d51ae64b): `check-shipped-unreleased-pointer.js`
   (scans every shipped text file except `package.json`, `LICENSE*`/`LICENCE*`,
   and a fixed binary-extension list, replacing the per-kind allowlist; adds a
   coverage invariant that fails loudly on an empty/malformed/missing-required-entry
