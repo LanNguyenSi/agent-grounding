@@ -82,6 +82,33 @@
   entry directly below already measured, a subset of the pre-task base's
   9 (`git show fe8fa4f:docs/okf/log.md` measured separately: 0/9/0).
 
+- 2026-09-23T06:31:53Z, release-guard checks, follow-up fixes
+  (task d51ae64b): `check-shipped-unreleased-pointer.js` gained a
+  `isLicenseFile` helper anchoring the LICENSE exclusion to real license
+  filenames (a shipped `dist/license-policy.js`-style script is no longer
+  swallowed by the old `/^licen[cs]e/i` prefix match) and a files-field
+  coverage check in `loadPackedFileList` requiring each literal
+  package.json `files` entry to appear in the resolved pack listing (an
+  unbuilt package now fails loudly with a named coverage-invariant error
+  instead of silently under-scanning); its test file gained fixtures
+  isolating the CHANGELOG-only heading/link-ref exclusion scoping and an
+  assertion on the exact per-package success-line text.
+  `check-changelog-duplicate-headings.js`'s dash-separator comment was
+  reworded for accuracy (the ASCII hyphen separator already matched; the
+  actual prior bug was the lazy version-capture group absorbing an en/em
+  dash glyph into the version key). Workflow-internal identifiers were removed from scripts/*.js,
+  scripts/*.test.js, and `.github/workflows/ci.yml` comments, keeping
+  "task d51ae64b" as the single pointer. `ci.yml`'s two edited comment blocks (the
+  CHANGELOG duplicate-heading step and the Shipped [Unreleased] pointer
+  step) are both net-zero-line rewords, so the "grounding-mcp
+  packed-tarball --version check" step's citation range
+  (`.github/workflows/ci.yml:463-479`) in `grounding-stack-overview.md`
+  did not shift; re-verified the anchor text
+  `"npm run check:grounding-mcp-pack"` still occurs in that range and
+  re-stamped that doc's timestamp only because it lists `ci.yml` as a
+  source and `ci.yml`'s content changed (comments only, no claim in the
+  doc affected).
+
 - 2026-09-23T05:59:02Z, ledger_add/ledger_summary concurrency fix (task
   0a8645d2, follow-up to the entry below): the prior, sequential-only
   investigation (below) tested only add-then-await-summary calls and
@@ -137,6 +164,55 @@
   fewer warning than the pre-task base, from that entry's own STALE fix,
   none from this one).
 
+- 2026-09-23T05:50:39Z, release-guard checks, structural redesign (task
+  d51ae64b): `check-shipped-unreleased-pointer.js`
+  (scans every shipped text file except `package.json`, `LICENSE*`/`LICENCE*`,
+  and a fixed binary-extension list, replacing the per-kind allowlist; adds a
+  coverage invariant that fails loudly on an empty/malformed/missing-required-entry
+  pack result instead of passing vacuously; `LINK_REF_RE` tightened to
+  require a URL) and `check-changelog-duplicate-headings.js` (dated-heading
+  regex now tolerates an en/em dash separator; a version-shaped heading that
+  still fails to parse now fails the check visibly instead of being silently
+  unscanned; allowlist made injectable). `.github/workflows/ci.yml`'s
+  "Shipped [Unreleased] pointer check" step comment and its unit-test step
+  comment reworded for the widened scope; `CONTRIBUTING.md`'s "Cutting a
+  release" step 5 reworded the same way. Both ci.yml edits land strictly
+  after the "grounding-mcp packed-tarball --version check" step's anchored
+  citation range in `grounding-stack-overview.md`, so that citation is
+  unaffected: verified the anchor text `"npm run check:grounding-mcp-pack"`
+  still resolves inside the cited range after the edit. Every other claim in
+  `grounding-stack-overview.md` re-checked against `README.md`,
+  `CHANGELOG.md`, `package.json`, `packages/grounding-mcp/package.json`,
+  `packages/grounding-mcp/src/assessment-index.ts`,
+  `packages/grounding-mcp/src/assessment-server.ts`,
+  `.github/workflows/ci.yml`, and `scripts/check-grounding-mcp-pack.js` and
+  found unchanged. `merge-approval-gate-mechanics.md`'s `CONTRIBUTING.md`
+  reference remains a prose pointer to the "Cutting a release" section, not
+  line-anchored, unaffected by the reworded step-5 sentence. Both docs
+  re-stamped.
+
+- 2026-09-23T05:22:43Z, release-guard checks (task d51ae64b): adding three
+  new `ci.yml` steps (`check:changelog-duplicate-headings`,
+  `check:grounding-mcp-pack-shape`, and `check:shipped-unreleased-pointer`,
+  each with its own unit-test step) shifted the "grounding-mcp
+  packed-tarball --version check" step's anchored citation in
+  `grounding-stack-overview.md` out of range: it moved from `449-465` to
+  `463-479`. Re-pointed; every other citation in that doc
+  (`README.md:13-49`, `CHANGELOG.md:9-30`,
+  `packages/grounding-mcp/package.json:24-26`,
+  `packages/grounding-mcp/src/assessment-index.ts:11-13`,
+  `packages/grounding-mcp/src/assessment-server.ts:32-35`,
+  `package.json:30`) re-checked and found unchanged, as were the
+  version-lock claims (`0.6.0` for the four locked packages,
+  `grounding-mcp` `0.12.0`, `runtime-reality-checker` `0.3.2`,
+  `review-claim-gate` `0.1.6`). `merge-approval-gate-mechanics.md` lists
+  `CONTRIBUTING.md` as a source, and this task also extended
+  `CONTRIBUTING.md`'s "Cutting a release" checklist (naming the same three
+  checks in steps 4 and 5); that doc's own `CONTRIBUTING.md` reference is
+  a prose pointer to the section, not line-anchored, and the section's
+  path-level-disqualifier content it actually describes is unaffected by
+  the added sentences. Both docs re-stamped.
+
 - 2026-09-23T05:02:00Z, ledger_summary session-key equality pin (task
   0a8645d2): evidence-ledger-session-key-shapes.md lists
   packages/grounding-mcp/src/server.ts and packages/grounding-wrapper/src/lib.ts
@@ -173,6 +249,11 @@
   against the committed tree: identical summary to the pre-task base
   (0 errors, 9 warnings, 0 notices); the remaining warnings are
   pre-existing log.md historical citations, unrelated to this task.
+
+- 2026-09-22T06:28:10Z, package LICENSE-in-tarballs check (task ae26b625):
+  adding `packages/*/LICENSE` and a `files` entry in twelve package
+  manifests plus a `check:package-license` step in `ci.yml` shifted two
+  anchored citations in `grounding-stack-overview.md` out of range: the
 
   `.github/workflows/ci.yml` "grounding-mcp packed-tarball --version check"
   step name moved from 430-446 to 449-465 (LICENSE-shipping steps and their
