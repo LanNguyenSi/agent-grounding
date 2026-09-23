@@ -5,12 +5,18 @@
  * A release cut moves the `## [Unreleased]` section's notes under a new
  * dated heading and leaves `## [Unreleased]` empty. Any file that SHIPS in
  * the package's npm tarball and still says something like "see CHANGELOG
- * [Unreleased]" now points at nothing: the README, and any dist comment
- * carried over from a source comment (tsc keeps comments in emitted JS/d.ts),
- * are the two kinds task d51ae64b actually found (the grounding-mcp 0.11.0
- * README, and a comment in `dist/ow-run-completeness.js` compiled from
- * `src/ow-run-completeness.ts`). Nothing mechanical caught either before
- * this check.
+ * [Unreleased]" now points at nothing. Task d51ae64b found this three
+ * different ways in one cut: the README, a comment in
+ * `dist/ow-run-completeness.js` (carried over from a source comment --
+ * tsc keeps comments in emitted JS/d.ts), and, in round 2 of this same
+ * check's own build-out, a package's ROADMAP.md that shipped alongside its
+ * README and CHANGELOG. Round 1 and round 2 of this check chased each kind
+ * one at a time (README, then dist/*.js and dist/*.d.ts, then more dist
+ * extensions); a shipped file of yet another kind (ROADMAP.md, a shipped
+ * docs/*.md, ...) always stayed invisible to a per-kind allowlist. Round 3
+ * (task d51ae64b, decision D-013) drops the per-kind allowlist entirely:
+ * this check now scans every shipped TEXT file, so a new file kind cannot
+ * silently opt out of scanning by not yet being named here.
  *
  * For every publishable (`private` !== true) `packages/*` workspace member:
  *
@@ -21,29 +27,48 @@
  *      when the heading exists but its body -- after stripping `### <Kind>`
  *      sub-headings and HTML comments, which carry no release notes of
  *      their own -- is blank. A package whose section genuinely has content
- *      is skipped: a pointer into it is not dangling.
+ *      is skipped entirely: a pointer into it is not dangling, and its
+ *      shipped file set is never even resolved (no `npm pack` call for it).
  *   2. Otherwise, resolve the package's SHIPPED file set the same way `npm
  *      publish` would, via `npm pack --dry-run --json -w <name>` (never a
  *      hard-coded list, and never a naive read of `package.json`'s `files`
  *      field by hand): this follows npm's own README always-included rule,
  *      globs, and negations. The pack lister is injectable (`packFn`) so
- *      unit tests do not need a real `npm pack` for every case.
- *   3. Within that shipped set, scan: `README.md`, `CHANGELOG.md` (prose
- *      only -- the `[Unreleased]` heading line itself is expected and
- *      excluded, as is any keep-a-changelog link-reference line like
- *      `[Unreleased]: https://...`), and every shipped `dist/**` file whose
- *      extension is one tsc/build tooling actually emits comments into
- *      (`.js`, `.d.ts`, `.mjs`, `.cjs`, `.d.mts`, `.d.cts`), for either the
- *      literal substring `[Unreleased]` or the bracketless, capitalised,
- *      word-bounded label `Unreleased` (e.g. "(Unreleased)", "see the
- *      Unreleased section"). Any hit is a violation: a pointer into a
+ *      unit tests do not need a real `npm pack` for every case. The pack
+ *      result is held to a COVERAGE INVARIANT before it is trusted (see
+ *      `loadPackedFileList`): an empty result, a result missing
+ *      `package.json` or `README.md`, packFn throwing, or packFn returning
+ *      something that is not a file-path array all fail the check loudly
+ *      and by name, rather than being silently treated as "nothing to
+ *      scan" (a coverage-shrinkage bug this check had in round 2: a
+ *      malformed/empty pack result passed vacuously).
+ *   3. Within that shipped set, scan every file EXCEPT `package.json`,
+ *      `LICENSE*`/`LICENCE*`, and a fixed, explicit list of binary
+ *      extensions (images, fonts, archives, `.node`, `.wasm` -- see
+ *      `BINARY_EXTENSIONS`): so a shipped README, CHANGELOG, ROADMAP, any
+ *      other shipped `*.md`, and every shipped `dist/**` file (`.js`,
+ *      `.d.ts`, `.mjs`, `.cjs`, whatever a build emits) are all scanned by
+ *      default, not by an allowlist of kinds this check happened to have
+ *      already seen. `CHANGELOG.md` alone additionally gets two
+ *      CHANGELOG-specific exclusions applied before the text is searched
+ *      (see `findPointerHit`): its own `[Unreleased]` heading line (always
+ *      present, even while the section is empty -- not a dangling pointer
+ *      into itself) and a genuine keep-a-changelog link-reference line
+ *      (`[Unreleased]: <url>`). Neither exclusion applies to any other
+ *      shipped file kind: a README or ROADMAP line that merely LOOKS like a
+ *      changelog link reference (no URL) is prose, and is scanned like any
+ *      other line.
+ *      Any hit -- the literal substring `[Unreleased]` or the bracketless,
+ *      capitalised, word-bounded label `Unreleased` (e.g. "(Unreleased)",
+ *      "see the Unreleased section") -- is a violation: a pointer into a
  *      section that ships empty.
  *
  * Usage: `node scripts/check-shipped-unreleased-pointer.js` (wired as
  * `check:shipped-unreleased-pointer`). Exits non-zero and prints one line
- * per offending package + file on failure. Also exits non-zero if zero
- * publishable workspace packages are found (mirrors check-package-license.js's
- * zero-workspace guard: a renamed/emptied packages/ must not silently pass).
+ * per offending package + file on failure, or one named coverage-invariant
+ * error. Also exits non-zero if zero publishable workspace packages are
+ * found (mirrors check-package-license.js's zero-workspace guard: a
+ * renamed/emptied packages/ must not silently pass).
  */
 'use strict';
 
@@ -55,10 +80,31 @@ const UNRELEASED_HEADING_RE = /^##\s*\[?unreleased\]?\s*$/i;
 const NEXT_HEADING_RE = /^##\s/;
 const SUBSECTION_HEADING_RE = /^###\s/;
 const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g;
-const LINK_REF_RE = /^\[Unreleased\]:\s*\S+/i;
+// Requires an actual URL (or an absolute/relative path) after the colon, so
+// a prose line that merely LOOKS like a keep-a-changelog link reference
+// (e.g. "[Unreleased]: see the next release") is NOT excluded from the
+// pointer scan: an earlier, URL-less shape excluded it, producing a false
+// negative (task d51ae64b).
+const LINK_REF_RE = /^\[Unreleased\]:\s*(https?:\/\/|\.{0,2}\/)\S*/i;
 const BRACKETED_POINTER_RE = /\[Unreleased\]/;
 const BAREWORD_POINTER_RE = /\bUnreleased\b/;
-const DIST_SCANNED_EXTENSIONS = ['.d.mts', '.d.cts', '.d.ts', '.mjs', '.cjs', '.js'];
+
+// Explicit, small binary-extension exclusion (task d51ae64b round 3,
+// decision D-013): everything else shipped is treated as scannable text.
+// Kept deliberately short -- this repo's packages ship JS/TS build output
+// and docs, not media -- rather than trying to be an exhaustive MIME table.
+const BINARY_EXTENSIONS = new Set([
+  // images
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp', '.avif', '.svg',
+  // fonts
+  '.woff', '.woff2', '.ttf', '.otf', '.eot',
+  // archives
+  '.zip', '.tar', '.gz', '.tgz', '.br', '.7z', '.rar',
+  // native/compiled build artifacts
+  '.node', '.wasm',
+]);
+
+class CoverageInvariantError extends Error {}
 
 /** Reads every `packages/*\/package.json` under `rootDir` and returns
  * `{ name, dir, private }` entries. Skips a workspace dir with no
@@ -143,7 +189,9 @@ function isUnreleasedEffectivelyEmpty(changelogPath) {
  * `rootDir` and returns the packed tarball's entry paths (relative to the
  * package root), the same list `npm publish` would actually ship --
  * README always included, `files` globs and `.npmignore`/`!` negations
- * already resolved by npm itself. */
+ * already resolved by npm itself. Lets a JSON-parse failure or a missing
+ * result propagate as a thrown error: `loadPackedFileList` turns that into
+ * a named coverage-invariant failure rather than a raw stack trace. */
 function runNpmPackDryRun(pkgName, rootDir) {
   const output = execFileSync('npm', ['pack', '--dry-run', '--json', '-w', pkgName], {
     cwd: rootDir,
@@ -151,17 +199,56 @@ function runNpmPackDryRun(pkgName, rootDir) {
   });
   const parsed = JSON.parse(output);
   const result = parsed[0];
-  return (result && Array.isArray(result.files) ? result.files : []).map((f) => f.path);
+  if (!result || !Array.isArray(result.files)) {
+    throw new Error('npm pack --dry-run --json returned no parseable file list');
+  }
+  return result.files.map((f) => f.path);
 }
 
-/** Resolves the package's shipped file set (absolute paths, files only) via
- * `packFn` (default: real `npm pack --dry-run --json`, injectable for
- * tests). A relative path `npm pack` reports that no longer exists on disk
- * is skipped rather than erroring: `npm pack --dry-run` reflects the
- * working tree, so this should not normally happen, but a stale report
- * must not crash the check. */
+/** Resolves and validates `pkg`'s packed file-path list via `packFn`
+ * (default: real `npm pack --dry-run --json`, injectable for tests).
+ * Enforces the coverage invariant (decision D-013): a publishable
+ * package's shipped-file scan must never silently shrink to "nothing to
+ * check". Throws `CoverageInvariantError` (message has no stack trace
+ * attached by the caller) when `packFn` throws, returns something that is
+ * not an array of paths, returns an empty array, or returns a list missing
+ * `package.json` or `README.md` -- every real npm-published package ships
+ * both, so their absence means the pack listing itself cannot be trusted. */
+function loadPackedFileList(pkg, rootDir, packFn) {
+  let relPaths;
+  try {
+    relPaths = packFn(pkg.name, rootDir);
+  } catch (err) {
+    throw new CoverageInvariantError(
+      `pack listing for ${pkg.name} threw (${err.message}); cannot verify its shipped file set`,
+    );
+  }
+  if (!Array.isArray(relPaths)) {
+    throw new CoverageInvariantError(
+      `pack listing for ${pkg.name} returned unparsable output (expected an array of file paths, got ${typeof relPaths})`,
+    );
+  }
+  if (relPaths.length === 0) {
+    throw new CoverageInvariantError(
+      `pack listing for ${pkg.name} is empty; a publishable package must ship at least package.json and README.md`,
+    );
+  }
+  if (!relPaths.includes('package.json')) {
+    throw new CoverageInvariantError(`pack listing for ${pkg.name} does not include package.json`);
+  }
+  if (!relPaths.includes('README.md')) {
+    throw new CoverageInvariantError(`pack listing for ${pkg.name} does not include README.md`);
+  }
+  return relPaths;
+}
+
+/** Resolves the package's shipped file set (absolute paths, files only),
+ * via `loadPackedFileList`. A relative path `npm pack` reports that no
+ * longer exists on disk is skipped rather than erroring: `npm pack
+ * --dry-run` reflects the working tree, so this should not normally
+ * happen, but a stale report must not crash the check. */
 function resolveShippedFiles(pkg, rootDir, packFn = runNpmPackDryRun) {
-  const relPaths = packFn(pkg.name, rootDir);
+  const relPaths = loadPackedFileList(pkg, rootDir, packFn);
   const out = [];
   for (const rel of relPaths) {
     const abs = path.join(pkg.dir, rel);
@@ -170,31 +257,38 @@ function resolveShippedFiles(pkg, rootDir, packFn = runNpmPackDryRun) {
   return out;
 }
 
-/** True when `absPath` is one of the file kinds this check scans:
- * README.md, CHANGELOG.md, or a `dist/**` file whose extension is one a
- * build carries source comments into (`.js`, `.d.ts`, `.mjs`, `.cjs`,
- * `.d.mts`, `.d.cts`). */
-function isScannedKind(absPath, pkgDir) {
-  const rel = path.relative(pkgDir, absPath);
+/** True when `absPath` is excluded from the shipped-text scan:
+ * `package.json`, `LICENSE*`/`LICENCE*` (any casing/extension), or a
+ * binary extension (see `BINARY_EXTENSIONS`). Everything else shipped is
+ * scanned -- this is deliberately NOT an allowlist of known-good kinds
+ * (see this file's docblock, decision D-013). */
+function isExcludedShippedFile(absPath) {
   const basename = path.basename(absPath);
-  if (basename === 'README.md' || basename === 'CHANGELOG.md') return true;
-  if (rel.split(path.sep)[0] !== 'dist') return false;
-  return DIST_SCANNED_EXTENSIONS.some((ext) => absPath.endsWith(ext));
+  if (basename === 'package.json') return true;
+  if (/^licen[cs]e/i.test(basename)) return true;
+  const ext = path.extname(absPath).toLowerCase();
+  return BINARY_EXTENSIONS.has(ext);
 }
 
 /** Scans one shipped file's text for a dangling `[Unreleased]` pointer,
  * either the bracketed literal or the bracketless, capitalised,
- * word-bounded label. For `CHANGELOG.md`, the `[Unreleased]` heading line
- * itself and any keep-a-changelog `[Unreleased]: <url>` link-reference
- * line are stripped first: both are expected, even while the section is
- * empty, and neither is a dangling pointer into it. */
+ * word-bounded label. For `CHANGELOG.md` ONLY, two lines are stripped
+ * first, since neither is a dangling pointer into the section: the
+ * `[Unreleased]` heading line itself (expected, even while the section is
+ * empty), and a genuine keep-a-changelog link-reference line
+ * (`[Unreleased]: <url>`, matched only when it actually looks like a URL
+ * or path -- see `LINK_REF_RE`). Neither exclusion is applied to any other
+ * shipped file: a README/ROADMAP/other file's own heading- or
+ * link-reference-shaped line is prose, not a changelog convention, and is
+ * scanned like any other line in that file. */
 function findPointerHit(absPath) {
   const isChangelog = path.basename(absPath) === 'CHANGELOG.md';
   const text = fs
     .readFileSync(absPath, 'utf8')
     .split('\n')
     .filter((line) => {
-      if (isChangelog && UNRELEASED_HEADING_RE.test(line)) return false;
+      if (!isChangelog) return true;
+      if (UNRELEASED_HEADING_RE.test(line)) return false;
       if (LINK_REF_RE.test(line.trim())) return false;
       return true;
     })
@@ -202,20 +296,28 @@ function findPointerHit(absPath) {
   return BRACKETED_POINTER_RE.test(text) || BAREWORD_POINTER_RE.test(text);
 }
 
-/** Full check for one package. Returns an array of violation objects
- * `{ consumer, file }` (empty when clean or not applicable). */
+/** Full check for one package. Returns `{ violations, scannedCount }`:
+ * `violations` is `{ consumer, file }[]` (empty when clean or not
+ * applicable -- the package's Unreleased section is not effectively
+ * empty, in which case `packFn` is never called for it at all);
+ * `scannedCount` is how many shipped files were actually text-scanned
+ * (0 when the package was skipped). Throws `CoverageInvariantError` (see
+ * `loadPackedFileList`) when the package needs scanning but its pack
+ * listing cannot be trusted. */
 function collectPackageViolations(pkg, rootDir, packFn) {
   const changelogPath = path.join(pkg.dir, 'CHANGELOG.md');
-  if (!isUnreleasedEffectivelyEmpty(changelogPath)) return [];
+  if (!isUnreleasedEffectivelyEmpty(changelogPath)) return { violations: [], scannedCount: 0 };
 
   const violations = [];
+  let scannedCount = 0;
   for (const absPath of resolveShippedFiles(pkg, rootDir, packFn)) {
-    if (!isScannedKind(absPath, pkg.dir)) continue;
+    if (isExcludedShippedFile(absPath)) continue;
+    scannedCount += 1;
     if (findPointerHit(absPath)) {
       violations.push({ consumer: pkg.name, file: path.relative(pkg.dir, absPath) });
     }
   }
-  return violations;
+  return { violations, scannedCount };
 }
 
 function run(rootDir = path.join(__dirname, '..'), packFn = runNpmPackDryRun) {
@@ -238,8 +340,20 @@ function run(rootDir = path.join(__dirname, '..'), packFn = runNpmPackDryRun) {
   }
 
   const violations = [];
+  const scannedCounts = [];
   for (const pkg of publishable) {
-    violations.push(...collectPackageViolations(pkg, rootDir, packFn));
+    let result;
+    try {
+      result = collectPackageViolations(pkg, rootDir, packFn);
+    } catch (err) {
+      if (err instanceof CoverageInvariantError) {
+        console.error(`Shipped-[Unreleased]-pointer check failed: coverage invariant violated: ${err.message}.`);
+        return 1;
+      }
+      throw err;
+    }
+    violations.push(...result.violations);
+    if (result.scannedCount > 0) scannedCounts.push({ name: pkg.name, count: result.scannedCount });
   }
 
   if (violations.length > 0) {
@@ -253,9 +367,12 @@ function run(rootDir = path.join(__dirname, '..'), packFn = runNpmPackDryRun) {
     return 1;
   }
 
+  const countsSummary = scannedCounts.length > 0
+    ? ` (${scannedCounts.map((s) => `${s.name}: ${s.count} file(s) scanned`).join(', ')})`
+    : ' (none needed scanning: every Unreleased section already has content)';
   console.log(
-    `Shipped-[Unreleased]-pointer check passed: ${publishable.length} publishable workspace package(s) carry ` +
-      'no dangling [Unreleased] pointer in a shipped file while their CHANGELOG.md Unreleased section is empty.',
+    `Shipped-[Unreleased]-pointer check passed: ${publishable.length} publishable workspace package(s) checked${countsSummary}; ` +
+      'no dangling [Unreleased] pointer found in a shipped file while its CHANGELOG.md Unreleased section is empty.',
   );
   return 0;
 }
@@ -265,13 +382,15 @@ function main() {
 }
 
 module.exports = {
+  CoverageInvariantError,
   loadWorkspacePackages,
   isPublishable,
   readUnreleasedSectionState,
   isUnreleasedEffectivelyEmpty,
   runNpmPackDryRun,
+  loadPackedFileList,
   resolveShippedFiles,
-  isScannedKind,
+  isExcludedShippedFile,
   findPointerHit,
   collectPackageViolations,
   run,

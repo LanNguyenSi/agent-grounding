@@ -518,21 +518,30 @@ jobs:
         run: npm run test:check-grounding-mcp-pack-shape
 
       - name: Shipped [Unreleased] pointer check
-        # Asserts no publishable package ships a README.md/CHANGELOG.md/
-        # dist/*.js/dist/*.d.ts file pointing at CHANGELOG.md's [Unreleased]
-        # section while that section is empty (task d51ae64b: caught twice,
-        # by hand, in the grounding-mcp 0.11.0 README and a
-        # src/ow-run-completeness.ts comment carried into dist/ by tsc).
-        # Runs after Build: the dist/*.js and dist/*.d.ts comment scan needs
-        # real built output, not source.
+        # Asserts no publishable package ships ANY text file (its whole
+        # `npm pack --dry-run` file list, minus package.json, LICENSE*, and
+        # a small binary-extension exclusion -- not an allowlist of known
+        # kinds) pointing at CHANGELOG.md's [Unreleased] section while that
+        # section is empty (task d51ae64b round 3, decision D-013: round 1
+        # and round 2 chased README/CHANGELOG/dist one kind at a time and
+        # kept missing a next one, e.g. a shipped ROADMAP.md; round 3 drops
+        # the per-kind allowlist and adds a coverage invariant so an empty
+        # or malformed `npm pack` result fails loudly instead of passing
+        # vacuously). Runs after Build: the dist/**/* comment scan needs
+        # real built output, not source. See
+        # scripts/check-shipped-unreleased-pointer.js's own docblock for
+        # the full scan rule.
         run: npm run check:shipped-unreleased-pointer
 
       - name: Shipped [Unreleased] pointer checker unit tests
         # Fixture-based unit tests, one fixture per shipped-file kind
-        # (README.md, CHANGELOG.md prose, dist/*.js, dist/*.d.ts) plus the
-        # required negative control (a non-empty Unreleased section with the
-        # same pointer text is NOT a violation), and a real end-to-end
-        # sanity run against this repo's actual packages/* tree.
+        # (README.md, CHANGELOG.md prose, dist/*.js, dist/*.d.ts, and a
+        # fourth *.md kind proving the scan is not a per-kind allowlist)
+        # plus the required negative control (a non-empty Unreleased
+        # section with the same pointer text is NOT a violation), coverage-
+        # invariant unit tests, and two real end-to-end sanity runs against
+        # this repo's actual packages/* tree (the full check, and a real
+        # `npm pack --dry-run` read for grounding-mcp specifically).
         run: npm run test:check-shipped-unreleased-pointer
 
       - name: Typecheck

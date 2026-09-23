@@ -2,13 +2,14 @@
  * Unit tests for check-shipped-unreleased-pointer.js.
  *
  * Runs entirely against disposable temp fixture workspaces (never this
- * repo's actual packages/, except a real end-to-end run at the bottom that
- * only reads and asserts exit 0), one fixture per shipped-file kind
- * (README.md, CHANGELOG.md prose, dist/*.js, dist/*.d.ts) plus a negative
- * control (a non-empty Unreleased section still carrying pointer text is
- * NOT a violation). Uses Node's built-in test runner. The shipped-file set
- * is always resolved through an injected `packFn` stub, never a real
- * `npm pack`, except in the one real end-to-end test.
+ * repo's actual packages/, except two real end-to-end reads at the bottom
+ * that only read and assert), one fixture per shipped-file kind (README.md,
+ * CHANGELOG.md prose, dist/*.js, dist/*.d.ts, and a third *.md kind that
+ * proves the scan is not an allowlist of known kinds -- decision D-013)
+ * plus a negative control (a non-empty Unreleased section still carrying
+ * pointer text is NOT a violation). Uses Node's built-in test runner. The
+ * shipped-file set is always resolved through an injected `packFn` stub,
+ * never a real `npm pack`, except in the two real end-to-end tests.
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -16,11 +17,14 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const {
+  CoverageInvariantError,
   isPublishable,
   readUnreleasedSectionState,
   isUnreleasedEffectivelyEmpty,
+  runNpmPackDryRun,
+  loadPackedFileList,
   resolveShippedFiles,
-  isScannedKind,
+  isExcludedShippedFile,
   findPointerHit,
   collectPackageViolations,
   run,
@@ -42,10 +46,17 @@ function tmp(name) {
 
 /** Stub packFn: ignores pkgName/rootDir, returns a fixed relative path list,
  * exactly like a real `npm pack --dry-run --json` result's `.files[].path`
- * list, without shelling out. */
+ * list, without shelling out. Every fixture list below includes
+ * "package.json" and "README.md" so it satisfies the coverage invariant
+ * (loadPackedFileList) unless a test is specifically about that invariant;
+ * neither file needs to exist on disk for the invariant check itself
+ * (resolveShippedFiles separately drops any reported path that isn't
+ * actually a file on disk). */
 function stubPackFn(relPaths) {
   return () => relPaths;
 }
+
+const BASE_SHIPPED = ['package.json', 'README.md'];
 
 // ── isPublishable ───────────────────────────────────────────────────────
 
@@ -77,24 +88,24 @@ test('readUnreleasedSectionState: empty section at end of file (no following hea
   assert.deepEqual(s, { present: true, empty: true });
 });
 
-test('readUnreleasedSectionState: bracketless "## Unreleased" heading is recognized (finding 2)', () => {
+test('readUnreleasedSectionState: bracketless "## Unreleased" heading is recognized', () => {
   const s = readUnreleasedSectionState('# Changelog\n\n## Unreleased\n\n## 0.1.0, 2026-01-01\n');
   assert.deepEqual(s, { present: true, empty: true });
 });
 
-test('readUnreleasedSectionState: heading match is case-insensitive (finding 2)', () => {
+test('readUnreleasedSectionState: heading match is case-insensitive', () => {
   const s = readUnreleasedSectionState('# Changelog\n\n## unreleased\n\n## 0.1.0, 2026-01-01\n');
   assert.deepEqual(s, { present: true, empty: true });
 });
 
-test('readUnreleasedSectionState: a body with only ### sub-headings is empty (finding 3)', () => {
+test('readUnreleasedSectionState: a body with only ### sub-headings is empty', () => {
   const s = readUnreleasedSectionState(
     '# Changelog\n\n## [Unreleased]\n\n### Added\n\n### Changed\n\n## 0.1.0, 2026-01-01\n',
   );
   assert.deepEqual(s, { present: true, empty: true });
 });
 
-test('readUnreleasedSectionState: a body with only an HTML comment (incl. multi-line) is empty (finding 3)', () => {
+test('readUnreleasedSectionState: a body with only an HTML comment (incl. multi-line) is empty', () => {
   const s = readUnreleasedSectionState(
     '# Changelog\n\n## [Unreleased]\n\n<!--\n  nothing pending yet\n-->\n\n## 0.1.0, 2026-01-01\n',
   );
@@ -108,7 +119,7 @@ test('readUnreleasedSectionState: negative control -- real content survives stri
   assert.deepEqual(s, { present: true, empty: false });
 });
 
-// ── isUnreleasedEffectivelyEmpty (finding 2) ────────────────────────────
+// ── isUnreleasedEffectivelyEmpty ────────────────────────────────────────
 
 test('isUnreleasedEffectivelyEmpty: no CHANGELOG.md at all -> effectively empty', () => {
   const tmpRoot = tmp('eff-nochangelog');
@@ -141,7 +152,63 @@ test('isUnreleasedEffectivelyEmpty: negative control -- non-empty heading -> not
   }
 });
 
-// ── resolveShippedFiles (finding 4: npm-pack-derived, injectable) ──────
+// ── loadPackedFileList / coverage invariant (decision D-013) ───────────
+
+test('loadPackedFileList: negative control -- a valid pack result (package.json + README.md present) passes through unchanged', () => {
+  const relPaths = loadPackedFileList({ name: '@x/pkg' }, '/root', stubPackFn(['package.json', 'README.md', 'dist/index.js']));
+  assert.deepEqual(relPaths, ['package.json', 'README.md', 'dist/index.js']);
+});
+
+test('loadPackedFileList: throws CoverageInvariantError when the pack result is empty (round-2 vacuous-pass regression)', () => {
+  assert.throws(
+    () => loadPackedFileList({ name: '@x/pkg' }, '/root', stubPackFn([])),
+    (err) => err instanceof CoverageInvariantError && /is empty/.test(err.message),
+  );
+});
+
+test('loadPackedFileList: throws CoverageInvariantError when the pack result is missing package.json', () => {
+  assert.throws(
+    () => loadPackedFileList({ name: '@x/pkg' }, '/root', stubPackFn(['README.md'])),
+    (err) => err instanceof CoverageInvariantError && /does not include package\.json/.test(err.message),
+  );
+});
+
+test('loadPackedFileList: throws CoverageInvariantError when the pack result is missing README.md', () => {
+  assert.throws(
+    () => loadPackedFileList({ name: '@x/pkg' }, '/root', stubPackFn(['package.json'])),
+    (err) => err instanceof CoverageInvariantError && /does not include README\.md/.test(err.message),
+  );
+});
+
+test('loadPackedFileList: throws CoverageInvariantError when packFn throws', () => {
+  const packFn = () => {
+    throw new Error('npm pack exited 1');
+  };
+  assert.throws(
+    () => loadPackedFileList({ name: '@x/pkg' }, '/root', packFn),
+    (err) => err instanceof CoverageInvariantError && /threw \(npm pack exited 1\)/.test(err.message),
+  );
+});
+
+test('loadPackedFileList: throws CoverageInvariantError when packFn returns unparsable output (not an array)', () => {
+  const packFn = () => ({ not: 'an array' });
+  assert.throws(
+    () => loadPackedFileList({ name: '@x/pkg' }, '/root', packFn),
+    (err) => err instanceof CoverageInvariantError && /unparsable output/.test(err.message),
+  );
+});
+
+test('loadPackedFileList: error message never includes a stack trace (formatted, named error only)', () => {
+  try {
+    loadPackedFileList({ name: '@x/pkg' }, '/root', stubPackFn([]));
+    assert.fail('expected loadPackedFileList to throw');
+  } catch (err) {
+    assert.equal(err instanceof CoverageInvariantError, true);
+    assert.equal(/\n\s*at /.test(err.message), false, 'error message should not embed stack-trace-shaped text');
+  }
+});
+
+// ── resolveShippedFiles ─────────────────────────────────────────────────
 
 test('resolveShippedFiles: uses the injected packFn result, not a hard-coded list', () => {
   const tmpRoot = tmp('resolve');
@@ -153,7 +220,7 @@ test('resolveShippedFiles: uses the injected packFn result, not a hard-coded lis
       'dist/nested/x.d.ts': '// y',
       'src/index.ts': 'ignored, not reported by pack',
     });
-    const packFn = stubPackFn(['README.md', 'CHANGELOG.md', 'dist/index.js', 'dist/nested/x.d.ts']);
+    const packFn = stubPackFn([...BASE_SHIPPED, 'CHANGELOG.md', 'dist/index.js', 'dist/nested/x.d.ts']);
     const shipped = resolveShippedFiles({ dir: pkgDir, name: '@x/pkg-a' }, tmpRoot, packFn);
     const rels = shipped.map((p) => path.relative(pkgDir, p)).sort();
     assert.deepEqual(
@@ -169,7 +236,7 @@ test('resolveShippedFiles: a pack-reported path that no longer exists on disk is
   const tmpRoot = tmp('resolve-stale');
   try {
     const pkgDir = writePkg(tmpRoot, 'pkg-a', { 'README.md': 'hi' });
-    const packFn = stubPackFn(['README.md', 'dist/gone.js']);
+    const packFn = stubPackFn([...BASE_SHIPPED, 'dist/gone.js']);
     const shipped = resolveShippedFiles({ dir: pkgDir, name: '@x/pkg-a' }, tmpRoot, packFn);
     assert.deepEqual(shipped.map((p) => path.relative(pkgDir, p)), ['README.md']);
   } finally {
@@ -177,18 +244,36 @@ test('resolveShippedFiles: a pack-reported path that no longer exists on disk is
   }
 });
 
-test('isScannedKind: README.md, CHANGELOG.md, dist/*.js, dist/*.d.ts, dist/*.mjs, dist/*.cjs, dist/*.d.mts, dist/*.d.cts are scanned (finding 6); other dist entries are not', () => {
+// ── isExcludedShippedFile (decision D-013: exclusion list, not an allowlist of kinds) ──
+
+test('isExcludedShippedFile: package.json and LICENSE*/LICENCE* are excluded; everything else text-shaped is scanned', () => {
   const pkgDir = '/pkg';
-  assert.equal(isScannedKind('/pkg/README.md', pkgDir), true);
-  assert.equal(isScannedKind('/pkg/CHANGELOG.md', pkgDir), true);
-  assert.equal(isScannedKind('/pkg/dist/a.js', pkgDir), true);
-  assert.equal(isScannedKind('/pkg/dist/a.d.ts', pkgDir), true);
-  assert.equal(isScannedKind('/pkg/dist/a.mjs', pkgDir), true);
-  assert.equal(isScannedKind('/pkg/dist/a.cjs', pkgDir), true);
-  assert.equal(isScannedKind('/pkg/dist/a.d.mts', pkgDir), true);
-  assert.equal(isScannedKind('/pkg/dist/a.d.cts', pkgDir), true);
-  assert.equal(isScannedKind('/pkg/dist/a.js.map', pkgDir), false);
-  assert.equal(isScannedKind('/pkg/LICENSE', pkgDir), false);
+  assert.equal(isExcludedShippedFile('/pkg/package.json'), true);
+  assert.equal(isExcludedShippedFile('/pkg/LICENSE'), true);
+  assert.equal(isExcludedShippedFile('/pkg/LICENSE.md'), true);
+  assert.equal(isExcludedShippedFile('/pkg/LICENCE'), true);
+  assert.equal(isExcludedShippedFile('/pkg/README.md'), false);
+  assert.equal(isExcludedShippedFile('/pkg/CHANGELOG.md'), false);
+  assert.equal(isExcludedShippedFile('/pkg/ROADMAP.md'), false, 'a third *.md kind must be scanned, not allowlisted away');
+  assert.equal(isExcludedShippedFile('/pkg/docs/notes.md'), false);
+  assert.equal(isExcludedShippedFile(path.join(pkgDir, 'dist/a.js')), false);
+  assert.equal(isExcludedShippedFile(path.join(pkgDir, 'dist/a.d.ts')), false);
+  assert.equal(isExcludedShippedFile(path.join(pkgDir, 'dist/a.mjs')), false);
+  assert.equal(isExcludedShippedFile(path.join(pkgDir, 'dist/a.cjs')), false);
+  assert.equal(isExcludedShippedFile(path.join(pkgDir, 'dist/a.d.mts')), false);
+  assert.equal(isExcludedShippedFile(path.join(pkgDir, 'dist/a.d.cts')), false);
+  assert.equal(
+    isExcludedShippedFile(path.join(pkgDir, 'dist/a.js.map')),
+    false,
+    'a source map is text (JSON), not binary, and is now scanned under the widened rule',
+  );
+});
+
+test('isExcludedShippedFile: the explicit binary-extension list (images, fonts, archives, .node, .wasm) is excluded', () => {
+  const pkgDir = '/pkg';
+  for (const ext of ['.png', '.jpg', '.gif', '.woff', '.woff2', '.ttf', '.zip', '.tgz', '.node', '.wasm']) {
+    assert.equal(isExcludedShippedFile(path.join(pkgDir, `asset${ext}`)), true, `expected ${ext} excluded`);
+  }
 });
 
 // ── findPointerHit ────────────────────────────────────────────────────
@@ -215,7 +300,7 @@ test('findPointerHit: bracketless CHANGELOG.md heading line itself is not a hit'
   }
 });
 
-test('findPointerHit: keep-a-changelog link-reference line is not a hit (finding 7)', () => {
+test('findPointerHit: keep-a-changelog link-reference line (a real URL) is not a hit', () => {
   const tmpRoot = tmp('hit-linkref');
   try {
     const p = path.join(tmpRoot, 'CHANGELOG.md');
@@ -224,6 +309,56 @@ test('findPointerHit: keep-a-changelog link-reference line is not a hit (finding
       '# Changelog\n\n## [Unreleased]\n\n## 0.1.0, 2026-01-01\n\n[Unreleased]: https://example.com/compare/v0.1.0...HEAD\n',
     );
     assert.equal(findPointerHit(p), false);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('findPointerHit: a relative-path link-reference line is not a hit', () => {
+  const tmpRoot = tmp('hit-linkref-relative');
+  try {
+    const p = path.join(tmpRoot, 'CHANGELOG.md');
+    fs.writeFileSync(
+      p,
+      '# Changelog\n\n## [Unreleased]\n\n## 0.1.0, 2026-01-01\n\n[Unreleased]: ./compare/v0.1.0...HEAD\n',
+    );
+    assert.equal(findPointerHit(p), false);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('findPointerHit: CHANGELOG.md prose line shaped like a link reference but with NO url IS a hit (LINK_REF_RE tightened, finding: false negative)', () => {
+  const tmpRoot = tmp('hit-linkref-nourl');
+  try {
+    const p = path.join(tmpRoot, 'CHANGELOG.md');
+    fs.writeFileSync(
+      p,
+      '# Changelog\n\n## [Unreleased]\n\n## 0.1.0, 2026-01-01\n\n[Unreleased]: see the next release for what is coming.\n',
+    );
+    assert.equal(findPointerHit(p), true);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('findPointerHit: README.md prose line shaped like a link reference but with NO url IS a hit', () => {
+  const tmpRoot = tmp('hit-readme-linkref-nourl');
+  try {
+    const p = path.join(tmpRoot, 'README.md');
+    fs.writeFileSync(p, '[Unreleased]: see the next release for what is coming.\n');
+    assert.equal(findPointerHit(p), true);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('findPointerHit: a non-CHANGELOG.md shipped file is not subject to the CHANGELOG-only heading/link-ref exclusions', () => {
+  const tmpRoot = tmp('hit-nonchangelog-noexclusion');
+  try {
+    const p = path.join(tmpRoot, 'ROADMAP.md');
+    fs.writeFileSync(p, '## [Unreleased]\n\nSee CHANGELOG.md [Unreleased] for the current status.\n');
+    assert.equal(findPointerHit(p), true);
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -254,7 +389,7 @@ test('findPointerHit: README.md bracketed pointer is a hit', () => {
   }
 });
 
-test('findPointerHit: README.md bracketless capitalised word-bounded pointer is a hit (finding 6)', () => {
+test('findPointerHit: README.md bracketless capitalised word-bounded pointer is a hit', () => {
   const tmpRoot = tmp('hit-readme-bareword');
   try {
     const p = path.join(tmpRoot, 'README.md');
@@ -265,7 +400,7 @@ test('findPointerHit: README.md bracketless capitalised word-bounded pointer is 
   }
 });
 
-test('findPointerHit: README.md "(Unreleased)" parenthetical is a hit (finding 6)', () => {
+test('findPointerHit: README.md "(Unreleased)" parenthetical is a hit', () => {
   const tmpRoot = tmp('hit-readme-paren');
   try {
     const p = path.join(tmpRoot, 'README.md');
@@ -309,6 +444,17 @@ test('findPointerHit: dist/*.d.ts comment pointer is a hit', () => {
   }
 });
 
+test('findPointerHit: a shipped ROADMAP.md comment pointer is a hit (decision D-013: not an allowlist of kinds)', () => {
+  const tmpRoot = tmp('hit-roadmap');
+  try {
+    const p = path.join(tmpRoot, 'ROADMAP.md');
+    fs.writeFileSync(p, 'See CHANGELOG.md [Unreleased] for what ships next.\n');
+    assert.equal(findPointerHit(p), true);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
 // ── collectPackageViolations (per-kind fixtures + negative control) ────
 
 const CHANGELOG_EMPTY = '# Changelog\n\n## [Unreleased]\n\n## 0.1.0, 2026-01-01\n\nfirst release\n';
@@ -322,10 +468,11 @@ test('collectPackageViolations: README.md fixture, empty Unreleased -> violation
       'README.md': 'See CHANGELOG.md [Unreleased] for what is coming next.\n',
     });
     const pkg = { name: '@x/pkg', dir: pkgDir };
-    const packFn = stubPackFn(['README.md', 'CHANGELOG.md']);
-    const violations = collectPackageViolations(pkg, tmpRoot, packFn);
-    assert.equal(violations.length, 1);
-    assert.equal(violations[0].file, 'README.md');
+    const packFn = stubPackFn([...BASE_SHIPPED, 'CHANGELOG.md']);
+    const result = collectPackageViolations(pkg, tmpRoot, packFn);
+    assert.equal(result.violations.length, 1);
+    assert.equal(result.violations[0].file, 'README.md');
+    assert.equal(result.scannedCount, 2, 'README.md + CHANGELOG.md scanned (package.json excluded)');
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -339,10 +486,10 @@ test('collectPackageViolations: CHANGELOG.md prose fixture, empty Unreleased -> 
         '# Changelog\n\n## [Unreleased]\n\n## 0.1.0, 2026-01-01\n\nSee [Unreleased] above for what is next.\n',
     });
     const pkg = { name: '@x/pkg', dir: pkgDir };
-    const packFn = stubPackFn(['CHANGELOG.md']);
-    const violations = collectPackageViolations(pkg, tmpRoot, packFn);
-    assert.equal(violations.length, 1);
-    assert.equal(violations[0].file, 'CHANGELOG.md');
+    const packFn = stubPackFn([...BASE_SHIPPED, 'CHANGELOG.md']);
+    const result = collectPackageViolations(pkg, tmpRoot, packFn);
+    assert.equal(result.violations.length, 1);
+    assert.equal(result.violations[0].file, 'CHANGELOG.md');
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -356,10 +503,10 @@ test('collectPackageViolations: dist/*.js fixture, empty Unreleased -> violation
       'dist/index.js': '// see CHANGELOG.md [Unreleased] for the roadmap\nmodule.exports = {};\n',
     });
     const pkg = { name: '@x/pkg', dir: pkgDir };
-    const packFn = stubPackFn(['CHANGELOG.md', 'dist/index.js']);
-    const violations = collectPackageViolations(pkg, tmpRoot, packFn);
-    assert.equal(violations.length, 1);
-    assert.equal(violations[0].file, path.join('dist', 'index.js'));
+    const packFn = stubPackFn([...BASE_SHIPPED, 'CHANGELOG.md', 'dist/index.js']);
+    const result = collectPackageViolations(pkg, tmpRoot, packFn);
+    assert.equal(result.violations.length, 1);
+    assert.equal(result.violations[0].file, path.join('dist', 'index.js'));
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -373,10 +520,27 @@ test('collectPackageViolations: dist/*.d.ts fixture, empty Unreleased -> violati
       'dist/index.d.ts': '/** see CHANGELOG.md [Unreleased] for the roadmap */\nexport {};\n',
     });
     const pkg = { name: '@x/pkg', dir: pkgDir };
-    const packFn = stubPackFn(['CHANGELOG.md', 'dist/index.d.ts']);
-    const violations = collectPackageViolations(pkg, tmpRoot, packFn);
-    assert.equal(violations.length, 1);
-    assert.equal(violations[0].file, path.join('dist', 'index.d.ts'));
+    const packFn = stubPackFn([...BASE_SHIPPED, 'CHANGELOG.md', 'dist/index.d.ts']);
+    const result = collectPackageViolations(pkg, tmpRoot, packFn);
+    assert.equal(result.violations.length, 1);
+    assert.equal(result.violations[0].file, path.join('dist', 'index.d.ts'));
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('collectPackageViolations: shipped ROADMAP.md fixture, empty Unreleased -> violation (decision D-013: widened scan catches a fourth file kind with no code change)', () => {
+  const tmpRoot = tmp('pkg-roadmap');
+  try {
+    const pkgDir = writePkg(tmpRoot, 'pkg', {
+      'CHANGELOG.md': CHANGELOG_EMPTY,
+      'ROADMAP.md': 'See CHANGELOG.md [Unreleased] for what ships next.\n',
+    });
+    const pkg = { name: '@x/pkg', dir: pkgDir };
+    const packFn = stubPackFn([...BASE_SHIPPED, 'CHANGELOG.md', 'ROADMAP.md']);
+    const result = collectPackageViolations(pkg, tmpRoot, packFn);
+    assert.equal(result.violations.length, 1);
+    assert.equal(result.violations[0].file, 'ROADMAP.md');
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -390,15 +554,16 @@ test('collectPackageViolations: negative control -- non-empty Unreleased with th
       'README.md': 'See CHANGELOG.md [Unreleased] for what is coming next.\n',
     });
     const pkg = { name: '@x/pkg', dir: pkgDir };
-    const packFn = stubPackFn(['README.md', 'CHANGELOG.md']);
-    const violations = collectPackageViolations(pkg, tmpRoot, packFn);
-    assert.deepEqual(violations, []);
+    const packFn = stubPackFn([...BASE_SHIPPED, 'CHANGELOG.md']);
+    const result = collectPackageViolations(pkg, tmpRoot, packFn);
+    assert.deepEqual(result.violations, []);
+    assert.equal(result.scannedCount, 0, 'a clean/skipped package never resolves or scans its shipped files');
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
 });
 
-test('collectPackageViolations: no [Unreleased] heading at all + a shipped pointer -> violation (finding 2: treated like empty, not skipped)', () => {
+test('collectPackageViolations: no [Unreleased] heading at all + a shipped pointer -> violation (treated like empty, not skipped)', () => {
   const tmpRoot = tmp('pkg-noheading');
   try {
     const pkgDir = writePkg(tmpRoot, 'pkg', {
@@ -406,32 +571,32 @@ test('collectPackageViolations: no [Unreleased] heading at all + a shipped point
       'README.md': 'See the Unreleased section for what is next.\n',
     });
     const pkg = { name: '@x/pkg', dir: pkgDir };
-    const packFn = stubPackFn(['README.md', 'CHANGELOG.md']);
-    const violations = collectPackageViolations(pkg, tmpRoot, packFn);
-    assert.equal(violations.length, 1);
-    assert.equal(violations[0].file, 'README.md');
+    const packFn = stubPackFn([...BASE_SHIPPED, 'CHANGELOG.md']);
+    const result = collectPackageViolations(pkg, tmpRoot, packFn);
+    assert.equal(result.violations.length, 1);
+    assert.equal(result.violations[0].file, 'README.md');
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
 });
 
-test('collectPackageViolations: no CHANGELOG.md at all + a shipped pointer -> violation (finding 2)', () => {
+test('collectPackageViolations: no CHANGELOG.md at all + a shipped pointer -> violation', () => {
   const tmpRoot = tmp('pkg-nochangelog');
   try {
     const pkgDir = writePkg(tmpRoot, 'pkg', {
       'README.md': 'See CHANGELOG.md [Unreleased] for what is next.\n',
     });
     const pkg = { name: '@x/pkg', dir: pkgDir };
-    const packFn = stubPackFn(['README.md']);
-    const violations = collectPackageViolations(pkg, tmpRoot, packFn);
-    assert.equal(violations.length, 1);
-    assert.equal(violations[0].file, 'README.md');
+    const packFn = stubPackFn(BASE_SHIPPED);
+    const result = collectPackageViolations(pkg, tmpRoot, packFn);
+    assert.equal(result.violations.length, 1);
+    assert.equal(result.violations[0].file, 'README.md');
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
 });
 
-test('collectPackageViolations: Unreleased body with only ### stubs + a shipped pointer -> violation (finding 3)', () => {
+test('collectPackageViolations: Unreleased body with only ### stubs + a shipped pointer -> violation', () => {
   const tmpRoot = tmp('pkg-stubs');
   try {
     const pkgDir = writePkg(tmpRoot, 'pkg', {
@@ -439,10 +604,24 @@ test('collectPackageViolations: Unreleased body with only ### stubs + a shipped 
       'README.md': 'See CHANGELOG.md [Unreleased] for what is next.\n',
     });
     const pkg = { name: '@x/pkg', dir: pkgDir };
-    const packFn = stubPackFn(['README.md', 'CHANGELOG.md']);
-    const violations = collectPackageViolations(pkg, tmpRoot, packFn);
-    assert.equal(violations.length, 1);
-    assert.equal(violations[0].file, 'README.md');
+    const packFn = stubPackFn([...BASE_SHIPPED, 'CHANGELOG.md']);
+    const result = collectPackageViolations(pkg, tmpRoot, packFn);
+    assert.equal(result.violations.length, 1);
+    assert.equal(result.violations[0].file, 'README.md');
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('collectPackageViolations: propagates CoverageInvariantError for a package that needs scanning but has an untrustworthy pack listing', () => {
+  const tmpRoot = tmp('pkg-invariant');
+  try {
+    const pkgDir = writePkg(tmpRoot, 'pkg', { 'CHANGELOG.md': CHANGELOG_EMPTY });
+    const pkg = { name: '@x/pkg', dir: pkgDir };
+    assert.throws(
+      () => collectPackageViolations(pkg, tmpRoot, stubPackFn([])),
+      (err) => err instanceof CoverageInvariantError,
+    );
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -471,7 +650,7 @@ test('run: red on a seeded violation, green after removing the pointer (fix-or-a
       path.join(tmpRoot, 'packages', 'pkg', 'package.json'),
       JSON.stringify({ name: '@x/pkg', private: false, files: ['README.md', 'CHANGELOG.md'] }),
     );
-    const packFn = stubPackFn(['README.md', 'CHANGELOG.md']);
+    const packFn = stubPackFn([...BASE_SHIPPED, 'CHANGELOG.md']);
     assert.equal(run(tmpRoot, packFn), 1, 'expected red with the dangling pointer present');
 
     fs.writeFileSync(
@@ -484,11 +663,81 @@ test('run: red on a seeded violation, green after removing the pointer (fix-or-a
   }
 });
 
+test('run: coverage invariant violation (empty pack result) fails the whole check with a named, non-stack-trace error (decision D-013)', () => {
+  const tmpRoot = tmp('run-invariant');
+  try {
+    writePkg(tmpRoot, 'pkg', { 'CHANGELOG.md': CHANGELOG_EMPTY, 'README.md': 'fine' });
+    fs.writeFileSync(
+      path.join(tmpRoot, 'packages', 'pkg', 'package.json'),
+      JSON.stringify({ name: '@x/pkg', private: false }),
+    );
+    assert.equal(run(tmpRoot, stubPackFn([])), 1);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('run: a private package with a shipped pointer next to a scanned, clean public package exits 0, and packFn is never called for the private package (round-2 finding: run()-level private filter untested, mutant ptr:231 survived)', () => {
+  const tmpRoot = tmp('run-private');
+  try {
+    writePkg(tmpRoot, 'priv', {
+      'CHANGELOG.md': CHANGELOG_EMPTY,
+      'README.md': 'See CHANGELOG.md [Unreleased] for what is next.\n',
+    });
+    fs.writeFileSync(
+      path.join(tmpRoot, 'packages', 'priv', 'package.json'),
+      JSON.stringify({ name: '@x/priv', private: true }),
+    );
+    writePkg(tmpRoot, 'pub', {
+      'CHANGELOG.md': CHANGELOG_EMPTY,
+      'README.md': 'Nothing dangling here.\n',
+    });
+    fs.writeFileSync(
+      path.join(tmpRoot, 'packages', 'pub', 'package.json'),
+      JSON.stringify({ name: '@x/pub', private: false }),
+    );
+
+    const calledWith = [];
+    const packFn = (pkgName) => {
+      calledWith.push(pkgName);
+      if (pkgName === '@x/priv') throw new Error('packFn must never be called for a private package');
+      return [...BASE_SHIPPED, 'CHANGELOG.md'];
+    };
+
+    assert.equal(run(tmpRoot, packFn), 0);
+    assert.equal(calledWith.includes('@x/priv'), false, 'packFn must not be called for the private package');
+    assert.equal(calledWith.includes('@x/pub'), true, 'packFn must be called for the scanned public package');
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
 test(
-  'run: real repo sanity check (asserts exit 0 against the actual packages/ tree, finding 9)',
+  'run: real repo sanity check (asserts exit 0 against the actual packages/ tree)',
   { timeout: 120000 },
   () => {
     const rootDir = path.join(__dirname, '..');
     assert.equal(run(rootDir), 0);
+  },
+);
+
+test(
+  'runNpmPackDryRun: real npm pack for @lannguyensi/grounding-mcp includes README.md and at least one dist/ entry (skips with a clear message if dist/ is absent -- CI builds before this check runs)',
+  { timeout: 60000 },
+  () => {
+    const rootDir = path.join(__dirname, '..');
+    const distDir = path.join(rootDir, 'packages', 'grounding-mcp', 'dist');
+    if (!fs.existsSync(distDir) || fs.readdirSync(distDir).length === 0) {
+      console.log(
+        'SKIP: packages/grounding-mcp/dist is absent or empty; run `npm run build` first (CI builds before this check runs).',
+      );
+      return;
+    }
+    const relPaths = runNpmPackDryRun('@lannguyensi/grounding-mcp', rootDir);
+    assert.ok(relPaths.includes('README.md'), 'expected README.md in the real packed file list');
+    assert.ok(
+      relPaths.some((p) => p.startsWith('dist/')),
+      'expected at least one dist/ entry in the real packed file list',
+    );
   },
 );
