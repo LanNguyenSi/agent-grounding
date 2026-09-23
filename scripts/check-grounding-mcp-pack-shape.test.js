@@ -65,7 +65,12 @@ test('evaluatePackShape: seeded defect -- src/ entry present (the mutation probe
     'src/server.ts',
   ]);
   assert.equal(withSrc.ok, false);
-  assert.ok(withSrc.violations.some((v) => v.includes('src/server.ts')));
+  // Must be the src-specific violation, not merely the generic
+  // unexpected-top-level-entry one (both would mention "src/server.ts" in
+  // their text; this check is what makes the two distinguishable).
+  assert.ok(
+    withSrc.violations.some((v) => v.includes('src/server.ts') && v.includes('src/ must not be published')),
+  );
 });
 
 test('evaluatePackShape: a shipped test file is a violation', () => {
