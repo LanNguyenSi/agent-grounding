@@ -12,9 +12,14 @@
   `ledger_summary` for the same sessionId returned 0 facts: not
   reproduced at the MCP tool level across every entry type and a range
   of sessionId shapes, in-process and across separate server process
-  invocations (see `scripts/repro-ledger-summary-count.mjs`); the only
-  zero-count case is a mismatched sessionId, which this change documents
-  and two new regression tests in
+  invocations, and across four configurations: this repo's workspace
+  build, a packed tarball installed into a scratch npm prefix with
+  evidence-ledger 0.6.0 resolved from the registry (the exact shape of
+  the original tracker observation, confirmed via `npm ls --prefix`),
+  and the published `@lannguyensi/grounding-mcp` `0.12.0` and `0.11.0`
+  from the registry (see `scripts/repro-ledger-summary-count.mjs`); the
+  only zero-count case is a mismatched sessionId, which this change
+  documents and two new regression tests in
   `tests/grounding-gate-mcp-roundtrip.test.ts` pin.
 
 ## 0.12.0, 2026-09-21
