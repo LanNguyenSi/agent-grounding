@@ -246,6 +246,20 @@ test('loadPackedFileList: passes when a literal "files" entry (dist) is present 
   }
 });
 
+test('loadPackedFileList: a "./"-prefixed literal "files" entry (./dist/) matches the normalised pack paths of a built package', () => {
+  const tmpRoot = tmp('files-field-dot-slash');
+  try {
+    const pkgDir = writePkg(tmpRoot, 'pkg', {
+      'package.json': JSON.stringify({ name: '@x/pkg', files: ['./dist/', './README.md'] }),
+    });
+    const pkg = { name: '@x/pkg', dir: pkgDir };
+    const packFn = stubPackFn(['package.json', 'README.md', 'dist/index.js']);
+    assert.deepEqual(loadPackedFileList(pkg, tmpRoot, packFn), ['package.json', 'README.md', 'dist/index.js']);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
 test('loadPackedFileList: glob and negated "files" entries are not required as literal matches', () => {
   const tmpRoot = tmp('files-field-glob');
   try {

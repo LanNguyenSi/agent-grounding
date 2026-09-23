@@ -267,7 +267,7 @@ function loadPackedFileList(pkg, rootDir, packFn) {
     throw new CoverageInvariantError(`pack listing for ${pkg.name} does not include README.md`);
   }
   for (const entry of readLiteralFilesFieldEntries(pkg)) {
-    const normalized = entry.replace(/\/+$/, '');
+    const normalized = entry.replace(/^(\.\/)+/, '').replace(/\/+$/, '');
     const matched = relPaths.some((p) => p === normalized || p.startsWith(`${normalized}/`));
     if (!matched) {
       throw new CoverageInvariantError(
