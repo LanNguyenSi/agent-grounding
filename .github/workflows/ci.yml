@@ -426,6 +426,20 @@ jobs:
         # repoint, a non-semver value, an unparsable or missing file).
         run: npm run test:check-release-exception
 
+      - name: CHANGELOG duplicate-heading check
+        # Asserts no dated CHANGELOG section (## X, DATE or ## [X] - DATE)
+        # carries the same ### <Kind> heading twice (task d51ae64b: the
+        # grounding-mcp 0.12.0 cut did this for ### Added and ### Changed,
+        # and nothing mechanical caught it). Pure text parsing, no build
+        # needed, so this runs alongside the other pre-Build checks.
+        run: npm run check:changelog-duplicate-headings
+
+      - name: CHANGELOG duplicate-heading checker unit tests
+        # Fixture-based unit tests for the checker (including a negative
+        # control), plus a real end-to-end run against this repo's actual
+        # CHANGELOG.md files (clean today; ALLOWLIST starts empty).
+        run: npm run test:check-changelog-duplicate-headings
+
       - name: Merge-approval release-exception step wiring replay
         # Replays `.github/workflows/merge-approval.yml`'s
         # `id: release_exception` github-script step body (line-range
@@ -485,6 +499,50 @@ jobs:
         env:
           GROUNDING_MCP_PACK_REQUIRE_DIST: '1'
         run: npm run test:check-grounding-mcp-pack
+
+      - name: grounding-mcp packed-tarball entry-shape check
+        # Sibling to the --version check above: asserts the SAME packed
+        # tarball ships exactly package.json/README.md/CHANGELOG.md plus its
+        # built dist/, nothing under src/, and no test file (task d51ae64b).
+        # Runs after Build for the same reason as the --version check: a
+        # meaningful assertion needs the real dist/ output packed alongside
+        # the manifest files, not just a `files`-list shape check. See
+        # scripts/check-grounding-mcp-pack-shape.js's own docblock.
+        run: npm run check:grounding-mcp-pack-shape
+
+      - name: grounding-mcp packed-tarball entry-shape checker unit tests
+        # Fixture-based unit tests (including the required negative control:
+        # a stubbed pack result with "src/server.ts" added to the shipped
+        # file list must fail), plus a real end-to-end test against the
+        # actual grounding-mcp workspace package's real `npm pack --dry-run`.
+        run: npm run test:check-grounding-mcp-pack-shape
+
+      - name: Shipped [Unreleased] pointer check
+        # Asserts no publishable package ships ANY text file (its whole
+        # `npm pack --dry-run` file list, minus package.json, LICENSE*, and
+        # a small binary-extension exclusion -- not an allowlist of known
+        # kinds) pointing at CHANGELOG.md's [Unreleased] section while that
+        # section is empty (task d51ae64b: chasing README/CHANGELOG/dist one
+        # kind at a time kept missing a next one, e.g. a shipped
+        # ROADMAP.md, so this check drops the per-kind allowlist entirely
+        # and adds a coverage invariant so an empty or malformed
+        # `npm pack` result fails loudly instead of passing vacuously).
+        # Runs after Build: the dist/**/* comment scan needs
+        # real built output, not source. See
+        # scripts/check-shipped-unreleased-pointer.js's own docblock for
+        # the full scan rule.
+        run: npm run check:shipped-unreleased-pointer
+
+      - name: Shipped [Unreleased] pointer checker unit tests
+        # Fixture-based unit tests, one fixture per shipped-file kind
+        # (README.md, CHANGELOG.md prose, dist/*.js, dist/*.d.ts, and a
+        # fourth *.md kind proving the scan is not a per-kind allowlist)
+        # plus the required negative control (a non-empty Unreleased
+        # section with the same pointer text is NOT a violation), coverage-
+        # invariant unit tests, and two real end-to-end sanity runs against
+        # this repo's actual packages/* tree (the full check, and a real
+        # `npm pack --dry-run` read for grounding-mcp specifically).
+        run: npm run test:check-shipped-unreleased-pointer
 
       - name: Typecheck
         # Runs per workspace only if the script is defined — packages that

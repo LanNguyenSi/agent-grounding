@@ -47,8 +47,8 @@ The checklist below is the canonical cut-procedure. Skipping step 3 has bitten u
    git diff package-lock.json
    ```
    The diff should touch the bumped package only. If it touches an unrelated workspace, that is pre-existing lock drift catching up with reality, not an error caused by your bump, but it does indicate a prior release skipped this step. Note it in the PR body and move on.
-4. **CHANGELOG entry.** Add a new top-level section in the package's `CHANGELOG.md` matching the existing format (e.g. `## 0.2.2, 2026-05-03`). Reference the merged PR(s) the release ships. No em-dashes in new prose; the older entries keep their historical style.
-5. **Build + test green** for the package being released:
+4. **CHANGELOG entry.** Add a new top-level section in the package's `CHANGELOG.md` matching the existing format (e.g. `## 0.2.2, 2026-05-03`). Reference the merged PR(s) the release ships. No em-dashes in new prose; the older entries keep their historical style. Do not give the same `### <Kind>` heading (e.g. two `### Added` blocks) twice within that new dated section; merge the notes into one block instead. CI's `check:changelog-duplicate-headings` step enforces this on the PR.
+5. **Build + test green** for the package being released. CI's `check:shipped-unreleased-pointer` and `check:grounding-mcp-pack-shape` steps (both run right after the root `Build` step, since they need real `dist/` output) also gate the PR here: the first fails if ANY shipped text file (the package's whole `npm pack` file list, not just README/CHANGELOG/dist) still points at `CHANGELOG.md`'s `[Unreleased]` section after this cut leaves it empty (fix by removing or updating the stale pointer, not by rewriting the released CHANGELOG prose); the second, grounding-mcp-specific, fails if the packed tarball ships anything under `src/` or a test file.
    ```sh
    npm run build -w @<scope>/<name>
    npm test  -w @<scope>/<name>
