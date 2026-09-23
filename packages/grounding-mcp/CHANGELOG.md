@@ -4,6 +4,27 @@
 
 ### Fixed
 
+- `ledger_summary`'s `sinceIso` filter now rejects a value it cannot
+  compare instead of silently matching nothing (task dde2ba58). Cause:
+  the filter reaches evidence-ledger's
+  `datetime(created_at) >= datetime(@sinceIso)` SQL comparison, and
+  SQLite's `datetime()` returns `NULL` (never an error) for `''`, `"1h"`,
+  `"24h"`, `"yesterday"`, an epoch-seconds or epoch-milliseconds string,
+  and `Date.toString()` output, which makes the comparison false for
+  every row; a local datetime with no zone parses without error but
+  silently shifts the window whenever the caller's wall-clock zone is
+  not UTC. `sinceIso` is now validated at the tool's zod schema boundary
+  to be an ISO-8601 date (`"2026-05-01"`) or a datetime carrying an
+  explicit `Z` or numeric offset (`"2026-05-01T08:00:00Z"`,
+  `"2026-05-01T10:00:00+02:00"`); anything else is rejected with a
+  validation error naming the `sinceIso` field before the query ever
+  runs. SQLite's `datetime()` already normalizes an explicit numeric
+  offset to UTC correctly for the comparison, confirmed against
+  better-sqlite3 directly, so no change was needed on the query side
+  (evidence-ledger's SQL is unchanged). `claim_evaluate_from_session` and
+  `ledger_status` do not take a `sinceIso` argument and are unaffected;
+  `evidence-ledger`'s own CLI/API `sinceIso` parameter is unchanged and
+  out of scope for this fix.
 - `ledger_add` followed by `ledger_summary` for the same sessionId could
   report 0 facts when the two calls were concurrent or pipelined (their
   JSON-RPC requests both in flight, neither awaited before the next was

@@ -164,6 +164,30 @@ const hypothesisIdSchema = z
   .max(64)
   .describe('Hypothesis id returned by hypothesis_record.');
 
+// ledger_summary's sinceIso filter is passed straight into evidence-ledger's
+// `datetime(created_at) >= datetime(@sinceIso)` SQL comparison. SQLite's
+// datetime() silently returns NULL for anything it cannot parse, which makes
+// the comparison false for every row rather than erroring -- a caller who
+// passes '', a relative shorthand ('1h', '24h', 'yesterday'), an epoch
+// number, or `Date.toString()` output gets a quiet 0 back, indistinguishable
+// from "nothing established yet". A local datetime with no zone is a
+// different failure: SQLite accepts it (this task's own probing confirmed
+// datetime() already normalizes an explicit numeric offset to UTC correctly,
+// so no query-side normalization is needed here), but it silently shifts the
+// window whenever the caller's wall-clock zone is not UTC. Reject both
+// classes at the schema boundary, before either reaches SQL, so an agent
+// never mistakes "the filter matched nothing" for "the filter was
+// malformed".
+const SINCE_ISO_PATTERN =
+  /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2}))?$/;
+
+function isValidSinceIso(value: string): boolean {
+  return SINCE_ISO_PATTERN.test(value) && !Number.isNaN(Date.parse(value));
+}
+
+const SINCE_ISO_VALIDATION_MESSAGE =
+  'sinceIso must be an ISO-8601 date (e.g. "2026-05-01") or a datetime with an explicit Z or numeric offset (e.g. "2026-05-01T08:00:00Z" or "2026-05-01T10:00:00+02:00"); relative shorthand ("1h", "24h", "yesterday"), epoch seconds/milliseconds, Date.toString() output, an empty string, and a local datetime without a zone are rejected because SQLite would otherwise silently exclude every row instead of erroring';
+
 const hypothesisTextSchema = z
   .string()
   .min(1)
@@ -581,9 +605,10 @@ export function createServer(
       sessionId: z.string().min(1),
       sinceIso: z
         .string()
+        .refine(isValidSinceIso, { message: SINCE_ISO_VALIDATION_MESSAGE })
         .optional()
         .describe(
-          'Optional ISO-8601 UTC cutoff (e.g. "2026-05-01T08:00:00Z"). Rows with `created_at` earlier than this are excluded server-side.',
+          'Optional ISO-8601 cutoff: a date ("2026-05-01") or a datetime with an explicit Z or numeric offset (e.g. "2026-05-01T08:00:00Z" or "2026-05-01T10:00:00+02:00"). Rows with `created_at` earlier than this are excluded server-side. Rejected (not silently ignored) if it is empty, a relative shorthand ("1h", "24h", "yesterday"), an epoch number, Date.toString() output, or a local datetime without a zone.',
         ),
       contentPrefix: z
         .string()

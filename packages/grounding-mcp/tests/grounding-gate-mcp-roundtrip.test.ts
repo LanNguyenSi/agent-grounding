@@ -2341,3 +2341,69 @@ describe('ledger tools: batches, stamp lifetime and missing stamps (0a8645d2)', 
     expect(errorSpy).not.toHaveBeenCalled();
   });
 });
+
+// ── ledger_summary: sinceIso validation (task dde2ba58) ─────────────────────
+//
+// evidence-ledger's SQL compares via `datetime(created_at) >= datetime(@sinceIso)`.
+// SQLite's `datetime()` returns NULL (never an error) for input it cannot
+// parse, which makes that comparison false for every row -- a caller passing
+// '', a relative shorthand, an epoch number, or `Date.toString()` output gets
+// a silent zero back instead of a validation error. A local datetime with no
+// zone parses without error but silently shifts the window whenever the
+// caller's wall-clock zone is not UTC. `sinceIso` must now be an ISO-8601
+// date or a datetime carrying an explicit Z or numeric offset.
+
+describe('ledger_summary: sinceIso validation (dde2ba58)', () => {
+  it.each([
+    ['empty string', ''],
+    ['relative shorthand "1h"', '1h'],
+    ['relative shorthand "24h"', '24h'],
+    ['relative shorthand "yesterday"', 'yesterday'],
+    ['epoch seconds', '1780000000'],
+    ['epoch milliseconds', '1780000000000'],
+    ['Date.toString() output', new Date('2026-05-01T08:00:00Z').toString()],
+    ['local datetime without a zone', '2026-05-01T08:00:00'],
+  ])('rejects sinceIso = %s (%s)', async (_label, sinceIso) => {
+    const raw = await client.callTool({
+      name: 'ledger_summary',
+      arguments: { sessionId: 'gs-since-invalid', sinceIso },
+    });
+    expectValidationError(raw, 'ledger_summary', 'sinceIso');
+  });
+
+  it('a Z datetime, its equivalent numeric-offset datetime, and a date-only cutoff all still filter correctly', async () => {
+    const sessionId = 'gs-since-filter';
+    const added = await client.callTool({
+      name: 'ledger_add',
+      arguments: { sessionId, type: 'fact', content: 'the only fact' },
+    });
+    const { createdAt } = parseToolResult(added) as { createdAt: string };
+
+    // evidence-ledger stores `created_at` as SQLite's `datetime('now')`
+    // form: "YYYY-MM-DD HH:MM:SS" (space-separated, UTC, second precision).
+    const createdAtInstant = new Date(`${createdAt.replace(' ', 'T')}Z`);
+    expect(Number.isNaN(createdAtInstant.getTime())).toBe(false);
+
+    const zCutoff = `${createdAt.replace(' ', 'T')}Z`;
+    // Same instant as zCutoff, expressed with an explicit +02:00 offset
+    // instead of Z: wall-clock time shifted 2h later, offset suffix +02:00.
+    const offsetInstant = new Date(createdAtInstant.getTime() + 2 * 60 * 60 * 1000);
+    const offsetCutoff = `${offsetInstant.toISOString().replace(/\.\d{3}Z$/, '')}+02:00`;
+    const dateOnlyCutoff = createdAt.slice(0, 'YYYY-MM-DD'.length);
+    const futureCutoff = `${new Date(createdAtInstant.getTime() + 24 * 60 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, '')}Z`;
+
+    async function factsWithSince(sinceIso: string): Promise<number> {
+      const raw = await client.callTool({
+        name: 'ledger_summary',
+        arguments: { sessionId, sinceIso },
+      });
+      const result = parseToolResult(raw) as { counts: { facts: number } };
+      return result.counts.facts;
+    }
+
+    expect(await factsWithSince(zCutoff)).toBe(1);
+    expect(await factsWithSince(offsetCutoff)).toBe(1);
+    expect(await factsWithSince(dateOnlyCutoff)).toBe(1);
+    expect(await factsWithSince(futureCutoff)).toBe(0);
+  });
+});
