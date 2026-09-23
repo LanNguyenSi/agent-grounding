@@ -2,6 +2,76 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `ledger_add` followed by `ledger_summary` for the same sessionId could
+  report 0 facts when the two calls were concurrent or pipelined (their
+  JSON-RPC requests both in flight, neither awaited before the next was
+  sent). Cause: the MCP SDK's `tools/call` dispatch validates each
+  request's zod input schema asynchronously before invoking its handler,
+  and `ledger_add`'s (5-key object) and `ledger_summary`'s (3-key object)
+  schemas resolve that validation in a different number of microtask
+  ticks, so the summary handler could be invoked before the add handler
+  even though the add request arrived first. Every handler that reads or
+  writes the ledger (`ledger_add`, `ledger_summary`,
+  `claim_evaluate_from_session`, `ledger_status`) now serializes through
+  one queue that orders each request by its TRUE arrival order at the
+  transport: `createServer` wraps `server.connect` to install an
+  `onmessage` wrapper on the transport before the SDK's own
+  `Protocol#connect` runs, stamping the arrival of each `tools/call`
+  request for one of those four tools synchronously, before any
+  request's async zod validation can reorder which handler is invoked
+  first (see the "Ledger request serialization" comment in
+  `src/server.ts` for the full mechanism, including why sorting by the
+  request id's own VALUE, an approach tried and found insufficient during
+  this same investigation, is wrong for a string id, a UUID, or a client
+  that hands out falling numeric ids). The queue computes each queued
+  request's sort key once and then sorts, so batches of three or more
+  concurrent ledger requests keep arrival order too. A stamp is released
+  when the server sends the response for its request or when the
+  request's queued run settles (a cancelled request gets no response),
+  and at most 1024 stamps are kept (`createServer`'s test-oriented
+  `ledgerArrivalCap` option lowers that; the package entry also exports
+  `ledgerArrivalStampCount` as a test seam, not supported API): recording one more evicts the
+  oldest, and a request left without a stamp is logged to stderr and runs
+  after the stamped requests of its batch. `hypothesis_*` tools
+  read/write a separate store through the same kind of SDK dispatch and
+  are NOT serialized by this or any other mechanism; tracked as a
+  follow-up task. A first investigation of
+  this tracker report tested only sequential add-then-summary calls
+  (every entry type, a range of sessionId shapes, in-process and across
+  separate server processes, and four configurations including a packed
+  tarball with evidence-ledger 0.6.0 and the published
+  `0.12.0`/`0.11.0`) and never reproduced it; the real defect surfaced
+  only once a concurrent/pipelined pair was tried (see
+  `scripts/repro-ledger-summary-count.mjs`'s pipelined cases and the
+  "concurrent requests", "true arrival order at the transport" and
+  "batches, stamp lifetime and missing stamps" tests in
+  `tests/grounding-gate-mcp-roundtrip.test.ts`).
+- `sessionId` now requires at least 1 character (zod `.min(1)`) on
+  `ledger_add`, `ledger_summary`, and `claim_evaluate_from_session`: an
+  empty string previously bypassed evidence-ledger's session filter
+  entirely (`listEntries`'s `if (opts.session) { ... }` treats `""` as
+  falsy and skips the filter), silently returning every session's
+  entries instead of the documented zero-or-exact-match behavior.
+
+### Changed
+
+- `ledger_add`, `ledger_summary`, `claim_evaluate_from_session`, and
+  `ledger_status` tool descriptions, and the README tool catalog, state
+  precisely which tools order a concurrent/pipelined ledger access by
+  arrival at the transport (those four) and which do not
+  (`hypothesis_*`, a separate store, tracked as a follow-up);
+  `ledger_add`'s description and README row also state the 1024
+  in-flight bound on that ordering.
+  `ledger_add`'s and `ledger_summary`'s descriptions also state in one
+  sentence each that a session's entries are only visible to a
+  `ledger_summary` call using the exact sessionId string `ledger_add`
+  used (case-sensitive, no normalization). `ledger_summary`'s description
+  and README row describe a zero count as non-exhaustive (also caused by
+  a `sinceIso`/`contentPrefix` filter that excludes every row) instead of
+  naming a mismatched sessionId as the only cause.
+
 ## 0.12.0, 2026-09-21
 
 ### Added

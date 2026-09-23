@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { isJSONRPCRequest, type JSONRPCMessage, type JSONRPCRequest, type MessageExtraInfo, type RequestId } from '@modelcontextprotocol/sdk/types.js';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { z } from 'zod';
 
 import {
@@ -174,6 +176,245 @@ const evidenceTextSchema = z
   .max(4096)
   .describe('What you observed (raw, not interpreted).');
 
+// ── Ledger request serialization (task 0a8645d2) ────────────────────────
+//
+// The evidence ledger (better-sqlite3, fully synchronous) has no race of
+// its own. The race is upstream, in the MCP SDK's own dispatch: the
+// `tools/call` request handler `await`s zod schema validation
+// (`validateToolInput`) before invoking a tool's callback, and two
+// concurrently-arriving requests validate against schemas of different
+// shapes (ledger_add's 5-key object vs ledger_summary's 3-key object).
+// That difference changes how many microtask ticks each validation takes
+// to resolve, so the tool whose schema resolves faster can have ITS
+// callback invoked first, even though its JSON-RPC request arrived
+// second (seen in an instrumentation trace of a
+// `Promise.all([ledger_add, ledger_summary])` call: the summary callback
+// ran before the add callback).
+//
+// Two orders that look like arrival order are not:
+//   - The JSON-RPC request id's own VALUE. Nothing in JSON-RPC requires
+//     rising numeric ids: a string id, a UUID, or a client that hands out
+//     falling numeric ids is legal, and sorting by value reorders those
+//     exactly like the original bug.
+//   - The order in which handlers call `enqueue()`. By then the SDK's
+//     async per-request validation has already had its chance to reorder
+//     which handler runs first, so this is the reordered invocation order.
+//
+// Arrival stamp. True arrival order is observable in the transport's own
+// `onmessage` callback: `Protocol#connect` (see
+// node_modules/@modelcontextprotocol/sdk/dist/esm/shared/protocol.js,
+// the `connect()` method) keeps whatever `transport.onmessage` was
+// already set to and invokes it SYNCHRONOUSLY, first, for every message,
+// before its own routing and the async validation chain that reorders
+// invocation:
+//
+//   const _onmessage = this._transport?.onmessage;
+//   this._transport.onmessage = (message, extra) => {
+//     _onmessage?.(message, extra);           // <- ours, if set first
+//     ... isJSONRPCRequest(message) ? this._onrequest(message, extra) ...
+//   };
+//
+// `trackLedgerRequests` below installs that `onmessage` (and a `send`
+// wrapper, see "Stamp lifetime") on a transport before `Protocol#connect`
+// runs; `createServer` wraps `server.connect` so this happens for every
+// transport the server is connected to (stdio in `main()`,
+// `InMemoryTransport` in the tests). It stamps only a JSON-RPC request
+// (`isJSONRPCRequest`, the check the SDK routes requests by) whose method
+// is `tools/call` and whose `params.name` is in `LEDGER_TOOL_NAMES`, with a
+// per-server sequence number that rises by one per stamped request.
+//
+// Stamp lifetime. Two releases and a cap keep the map down to ledger
+// requests that are still in flight:
+//   - `send` wrapper: released when the server sends the JSON-RPC response
+//     (a message with an `id` and no `method`) for that id. The SDK sends
+//     one for a completed call, for a tool error, and for a call that fails
+//     input validation (answered with an `isError` result without invoking
+//     the tool's callback, so that call never reaches the queue).
+//   - queue `finally` (in `drain`): released when the request's queued run
+//     settles. This covers a request the client cancels
+//     (`notifications/cancelled`) after it arrived: the SDK still invokes
+//     the tool's callback but sends no response for it.
+//   - cap: neither release fires for a request that gets no response
+//     (cancelled, or cut off by the transport closing) AND never reaches
+//     the queue (it fails validation, say), so its stamp would stay.
+//     `LedgerArrivalStamps` therefore holds at most `cap` stamps (default
+//     `DEFAULT_LEDGER_ARRIVAL_CAP`): recording one more evicts the oldest,
+//     since a Map iterates in insertion order and a stamp is inserted when
+//     its request arrives.
+//
+// Queue. Each ledger handler hands `{requestId, run}` to `enqueue()`,
+// which buffers entries and, on the first entry of a new batch, schedules
+// a `setImmediate` barrier. The barrier fires after the current microtask
+// queue drains, so every ledger request that arrived in the same
+// event-loop turn has reached `enqueue()` by then (the dispatch up to
+// `enqueue()`, validation included, is microtask-only). `drain`
+// computes each entry's sort key exactly once, reading its stamp without
+// removing it, sorts on those precomputed keys, and chains each entry's
+// `run()` onto one shared tail promise, so entry N only starts once entry
+// N-1's ledger work has finished. Keys are never computed inside the sort comparator: a
+// comparator is called more than once per element, and one that changed
+// the stamps would change an element's key in the middle of the sort.
+//
+// Missing stamp. An entry whose stamp is absent when its batch drains
+// (evicted by the cap, or a client that reuses an in-flight request id,
+// which MCP forbids) is logged with `console.error`, one line per entry,
+// and runs after every stamped entry of its batch, in `enqueue()` call
+// order, since its arrival position is no longer known. A caller that
+// invokes a tool's callback directly, without a transport, has no stamp
+// either and takes this path.
+//
+// Scope. The handlers that read or write the ledger
+// (`rg 'ledgerDb\(\)|ledgerStatus\(\)' packages/grounding-mcp/src`):
+// ledger_add, ledger_summary, claim_evaluate_from_session (via
+// getSummary), and ledger_status (via ledgerStatus's own ledgerDb()
+// call). All four go through this queue, and `LEDGER_TOOL_NAMES` lists
+// the same four. `hypothesis_*` reads/writes its own separate store
+// through the same kind of SDK dispatch and is NOT ordered by this or any
+// other mechanism (same root cause, tracked as a follow-up task, out of
+// scope here): see the package README and CHANGELOG.
+const LEDGER_TOOL_NAMES: ReadonlySet<string> = new Set([
+  'ledger_add',
+  'ledger_summary',
+  'claim_evaluate_from_session',
+  'ledger_status',
+]);
+
+const DEFAULT_LEDGER_ARRIVAL_CAP = 1024;
+
+// `raw` is createServer's test-oriented `ledgerArrivalCap` option: anything
+// that is not a positive safe integer falls back to the default, since a
+// cap below 1 would evict every stamp as soon as it is recorded.
+function resolveLedgerArrivalCap(raw: unknown): number {
+  return typeof raw === 'number' && Number.isSafeInteger(raw) && raw > 0 ? raw : DEFAULT_LEDGER_ARRIVAL_CAP;
+}
+
+class LedgerArrivalStamps {
+  private readonly stamps = new Map<RequestId, number>();
+  private nextSeq = 0;
+
+  constructor(private readonly cap: number) {}
+
+  record(requestId: RequestId): void {
+    this.stamps.set(requestId, this.nextSeq++);
+    if (this.stamps.size > this.cap) {
+      const oldest = this.stamps.keys().next().value as RequestId;
+      this.stamps.delete(oldest);
+    }
+  }
+
+  get(requestId: RequestId): number | undefined {
+    return this.stamps.get(requestId);
+  }
+
+  release(requestId: RequestId): void {
+    this.stamps.delete(requestId);
+  }
+
+  get size(): number {
+    return this.stamps.size;
+  }
+}
+
+const ledgerArrivalStampsByServer = new WeakMap<McpServer, LedgerArrivalStamps>();
+
+// Test seam, not supported API: how many ledger arrival stamps a server
+// built by `createServer` holds right now (see "Stamp lifetime" above).
+// @internal
+export function ledgerArrivalStampCount(server: McpServer): number {
+  const stamps = ledgerArrivalStampsByServer.get(server);
+  if (stamps === undefined) {
+    throw new Error('ledgerArrivalStampCount: server was not built by createServer');
+  }
+  return stamps.size;
+}
+
+function isLedgerToolCall(message: JSONRPCMessage): message is JSONRPCRequest {
+  if (!isJSONRPCRequest(message) || message.method !== 'tools/call') return false;
+  const name = (message.params as { name?: unknown } | undefined)?.name;
+  return typeof name === 'string' && LEDGER_TOOL_NAMES.has(name);
+}
+
+function trackLedgerRequests(transport: Transport, stamps: LedgerArrivalStamps): void {
+  const priorOnMessage = transport.onmessage;
+  transport.onmessage = ((message: JSONRPCMessage, extra?: MessageExtraInfo) => {
+    if (isLedgerToolCall(message)) stamps.record(message.id);
+    priorOnMessage?.(message, extra);
+  }) as typeof transport.onmessage;
+  const baseSend = transport.send.bind(transport);
+  transport.send = (message, options) => {
+    if (!('method' in message) && message.id !== undefined) stamps.release(message.id);
+    return baseSend(message, options);
+  };
+}
+
+interface LedgerQueueEntry {
+  requestId: RequestId;
+  enqueueSeq: number;
+  run: () => unknown;
+  resolve: (value: unknown) => void;
+  reject: (err: unknown) => void;
+}
+
+function createLedgerRequestQueue(
+  stamps: LedgerArrivalStamps,
+): <T>(requestId: RequestId, run: () => T | Promise<T>) => Promise<T> {
+  let pending: LedgerQueueEntry[] = [];
+  let barrierScheduled = false;
+  let enqueueCounter = 0;
+  let tail: Promise<void> = Promise.resolve();
+
+  // [tier, key]: tier 0 (a recorded arrival stamp, key = the stamp) sorts
+  // before tier 1 (no stamp, see "Missing stamp" above; key = enqueue-call
+  // order). Called once per entry per batch, from `drain`, never from the
+  // sort comparator.
+  function sortKey(entry: LedgerQueueEntry): [number, number] {
+    const stamp = stamps.get(entry.requestId);
+    if (stamp !== undefined) return [0, stamp];
+    // eslint-disable-next-line no-console
+    console.error(
+      `grounding-mcp: ledger request id ${JSON.stringify(entry.requestId)} has no recorded arrival ` +
+        'stamp (evicted by the in-flight cap, or a reused request id); running it after every stamped ' +
+        'ledger request of its batch, in enqueue-call order, which is NOT guaranteed to be arrival order.',
+    );
+    return [1, entry.enqueueSeq];
+  }
+
+  function drain(): void {
+    const batch = pending;
+    pending = [];
+    barrierScheduled = false;
+    const keyed = batch.map((entry) => ({ entry, key: sortKey(entry) }));
+    keyed.sort((a, b) => a.key[0] - b.key[0] || a.key[1] - b.key[1]);
+    for (const { entry } of keyed) {
+      tail = tail.then(async () => {
+        try {
+          entry.resolve(await entry.run());
+        } catch (err) {
+          entry.reject(err);
+        } finally {
+          stamps.release(entry.requestId);
+        }
+      });
+    }
+  }
+
+  return function enqueue<T>(requestId: RequestId, run: () => T | Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      pending.push({
+        requestId,
+        enqueueSeq: enqueueCounter++,
+        run: run as () => unknown,
+        resolve: resolve as (value: unknown) => void,
+        reject,
+      });
+      if (!barrierScheduled) {
+        barrierScheduled = true;
+        setImmediate(drain);
+      }
+    });
+  };
+}
+
 // ── Server factory ──────────────────────────────────────────────────────
 //
 // Builds a fully wired McpServer instance. Exposed as a factory so tests
@@ -202,6 +443,12 @@ export function resolveProgressIntervalMs(raw: unknown): number {
 // in use cuts calls earlier than this default assumes. Each is validated the
 // same way `progressIntervalMs` is, inside the registry.
 //
+// `ledgerArrivalCap` is test-oriented too: the most ledger arrival stamps
+// the server keeps at once (default 1024, see the "Ledger request
+// serialization" comment above `LEDGER_TOOL_NAMES`), so a test can evict
+// a stamp with a handful of requests. Anything that is not a positive safe
+// integer falls back to the default. Production callers should not set it.
+//
 // Spelled out field by field rather than intersected with the registry's own
 // `AttemptRegistryOptions`: intersecting it published a SECOND, undocumented
 // spelling of every knob (`waitBoundMs` beside `attemptWaitBoundMs`, and so
@@ -216,6 +463,7 @@ export function createServer(
     attemptRetentionMs?: number;
     attemptLockStaleMs?: number;
     now?: () => number;
+    ledgerArrivalCap?: number;
   } = {},
 ): McpServer {
   const progressIntervalMs = resolveProgressIntervalMs(options.progressIntervalMs);
@@ -231,6 +479,27 @@ export function createServer(
     name: 'grounding-mcp',
     version: PACKAGE_VERSION,
   });
+
+  // One stamp map and one queue per server instance (see the "Ledger
+  // request serialization" comment above `LEDGER_TOOL_NAMES`), not
+  // module-level singletons: tests create a fresh server per case, and
+  // module-level state would leak ordering state across otherwise
+  // independent test servers.
+  const ledgerArrivalStamps = new LedgerArrivalStamps(resolveLedgerArrivalCap(options.ledgerArrivalCap));
+  ledgerArrivalStampsByServer.set(server, ledgerArrivalStamps);
+  const enqueueLedgerRequest = createLedgerRequestQueue(ledgerArrivalStamps);
+
+  // Wrap `connect` itself (not each individual call site) so every
+  // transport this server instance is connected to (stdio in `main()`
+  // below, `InMemoryTransport` in the tests) gets `trackLedgerRequests`
+  // installed before the SDK's own `Protocol#connect` runs. See the
+  // "Ledger request serialization" comment above `LEDGER_TOOL_NAMES` for
+  // why this must happen before, not inside, a ledger-touching handler.
+  const baseConnect = server.connect.bind(server);
+  server.connect = (async (transport: Transport) => {
+    trackLedgerRequests(transport, ledgerArrivalStamps);
+    return baseConnect(transport);
+  }) as typeof server.connect;
 
   server.tool(
     'grounding_start',
@@ -283,31 +552,33 @@ export function createServer(
 
   server.tool(
     'ledger_add',
-    'Append an entry to the evidence ledger for a session. Types: fact (verified), hypothesis (unverified), rejected (disproven), unknown (open question), policy_decision (Phase 5 #4 audit row, kept in a separate bucket from evidence types).',
+    'Append an entry to the evidence ledger for a session. Types: fact (verified), hypothesis (unverified), rejected (disproven), unknown (open question), policy_decision (Phase 5 #4 audit row, kept in a separate bucket from evidence types). A later ledger_summary call only sees this entry if it is given this exact sessionId string (case-sensitive, no normalization), and only once the write has actually happened: ledger_add, ledger_summary, claim_evaluate_from_session, and ledger_status are ordered by arrival at the transport (not by request id value or invocation order), so a ledger_summary that arrives after a ledger_add for the same sessionId sees it, also when the two calls are pipelined or made concurrently. With more than 1024 ledger requests in flight at once, the oldest loses its arrival stamp and runs after the other requests of its batch (logged to stderr). hypothesis_* tools are a separate store and are not ordered this way.',
     {
-      sessionId: z.string().describe('Session id — used as the ledger session namespace.'),
+      sessionId: z.string().min(1).describe('Session id: used as the ledger session namespace.'),
       type: z.enum(['fact', 'hypothesis', 'rejected', 'unknown', 'policy_decision']),
       content: z.string().describe('What you observed / hypothesize / rejected.'),
       source: z.string().optional().describe('Where the evidence came from (file path, log line, command output).'),
       confidence: z.enum(['high', 'medium', 'low']).optional(),
     },
-    async ({ sessionId, type, content, source, confidence }) => {
-      const entry = addEntry(ledgerDb(), {
-        type: type as EntryType,
-        content,
-        source,
-        confidence: confidence as ConfidenceLevel | undefined,
-        session: sessionId,
-      });
+    async ({ sessionId, type, content, source, confidence }, extra) => {
+      const entry = await enqueueLedgerRequest(extra.requestId, () =>
+        addEntry(ledgerDb(), {
+          type: type as EntryType,
+          content,
+          source,
+          confidence: confidence as ConfidenceLevel | undefined,
+          session: sessionId,
+        }),
+      );
       return jsonResponse(entry);
     },
   );
 
   server.tool(
     'ledger_summary',
-    'Return facts/hypotheses/rejected/unknowns for a session. Use to brief a follow-up agent or before claim-gate evaluation. Phase 5 #5: optional server-side filters.',
+    'Return facts/hypotheses/rejected/unknowns for a session. Use to brief a follow-up agent or before claim-gate evaluation. Phase 5 #5: optional server-side filters. A zero count is not necessarily an error: causes include (not an exhaustive list) no entries yet, a sessionId that does not exactly match the string an earlier ledger_add used (case-sensitive, no normalization), or a sinceIso/contentPrefix filter that excludes every matching row (for example a sinceIso value SQLite cannot parse silently excludes rows rather than erroring). Ordered by arrival at the transport relative to a concurrent/pipelined ledger_add for the same sessionId, see the ledger_add description.',
     {
-      sessionId: z.string(),
+      sessionId: z.string().min(1),
       sinceIso: z
         .string()
         .optional()
@@ -321,11 +592,11 @@ export function createServer(
           'Optional content-prefix filter. Only rows whose `content` starts with this string are returned. Useful for harness audit consumers that only want `policy_decision:` rows.',
         ),
     },
-    async ({ sessionId, sinceIso, contentPrefix }) => {
+    async ({ sessionId, sinceIso, contentPrefix }, extra) => {
       const filters: { sinceIso?: string; contentPrefix?: string } = {};
       if (sinceIso !== undefined) filters.sinceIso = sinceIso;
       if (contentPrefix !== undefined) filters.contentPrefix = contentPrefix;
-      const summary = getSummary(ledgerDb(), sessionId, filters);
+      const summary = await enqueueLedgerRequest(extra.requestId, () => getSummary(ledgerDb(), sessionId, filters));
       return jsonResponse({
         sessionId,
         counts: {
@@ -377,9 +648,9 @@ export function createServer(
 
   server.tool(
     'claim_evaluate_from_session',
-    'Like claim_evaluate, but derives the context from the linked grounding session and its ledger entries. The default path for in-session use — no manual flag-passing.',
+    'Like claim_evaluate, but derives the context from the linked grounding session and its ledger entries. The default path for in-session use: no manual flag-passing. Its ledger read is ordered by arrival at the transport relative to a concurrent/pipelined ledger_add for the same sessionId, see the ledger_add description.',
     {
-      sessionId: z.string(),
+      sessionId: z.string().min(1),
       claim: z.string(),
       type: z.enum([
         'root_cause',
@@ -393,9 +664,9 @@ export function createServer(
         'generic',
       ]).optional(),
     },
-    async ({ sessionId, claim, type }) => {
+    async ({ sessionId, claim, type }, extra) => {
       const session = loadSession(sessionId);
-      const summary = getSummary(ledgerDb(), sessionId);
+      const summary = await enqueueLedgerRequest(extra.requestId, () => getSummary(ledgerDb(), sessionId));
       const context = deriveContext(session, summary);
       const result = evaluateClaim(claim, context, type as ClaimType | undefined);
       return jsonResponse({ ...result, derivedContext: context });
@@ -700,9 +971,9 @@ export function createServer(
 
   server.tool(
     'ledger_status',
-    'Return ledger reachability + lightweight stats (entry count, db path, last-write timestamp). No-arg liveness probe — designed for harness MCP health checks. Does not require a session.',
+    'Return ledger reachability + lightweight stats (entry count, db path, last-write timestamp). No-arg liveness probe, designed for harness MCP health checks. Does not require a session. Its entry count is ordered by arrival at the transport relative to a concurrent/pipelined ledger_add, see the ledger_add description.',
     {},
-    async () => jsonResponse(ledgerStatus()),
+    async (_args, extra) => jsonResponse(await enqueueLedgerRequest(extra.requestId, () => ledgerStatus())),
   );
 
   return server;

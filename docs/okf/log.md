@@ -2,6 +2,144 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-23T08:18:16Z, ledger request ordering: sort keys and stamp
+  lifetime (task 0a8645d2, follow-up to the entry below): the
+  arrival-stamp fix in the entry below had two defects. First, the queue
+  read and deleted each entry's arrival stamp inside the sort comparator.
+  A comparator is called more than once per element, so in a batch of
+  three or more ledger requests an entry could lose its stamp mid-sort,
+  drop to the missing-stamp tier and be misordered: with the SDK Client's
+  own ids, `Promise.all([ledger_add, ledger_summary, ledger_summary])`
+  returned 0 facts to a summary that arrived after the add. `drain` now
+  computes every entry's [tier, key] once, reading the stamp without
+  removing it, and sorts the precomputed pairs. Second, the stamp map
+  gained an entry for every JSON-RPC request and lost one only when the
+  sort comparator looked up a ledger request's stamp, so it grew without
+  bound. `trackLedgerRequests` (formerly `stampLedgerRequestArrival`)
+  now stamps only a `tools/call` whose `params.name` is one of the four
+  ledger tools, and releases the stamp when the server sends the response for that id (a `transport.send`
+  wrapper, which covers a ledger call that fails input validation and
+  never reaches the queue) or when the request's queued run settles (a
+  cancelled request, whose response the SDK suppresses). A cap of 1024
+  stamps (`createServer`'s test-oriented `ledgerArrivalCap` option)
+  evicts the oldest stamp for whatever neither release reaches; an entry
+  without a stamp is logged with `console.error` and runs after the
+  stamped entries of its batch. A test-only export,
+  `ledgerArrivalStampCount`, reads the map's size. New tests in the
+  roundtrip test file's "batches, stamp lifetime and missing stamps"
+  block: batches of three (SDK Client ids: add, summary, summary and add,
+  summary, status; raw frames: add, summary, add), four and twelve
+  requests, all of which failed against the previous revision of this
+  change and pass now; the stamp lifetime across in-flight, sequential,
+  validation-failure, throwing-handler and cancelled requests; eviction
+  by a cap of 2 with the missing-stamp fallback; the default cap of 1024;
+  invalid cap values. The reproduction script gained Case 5 (three
+  pipelined stdio frames, exact counts), and Case 3 now counts an
+  unexpected non-zero as a failure. `ledger_add`'s tool description, its
+  README row, the CHANGELOG and the entry below now state the in-flight
+  bound and no longer describe stamps as deleted on use.
+
+  `server.ts` grew by 46 lines (987 to 1033), all of them before the
+  `ledger_add` registration, so every anchored citation into it from that
+  registration on was re-pointed by +46 (13 in
+  `hypothesis-tracker-persistence-split.md`, 2 in
+  `solution-acceptance-verdict-contract.md`, 4 in
+  `evidence-ledger-session-key-shapes.md`, 30 in this log's history),
+  anchor text unchanged and checked to resolve at the new line. The three
+  `session: sessionId,` write-through citations, narrowed to a single
+  line by an earlier revision of this change, again span the `addEntry`
+  call as they did on master. The three docs that list `server.ts` as a
+  source (and, for the verdict contract, the README) were re-verified:
+  none of them makes an ordering claim, and each cited line still says
+  what the doc says it does; all three re-stamped. The
+  2026-09-22T06:28:10Z entry below is restored byte-identical to master
+  (a merge had split one of its sentences with a blank line), and the
+  blank line the same merge added between the 05:50:39Z and 05:22:43Z
+  entries is removed. `okf-kit@0.10.0 check --json docs/okf` on the
+  committed tree: 0 errors, 8 warnings, 0 notices, each of the 8 also a
+  finding of master 71a4dc8 (0/9/0).
+
+- 2026-09-23T07:23:00Z, ledger_add/ledger_summary true arrival order at
+  the transport (task 0a8645d2, follow-up to the two entries below): the
+  entry directly below fixed the pipelined add+summary reorder for the
+  MCP Client's own auto-incrementing numeric request ids by sorting the
+  serialization queue's batch by the JSON-RPC request id's own VALUE
+  (falling back to enqueue-call order for a non-numeric id). Both halves
+  of that fix were still wrong: sorting by id VALUE assumes a rising
+  numeric sequence, which JSON-RPC does not require, and the
+  enqueue-call-order fallback observes the SDK's already-reordered
+  invocation order, not the real arrival order, the same flaw the
+  original bug had. Reproduced with raw JSON-RPC frames (string ids,
+  falling numeric ids) sent directly over `InMemoryTransport`, bypassing
+  the SDK `Client`'s own rising-integer ids: both sub-cases showed
+  `counts.facts=0` against that fix's build, both via the extended
+  reproduction script (`scripts/repro-ledger-summary-count.mjs`'s Case 4,
+  now also looping every entry type) and via three new deterministic
+  tests in `tests/grounding-gate-mcp-roundtrip.test.ts`'s "true arrival
+  order at the transport" describe block (string ids, falling numeric
+  ids, UUID ids); confirmed by checking out that fix's own commit,
+  rebuilding, and running both directly. Fixed by stamping true arrival
+  order at the transport instead of trusting the request id: `createServer`
+  wraps `server.connect` (`stampLedgerRequestArrival` in
+  `packages/grounding-mcp/src/server.ts`) to install an `onmessage`
+  wrapper on the transport before the SDK's own `Protocol#connect` runs
+  (the SDK preserves and synchronously invokes any existing
+  `transport.onmessage` first, before its own async per-request routing
+  that reorders invocation), stamping each JSON-RPC request's arrival
+  into a map keyed by request id. The queue now sorts by that stamp; a
+  request with no recorded stamp falls back to enqueue-call order and
+  logs (`console.error`) instead of silently. That version stamped every
+  JSON-RPC request, not only ledger calls, and read and deleted each
+  stamp inside the sort comparator; the entry above records how both
+  were corrected. Every ledger-touching handler (`ledger_add`, `ledger_summary`,
+  `claim_evaluate_from_session`, `ledger_status`) goes through this
+  mechanism; two more new tests pin that `claim_evaluate_from_session`
+  and `ledger_status` are actually routed through it rather than
+  bypassing it (a mutant removing either's `enqueueLedgerRequest` wrap
+  was killed by each). `hypothesis_*` tools read/write a separate store
+  through the same kind of SDK dispatch and share the same root cause,
+  left unserialized: stated explicitly in tool descriptions, the README,
+  and the CHANGELOG, and tracked as a follow-up task, not fixed here.
+  Full package suite (1141 tests) passes against the fix.
+
+  `server.ts` grew by 105 lines net (882 to 987; the fix's comment,
+  `stampLedgerRequestArrival`, and the `sortKey`/`enqueue` rework, all
+  before the `ledger_add` registration) plus 2 lines from a new type-only
+  import pair near the top of the file, shifting every later citation in
+  this bundle by +105 (everything from the `ledger_add` registration
+  onward) or +2 (the two mentions of `PACKAGE_VERSION` and the one
+  `@internal` mention, all above the fix's own insertion point). Every
+  anchored citation into `server.ts` in this bundle was re-pointed to the
+  new line numbers, quoted anchor text unchanged and verified to still
+  resolve verbatim at each new line, including the ones inside this
+  doc's own already-merged history below (a prior investigation
+  confirmed empirically, by running `okf-kit check` before and after,
+  that log.md's own full citations are NOT excluded from
+  `citations-resolve`'s finding count by any built-in okf-kit mechanism,
+  only from this repo's CI job's two blocking selectors, which filter
+  `file == "log.md"` findings out of the pass/fail decision but not out
+  of the raw findings list this task's acceptance criterion measures;
+  leaving those stale would have added findings versus base). Two prior
+  historical passages in this doc's own history below (this entry's
+  neighbor two below, and one further down) had their surrounding prose
+  rewritten, not just their citation tokens re-pointed, by the fix
+  directly below this one; both are restored to their original wording
+  verbatim (compared against `git show fe8fa4f:docs/okf/log.md`), with
+  only the two anchored citations they each also carry re-pointed to the
+  new line numbers, since only citation tokens may differ from that
+  base. `evidence-ledger-session-key-shapes.md`, `hypothesis-tracker-persistence-split.md`,
+  and `solution-acceptance-verdict-contract.md` (`server.ts` and, for the
+  last one, `packages/grounding-mcp/README.md`) were re-verified against
+  the changed files and re-stamped; `solution-acceptance-verdict-contract.md`'s
+  prose about `README.md` is unaffected (it describes the
+  `solution_evaluate`/`solution_gate` section, which this task's README
+  edit did not touch). `okf-kit check --json docs/okf` measured on the
+  committed tree after every source-touching commit of this round: 0
+  errors, 8 warnings, 0 notices, the same 8 pre-existing warnings (none
+  naming `server.ts`, `README.md`'s ledger rows, or `CHANGELOG.md`) the
+  entry directly below already measured, a subset of the pre-task base's
+  9 (`git show fe8fa4f:docs/okf/log.md` measured separately: 0/9/0).
+
 - 2026-09-23T06:31:53Z, release-guard checks, follow-up fixes
   (task d51ae64b): `check-shipped-unreleased-pointer.js` gained a
   `isLicenseFile` helper anchoring the LICENSE exclusion to real license
@@ -28,6 +166,61 @@
   re-stamped that doc's timestamp only because it lists `ci.yml` as a
   source and `ci.yml`'s content changed (comments only, no claim in the
   doc affected).
+
+- 2026-09-23T05:59:02Z, ledger_add/ledger_summary concurrency fix (task
+  0a8645d2, follow-up to the entry below): the prior, sequential-only
+  investigation (below) tested only add-then-await-summary calls and
+  found no defect. A follow-up investigation tried a concurrent/pipelined
+  pair instead (ledger_summary sent without awaiting ledger_add's
+  response first) and reproduced a real defect: the MCP SDK's
+  `tools/call` dispatch validates each request's zod input schema
+  asynchronously before invoking its handler, and `ledger_add`'s and
+  `ledger_summary`'s schemas resolve that validation in a different
+  number of microtask ticks, so the summary handler could be invoked
+  before the add handler even though the add request arrived first
+  (confirmed by an instrumented trace, not just by output timing: a
+  `Promise.all([ledger_add, ledger_summary])` call logged the summary
+  handler's own invocation before the add handler's, deterministically,
+  every run tried). Fixed by serializing every handler that reads or
+  writes the ledger (`ledger_add`, `ledger_summary`,
+  `claim_evaluate_from_session`, `ledger_status`) through one queue keyed
+  by JSON-RPC request id, which reflects true arrival order even when
+  handler invocation order does not (`createLedgerRequestQueue` and its
+  surrounding comment in `packages/grounding-mcp/src/server.ts`).
+  Regression test added at the MCP tool level (`Promise.all` over
+  InMemoryTransport, `packages/grounding-mcp/tests/grounding-gate-mcp-roundtrip.test.ts`'s
+  "concurrent requests" describe block): fails against base commit
+  fe8fa4f (20/20 runs reported a zero count) and passes against the fix.
+  The reproduction script (`packages/grounding-mcp/scripts/repro-ledger-summary-count.mjs`)
+  gained a matching pipelined case and a sessionId-shapes case backing a
+  header claim the script did not previously exercise; its header now
+  separates the two investigations' findings instead of asserting "no
+  defect" as a single, since-superseded conclusion.
+  `ledger_summary`'s "zero means either no entries or a mismatched
+  sessionId" wording was also exhaustive-sounding but wrong (a
+  `sinceIso`/`contentPrefix` filter can also produce a zero count for a
+  matching sessionId); reworded non-exhaustively, and `sessionId` on
+  `ledger_add`, `ledger_summary`, and `claim_evaluate_from_session` now
+  requires at least 1 character, since an empty string previously bypassed
+  evidence-ledger's session filter entirely (a falsy-string check in
+  `listEntries`) and silently returned every session's entries.
+  `server.ts` grew by roughly 90 lines (the new queue) before the
+  `ledger_add` registration, shifting every later citation in this
+  bundle; every anchored citation into `server.ts` from
+  `evidence-ledger-session-key-shapes.md`, `hypothesis-tracker-persistence-split.md`,
+  `solution-acceptance-verdict-contract.md`, and this doc's own history
+  below was re-pinned to the new line numbers (quoted anchor text
+  unchanged and still resolves verbatim, except the `ledger_add` sessionId
+  param description, whose own em dash was replaced with a colon so the
+  diff introducing it carried none, with the quoting citations updated to
+  match). The two bare, unanchored `server.ts` point-in-time line-number
+  references in this doc's own history (this entry's neighbor below, and
+  one further down) were left un-restated rather than updated to a new
+  number that would just go stale again on the next shift; see each of
+  those entries for why. `okf-kit check --json docs/okf` measured after
+  this fix: identical to the summary recorded in the entry below (one
+  fewer warning than the pre-task base, from that entry's own STALE fix,
+  none from this one).
 
 - 2026-09-23T05:50:39Z, release-guard checks, structural redesign (task
   d51ae64b): `check-shipped-unreleased-pointer.js`
@@ -76,6 +269,44 @@
   a prose pointer to the section, not line-anchored, and the section's
   path-level-disqualifier content it actually describes is unaffected by
   the added sentences. Both docs re-stamped.
+
+- 2026-09-23T05:02:00Z, ledger_summary session-key equality pin (task
+  0a8645d2): evidence-ledger-session-key-shapes.md lists
+  packages/grounding-mcp/src/server.ts and packages/grounding-wrapper/src/lib.ts
+  as sources; a batch-61 task touched packages/grounding-mcp/src/server.ts
+  (added one sentence to the ledger_add and ledger_summary tool
+  descriptions, on lines adjacent to but not overlapping the anchored
+  citations) while investigating a reported ledger_add plus
+  ledger_summary fact-loss bug. Re-verified both anchored citations to
+  that file (server.ts line 288, the sessionId param description; and
+  server.ts lines 295-301, the addEntry write-through): both lines and
+  quoted text unchanged, no re-point needed. The investigation itself
+  found no defect: ledger_add followed by ledger_summary under the
+  exact same sessionId string reflects the entry for every entry type
+  and every sessionId shape tried, both in-process and across separate
+  server process invocations; the only zero-count case is a different
+  sessionId string, which matches this doc's documented
+  strict-equality invariant. Timestamp re-stamped; no other claim in
+  this doc changed. The same task's two new regression tests in
+  packages/grounding-mcp/tests/grounding-gate-mcp-roundtrip.test.ts
+  were appended as a new describe block at the end of that file
+  (rather than inlined earlier in it), specifically so this doc's
+  Out-of-repo-boundary citation into that file's not-ready-preflight
+  test block keeps its existing line range; that citation was checked
+  after the append and still resolves unchanged. hypothesis-tracker-
+  persistence-split.md and solution-acceptance-verdict-contract.md
+  also list packages/grounding-mcp/src/server.ts as a source (the
+  latter also lists packages/grounding-mcp/README.md, touched by the
+  same task for the ledger_add/ledger_summary README rows); both docs'
+  anchored citations checked against the current file content:
+  unchanged (the server.ts edit was a same-line text replace on two
+  lines, adding no lines; the README.md edit likewise replaced two
+  existing table-row lines in place). Both timestamps re-stamped; no
+  other claim in either doc changed. okf-kit check --json docs/okf run
+  against the committed tree: identical summary to the pre-task base
+  (0 errors, 9 warnings, 0 notices); the remaining warnings are
+  pre-existing log.md historical citations, unrelated to this task.
+
 - 2026-09-22T06:28:10Z, package LICENSE-in-tarballs check (task ae26b625):
   adding `packages/*/LICENSE` and a `files` entry in twelve package
   manifests plus a `check:package-license` step in `ci.yml` shifted two
@@ -263,7 +494,7 @@
   bounds of every citation this broke, both in
   `solution-acceptance-verdict-contract.md` (`solution_evaluate`/
   `solution_gate` registration lines,
-  `packages/grounding-mcp/src/server.ts:102#"const PACKAGE_VERSION = readPackageVersion();"`),
+  `packages/grounding-mcp/src/server.ts:104#"const PACKAGE_VERSION = readPackageVersion();"`),
   `evidence-ledger-session-key-shapes.md` (the `ledger_add` sessionId
   param doc and write-through range), `hypothesis-tracker-persistence-split.md`
   (all seven `hypothesis_*` registration lines, the `saveStore` call-site
@@ -321,7 +552,7 @@
   guard and collapsed to one line before interpolation. L2: claim-gate's
   and evidence-ledger's `readVersion` exports now carry the same
   "test seam, not supported API" `@internal` marker
-  `packages/grounding-mcp/src/server.ts:66#"@internal"` already had.
+  `packages/grounding-mcp/src/server.ts:68#"@internal"` already had.
   L3: the missing-version tests' `toContain('version')` assertions also
   matched the read-failure message; replaced with the distinguishing
   substring per branch, and added a seventh per-package case for
@@ -330,7 +561,7 @@
 
   The L1 fix shifted `server.ts` by +3 lines (`const PACKAGE_VERSION =
   readPackageVersion();` now at
-  `packages/grounding-mcp/src/server.ts:102#"const PACKAGE_VERSION = readPackageVersion();"`)
+  `packages/grounding-mcp/src/server.ts:104#"const PACKAGE_VERSION = readPackageVersion();"`)
   and `claim-gate/src/cli.ts` by +5 (L2's marker added two of those);
   every citation into both files was re-pinned, including the two bare,
   unanchored `server.ts` point-in-time references this doc's own history
@@ -1245,22 +1476,22 @@
   citation at or after line 368 as the file stood after round 2 (the
   `solution_evaluate` registration's line at that point) by +11, uniformly, all the
   way to the end of the file: re-pointed to
-  `packages/grounding-mcp/src/server.ts:423#"'solution_evaluate'"` and
-  `packages/grounding-mcp/src/server.ts:498#"'solution_gate'"` in
+  `packages/grounding-mcp/src/server.ts:694#"'solution_evaluate'"` and
+  `packages/grounding-mcp/src/server.ts:769#"'solution_gate'"` in
   `solution-acceptance-verdict-contract.md`, and to
-  `packages/grounding-mcp/src/server.ts:543#"'hypothesis_record',"`,
-  `packages/grounding-mcp/src/server.ts:557#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:563#"'hypothesis_list',"`,
-  `packages/grounding-mcp/src/server.ts:586#"'hypothesis_evidence',"`,
-  `packages/grounding-mcp/src/server.ts:603#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:609#"'hypothesis_check_done',"`,
-  `packages/grounding-mcp/src/server.ts:635#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:641#"'hypothesis_reject',"`,
-  `packages/grounding-mcp/src/server.ts:657#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:663#"'hypothesis_support',"`,
-  `packages/grounding-mcp/src/server.ts:679#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
-  `packages/grounding-mcp/src/server.ts:684#"saveStore(sessionId, store);"` and
-  `packages/grounding-mcp/src/server.ts:690#"'hypothesis_reset',"` in
+  `packages/grounding-mcp/src/server.ts:814#"'hypothesis_record',"`,
+  `packages/grounding-mcp/src/server.ts:828#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:834#"'hypothesis_list',"`,
+  `packages/grounding-mcp/src/server.ts:857#"'hypothesis_evidence',"`,
+  `packages/grounding-mcp/src/server.ts:874#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:880#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:906#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:912#"'hypothesis_reject',"`,
+  `packages/grounding-mcp/src/server.ts:928#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:934#"'hypothesis_support',"`,
+  `packages/grounding-mcp/src/server.ts:950#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
+  `packages/grounding-mcp/src/server.ts:955#"saveStore(sessionId, store);"` and
+  `packages/grounding-mcp/src/server.ts:961#"'hypothesis_reset',"` in
   `hypothesis-tracker-persistence-split.md`. `evidence-ledger-session-key-shapes.md`'s
   own citations sit entirely before line 368 (`server.ts:244`, `server.ts:251-256/257`,
   as the file stood then) and did not move, but the file is re-stamped anyway: it declares `server.ts` as a
@@ -1322,8 +1553,8 @@
   `server.ts` edits (the import swap, the spelled-out `createServer` option
   type, the comment above the two lookup registrations, and the two widened `id`
   schemas) shifted the citations below them by +9 as far as
-  `packages/grounding-mcp/src/server.ts:423#"'solution_evaluate'"`, and by +23
-  from `packages/grounding-mcp/src/server.ts:498#"'solution_gate'"` onward. The
+  `packages/grounding-mcp/src/server.ts:694#"'solution_evaluate'"`, and by +23
+  from `packages/grounding-mcp/src/server.ts:769#"'solution_gate'"` onward. The
   new README paragraph shifted
   `packages/grounding-mcp/README.md:214#"the root cause is the backend container's missing OPENAI_API_KEY env var"`
   by +2, and the one new import in the roundtrip test shifted
@@ -1392,23 +1623,23 @@
   below them, by +5 at `PACKAGE_VERSION` (the version literal was `'0.10.0'` at
   the time of this entry, now read from `package.json` at runtime, task
   ed06b4c8)
-  (`packages/grounding-mcp/src/server.ts:102#"const PACKAGE_VERSION = readPackageVersion();"`), by +26
+  (`packages/grounding-mcp/src/server.ts:104#"const PACKAGE_VERSION = readPackageVersion();"`), by +26
   through the `ledger_add` handler
-  (`packages/grounding-mcp/src/server.ts:288#"Session id"`,
-  `packages/grounding-mcp/src/server.ts:295-301#"session: sessionId,"`), by +26 at
+  (`packages/grounding-mcp/src/server.ts:557#"Session id"`,
+  `packages/grounding-mcp/src/server.ts:565-572#"session: sessionId,"`), by +26 at
   the `solution_evaluate` registration
-  (`packages/grounding-mcp/src/server.ts:423#"'solution_evaluate'"`), and by +63
-  from `solution_gate` (`packages/grounding-mcp/src/server.ts:498#"'solution_gate'"`)
+  (`packages/grounding-mcp/src/server.ts:694#"'solution_evaluate'"`), and by +63
+  from `solution_gate` (`packages/grounding-mcp/src/server.ts:769#"'solution_gate'"`)
   through every `hypothesis_*` tool below it
-  (`packages/grounding-mcp/src/server.ts:543#"'hypothesis_record',"`,
-  `packages/grounding-mcp/src/server.ts:557#"saveStore(sessionId, store);"`,
-  `packages/grounding-mcp/src/server.ts:563#"'hypothesis_list',"`,
-  `packages/grounding-mcp/src/server.ts:586#"'hypothesis_evidence',"`,
-  `packages/grounding-mcp/src/server.ts:609#"'hypothesis_check_done',"`,
-  `packages/grounding-mcp/src/server.ts:641#"'hypothesis_reject',"`,
-  `packages/grounding-mcp/src/server.ts:663#"'hypothesis_support',"`,
-  `packages/grounding-mcp/src/server.ts:679#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
-  `packages/grounding-mcp/src/server.ts:690#"'hypothesis_reset',"`), since the two
+  (`packages/grounding-mcp/src/server.ts:814#"'hypothesis_record',"`,
+  `packages/grounding-mcp/src/server.ts:828#"saveStore(sessionId, store);"`,
+  `packages/grounding-mcp/src/server.ts:834#"'hypothesis_list',"`,
+  `packages/grounding-mcp/src/server.ts:857#"'hypothesis_evidence',"`,
+  `packages/grounding-mcp/src/server.ts:880#"'hypothesis_check_done',"`,
+  `packages/grounding-mcp/src/server.ts:912#"'hypothesis_reject',"`,
+  `packages/grounding-mcp/src/server.ts:934#"'hypothesis_support',"`,
+  `packages/grounding-mcp/src/server.ts:950#"error: 'hypothesis_not_found_rejected_or_checks_pending',"`,
+  `packages/grounding-mcp/src/server.ts:961#"'hypothesis_reset',"`), since the two
   new tool registrations sit between those two anchors. The `preWriteGuard` block
   moved the marker-write anchor's range end only
   (`packages/grounding-mcp/src/solution-verdict.ts:746-803#"const markerPath = writeVerdict(verdict);"`),

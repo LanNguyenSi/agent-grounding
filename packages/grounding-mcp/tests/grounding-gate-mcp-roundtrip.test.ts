@@ -41,7 +41,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { ErrorCode, ProgressNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 
-import { createServer, resolveProgressIntervalMs } from '../src/server.js';
+import { createServer, ledgerArrivalStampCount, resolveProgressIntervalMs } from '../src/server.js';
 import {
   withProgressPings,
   DEFAULT_PROGRESS_MESSAGE,
@@ -1680,5 +1680,664 @@ describe('solution_evaluate_status / solution_evaluate_result (MCP roundtrip)', 
       'solution_evaluate_result',
       'attemptId',
     );
+  });
+});
+
+// ── ledger_summary regression (0a8645d2) ────────────────────────────────────
+//
+// Appended at the end of the file (not inlined into the ledger_summary
+// describe block above) so it never shifts any other test's line number:
+// several docs/okf citations anchor to specific lines in this file.
+
+describe('ledger_summary: session-key regression (0a8645d2)', () => {
+  it('reflects an entry of every type via ledger_add, one session per type', async () => {
+    // Tracker observation: ledger_add followed by ledger_summary for the
+    // same sessionId reported 0 facts. Sequential add-then-await-summary
+    // calls (as this test does) never reproduced it; a later investigation
+    // found the real defect one level down, in concurrent/pipelined
+    // add+summary calls for the same sessionId (see the "concurrent
+    // ledger_add + ledger_summary" describe block below for that
+    // regression test, and scripts/repro-ledger-summary-count.mjs for the
+    // stdio-level reproduction). This test pins the unrelated, always-true
+    // claim that every entry type is visible to a sequential ledger_summary
+    // call under the exact sessionId ledger_add used.
+    const typeToBucket = {
+      fact: 'facts',
+      hypothesis: 'hypotheses',
+      rejected: 'rejected',
+      unknown: 'unknowns',
+      policy_decision: 'policyDecisions',
+    } as const;
+
+    for (const [type, bucket] of Object.entries(typeToBucket)) {
+      const sessionId = `gs-regression-0a8645d2-${type}`;
+      await client.callTool({
+        name: 'ledger_add',
+        arguments: { sessionId, type, content: `regression entry of type ${type}` },
+      });
+      const raw = await client.callTool({
+        name: 'ledger_summary',
+        arguments: { sessionId },
+      });
+      const result = parseToolResult(raw) as {
+        counts: Record<string, number>;
+      };
+      expect(result.counts[bucket]).toBe(1);
+    }
+  });
+
+  it('a sessionId that does not exactly match ledger_add is legitimately zero', async () => {
+    // Documents the intended, strict-equality behavior described in
+    // docs/okf/evidence-ledger-session-key-shapes.md: two different
+    // sessionId strings never see each other's rows. This is not the
+    // tracker defect (that would be the SAME sessionId losing the
+    // entry), it is the expected disagreement case.
+    await client.callTool({
+      name: 'ledger_add',
+      arguments: { sessionId: 'gs-agent-grounding-abc123', type: 'fact', content: 'added under a gs-* id' },
+    });
+    const raw = await client.callTool({
+      name: 'ledger_summary',
+      arguments: { sessionId: 'fix/0a8645d2-ledger-summary-count' },
+    });
+    const result = parseToolResult(raw) as { counts: { facts: number } };
+    expect(result.counts.facts).toBe(0);
+  });
+
+  it('exact sessionId match is case- and whitespace-sensitive', async () => {
+    // Pins the "case-sensitive, no normalization" sentence in both tool
+    // descriptions: a session written under a mixed-case, trailing-space
+    // id is invisible to a summary call that trims and lowercases it, and
+    // visible only to the exact same string. Kills a trim+lowercase
+    // normalization mutant that a looser (case/whitespace-insensitive)
+    // match would let survive.
+    await client.callTool({
+      name: 'ledger_add',
+      arguments: { sessionId: 'GS-Case ', type: 'fact', content: 'case/whitespace pin' },
+    });
+    const mismatched = await client.callTool({
+      name: 'ledger_summary',
+      arguments: { sessionId: 'gs-case' },
+    });
+    expect((parseToolResult(mismatched) as { counts: { facts: number } }).counts.facts).toBe(0);
+
+    const exact = await client.callTool({
+      name: 'ledger_summary',
+      arguments: { sessionId: 'GS-Case ' },
+    });
+    expect((parseToolResult(exact) as { counts: { facts: number } }).counts.facts).toBe(1);
+  });
+});
+
+// ── ledger_add + ledger_summary: concurrent/pipelined requests (0a8645d2) ──
+//
+// The sequential tests above (await ledger_add's response
+// before sending ledger_summary) never reproduce the tracker defect. The
+// real defect only shows when a ledger_add and a ledger_summary for the
+// SAME sessionId are in flight at the same time (pipelined stdio requests,
+// or two tool calls issued without awaiting the first): the MCP SDK's
+// tools/call dispatch validates each request's zod schema asynchronously
+// before invoking its handler, and ledger_add's and ledger_summary's
+// schemas resolve that validation in a different number of microtask
+// ticks, so the summary handler can run BEFORE the add handler even though
+// the add request was sent (and received) first. See the "Ledger request
+// serialization" comment in src/server.ts for the full mechanism and the
+// fix (a queue ordered by each request's arrival stamp, recorded at the
+// transport before validation, which reflects true arrival order even
+// when handler invocation order does not).
+
+describe('ledger_add + ledger_summary: concurrent requests (0a8645d2)', () => {
+  it('a summary sent without awaiting a concurrent add for the same sessionId still sees it', async () => {
+    const sessionId = 'gs-concurrent-0a8645d2';
+    // Fire both calls without awaiting the first: this is what the
+    // sequential tests above never exercise. Deterministically triggered
+    // the defect 20/20 runs on this task's base commit (fe8fa4f), both
+    // through this exact InMemoryTransport + Promise.all shape and over
+    // real pipelined stdio (scripts/repro-ledger-summary-count.mjs's
+    // pipelined case).
+    const [, summaryRaw] = await Promise.all([
+      client.callTool({
+        name: 'ledger_add',
+        arguments: { sessionId, type: 'fact', content: 'concurrent add' },
+      }),
+      client.callTool({
+        name: 'ledger_summary',
+        arguments: { sessionId },
+      }),
+    ]);
+    const result = parseToolResult(summaryRaw) as { counts: { facts: number } };
+    expect(result.counts.facts).toBe(1);
+  });
+
+  it('20 repeated concurrent add+summary pairs on fresh sessions all see the add', async () => {
+    // A single run of the test above cannot rule out a flaky pass;
+    // repeats the same shape 20 times, each on its own sessionId.
+    for (let i = 0; i < 20; i++) {
+      const sessionId = `gs-concurrent-0a8645d2-${i}`;
+      const [, summaryRaw] = await Promise.all([
+        client.callTool({
+          name: 'ledger_add',
+          arguments: { sessionId, type: 'fact', content: `concurrent add ${i}` },
+        }),
+        client.callTool({
+          name: 'ledger_summary',
+          arguments: { sessionId },
+        }),
+      ]);
+      const result = parseToolResult(summaryRaw) as { counts: { facts: number } };
+      expect(result.counts.facts).toBe(1);
+    }
+  });
+});
+
+// ── ledger tools: sessionId must be non-empty (0a8645d2) ────────────────────
+//
+// `getSummary`/`listEntries` treat an empty-string
+// `session` as falsy and skip the `session = @session` filter entirely
+// (evidence-ledger's `listEntries`: `if (opts.session) { ... }`), so
+// `ledger_summary`/`claim_evaluate_from_session` called with
+// `sessionId: ''` silently returned every session's entries instead of
+// zero, the opposite of, and worse than, the documented "exact match or
+// zero" contract. `.min(1)` on each ledger-touching tool's sessionId
+// schema turns that into a clean MCP validation error instead.
+
+describe('ledger tools: sessionId must be non-empty (0a8645d2)', () => {
+  it('ledger_add rejects an empty sessionId', async () => {
+    const raw = await client.callTool({
+      name: 'ledger_add',
+      arguments: { sessionId: '', type: 'fact', content: 'whatever' },
+    });
+    expectValidationError(raw, 'ledger_add', 'sessionId');
+  });
+
+  it('ledger_summary rejects an empty sessionId', async () => {
+    const raw = await client.callTool({
+      name: 'ledger_summary',
+      arguments: { sessionId: '' },
+    });
+    expectValidationError(raw, 'ledger_summary', 'sessionId');
+  });
+
+  it('claim_evaluate_from_session rejects an empty sessionId', async () => {
+    const raw = await client.callTool({
+      name: 'claim_evaluate_from_session',
+      arguments: { sessionId: '', claim: 'whatever' },
+    });
+    expectValidationError(raw, 'claim_evaluate_from_session', 'sessionId');
+  });
+});
+
+// ── ledger tools: true arrival order at the transport (task 0a8645d2) ───────
+//
+// An earlier fix for this task keyed the queue's sort order by the
+// JSON-RPC request id's own VALUE (falling back to enqueue-call order for
+// a non-numeric id). Both are wrong for an id shape a real client is free
+// to use: a string id, a UUID, or a client that hands out falling numeric
+// ids. The tests below send raw JSON-RPC frames directly over the
+// InMemoryTransport (bypassing the SDK Client's own auto-incrementing
+// numeric request ids, the one id shape the earlier value-sort happened
+// to get right) so the id shape is fully controlled.
+// `InMemoryTransport#send` delivers synchronously to the peer's `onmessage`
+// inside the `send()` call itself
+// (see node_modules/@modelcontextprotocol/sdk/dist/esm/inMemory.js): two
+// `send()` calls made back-to-back, with nothing awaited between them,
+// are therefore guaranteed to arrive at the server in that exact call
+// order, which is what makes these tests deterministic rather than a race.
+
+// A minimal raw JSON-RPC layer over an already-initialized InMemoryTransport
+// client-side leg: composes with (does not replace) the SDK Client's own
+// `onmessage`, so the same transport pair keeps working for ordinary
+// `client.callTool` calls elsewhere in this file. Only resolves an id this
+// layer itself sent; anything else falls through to the prior handler.
+function createRawFrameCaller(clientTransport: InMemoryTransport): (
+  id: string | number,
+  name: string,
+  args: Record<string, unknown>,
+) => Promise<unknown> {
+  const pending = new Map<string | number, { resolve: (value: unknown) => void; reject: (err: unknown) => void }>();
+  const priorOnMessage = clientTransport.onmessage;
+  clientTransport.onmessage = (message, extra) => {
+    const asResponse = message as { id?: string | number; result?: unknown; error?: unknown };
+    if (asResponse && typeof asResponse === 'object' && asResponse.id !== undefined && pending.has(asResponse.id)) {
+      const waiter = pending.get(asResponse.id) as { resolve: (value: unknown) => void; reject: (err: unknown) => void };
+      pending.delete(asResponse.id);
+      if ('error' in asResponse && asResponse.error !== undefined) waiter.reject(asResponse.error);
+      else waiter.resolve(asResponse.result);
+      return;
+    }
+    priorOnMessage?.(message, extra);
+  };
+  return function callToolRaw(id, name, args) {
+    return new Promise((resolve, reject) => {
+      pending.set(id, { resolve, reject });
+      void clientTransport.send({
+        jsonrpc: '2.0',
+        id,
+        method: 'tools/call',
+        params: { name, arguments: args },
+      } as Parameters<InMemoryTransport['send']>[0]);
+    });
+  };
+}
+
+describe('ledger tools: true arrival order at the transport (0a8645d2)', () => {
+  let rfTmpRoot: string;
+  let prevRfSessionsDir: string | undefined;
+  let prevRfLedgerDb: string | undefined;
+  let rfHarnessHomeTmp: string;
+  let prevRfHarnessHome: string | undefined;
+  let rfClient: Client;
+  let rfServer: ReturnType<typeof createServer>;
+  let callToolRaw: ReturnType<typeof createRawFrameCaller>;
+
+  beforeEach(async () => {
+    rfTmpRoot = mkdtempSync(join(tmpdir(), 'grounding-mcp-arrival-'));
+    prevRfSessionsDir = process.env.GROUNDING_MCP_SESSIONS_DIR;
+    prevRfLedgerDb = process.env.EVIDENCE_LEDGER_DB;
+    process.env.GROUNDING_MCP_SESSIONS_DIR = join(rfTmpRoot, 'sessions');
+    process.env.EVIDENCE_LEDGER_DB = join(rfTmpRoot, 'ledger.db');
+    prevRfHarnessHome = process.env.HARNESS_HOME;
+    rfHarnessHomeTmp = mkdtempSync(join(tmpdir(), 'grounding-mcp-arrival-harness-home-'));
+    process.env.HARNESS_HOME = rfHarnessHomeTmp;
+
+    resetLedgerDb();
+    resetStores();
+
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    rfServer = createServer();
+    await rfServer.connect(serverTransport);
+    rfClient = new Client({ name: 'arrival-order-test', version: '0.0.0' });
+    await rfClient.connect(clientTransport);
+    callToolRaw = createRawFrameCaller(clientTransport);
+  });
+
+  afterEach(async () => {
+    await rfClient.close();
+    await rfServer.close();
+    resetLedgerDb();
+    resetStores();
+    if (prevRfSessionsDir === undefined) delete process.env.GROUNDING_MCP_SESSIONS_DIR;
+    else process.env.GROUNDING_MCP_SESSIONS_DIR = prevRfSessionsDir;
+    if (prevRfLedgerDb === undefined) delete process.env.EVIDENCE_LEDGER_DB;
+    else process.env.EVIDENCE_LEDGER_DB = prevRfLedgerDb;
+    if (prevRfHarnessHome === undefined) delete process.env.HARNESS_HOME;
+    else process.env.HARNESS_HOME = prevRfHarnessHome;
+    rmSync(rfTmpRoot, { recursive: true, force: true });
+    rmSync(rfHarnessHomeTmp, { recursive: true, force: true });
+  });
+
+  it('pipelined ledger_add then ledger_summary with STRING request ids still sees the add', async () => {
+    const sessionId = 'gs-arrival-string-ids';
+    const addPromise = callToolRaw('s-0', 'ledger_add', { sessionId, type: 'fact', content: 'string-id add' });
+    const summaryPromise = callToolRaw('s-1', 'ledger_summary', { sessionId });
+    const [, summaryRaw] = await Promise.all([addPromise, summaryPromise]);
+    const result = parseToolResult(summaryRaw) as { counts: { facts: number } };
+    expect(result.counts.facts).toBe(1);
+  });
+
+  it('pipelined ledger_add then ledger_summary with FALLING numeric request ids still sees the add', async () => {
+    // ledger_add arrives first (sent first) but carries the numerically
+    // LARGER id; ledger_summary arrives second but carries the numerically
+    // SMALLER id. A queue that sorts by id value would run ledger_summary
+    // first and see 0 facts.
+    const sessionId = 'gs-arrival-falling-ids';
+    const addPromise = callToolRaw(9000, 'ledger_add', { sessionId, type: 'fact', content: 'falling-id add' });
+    const summaryPromise = callToolRaw(7, 'ledger_summary', { sessionId });
+    const [, summaryRaw] = await Promise.all([addPromise, summaryPromise]);
+    const result = parseToolResult(summaryRaw) as { counts: { facts: number } };
+    expect(result.counts.facts).toBe(1);
+  });
+
+  it('pipelined ledger_add then ledger_summary with UUID request ids still sees the add', async () => {
+    const sessionId = 'gs-arrival-uuid-ids';
+    const addPromise = callToolRaw(crypto.randomUUID(), 'ledger_add', { sessionId, type: 'fact', content: 'uuid add' });
+    const summaryPromise = callToolRaw(crypto.randomUUID(), 'ledger_summary', { sessionId });
+    const [, summaryRaw] = await Promise.all([addPromise, summaryPromise]);
+    const result = parseToolResult(summaryRaw) as { counts: { facts: number } };
+    expect(result.counts.facts).toBe(1);
+  });
+
+  it('a pipelined ledger_add + claim_evaluate_from_session sees the add as evidence (queue routing, not bypassed)', async () => {
+    // claim_evaluate_from_session's loadSession() requires a real session
+    // file, so grounding_start's own minted gs-* id is the sessionId used
+    // for the ledger add below, not a hand-picked string.
+    const startRaw = await rfClient.callTool({
+      name: 'grounding_start',
+      arguments: { keyword: 'agent-tasks', problem: 'arrival-order claim routing check' },
+    });
+    const { sessionId } = parseToolResult(startRaw) as { sessionId: string };
+    const [, claimRaw] = await Promise.all([
+      rfClient.callTool({
+        name: 'ledger_add',
+        arguments: { sessionId, type: 'fact', content: 'evidence for claim routing' },
+      }),
+      rfClient.callTool({
+        name: 'claim_evaluate_from_session',
+        arguments: { sessionId, claim: 'the root cause is a missing env var', type: 'root_cause' },
+      }),
+    ]);
+    const result = parseToolResult(claimRaw) as { derivedContext: { has_evidence: boolean } };
+    expect(result.derivedContext.has_evidence).toBe(true);
+  });
+
+  it('a claim_evaluate_from_session pipelined BEFORE a ledger_add does not see the add, and is stamped (no missing-stamp log)', async () => {
+    // A unique keyword per run: grounding_start mints gs-<slug>-<Date.now()>,
+    // so a reused keyword within one millisecond would reuse a session.
+    const startRaw = await rfClient.callTool({
+      name: 'grounding_start',
+      arguments: { keyword: `claim-first-${crypto.randomUUID()}`, problem: 'arrival-order claim-before-add check' },
+    });
+    const { sessionId } = parseToolResult(startRaw) as { sessionId: string };
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const [claimRaw] = await Promise.all([
+        rfClient.callTool({
+          name: 'claim_evaluate_from_session',
+          arguments: { sessionId, claim: 'the root cause is a missing env var', type: 'root_cause' },
+        }),
+        rfClient.callTool({
+          name: 'ledger_add',
+          arguments: { sessionId, type: 'fact', content: 'evidence added after the claim arrived' },
+        }),
+      ]);
+      const result = parseToolResult(claimRaw) as { derivedContext: { has_evidence: boolean } };
+      expect(result.derivedContext.has_evidence).toBe(false);
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('a pipelined ledger_add + ledger_status reflects the add in entryCount (queue routing, not bypassed)', async () => {
+    const before = await rfClient.callTool({ name: 'ledger_status', arguments: {} });
+    const beforeCount = (parseToolResult(before) as { entryCount: number }).entryCount;
+    const sessionId = 'gs-arrival-status-routing';
+    const [, statusRaw] = await Promise.all([
+      rfClient.callTool({
+        name: 'ledger_add',
+        arguments: { sessionId, type: 'fact', content: 'evidence for status routing' },
+      }),
+      rfClient.callTool({ name: 'ledger_status', arguments: {} }),
+    ]);
+    const afterCount = (parseToolResult(statusRaw) as { entryCount: number }).entryCount;
+    expect(afterCount).toBe(beforeCount + 1);
+  });
+});
+
+// ── ledger tools: batches of three or more, stamp lifetime, missing stamp (0a8645d2) ──
+//
+// The pair tests above hold two ledger requests in one batch. A batch of
+// three or more is what exercises the sort itself: `drain` in src/server.ts
+// computes every entry's [tier, key] once and then sorts, because a sort
+// comparator is called more than once per element and a comparator that
+// removed an arrival stamp while comparing would give an element a different
+// key the second time it is compared. The tests below pin batches of three,
+// four and twelve requests (SDK Client ids and raw frames), how long an
+// arrival stamp is kept (`ledgerArrivalStampCount`, a test seam exported by
+// src/server.ts), and what happens to a request whose stamp is gone (the
+// "Missing stamp" paragraph of the "Ledger request serialization" comment).
+
+type RawRpcResponse = { result?: unknown; error?: unknown };
+
+interface RawRpc {
+  request: (id: string | number, method: string, params?: Record<string, unknown>) => Promise<RawRpcResponse>;
+  callTool: (id: string | number, name: string, args: Record<string, unknown>) => Promise<unknown>;
+  notify: (method: string, params: Record<string, unknown>) => void;
+}
+
+// Like `createRawFrameCaller` above, but for any method and for
+// notifications. Every frame reaches the server synchronously inside the
+// call that sends it (InMemoryTransport#send, see the intro comment of the
+// "true arrival order" block above), so a count read right after a series
+// of calls sees exactly the requests that are still in flight.
+function createRawRpc(clientTransport: InMemoryTransport): RawRpc {
+  const pending = new Map<string | number, (response: RawRpcResponse) => void>();
+  const priorOnMessage = clientTransport.onmessage;
+  clientTransport.onmessage = (message, extra) => {
+    const frame = message as { id?: string | number; method?: string } & RawRpcResponse;
+    if (frame.method === undefined && frame.id !== undefined && pending.has(frame.id)) {
+      const resolve = pending.get(frame.id) as (response: RawRpcResponse) => void;
+      pending.delete(frame.id);
+      resolve(frame);
+      return;
+    }
+    priorOnMessage?.(message, extra);
+  };
+  const sendFrame = (frame: Record<string, unknown>): void => {
+    void clientTransport.send(frame as Parameters<InMemoryTransport['send']>[0]);
+  };
+  function request(id: string | number, method: string, params?: Record<string, unknown>): Promise<RawRpcResponse> {
+    return new Promise((resolve) => {
+      pending.set(id, resolve);
+      sendFrame({ jsonrpc: '2.0', id, method, ...(params === undefined ? {} : { params }) });
+    });
+  }
+  async function callTool(id: string | number, name: string, args: Record<string, unknown>): Promise<unknown> {
+    const response = await request(id, 'tools/call', { name, arguments: args });
+    if (response.error !== undefined) {
+      throw new Error(`JSON-RPC error for request ${JSON.stringify(id)}: ${JSON.stringify(response.error)}`);
+    }
+    return response.result;
+  }
+  function notify(method: string, params: Record<string, unknown>): void {
+    sendFrame({ jsonrpc: '2.0', method, params });
+  }
+  return { request, callTool, notify };
+}
+
+function factsOf(raw: unknown): number {
+  return (parseToolResult(raw) as { counts: { facts: number } }).counts.facts;
+}
+
+describe('ledger tools: batches, stamp lifetime and missing stamps (0a8645d2)', () => {
+  // Servers opened by `openHarness` in the current test, closed after it.
+  // The file-level beforeEach/afterEach already point the ledger DB, the
+  // session store and HARNESS_HOME at per-test tempdirs.
+  let harnessClosers: (() => Promise<void>)[] = [];
+
+  async function openHarness(options: Parameters<typeof createServer>[0] = {}): Promise<{
+    server: ReturnType<typeof createServer>;
+    rpc: RawRpc;
+  }> {
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const server = createServer(options);
+    await server.connect(serverTransport);
+    const harnessClient = new Client({ name: 'ledger-batch-test', version: '0.0.0' });
+    await harnessClient.connect(clientTransport);
+    harnessClosers.push(async () => {
+      await harnessClient.close();
+      await server.close();
+    });
+    return { server, rpc: createRawRpc(clientTransport) };
+  }
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    for (const closeHarness of harnessClosers) await closeHarness();
+    harnessClosers = [];
+  });
+
+  it('SDK Client default ids: Promise.all([ledger_add, ledger_summary, ledger_summary]) -> both summaries see the add', async () => {
+    for (let i = 0; i < 10; i++) {
+      const sessionId = `gs-batch-add-sum-sum-${i}`;
+      const [, first, second] = await Promise.all([
+        client.callTool({ name: 'ledger_add', arguments: { sessionId, type: 'fact', content: `batch of three ${i}` } }),
+        client.callTool({ name: 'ledger_summary', arguments: { sessionId } }),
+        client.callTool({ name: 'ledger_summary', arguments: { sessionId } }),
+      ]);
+      expect(factsOf(first)).toBe(1);
+      expect(factsOf(second)).toBe(1);
+    }
+  });
+
+  it('SDK Client default ids: Promise.all([ledger_add, ledger_summary, ledger_status]) -> the summary and the entry count both include the add', async () => {
+    for (let i = 0; i < 10; i++) {
+      const before = await client.callTool({ name: 'ledger_status', arguments: {} });
+      const beforeCount = (parseToolResult(before) as { entryCount: number }).entryCount;
+      const sessionId = `gs-batch-add-sum-status-${i}`;
+      const [, summary, status] = await Promise.all([
+        client.callTool({ name: 'ledger_add', arguments: { sessionId, type: 'fact', content: `add, summary, status ${i}` } }),
+        client.callTool({ name: 'ledger_summary', arguments: { sessionId } }),
+        client.callTool({ name: 'ledger_status', arguments: {} }),
+      ]);
+      expect(factsOf(summary)).toBe(1);
+      expect((parseToolResult(status) as { entryCount: number }).entryCount).toBe(beforeCount + 1);
+    }
+  });
+
+  it('raw frames ledger_add, ledger_summary, ledger_add -> the summary sees exactly the first add', async () => {
+    const { rpc } = await openHarness();
+    for (let i = 0; i < 10; i++) {
+      const sessionId = `gs-batch-add-sum-add-${i}`;
+      const [, summary] = await Promise.all([
+        rpc.callTool(`asa-${i}-add-1`, 'ledger_add', { sessionId, type: 'fact', content: 'first add' }),
+        rpc.callTool(`asa-${i}-sum`, 'ledger_summary', { sessionId }),
+        rpc.callTool(`asa-${i}-add-2`, 'ledger_add', { sessionId, type: 'fact', content: 'second add' }),
+      ]);
+      expect(factsOf(summary)).toBe(1);
+    }
+  });
+
+  it('a batch of four raw frames with mixed id shapes: add, summary, add, summary -> 1 then 2', async () => {
+    const { rpc } = await openHarness();
+    for (let i = 0; i < 10; i++) {
+      const sessionId = `gs-batch-four-${i}`;
+      const [, firstSummary, , secondSummary] = await Promise.all([
+        rpc.callTool(`four-${i}-add`, 'ledger_add', { sessionId, type: 'fact', content: 'add one' }),
+        rpc.callTool(9000 - i, 'ledger_summary', { sessionId }),
+        rpc.callTool(crypto.randomUUID(), 'ledger_add', { sessionId, type: 'fact', content: 'add two' }),
+        rpc.callTool(`four-${i}-sum`, 'ledger_summary', { sessionId }),
+      ]);
+      expect(factsOf(firstSummary)).toBe(1);
+      expect(factsOf(secondSummary)).toBe(2);
+    }
+  });
+
+  it('a batch of twelve raw frames alternating add and summary: summary k sees k adds', async () => {
+    const { rpc } = await openHarness();
+    const sessionId = 'gs-batch-twelve';
+    const calls: Promise<unknown>[] = [];
+    for (let k = 0; k < 6; k++) {
+      calls.push(rpc.callTool(`twelve-add-${k}`, 'ledger_add', { sessionId, type: 'fact', content: `add ${k}` }));
+      calls.push(rpc.callTool(1000 - k, 'ledger_summary', { sessionId }));
+    }
+    const results = await Promise.all(calls);
+    for (let k = 0; k < 6; k++) {
+      expect(factsOf(results[2 * k + 1])).toBe(k + 1);
+    }
+  });
+
+  it('keeps an arrival stamp only for a ledger tools/call that is still in flight', async () => {
+    const { server, rpc } = await openHarness();
+    const sessionId = 'gs-stamp-lifetime';
+    expect(ledgerArrivalStampCount(server)).toBe(0);
+
+    // Only the ledger tools/call is stamped: not a tools/list that carries a
+    // ledger tool name in its params, not a tools/call of a non-ledger tool,
+    // not a ping. All four are still in flight when the count is read.
+    const inFlight = [
+      rpc.callTool('life-add', 'ledger_add', { sessionId, type: 'fact', content: 'in flight' }),
+      rpc.request('life-list', 'tools/list', { name: 'ledger_summary' }),
+      rpc.callTool('life-start', 'grounding_start', { keyword: 'agent-tasks', problem: 'stamp lifetime check' }),
+      rpc.request('life-ping', 'ping'),
+    ];
+    expect(ledgerArrivalStampCount(server)).toBe(1);
+    await Promise.all(inFlight);
+    expect(ledgerArrivalStampCount(server)).toBe(0);
+
+    // Sequential calls of all four ledger tools and of non-ledger requests.
+    const startRaw = await rpc.callTool('life-start-2', 'grounding_start', { keyword: 'agent-tasks', problem: 'lifetime claim' });
+    const groundingSessionId = (parseToolResult(startRaw) as { sessionId: string }).sessionId;
+    await rpc.callTool('life-seq-add', 'ledger_add', { sessionId: groundingSessionId, type: 'fact', content: 'sequential' });
+    await rpc.callTool('life-seq-sum', 'ledger_summary', { sessionId: groundingSessionId });
+    await rpc.callTool('life-seq-claim', 'claim_evaluate_from_session', { sessionId: groundingSessionId, claim: 'the root cause is X' });
+    await rpc.callTool('life-seq-status', 'ledger_status', {});
+    await rpc.request('life-seq-ping', 'ping');
+    await rpc.request('life-seq-list', 'tools/list');
+    expect(ledgerArrivalStampCount(server)).toBe(0);
+
+    // A ledger call that fails input validation never reaches the queue: its
+    // stamp is released when the server sends the isError response.
+    const invalid = await rpc.callTool('life-invalid', 'ledger_add', { sessionId: '', type: 'fact', content: 'x' });
+    expectValidationError(invalid, 'ledger_add', 'sessionId');
+    expect(ledgerArrivalStampCount(server)).toBe(0);
+
+    // A claim_evaluate_from_session whose session does not exist throws
+    // before it reaches the queue: released on the isError response as well.
+    const missing = (await rpc.callTool('life-missing', 'claim_evaluate_from_session', {
+      sessionId: 'gs-no-such-session',
+      claim: 'x',
+    })) as ToolTextResponse;
+    expect(missing.isError).toBe(true);
+    expect(ledgerArrivalStampCount(server)).toBe(0);
+
+    // A cancelled ledger request gets no response (the SDK suppresses it)
+    // but still runs through the queue: released when its queued run
+    // settles. The summary sent after it runs after it in the same batch.
+    let cancelledAnswered = false;
+    void rpc.callTool('life-cancel', 'ledger_add', { sessionId, type: 'fact', content: 'cancelled' }).then(() => {
+      cancelledAnswered = true;
+    });
+    rpc.notify('notifications/cancelled', { requestId: 'life-cancel', reason: 'stamp lifetime test' });
+    await rpc.callTool('life-after-cancel', 'ledger_summary', { sessionId });
+    expect(cancelledAnswered).toBe(false);
+    expect(ledgerArrivalStampCount(server)).toBe(0);
+  });
+
+  it('an entry whose stamp the in-flight cap evicted is logged and runs after the stamped entries of its batch', async () => {
+    const { server, rpc } = await openHarness({ ledgerArrivalCap: 2 });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    // Three ledger calls that fail validation are stamped but never queued,
+    // so the stamp counter runs three ahead of the enqueue counter. The
+    // fallback key of the evicted entry below (its enqueue-call position,
+    // 0 to 2) is then lower than every stamp in its batch (4 and 5): only
+    // the tier keeps that entry behind the stamped ones.
+    for (const id of ['cap-invalid-1', 'cap-invalid-2', 'cap-invalid-3']) {
+      const invalid = await rpc.callTool(id, 'ledger_add', { sessionId: '', type: 'fact', content: 'x' });
+      expectValidationError(invalid, 'ledger_add', 'sessionId');
+    }
+    expect(errorSpy).not.toHaveBeenCalled();
+
+    const sessionId = 'gs-evicted-stamp';
+    const summary = rpc.callTool('cap-summary', 'ledger_summary', { sessionId });
+    const firstAdd = rpc.callTool('cap-add-1', 'ledger_add', { sessionId, type: 'fact', content: 'add one' });
+    // The third stamp exceeds the cap of 2 and evicts the oldest, the summary's.
+    const secondAdd = rpc.callTool('cap-add-2', 'ledger_add', { sessionId, type: 'fact', content: 'add two' });
+    expect(ledgerArrivalStampCount(server)).toBe(2);
+
+    const [summaryRaw] = await Promise.all([summary, firstAdd, secondAdd]);
+    expect(factsOf(summaryRaw)).toBe(2);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(String(errorSpy.mock.calls[0]?.[0])).toContain('"cap-summary"');
+    expect(ledgerArrivalStampCount(server)).toBe(0);
+  });
+
+  it('the default cap keeps 1024 stamps: one request over it loses its stamp', async () => {
+    const { server, rpc } = await openHarness();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const calls: Promise<unknown>[] = [];
+    for (let i = 0; i < 1025; i++) {
+      calls.push(rpc.callTool(`default-cap-${i}`, 'ledger_status', {}));
+    }
+    expect(ledgerArrivalStampCount(server)).toBe(1024);
+    await Promise.all(calls);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(String(errorSpy.mock.calls[0]?.[0])).toContain('"default-cap-0"');
+    expect(ledgerArrivalStampCount(server)).toBe(0);
+  });
+
+  it.each([0, -1, 1.5])('ledgerArrivalCap %s is not a positive integer and falls back to the default cap', async (cap) => {
+    const { rpc } = await openHarness({ ledgerArrivalCap: cap });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const sessionId = `gs-cap-fallback-${String(cap)}`;
+    const [, first, second] = await Promise.all([
+      rpc.callTool(`fallback-${String(cap)}-add`, 'ledger_add', { sessionId, type: 'fact', content: 'add' }),
+      rpc.callTool(`fallback-${String(cap)}-sum-1`, 'ledger_summary', { sessionId }),
+      rpc.callTool(`fallback-${String(cap)}-sum-2`, 'ledger_summary', { sessionId }),
+    ]);
+    expect(factsOf(first)).toBe(1);
+    expect(factsOf(second)).toBe(1);
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 });
