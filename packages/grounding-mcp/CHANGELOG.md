@@ -31,7 +31,8 @@
   when the server sends the response for its request or when the
   request's queued run settles (a cancelled request gets no response),
   and at most 1024 stamps are kept (`createServer`'s test-oriented
-  `ledgerArrivalCap` option lowers that): recording one more evicts the
+  `ledgerArrivalCap` option lowers that; the package entry also exports
+  `ledgerArrivalStampCount` as a test seam, not supported API): recording one more evicts the
   oldest, and a request left without a stamp is logged to stderr and runs
   after the stamped requests of its batch. `hypothesis_*` tools
   read/write a separate store through the same kind of SDK dispatch and

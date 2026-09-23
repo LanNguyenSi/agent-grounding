@@ -2020,6 +2020,34 @@ describe('ledger tools: true arrival order at the transport (0a8645d2)', () => {
     expect(result.derivedContext.has_evidence).toBe(true);
   });
 
+  it('a claim_evaluate_from_session pipelined BEFORE a ledger_add does not see the add, and is stamped (no missing-stamp log)', async () => {
+    // A unique keyword per run: grounding_start mints gs-<slug>-<Date.now()>,
+    // so a reused keyword within one millisecond would reuse a session.
+    const startRaw = await rfClient.callTool({
+      name: 'grounding_start',
+      arguments: { keyword: `claim-first-${crypto.randomUUID()}`, problem: 'arrival-order claim-before-add check' },
+    });
+    const { sessionId } = parseToolResult(startRaw) as { sessionId: string };
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const [claimRaw] = await Promise.all([
+        rfClient.callTool({
+          name: 'claim_evaluate_from_session',
+          arguments: { sessionId, claim: 'the root cause is a missing env var', type: 'root_cause' },
+        }),
+        rfClient.callTool({
+          name: 'ledger_add',
+          arguments: { sessionId, type: 'fact', content: 'evidence added after the claim arrived' },
+        }),
+      ]);
+      const result = parseToolResult(claimRaw) as { derivedContext: { has_evidence: boolean } };
+      expect(result.derivedContext.has_evidence).toBe(false);
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it('a pipelined ledger_add + ledger_status reflects the add in entryCount (queue routing, not bypassed)', async () => {
     const before = await rfClient.callTool({ name: 'ledger_status', arguments: {} });
     const beforeCount = (parseToolResult(before) as { entryCount: number }).entryCount;

@@ -95,9 +95,8 @@
 //     ticks, so the summary handler can be INVOKED before the add
 //     handler even though the add request was sent, and received,
 //     first, confirmed by an instrumented trace, not just by output
-//     timing (see the "Ledger request serialization" comment above
-//     `createLedgerRequestQueue` in src/server.ts for the full
-//     mechanism).
+//     timing (see the "Ledger request serialization" comment in
+//     src/server.ts for the full mechanism).
 //   - An earlier fix serialized every ledger-touching handler (ledger_add,
 //     ledger_summary, claim_evaluate_from_session, ledger_status)
 //     through one queue keyed by the JSON-RPC request id's own VALUE
@@ -117,10 +116,10 @@
 //     invocation order, not the real arrival order, for the same reason
 //     the original bug existed.
 //   - Fixed by stamping true arrival order at the transport instead
-//     (`stampLedgerRequestArrival`, installed by wrapping `server.connect`
-//     in `createServer`; see the "Ledger request serialization" comment
-//     above `createLedgerRequestQueue` in src/server.ts for the full
-//     mechanism). Every Case 4 sub-case (every entry type, default ids,
+//     (`trackLedgerRequests`, formerly `stampLedgerRequestArrival`,
+//     installed by wrapping `server.connect` in `createServer`; see the
+//     "Ledger request serialization" comment in src/server.ts for the
+//     full mechanism). Every Case 4 sub-case (every entry type, default ids,
 //     string ids, falling numeric ids) now passes against the fixed
 //     build.
 //   - The first arrival-stamp build read and deleted each stamp inside
