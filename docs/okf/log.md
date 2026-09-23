@@ -2,6 +2,32 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-23T05:50:39Z, release-guard checks, structural redesign (task
+  d51ae64b, decision D-013): `check-shipped-unreleased-pointer.js`
+  (scans every shipped text file except `package.json`, `LICENSE*`/`LICENCE*`,
+  and a fixed binary-extension list, replacing the per-kind allowlist; adds a
+  coverage invariant that fails loudly on an empty/malformed/missing-required-entry
+  pack result instead of passing vacuously; `LINK_REF_RE` tightened to
+  require a URL) and `check-changelog-duplicate-headings.js` (dated-heading
+  regex now tolerates an en/em dash separator; a version-shaped heading that
+  still fails to parse now fails the check visibly instead of being silently
+  unscanned; allowlist made injectable). `.github/workflows/ci.yml`'s
+  "Shipped [Unreleased] pointer check" step comment and its unit-test step
+  comment reworded for the widened scope; `CONTRIBUTING.md`'s "Cutting a
+  release" step 5 reworded the same way. Both ci.yml edits land strictly
+  after the "grounding-mcp packed-tarball --version check" step's anchored
+  citation range in `grounding-stack-overview.md`, so that citation is
+  unaffected: verified the anchor text `"npm run check:grounding-mcp-pack"`
+  still resolves inside the cited range after the edit. Every other claim in
+  `grounding-stack-overview.md` re-checked against `README.md`,
+  `CHANGELOG.md`, `package.json`, `packages/grounding-mcp/package.json`,
+  `packages/grounding-mcp/src/assessment-index.ts`,
+  `packages/grounding-mcp/src/assessment-server.ts`,
+  `.github/workflows/ci.yml`, and `scripts/check-grounding-mcp-pack.js` and
+  found unchanged. `merge-approval-gate-mechanics.md`'s `CONTRIBUTING.md`
+  reference remains a prose pointer to the "Cutting a release" section, not
+  line-anchored, unaffected by the reworded step-5 sentence. Both docs
+  re-stamped.
 - 2026-09-23T05:22:43Z, release-guard checks (task d51ae64b): adding three
   new `ci.yml` steps (`check:changelog-duplicate-headings`,
   `check:grounding-mcp-pack-shape`, and `check:shipped-unreleased-pointer`,
