@@ -2364,6 +2364,7 @@ describe('ledger_summary: sinceIso validation (dde2ba58)', () => {
     ['Date.toString() output', new Date('2026-05-01T08:00:00Z').toString()],
     ['local datetime without a zone', '2026-05-01T08:00:00'],
     ['out-of-range month', '2026-13-01'],
+    ['year that normalizes outside four digits', '0000-01-01T00:00:00+01:00'],
     ['out-of-range hour', '2026-05-01T25:00:00Z'],
   ])('rejects sinceIso = %s (%s)', async (_label, sinceIso) => {
     const raw = await client.callTool({
@@ -2409,8 +2410,8 @@ describe('ledger_summary: sinceIso validation (dde2ba58)', () => {
     expect(await factsWithSince(futureCutoff)).toBe(0);
   });
 
-  // D-005 (round 2 fix for review r1): the regex widened to admit shapes
-  // that worked at base (fractional seconds of any length, HH:MM without
+  // Accepted shapes: the pattern admits shapes that worked before validation
+  // was added (fractional seconds of any length, HH:MM without
   // seconds, lowercase "z", a space separator) and every accepted datetime
   // is normalized to a UTC "Z" instant via `new Date(v).toISOString()`
   // before it reaches evidence-ledger's SQL, so an offset SQLite's own
@@ -2448,8 +2449,9 @@ describe('ledger_summary: sinceIso validation (dde2ba58)', () => {
     // HH:MM with no seconds, and separately a lowercase 'z'.
     expect(await factsWithSince(`${earlierBase.slice(0, 'YYYY-MM-DDTHH:MM'.length)}Z`)).toBe(1);
     expect(await factsWithSince(`${earlierBase}z`)).toBe(1);
-    // Space separator instead of 'T'.
+    // Space separator, and lowercase 't', instead of 'T'.
     expect(await factsWithSince(`${earlierBase.replace('T', ' ')}Z`)).toBe(1);
+    expect(await factsWithSince(`${earlierBase.replace('T', 't')}Z`)).toBe(1);
 
     // -05:00: same instant expressed with a negative offset (facts === 1,
     // cutoff equal to the fact's own instant), and one hour later still in
@@ -2461,8 +2463,8 @@ describe('ledger_summary: sinceIso validation (dde2ba58)', () => {
     const minus5LaterCutoff = `${minus5Later.toISOString().replace(/\.\d{3}Z$/, '')}-05:00`;
     expect(await factsWithSince(minus5LaterCutoff)).toBe(0);
 
-    // +15:00: an offset hour SQLite's own datetime() cannot represent (see
-    // review r1's reproduction, where this silently returned 0). Same
+    // +15:00: an offset hour SQLite's own datetime() cannot represent (before
+    // normalization this silently returned 0). Same
     // instant as the fact's own created_at, expressed with a +15:00 offset;
     // now normalized before the query, so it must match.
     const plus15Equal = new Date(createdAtInstant.getTime() + 15 * 60 * 60 * 1000);

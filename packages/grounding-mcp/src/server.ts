@@ -173,7 +173,7 @@ const hypothesisIdSchema = z
 // from "nothing established yet". A local datetime with no zone is a
 // different failure: SQLite parses it without error, but it silently shifts
 // the window whenever the caller's wall-clock zone is not UTC (see the
-// CHANGELOG entry for task dde2ba58 for the reproduction). Reject both
+// CHANGELOG entry for task dde2ba58 for details). Reject both
 // classes at the schema boundary, before either reaches SQL, and normalize
 // every accepted datetime to a UTC `Z` instant via `new Date(v).toISOString()`
 // before it reaches the query, so SQLite always compares against a value it
@@ -187,7 +187,7 @@ const SINCE_ISO_PATTERN =
 const SINCE_ISO_DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function isValidSinceIso(value: string): boolean {
-  return SINCE_ISO_PATTERN.test(value) && !Number.isNaN(Date.parse(value));
+  return SINCE_ISO_PATTERN.test(value) && !Number.isNaN(Date.parse(value)) && /^\d{4}-/.test(new Date(value).toISOString());
 }
 
 // Precondition: `value` already passed `isValidSinceIso`. A date-only value
@@ -200,7 +200,7 @@ function normalizeSinceIso(value: string): string {
 }
 
 const SINCE_ISO_VALIDATION_MESSAGE =
-  'sinceIso must be an ISO-8601 date (e.g. "2026-05-01") or a datetime with an explicit Z or numeric offset (e.g. "2026-05-01T08:00:00Z" or "2026-05-01T10:00:00+02:00"); relative shorthand ("1h", "24h", "yesterday"), epoch seconds/milliseconds, Date.toString() output, an empty string, and a local datetime without a zone are rejected because a zone-less datetime would silently shift the filter window rather than erroring';
+  'sinceIso must be an ISO-8601 date (e.g. "2026-05-01") or a datetime with separator T, t or space and an explicit Z or numeric offset (e.g. "2026-05-01T08:00:00Z" or "2026-05-01T10:00:00+02:00"); an empty string, relative shorthand ("1h", "24h", "yesterday"), epoch seconds/milliseconds, Date.toString() output and out-of-range values are rejected because SQLite cannot parse them (every row would be silently excluded), and a local datetime without a zone is rejected because it would silently shift the filter window';
 
 const hypothesisTextSchema = z
   .string()
@@ -622,7 +622,7 @@ export function createServer(
         .refine(isValidSinceIso, { message: SINCE_ISO_VALIDATION_MESSAGE })
         .optional()
         .describe(
-          'Optional ISO-8601 cutoff: a date ("2026-05-01") or a datetime with an explicit Z or numeric offset (e.g. "2026-05-01T08:00:00Z" or "2026-05-01T10:00:00+02:00"). Rows with `created_at` earlier than this are excluded server-side. Rejected (not silently ignored) if it is empty, a relative shorthand ("1h", "24h", "yesterday"), an epoch number, Date.toString() output, or a local datetime without a zone.',
+          'Optional ISO-8601 cutoff: a date ("2026-05-01") or a datetime with separator T, t or space, optional seconds and fraction, and an explicit Z or numeric offset (e.g. "2026-05-01T08:00:00Z" or "2026-05-01T10:00:00+02:00"); datetimes are normalized to UTC before filtering. Rows with `created_at` earlier than this are excluded server-side. Rejected (not silently ignored) if it is empty, a relative shorthand ("1h", "24h", "yesterday"), an epoch number, Date.toString() output, out of range, or a local datetime without a zone.',
         ),
       contentPrefix: z
         .string()

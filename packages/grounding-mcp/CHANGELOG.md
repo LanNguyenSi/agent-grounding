@@ -15,7 +15,7 @@
   silently shifts the window whenever the caller's wall-clock zone is
   not UTC. `sinceIso` is now validated at the tool's zod schema boundary
   to be an ISO-8601 date (`"2026-05-01"`) or a datetime carrying an
-  explicit `Z`/`z` or numeric offset, with a `T` or space separator,
+  explicit `Z`/`z` or numeric offset, with a `T`, `t` or space separator,
   optional seconds and any number of fraction digits (e.g.
   `"2026-05-01T08:00:00Z"`, `"2026-05-01T10:00:00+02:00"`,
   `"2026-05-01T08:00:00.123456+00:00"`, `"2026-05-01T08:00z"`,
