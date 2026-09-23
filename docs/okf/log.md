@@ -2,6 +2,25 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-23T05:02:00Z, ledger_summary session-key equality pin (task
+  0a8645d2): `evidence-ledger-session-key-shapes.md` lists
+  `packages/grounding-mcp/src/server.ts` and `packages/grounding-wrapper/src/lib.ts`
+  as sources; a batch-61 task touched `packages/grounding-mcp/src/server.ts`
+  (added one sentence to the `ledger_add` and `ledger_summary` tool
+  descriptions, on lines adjacent to but not overlapping the anchored
+  citations) while investigating a reported `ledger_add` +
+  `ledger_summary` fact-loss bug. Re-verified both anchored citations to
+  that file (`server.ts:288#"Session id — used as the ledger session
+  namespace."` and `server.ts:295-300#"session: sessionId,"` /
+  `server.ts:295-301#"session: sessionId,"`): both lines and quoted text
+  unchanged, no re-point needed. The investigation itself found no
+  defect: `ledger_add` followed by `ledger_summary` under the exact same
+  sessionId string reflects the entry for every entry type and every
+  sessionId shape tried, both in-process and across separate server
+  process invocations; the only zero-count case is a different sessionId
+  string, which matches this doc's documented strict-equality
+  invariant. Timestamp re-stamped; no other claim in this doc changed.
+
 - 2026-09-22T06:28:10Z, package LICENSE-in-tarballs check (task ae26b625):
   adding `packages/*/LICENSE` and a `files` entry in twelve package
   manifests plus a `check:package-license` step in `ci.yml` shifted two
