@@ -2,6 +2,27 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-23T05:22:43Z, release-guard checks (task d51ae64b): adding three
+  new `ci.yml` steps (`check:changelog-duplicate-headings`,
+  `check:grounding-mcp-pack-shape`, and `check:shipped-unreleased-pointer`,
+  each with its own unit-test step) shifted the "grounding-mcp
+  packed-tarball --version check" step's anchored citation in
+  `grounding-stack-overview.md` out of range: it moved from `449-465` to
+  `463-479`. Re-pointed; every other citation in that doc
+  (`README.md:13-49`, `CHANGELOG.md:9-30`,
+  `packages/grounding-mcp/package.json:24-26`,
+  `packages/grounding-mcp/src/assessment-index.ts:11-13`,
+  `packages/grounding-mcp/src/assessment-server.ts:32-35`,
+  `package.json:30`) re-checked and found unchanged, as were the
+  version-lock claims (`0.6.0` for the four locked packages,
+  `grounding-mcp` `0.12.0`, `runtime-reality-checker` `0.3.2`,
+  `review-claim-gate` `0.1.6`). `merge-approval-gate-mechanics.md` lists
+  `CONTRIBUTING.md` as a source, and this task also extended
+  `CONTRIBUTING.md`'s "Cutting a release" checklist (naming the same three
+  checks in steps 4 and 5); that doc's own `CONTRIBUTING.md` reference is
+  a prose pointer to the section, not line-anchored, and the section's
+  path-level-disqualifier content it actually describes is unaffected by
+  the added sentences. Both docs re-stamped.
 - 2026-09-22T06:28:10Z, package LICENSE-in-tarballs check (task ae26b625):
   adding `packages/*/LICENSE` and a `files` entry in twelve package
   manifests plus a `check:package-license` step in `ci.yml` shifted two
