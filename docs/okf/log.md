@@ -2,6 +2,19 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-24, task ed96b766: re-stamped `grounding-stack-overview.md` after
+  the `@lannguyensi/grounding-mcp` `0.13.0` release
+  (`packages/grounding-mcp/package.json`) made it sources-fresh STALE. Every
+  claim citing that file, and every other cited source and anchor in the
+  doc, was re-verified against the files at HEAD: the two version mentions
+  (`0.12.0` -> `0.13.0`) were the only stale content, the four version-locked
+  packages are still all `0.6.0`, and every other citation (README.md,
+  CHANGELOG.md, .github/workflows/ci.yml, package.json,
+  packages/grounding-mcp/src/assessment-index.ts,
+  packages/grounding-mcp/src/assessment-server.ts) still resolves to its
+  quoted anchor text at the cited line range, so no citation needed
+  re-pointing.
+
 - 2026-09-23, task dde2ba58: `isValidSinceIso` also rejects a datetime whose
   UTC normalization falls outside a four-digit year, and the `sinceIso`
   validation message and description were reworded; no `server.ts` line
