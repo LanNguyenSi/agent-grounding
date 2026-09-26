@@ -3,7 +3,7 @@ type: invariant
 title: Solution-acceptance verdict contract — why the marker lives outside the ledger
 description: A "done" verdict is derived from a real preflight+OW run, HEAD-pinned, and written to an XDG state marker outside the agent-writable evidence-ledger because ledger rows are forgeable via ledger_add.
 tags: [solution-acceptance, verdicts, anti-hacking, trust-boundary]
-timestamp: 2026-09-23T10:51:07Z
+timestamp: 2026-09-26T05:00:00Z
 sources:
   - packages/grounding-mcp/src/solution-verdict.ts
   - packages/grounding-mcp/src/solution-attempt-log.ts
@@ -16,6 +16,7 @@ sources:
   - packages/grounding-mcp/tests/interop/harness-verifier.vendored.ts
   - packages/grounding-mcp/tests/interop/verdict-signing-interop.test.ts
   - packages/grounding-mcp/README.md
+  - packages/grounding-mcp/docs/solution-acceptance-gate.md
 ---
 
 # Solution-acceptance verdict contract
@@ -272,8 +273,9 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
   sanitized id under the same `verdictDir()`), which is audit material, never the
   thing `solution_gate` reads. The per-id lock they consult for liveness bounds
   duplicate preflight RUNS, not marker validity: the gate already fails closed on every
-  outcome a duplicate run can produce. The package README is authoritative for the
-  poll-versus-retry rules and the state list.
+  outcome a duplicate run can produce. The package's [solution-acceptance gate
+  reference](../../packages/grounding-mcp/docs/solution-acceptance-gate.md) is
+  authoritative for the poll-versus-retry rules and the state list.
 
 `evaluateSolution` returns an `error` for an invalid `id`, an unresolvable git HEAD, a
 missing `preflight` binary (ENOENT), malformed JSON/core, or a process outcome outside
@@ -561,7 +563,7 @@ suite's vendored-verifier header), measured via the interop suite, not assumed.
 The `run-base` marker this module verifies is **not emitted by this repo**. It is
 written into `00-goal.md` by the orchestrator-workflow kit (agent-dx); this repo
 ships no `00-goal.md` template and only *reads and verifies* the marker
-(`grounding-mcp/README.md`). Runs that predate the kit change carry no marker and
+(`packages/grounding-mcp/docs/solution-acceptance-gate.md`). Runs that predate the kit change carry no marker and
 fall back to the day-granular date heuristic. Treat marker emission as a
 cross-repo contract owned by agent-dx, and the verification semantics above as
 owned here.

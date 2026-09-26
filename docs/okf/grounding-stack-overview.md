@@ -104,5 +104,5 @@ That server registers the seven assessment lifecycle operations
 It uses the producer-owned assessment store, with no generic runtime, ledger,
 or solution-verdict tools. It is part of the same package and release lane,
 with separate startup configuration and deployment qualification. The package
-[README](../../packages/grounding-mcp/README.md#restricted-assessment-mcp)
+[receipt codec reference](../../packages/grounding-mcp/docs/grounding-receipt-codec.md#restricted-assessment-mcp)
 documents setup, byte transport, and consumer/activation boundaries.

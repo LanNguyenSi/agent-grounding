@@ -68,7 +68,7 @@ The stable lock has no time-based takeover. Unclean exit recovery requires
 operator-confirmed quiescence of all writers before removing the lock. File
 fsync, atomic rename, and directory fsync define the commit boundary; an error
 after rename requires retry/read reconciliation. Corrupt state and exhausted
-capacity fail explicitly. The [package documentation](../../packages/grounding-mcp/README.md#authoritative-assessment-store)
+capacity fail explicitly. The [package documentation](../../packages/grounding-mcp/docs/grounding-receipt-codec.md#authoritative-assessment-store)
 specifies configuration, limits, retry behavior, and recovery. Filesystem and
 OS isolation qualification, production key lifecycle, and consumer enforcement
 remain separate responsibilities. The restricted transport is described below.

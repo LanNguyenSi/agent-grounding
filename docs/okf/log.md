@@ -2,6 +2,41 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-26, package README refresh (12 packages under `packages/`):
+  `okf-kit@0.16.0 docs-for` against every touched README returned four
+  bundle docs. `solution-acceptance-verdict-contract.md` lists
+  `packages/grounding-mcp/README.md` under `sources`: that README moved
+  its "Solution-acceptance gate" body (verdict marker signing, progress
+  notifications, attempt lifecycle, the orchestrator-workflow
+  process-completeness arm) to the new
+  `packages/grounding-mcp/docs/solution-acceptance-gate.md`, and its
+  "Grounding receipt codec" / "Authoritative assessment store" /
+  "Restricted assessment MCP" sections to the new
+  `packages/grounding-mcp/docs/grounding-receipt-codec.md`, keeping short
+  summaries plus links in the README. This doc had no line-pinned
+  citation into `README.md` (only two prose mentions), so both were
+  re-pointed at `docs/solution-acceptance-gate.md` and the new doc was
+  added to `sources`; re-stamped. `claim-gate-vs-review-claim-gate.md`,
+  `evidence-ledger-session-key-shapes.md`, and
+  `merge-approval-gate-mechanics.md` all list
+  `packages/review-claim-gate/README.md` under `sources`; that README's
+  cited lines (28-34, 36, 59-63, 69-80, 109, 132, 137, 165, 180-185) were
+  left untouched (only a Development/License section was appended after
+  line 207) specifically to avoid breaking those citations, so every
+  quoted anchor in all three docs was re-verified against HEAD and still
+  resolves; re-stamped, no re-pointing needed. Two further docs
+  (`grounding-receipt-contract.md`, heading-anchor link
+  `#authoritative-assessment-store`; `grounding-stack-overview.md`,
+  heading-anchor link `#restricted-assessment-mcp`) are not in this
+  README's `sources` list (so `docs-for` did not return them) but each
+  held a plain markdown link into `grounding-mcp/README.md` that would
+  have 404'd after the move; both links were repointed at
+  `packages/grounding-mcp/docs/grounding-receipt-codec.md` with the same
+  anchors, and `hypothesis-tracker-persistence-split.md`'s line citation
+  into the README's round-trip example was re-pointed from line 224 to
+  its new line 116 (quoted text unchanged). No other bundle doc's
+  `sources` lists a touched package README.
+
 - 2026-09-26, README refresh: the root README was restructured (the
   package feature list replaced with a single package table, and the
   architecture diagram, "why this exists", "where this fits", and the
