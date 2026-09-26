@@ -4,7 +4,7 @@ Phase -1 produced this document. It anchors the implementation work in Phases 0 
 
 Three-layer split: harness-agnostic Core, per-harness Adapters, the harnesses themselves. Core is pure. Adapters do I/O. Harnesses are external.
 
-> Note: The harness-specific names below (Claude Code's `UserPromptSubmit`, opencode's `tool.execute.before`, etc.) are the implementation-side translation of an earlier design discussion's neutral "prompt hook" / "pre-tool hook" concepts. That discussion's own notes did not name specific harness APIs; this mapping was made during the conversation that produced this package plan.
+> Note: The harness-specific names below (Claude Code's `UserPromptSubmit`, opencode's `tool.execute.before`, etc.) are the implementation-side translation of the neutral "prompt hook" / "pre-tool hook" concepts from two earlier, unpublished design documents. Those documents do not name specific harness APIs; this mapping was made during the conversation that produced this package plan.
 
 ## Layered view
 
