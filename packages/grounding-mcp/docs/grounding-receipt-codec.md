@@ -1,6 +1,6 @@
 # Grounding receipt codec
 
-The wire format grounding-mcp uses to encode and decode grounding receipts.
+The grounding-receipt/v1 codec, the authoritative assessment store, and the restricted assessment MCP.
 
 The package also contains an unregistered `grounding-receipt/v1` library
 primitive and a versioned conformance corpus. It serializes a strict,

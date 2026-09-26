@@ -1,6 +1,6 @@
 # opencode integration notes
 
-How the opencode adapter's persist-report plugin works, and how to test its `transport_error` failure path.
+How to exercise the opencode persist-report plugin's `transport_error` failure path.
 
 ## Testing the opencode `transport_error` path
 

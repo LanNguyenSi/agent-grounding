@@ -1,6 +1,6 @@
 # Public API for enforcement
 
-The public API grounding-wrapper exposes for enforcing gate checks around a downstream tool call.
+The contract grounding-wrapper's plan output owes a downstream enforcer, with a worked harness Policy example.
 
 A typical pipeline that wants to *enforce* what this package recommends consumes the planner output and writes to a separate signal store (e.g. the evidence-ledger) that a Policy then reads.
 
