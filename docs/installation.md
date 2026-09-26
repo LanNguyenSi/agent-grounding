@@ -32,7 +32,7 @@ The `git clone` workflow in the root README is for hacking on the monorepo itsel
 
 ## What a run looks like
 
-Running the evidence-ledger quick start (see the root README) produces (punctuation normalized from the CLI's own em dash for this doc):
+Running the evidence-ledger usage example in the root README produces (punctuation normalized from the CLI's own em dash for this doc):
 
 ```
 ✓ Fact recorded:

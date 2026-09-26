@@ -29,6 +29,8 @@ Stop agents from acting on stale assumptions, making unsupported claims, or sile
 
 ## Quick start
 
+Requires Node.js 20 or later and npm.
+
 ```bash
 git clone https://github.com/LanNguyenSi/agent-grounding && cd agent-grounding
 npm install && npm run build
@@ -40,6 +42,7 @@ Every package is also published under the `@lannguyensi/` scope and installable 
 
 ```bash
 LEDGER="node packages/evidence-ledger/dist/cli.js"
+$LEDGER clear --session readme-demo  # no-op on first run
 
 $LEDGER fact "process is not running" \
   --source "ps aux | grep clawd-monitor" \
