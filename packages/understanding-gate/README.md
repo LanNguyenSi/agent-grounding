@@ -1,43 +1,29 @@
 # understanding-gate
 
-Pre-execution gate for AI agent harnesses. Before an agent edits files, runs destructive commands, or opens PRs, this tool asks it to emit a structured Understanding Report so a human can confirm, correct, or "grill me" before execution begins.
+Pre-execution gate for AI agent harnesses.
+
+## Overview
+
+Before an agent edits files, runs destructive commands, or opens PRs, this tool asks it to emit a structured Understanding Report so a human can confirm, correct, or "grill me" before execution begins.
 
 > **Status:** Phase 2 (enforcement) shipped. Phases -1, 0, 0.5, 1, 2 are live: prompt-hook gate, structured report parsing + persistence, and tool-blocking until the report is approved. Phase 3 (agent-tasks lifecycle integration) is next. See [ROADMAP.md](./ROADMAP.md).
-
-## What it does
 
 The gate sits in front of your agent harness as **two layers**, intentionally separated so each does one job well:
 
 **Layer 1, the cooperative gate (Phase 0).** A `UserPromptSubmit` hook injects an instruction into every task-like prompt asking the agent to first produce a report covering: current understanding, intended outcome, derived todos, acceptance criteria, assumptions, open questions, out-of-scope, risks, verification plan. A cooperative agent reads this and pauses for human confirmation. This is where most of the value comes from in practice: the agent slows down on its own and surfaces its interpretation before doing anything irreversible.
 
-**Layer 2, the enforced backstop (Phase 2).** A `PreToolUse` hook blocks destructive tools (`Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Bash` on Claude Code; `write`, `edit`, `bash` on opencode) until the latest persisted Understanding Report has `approvalStatus: "approved"`. Read-only tools (`Read`, `Grep`, `Glob`, `LS`, …) stay open at all times. Every block, approve, revoke, and force-bypass lands in `.understanding-gate/audit.log`. This is what fires when an agent ignores Layer 1, whether because of an aggressive prompt ("don't ask, just do"), a prompt-injection attack, or a less-cooperative model.
+**Layer 2, the enforced backstop (Phase 2).** A `PreToolUse` hook blocks destructive tools (`Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Bash` on Claude Code; `write`, `edit`, `bash` on opencode) until the latest persisted Understanding Report has `approvalStatus: "approved"`. Read-only tools (`Read`, `Grep`, `Glob`, `LS`, ...) stay open at all times. Every block, approve, revoke, and force-bypass lands in `.understanding-gate/audit.log`. This is what fires when an agent ignores Layer 1, whether because of an aggressive prompt ("don't ask, just do"), a prompt-injection attack, or a less-cooperative model.
 
-Two modes for the cooperative layer:
+## Key features
 
-| Mode | When | Shape |
-|---|---|---|
-| `fast_confirm` (default) | low-risk, small tasks | 5-line summary, "please confirm" |
-| `grill_me` | ambiguous, risky, broad | 9-section report, "please grill me" |
-
-Escalation to `grill_me`: set `UNDERSTANDING_GATE_MODE=grill_me`, or include `grill me` / `/grill` in the prompt. Only `grill_me` (and the equivalent `full` template) produces a parseable report that gets persisted to disk; `fast_confirm` stays in-conversation.
-
-### When does the block actually fire?
-
-Cooperative agent + cooperative prompt: rarely. The agent reads the Layer-1 template, emits its report, and waits for confirmation, so write tools never get attempted in the first place. The Layer-2 hook still runs on every tool call, but stays silent (read-only allowed; no audit entry).
-
-Cooperative agent + aggressive prompt ("do it now, no waiting"): often. The agent may try to edit before the report cycle closes; Layer 2 then denies with a clear deny-reason and writes a `block` event to the audit log. The agent typically reads the deny-reason and falls back to producing the report.
-
-Non-cooperative or prompt-injected agent: this is the case Layer 2 exists for. Every destructive tool call is denied as long as no approved report exists and no pause sentinel is active. The audit log is the trail you'll go back to in an incident review.
-
-Two routes through Layer 2 without an approved report: force-bypass with `UNDERSTANDING_GATE_FORCE=1` + a `UNDERSTANDING_GATE_FORCE_REASON` of at least 10 characters, or an active pause sentinel (see "Pause sentinel" below). Both are audit-logged: force-bypass as a `force_bypass` entry, a pause overriding what would otherwise have been a block or force-bypass as a `paused_allow` entry. Any force attempt with a missing/short reason is also audit-logged, as a `block`.
-
-## Why this exists
-
-Agentic systems often fail at the transition from partially-understood task to real-world action. The agent infers too much too early, executes on wrong assumptions, and the result is off-target. A pre-execution gate makes the interpretation visible and reviewable before the first impactful action.
+- Two modes for the cooperative layer: `fast_confirm` (default, 5-line summary) and `grill_me` (9-section report, persisted to disk)
+- Enforced backstop that blocks write/execute tools until a report is approved, with an audited force-bypass and an optional pause sentinel
+- One-shot installers for Claude Code and opencode hooks
+- Every block, approve, revoke, and force-bypass decision is JSONL-audited
 
 This is the front-of-pipeline counterpart to `claim-gate` (no claims without evidence) and `review-claim-gate` (no merge without checklist). Same family, earlier checkpoint.
 
-## Quickstart
+## Install / quick start
 
 ### Claude Code
 
@@ -45,13 +31,7 @@ This is the front-of-pipeline counterpart to `claim-gate` (no claims without evi
 npx @lannguyensi/understanding-gate init --target claude-code
 ```
 
-Writes three hook entries into `.claude/settings.json` (project scope) or `~/.claude/settings.json` (`--scope user`):
-
-- `UserPromptSubmit`, the Layer-1 prompt-template hook (Phase 0).
-- `Stop`, which parses the agent's final message and persists the report (Phase 1).
-- `PreToolUse`, the Layer-2 enforcement hook that blocks write tools until the latest report is approved (Phase 2).
-
-All three are installed in one shot; you do not need to wire them up by hand. The `UserPromptSubmit` hook only fires on task-like prompts (keyword classifier), so non-task questions are unaffected. To remove the entries again, run `understanding-gate uninstall --target claude-code` (respects the same `--scope`).
+Writes three hook entries into `.claude/settings.json` (project scope) or `~/.claude/settings.json` (`--scope user`): `UserPromptSubmit` (Layer-1 prompt template, Phase 0), `Stop` (parses the agent's final message and persists the report, Phase 1), and `PreToolUse` (Layer-2 enforcement, Phase 2). All three are installed in one shot. The `UserPromptSubmit` hook only fires on task-like prompts (keyword classifier), so non-task questions are unaffected. To remove the entries again, run `understanding-gate uninstall --target claude-code` (respects the same `--scope`).
 
 ### opencode (v0.5)
 
@@ -59,29 +39,13 @@ All three are installed in one shot; you do not need to wire them up by hand. Th
 npx @lannguyensi/understanding-gate init --target opencode
 ```
 
-opencode has no per-prompt hook before model inference, so v0.5 installs three files:
-
-- `.opencode/rules/understanding-gate.md`, the static fast-confirm rule the agent always sees.
-- `.opencode/command/grill.md`, the explicit `/grill` command for the deeper challenge.
-- `.opencode/plugins/understanding-gate-persist-report.ts`, a `message.updated` plugin shim that parses the agent's report and writes it to `.understanding-gate/reports/`. Without this shim Phases 1 and 2 degrade silently (no persisted report means nothing to approve, so the `PreToolUse`/`tool.execute.before` block has no `approved` marker to look at).
-
-The agent always sees the fast-confirm rule; the user invokes `/grill` for the deeper challenge. To remove the three files again, run `understanding-gate uninstall --target opencode`.
-
-#### Testing the opencode `transport_error` path
-
-`transport_error` breadcrumbs (`.understanding-gate/parse-errors/`, `kind: "transport_error"`) are written when the plugin's `message.updated` handler fails to fetch the just-finished assistant message back from opencode's own client, not a network-configurable endpoint. The deterministic unit-level hooks for this already exist: `tests/opencode-plugin-integration.test.ts` (search for "transport_error") injects a rejecting / error-returning `client.session.message` and asserts the breadcrumb, in two cases. To force the same failure through a real, live opencode session instead of a unit test, wrap the `ctx` the `init`-generated plugin shim receives so `client.session.message` always throws; see the [opencode npm dogfood doc](https://github.com/LanNguyenSi/agent-grounding/blob/master/docs/testing/opencode-npm-dogfood.md), Scenario 2/Attempt C, for the exact recipe.
+opencode has no per-prompt hook before model inference, so v0.5 installs three files: `.opencode/rules/understanding-gate.md` (the static fast-confirm rule the agent always sees), `.opencode/command/grill.md` (the explicit `/grill` command), and `.opencode/plugins/understanding-gate-persist-report.ts` (a `message.updated` plugin shim that parses the agent's report and writes it to `.understanding-gate/reports/`; without this shim Phases 1 and 2 degrade silently). To remove the three files again, run `understanding-gate uninstall --target opencode`. See [opencode integration notes](docs/opencode-integration.md) for testing the plugin's failure path.
 
 ### Non-interactive sessions (`claude -p`)
 
-Phase 2 works under `claude -p` as long as the harness ships
-`last_assistant_message` in the Stop-hook payload (recent Claude Code
-releases do; the 0.2.1 release added preference for this field to
-dodge a transcript-flush race). For older harnesses the gate falls back to
-reading the transcript JSONL, which can race against the harness's
-flush timing. If your `.understanding-gate/reports/` stays empty
-under a `-p` run while the agent's output clearly contains a
-`# Understanding Report`, that race is the most likely cause; upgrade
-the harness or run interactively as a workaround.
+Phase 2 works under `claude -p` as long as the harness ships `last_assistant_message` in the Stop-hook payload (recent Claude Code releases do). For older harnesses the gate falls back to reading the transcript JSONL, which can race against the harness's flush timing. If `.understanding-gate/reports/` stays empty under a `-p` run while the agent's output clearly contains a `# Understanding Report`, that race is the most likely cause; upgrade the harness or run interactively as a workaround.
+
+## Usage
 
 ### Approve / revoke the gate
 
@@ -108,7 +72,7 @@ The CLI flips the persisted report's `approvalStatus` field, which is the source
 # Kill switch (gate is off entirely):
 UNDERSTANDING_GATE_DISABLE=1 claude
 
-# Bypass enforcement once with a recorded reason (≥ 10 chars; logged):
+# Bypass enforcement once with a recorded reason (>= 10 chars; logged):
 UNDERSTANDING_GATE_FORCE=1 \
 UNDERSTANDING_GATE_FORCE_REASON="incident-recovery for ticket 1234" \
 claude
@@ -116,54 +80,14 @@ claude
 
 `FORCE` without a `FORCE_REASON` (or with one shorter than 10 chars) still blocks; the bypass is deliberately friction-bearing.
 
-### Pause sentinel (optional, read-only)
+Escalation to `grill_me`: set `UNDERSTANDING_GATE_MODE=grill_me`, or include `grill me` / `/grill` in the prompt. Only `grill_me` (and the equivalent `full` template) produces a parseable report that gets persisted to disk; `fast_confirm` stays in-conversation.
 
-Set `UNDERSTANDING_GATE_PAUSE_FILE` to the path of a pause-sentinel JSON
-file (`{pausedAt, expiresAt, reason, pausedBy}`) to make `UserPromptSubmit`,
-`PreToolUse`, and opencode's `tool.execute.before` enforcement hook stay
-silent (or, for `PreToolUse` / `tool.execute.before`, allow instead of
-deny/block) while that sentinel is active: the `UserPromptSubmit` hook
-skips the Understanding Report injection, and the `PreToolUse` and
-`tool.execute.before` hooks skip their deny/block (all three use the
-exact same reader, so a given sentinel file reads the same way on every
-path). The `Stop` hook only persists reports and is unaffected by a
-pause. A `PreToolUse` or `tool.execute.before` pause that overrides what
-would otherwise have been a block or force-bypass is audit-logged as a
-`paused_allow` entry; a pause that changes nothing (a read-only tool, an
-already-approved report) stays silent, same as without a pause. This
-package only ever reads the sentinel file; it never creates, writes, or
-deletes it, and never manages expiry. Unset (the default) means no pause
-check at all on any hook or plugin.
+## Documentation
 
-`UNDERSTANDING_GATE_PAUSE_FILE` must be set on **both** hook lines by any
-consumer that wires `understanding-gate-claude-pre-tool-use` directly
-(rather than through env plumbing that already exports it for the whole
-process) -- each hook only sees the env var on its own command line, so a
-sentinel wired to one hook and not the other silences only that one.
-
-The sentinel is unsigned and operator-owned: this package trusts whatever
-is at the configured path and applies no signature or origin check, so
-treat write access to the sentinel file itself as equivalent to write
-access to pause enforcement everywhere it is checked.
-
-#### opencode
-
-The opencode `tool.execute.before` enforcement hook honors the same
-pause sentinel, through the exact same `isPaused` reader as the Claude
-Code hooks (no second parser), behaving like the Claude Code
-`PreToolUse` path: an active sentinel overriding what would otherwise
-have blocked a tool call is audit-logged as `paused_allow` (`adapter:
-"opencode"`, but with no accompanying stderr diagnostic the way
-`PreToolUse` emits one -- the audit entry is the only observable
-signal); a pause that changes nothing (a read-only tool, an
-already-approved report) stays silent; a force-bypass under an active
-pause keeps its own `force_bypass` audit kind rather than being folded
-into `paused_allow`. This only covers opencode when
-`UNDERSTANDING_GATE_PAUSE_FILE` is exported into the environment that
-launches opencode (opencode has no per-hook-line settings.json
-equivalent to wire it through, so it is read off the launching
-process's env instead); unset there means no pause check on opencode at
-all, even if the same variable is set for Claude Code's hooks.
+- [When does the block actually fire?](docs/gate-behavior.md): what Layer 2 does for a cooperative agent, an aggressive prompt, and a non-cooperative or prompt-injected agent
+- [Pause sentinel](docs/pause-sentinel.md): an optional, read-only mechanism to silence both hook layers on both Claude Code and opencode
+- [opencode integration notes](docs/opencode-integration.md): testing the `transport_error` breadcrumb path
+- [ROADMAP.md](./ROADMAP.md): phase status and what's next
 
 ## Not implemented yet
 
@@ -174,17 +98,14 @@ Phases -1, 0, 0.5, 1, 2 are live. The following items are deliberately out of sc
 - Auto-escalate to `grill_me` based on risk heuristics. Manual escalation only for now.
 - Time-based expiry of approvals. An approved report stays approved until you revoke.
 
-## Roadmap
+## Development
 
-See [ROADMAP.md](./ROADMAP.md). Phases -1 / 0 / 0.5 / 1 / 2 shipped: prompt-hook, structured report, persistence, hypothesis bridge, tool-blocking enforcement. Phase 3 is `agent-tasks` lifecycle integration.
+```bash
+npm install
+npm run build
+npm test
+```
 
-## Design docs
+## License
 
-The concept and architecture live in the project log:
-
-- `lava-ice-logs/2026-04-29/pre-execution-understanding-gate.md`
-- `lava-ice-logs/2026-04-29/agent-harness-pre-execution-understanding-gate-architecture.md`
-
-## Status
-
-Experimental, pre-release. APIs may change between phases.
+MIT, experimental / pre-release. APIs may change between phases.
