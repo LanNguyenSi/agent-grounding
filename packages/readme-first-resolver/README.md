@@ -1,20 +1,20 @@
 # readme-first-resolver
 
-Forces agents to read primary documentation before any analysis, and builds a system mental model from it. Part of the agent-grounding stack.
+Forces agents to read primary documentation before any analysis, and builds a system mental model from it.
 
-## Problem
+## Overview
 
-Agents often start with logs, processes, or guesses instead of:
-- README
-- Architecture docs
-- Setup instructions
-- `.env.example`
+Part of the agent-grounding stack. Agents often start with logs, processes, or guesses instead of the README, architecture docs, setup instructions, or `.env.example`. readme-first-resolver reads the primary documentation set for a repo and reports what was found, what is missing, and whether analysis is safe to start.
+
+**No root-cause claim is allowed without `ready_for_analysis: true`.**
 
 ## Install
 
 ```bash
 npm install -g @lannguyensi/readme-first-resolver
 ```
+
+Requires Node.js >= 20.
 
 ## Usage
 
@@ -29,7 +29,7 @@ readme-first resolve -p /projects/clawd-monitor -f README.md docs/architecture.m
 readme-first resolve -p /projects/clawd-monitor --json
 ```
 
-## Example Output
+### Example output
 
 ```
 📖 README First Resolver
@@ -49,7 +49,7 @@ readme-first resolve -p /projects/clawd-monitor --json
     - No architecture docs found
 ```
 
-## API
+### API
 
 ```typescript
 import { resolve } from '@lannguyensi/readme-first-resolver';
@@ -58,16 +58,24 @@ const result = resolve({
   repo_path: '/projects/clawd-monitor',
   must_read: ['README.md', '.env.example'],
 });
-// → { system_summary, unknowns, sources_read, sources_missing, ready_for_analysis }
+// -> { system_summary, unknowns, sources_read, sources_missing, ready_for_analysis }
 ```
-
-## Rule
-
-**No root-cause claim is allowed without `ready_for_analysis: true`.**
 
 ## Part of the grounding stack
 
 1. [domain-router](../domain-router)
-2. **readme-first-resolver** ← you are here
+2. **readme-first-resolver** (you are here)
 3. [debug-playbook-engine](../debug-playbook-engine)
 4. [evidence-ledger](../evidence-ledger)
+
+## Development
+
+```bash
+npm install
+npm run build
+npm test
+```
+
+## License
+
+MIT
