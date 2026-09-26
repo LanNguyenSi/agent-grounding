@@ -13,13 +13,20 @@
   re-stamped: the `sources` entry changed from `README.md` to
   `docs/architecture.md`, the pointer text and link now target
   `../architecture.md`, and the citation now reads
-  `docs/architecture.md:5-42#"helpers --> el"` (the diagram moved but its
-  text is unchanged). Every other citation in the doc (`CHANGELOG.md:9-30`,
-  `.github/workflows/ci.yml:463-479`, `package.json:30`, the three
-  `packages/grounding-mcp/*` files, and the version numbers `0.13.0` /
-  `0.6.0` / `0.3.2` / `0.1.6`) was checked against HEAD and still resolves;
-  none needed re-pointing. No other bundle doc's `sources` list the root
-  README.
+  `docs/architecture.md:5-41#"helpers --> el"` (the diagram moved but its
+  text is unchanged; the range was corrected in review round 2 from
+  5-42, which put the anchor one line short of the closing mermaid
+  fence, so the anchor sat on the second-to-last line as
+  `okf-kit check --require-anchors` requires). Every other citation in
+  the doc (`CHANGELOG.md:9-30`, `.github/workflows/ci.yml:463-479`,
+  `package.json:30`, the three `packages/grounding-mcp/*` files, and the
+  version numbers `0.13.0` / `0.6.0` / `0.3.2` / `0.1.6`) was checked
+  against HEAD and still resolves; none needed re-pointing. No other
+  bundle doc's `sources` list the root README. A historical entry below
+  (the one investigating de995f0's staleness false positive) named a
+  now-stale README.md line range and pointed at this entry by saying
+  "below"; since this entry sits above it in the newest-first log, that
+  entry was reworded to say "above" instead.
 
 - 2026-09-24, task ed96b766: re-stamped `grounding-stack-overview.md` after
   the `@lannguyensi/grounding-mcp` `0.13.0` release
@@ -2184,7 +2191,7 @@
   (the README diagram in lines 13 through 49, the `package.json` workspaces/build:deps
   facts it describes narratively) is unchanged by de995f0's edits (those
   landed in README.md (a two-line addition, at what was then lines
-  200-202; that range predates the 2026-09-26 README restructure below
+  200-202; that range predates the 2026-09-26 README restructure above
   and no longer applies) and in package.json's `scripts` block,
   neither touching what the doc cites), so this was a stale-timestamp
   false positive, not stale content; the doc's frontmatter `timestamp:`
