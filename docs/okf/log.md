@@ -2,6 +2,25 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-26, follow-up to the package README refresh: three further
+  bundle docs were edited (a link fix each, not flagged by `docs-for`
+  since none lists a touched README under `sources`) and needed their
+  own re-stamp once `okf-kit check` showed why: `grounding-receipt-contract.md`'s
+  `#authoritative-assessment-store` link and `grounding-stack-overview.md`'s
+  `#restricted-assessment-mcp` link were re-pointed at
+  `packages/grounding-mcp/docs/grounding-receipt-codec.md`;
+  `hypothesis-tracker-persistence-split.md`'s line citation was
+  re-pointed to the README's new line 116. Leaving their `timestamp`
+  frontmatter unchanged after that edit made `sources-fresh` report
+  three of `grounding-receipt-contract.md`'s sources
+  (`assessment-index.ts`, `assessment-server.ts`, `grounding-issuer.ts`,
+  all pre-existing commits from 2026-09-07, roughly 40 minutes after
+  that doc's old timestamp) and one of `grounding-stack-overview.md`'s
+  sources (`docs/architecture.md`, whose own link fix in this same
+  batch bumped its commit date past that doc's old timestamp) as newly
+  STALE; all three docs are re-stamped to the time of this edit.
+
+
 - 2026-09-26, package README refresh (12 packages under `packages/`):
   `okf-kit@0.16.0 docs-for` against every touched README returned four
   bundle docs. `solution-acceptance-verdict-contract.md` lists

@@ -3,7 +3,7 @@ type: invariant
 title: Grounding receipt and assessment contract
 description: Portable documentary assessments, authoritative producer snapshots, immutable attempts, and the boundary between signature verification and issuer or task authority.
 tags: [grounding-mcp, receipt, contract, trust-boundary]
-timestamp: 2026-09-07T09:06:37Z
+timestamp: 2026-09-26T06:03:00Z
 sources:
   - packages/grounding-mcp/src/grounding-receipt.ts
   - packages/grounding-mcp/contracts/grounding-receipt-v1/README.md
