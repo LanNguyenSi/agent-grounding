@@ -2,6 +2,20 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-26, public package docs cleanup (removing org-internal identifiers
+  and machine paths from understanding-gate and grounding-mcp docs):
+  `packages/grounding-mcp/docs/solution-acceptance-gate.md` had its
+  review-round example keys (including the packed multi-round and
+  key-mismatch examples) replaced with fictional ones that still match the
+  documented marker grammar; no line-pinned citation from this bundle
+  targets those lines. `solution-acceptance-verdict-contract.md` lists that
+  file under `sources` with a whole-file prose reference only, so its
+  claims about the file's content were re-verified against the new text
+  and still hold; re-stamped. `packages/understanding-gate/docs/architecture.md`
+  (private repository name rewritten generically) and the removed
+  `packages/understanding-gate/docs/dogfood-phase-0.md` are not cited by
+  any bundle doc, so no other re-stamp was needed.
+
 - 2026-09-26, package README refresh (packages under `packages/`):
   `okf-kit@0.16.0 docs-for` was run against every path this task touched,
   not only the changed READMEs, since a bundle doc can list a source file
