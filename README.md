@@ -57,6 +57,8 @@ $LEDGER hypothesis "OOM killer terminated the process" \
 $LEDGER show --session readme-demo
 ```
 
+The `readme-demo` session keeps demo entries out of your real sessions.
+
 `evidence-ledger` is the headline package: every fact carries a source, every hypothesis lives separately from facts, rejected hypotheses stay visible, unknowns are acknowledged. The CLI is one of three surfaces; there's also a typed library API (`@lannguyensi/evidence-ledger`) and a JSON-RPC server (`grounding-mcp`) that any MCP client can call. Entries land in `~/.evidence-ledger/ledger.db`; see [docs/installation.md](docs/installation.md) for sample output.
 
 ## Documentation
