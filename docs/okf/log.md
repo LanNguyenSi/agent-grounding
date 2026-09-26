@@ -5,8 +5,9 @@
 - 2026-09-26, public package docs cleanup (removing org-internal identifiers
   and machine paths from understanding-gate and grounding-mcp docs):
   `packages/grounding-mcp/docs/solution-acceptance-gate.md` had its
-  review-round example keys replaced with fictional ones that still match
-  the documented marker grammar; no line-pinned citation from this bundle
+  review-round example keys (including the packed multi-round and
+  key-mismatch examples) replaced with fictional ones that still match the
+  documented marker grammar; no line-pinned citation from this bundle
   targets those lines. `solution-acceptance-verdict-contract.md` lists that
   file under `sources` with a whole-file prose reference only, so its
   claims about the file's content were re-verified against the new text
