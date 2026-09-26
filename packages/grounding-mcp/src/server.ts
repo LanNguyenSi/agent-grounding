@@ -731,7 +731,7 @@ export function createServer(
 
   server.tool(
     'solution_evaluate',
-    'Run preflight against a repo and record a HEAD-pinned solution-acceptance verdict for <id>, derived from preflight\'s real results (lint/typecheck/test/audit/secret), not from caller input, and with the check set taken from the repo\'s committed .preflight.json. Use this to earn "done" instead of claiming it. Requires the `preflight` binary (agent-preflight) on PATH or via SOLUTION_PREFLIGHT_BIN; fails closed (writes no verdict) when it is unavailable. If the request carries a progressToken, sends periodic notifications/progress pings ("still running", no percentage) while preflight runs; a client that also enables timeout reset on progress can then avoid its own client-side timeout on a slow preflight run — see README.',
+    'Run preflight against a repo and record a HEAD-pinned solution-acceptance verdict for <id>, derived from preflight\'s real results (lint/typecheck/test/audit/secret), not from caller input, and with the check set taken from the repo\'s committed .preflight.json. Use this to earn "done" instead of claiming it. Requires the `preflight` binary (agent-preflight) on PATH or via SOLUTION_PREFLIGHT_BIN; fails closed (writes no verdict) when it is unavailable. If the request carries a progressToken, sends periodic notifications/progress pings ("still running", no percentage) while preflight runs; a client that also enables timeout reset on progress can then avoid its own client-side timeout on a slow preflight run — see the grounding-mcp package\'s docs/solution-acceptance-gate.md.',
     {
       id: z
         .string()
