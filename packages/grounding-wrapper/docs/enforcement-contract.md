@@ -1,6 +1,6 @@
 # Public API for enforcement
 
-Moved out of the package README during the README restructure; the substance is unchanged.
+The public API grounding-wrapper exposes for enforcing gate checks around a downstream tool call.
 
 A typical pipeline that wants to *enforce* what this package recommends consumes the planner output and writes to a separate signal store (e.g. the evidence-ledger) that a Policy then reads.
 

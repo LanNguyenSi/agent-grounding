@@ -1,14 +1,14 @@
 # verify_memory_reference
 
-Moved out of the package README during the README restructure; the substance is unchanged.
+Checks whether a stored memory's claim about the repo (a file path, a
+symbol, or a CLI flag) still holds against the current working tree.
 
 A memory that names a concrete file, symbol, or CLI flag is making a
 claim about the current repo state. Files get renamed, symbols get
 deleted, never-merged PRs leave phantom references, and a memory
-written months ago has no way to catch up on its own. `CLAUDE.md`
-mandates that an agent verify such references *before* recommending
-anything based on a memory (see the "Before recommending from memory"
-section).
+written months ago has no way to catch up on its own. An agent's own
+instructions may require verifying such references before recommending
+anything based on a memory.
 
 `verifyMemoryReference` does that check in-process:
 
@@ -18,8 +18,8 @@ import { verifyMemoryReference } from "@lannguyensi/runtime-reality-checker";
 // 1. Does the file still exist?
 const pathResult = verifyMemoryReference({
   kind: "path",
-  value: "packages/memory-router/src/hooks/user-prompt-submit.ts",
-  repoRoot: "/home/you/git/pandora/agent-memory",
+  value: "src/hooks/user-prompt-submit.ts", // example: a path from another repo's memory
+  repoRoot: "/path/to/repo",
 });
 // -> { exists: true, lastModified: "2026-04-21T...", summary: "path '...' exists ..." }
 

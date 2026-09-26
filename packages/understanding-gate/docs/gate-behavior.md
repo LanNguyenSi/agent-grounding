@@ -1,6 +1,6 @@
 # When does the block actually fire?
 
-Moved out of the package README during the README restructure; the substance is unchanged.
+What the Layer-2 enforcement hook does for a cooperative agent, an aggressive prompt, and a non-cooperative or prompt-injected agent.
 
 **Cooperative agent + cooperative prompt:** rarely. The agent reads the Layer-1 template, emits its report, and waits for confirmation, so write tools never get attempted in the first place. The Layer-2 hook still runs on every tool call, but stays silent (read-only allowed; no audit entry).
 

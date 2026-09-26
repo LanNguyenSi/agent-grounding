@@ -1,6 +1,6 @@
 # Retention and export reference
 
-Moved out of the package README during the README restructure; the substance is unchanged.
+How ledger entries expire, are pruned, and can be exported for archival or audit.
 
 ## Export format
 

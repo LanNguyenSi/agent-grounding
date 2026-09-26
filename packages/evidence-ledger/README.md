@@ -94,7 +94,7 @@ const db = getDb(); // persists to ~/.evidence-ledger/ledger.db
 // argument, or with a path naming the same database (relative and
 // absolute forms are equivalent; ':memory:' is compared literally),
 // returns that handle. Calling it with a DIFFERENT explicit path while
-// a handle is open throws ("ledger already open at X, requested Y --
+// a handle is open throws ("ledger already open at X, requested Y —
 // call resetDb() first to switch to a different path.") instead of
 // silently returning the wrong database; call resetDb() to re-point.
 // Identity is fixed at open time (a relative path is resolved against

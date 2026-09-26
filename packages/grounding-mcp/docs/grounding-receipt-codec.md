@@ -1,6 +1,6 @@
 # Grounding receipt codec
 
-Moved out of the package README during the README restructure; the substance is unchanged.
+The wire format grounding-mcp uses to encode and decode grounding receipts.
 
 The package also contains an unregistered `grounding-receipt/v1` library
 primitive and a versioned conformance corpus. It serializes a strict,

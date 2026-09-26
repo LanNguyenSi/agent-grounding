@@ -1,6 +1,6 @@
 # Solution-acceptance gate
 
-Moved out of the package README during the README restructure; the substance is unchanged (em dashes normalized to hyphens for the repo's no-em-dash convention).
+How `solution_evaluate` and `solution_gate` turn a real preflight run into a HEAD-pinned, tamper-resistant verdict marker.
 
 Verifier-gated "done": completion is **earned from a real preflight run, not claimed**. `solution_evaluate` runs `preflight run <repoPath> --json` (the agent-preflight check battery: lint / typecheck / test / audit / secret) and records a verdict marker for an id, pinned to the git HEAD it was produced at. `solution_gate` then allows only when a ready verdict exists at the *current* HEAD.
 

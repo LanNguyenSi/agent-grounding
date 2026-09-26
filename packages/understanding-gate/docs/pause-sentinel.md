@@ -1,6 +1,6 @@
 # Pause sentinel (optional, read-only)
 
-Moved out of the package README during the README restructure; the substance is unchanged.
+An optional, read-only mechanism to silence both hook layers on Claude Code and opencode without an approved report.
 
 Set `UNDERSTANDING_GATE_PAUSE_FILE` to the path of a pause-sentinel JSON
 file (`{pausedAt, expiresAt, reason, pausedBy}`) to make `UserPromptSubmit`,
@@ -22,7 +22,7 @@ check at all on any hook or plugin.
 `UNDERSTANDING_GATE_PAUSE_FILE` must be set on **both** hook lines by any
 consumer that wires `understanding-gate-claude-pre-tool-use` directly
 (rather than through env plumbing that already exports it for the whole
-process), each hook only sees the env var on its own command line, so a
+process) -- each hook only sees the env var on its own command line, so a
 sentinel wired to one hook and not the other silences only that one.
 
 The sentinel is unsigned and operator-owned: this package trusts whatever
@@ -38,7 +38,7 @@ Code hooks (no second parser), behaving like the Claude Code
 `PreToolUse` path: an active sentinel overriding what would otherwise
 have blocked a tool call is audit-logged as `paused_allow` (`adapter:
 "opencode"`, but with no accompanying stderr diagnostic the way
-`PreToolUse` emits one, the audit entry is the only observable
+`PreToolUse` emits one -- the audit entry is the only observable
 signal); a pause that changes nothing (a read-only tool, an
 already-approved report) stays silent; a force-bypass under an active
 pause keeps its own `force_bypass` audit kind rather than being folded

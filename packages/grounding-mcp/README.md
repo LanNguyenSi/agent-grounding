@@ -50,6 +50,8 @@ Verifier-gated "done": completion is earned from a real preflight run, not claim
 
 ## Install + register
 
+Requires Node.js >= 20. `solution_evaluate` also requires the `preflight` binary (from `agent-preflight`) on PATH, or `SOLUTION_PREFLIGHT_BIN` pointing at it; it fails closed (writes no verdict) when neither is available.
+
 ```bash
 npm install -g @lannguyensi/grounding-mcp
 ```

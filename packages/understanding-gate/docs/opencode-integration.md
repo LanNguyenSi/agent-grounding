@@ -1,6 +1,6 @@
 # opencode integration notes
 
-Moved out of the package README during the README restructure; the substance is unchanged.
+How the opencode adapter's persist-report plugin works, and how to test its `transport_error` failure path.
 
 ## Testing the opencode `transport_error` path
 

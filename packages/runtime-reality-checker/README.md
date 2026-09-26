@@ -32,7 +32,7 @@ const result = runRealityCheck(
 );
 
 console.log(result.ready_for_diagnosis); // false - frontend is down
-console.log(result.summary);             // "1 critical drift(s) found - fix before diagnosing"
+console.log(result.summary);             // "1 critical drift(s) found — fix before diagnosing"
 
 if (hasCriticalDrift(result)) {
   console.log("Critical drift detected:", result.drift);

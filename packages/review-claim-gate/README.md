@@ -208,6 +208,8 @@ need a second parser.
 
 ## Development
 
+Requires Node.js >= 20.
+
 ```bash
 npm install
 npm run build

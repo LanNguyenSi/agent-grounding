@@ -14,6 +14,8 @@ The gate sits in front of your agent harness as **two layers**, intentionally se
 
 **Layer 2, the enforced backstop (Phase 2).** A `PreToolUse` hook blocks destructive tools (`Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Bash` on Claude Code; `write`, `edit`, `bash` on opencode) until the latest persisted Understanding Report has `approvalStatus: "approved"`. Read-only tools (`Read`, `Grep`, `Glob`, `LS`, ...) stay open at all times. Every block, approve, revoke, and force-bypass lands in `.understanding-gate/audit.log`. This is what fires when an agent ignores Layer 1, whether because of an aggressive prompt ("don't ask, just do"), a prompt-injection attack, or a less-cooperative model.
 
+Agentic systems often fail at the transition from partially-understood task to real-world action: the agent infers too much too early, executes on wrong assumptions, and the result is off-target. A pre-execution gate makes the interpretation visible and reviewable before the first impactful action.
+
 ## Key features
 
 - Two modes for the cooperative layer: `fast_confirm` (default, 5-line summary) and `grill_me` (9-section report, persisted to disk)
@@ -80,6 +82,13 @@ claude
 
 `FORCE` without a `FORCE_REASON` (or with one shorter than 10 chars) still blocks; the bypass is deliberately friction-bearing.
 
+Two modes for the cooperative layer:
+
+| Mode | When | Shape |
+|---|---|---|
+| `fast_confirm` (default) | low-risk, small tasks | 5-line summary, "please confirm" |
+| `grill_me` | ambiguous, risky, broad | 9-section report, "please grill me" |
+
 Escalation to `grill_me`: set `UNDERSTANDING_GATE_MODE=grill_me`, or include `grill me` / `/grill` in the prompt. Only `grill_me` (and the equivalent `full` template) produces a parseable report that gets persisted to disk; `fast_confirm` stays in-conversation.
 
 ## Documentation
@@ -87,6 +96,8 @@ Escalation to `grill_me`: set `UNDERSTANDING_GATE_MODE=grill_me`, or include `gr
 - [When does the block actually fire?](docs/gate-behavior.md): what Layer 2 does for a cooperative agent, an aggressive prompt, and a non-cooperative or prompt-injected agent
 - [Pause sentinel](docs/pause-sentinel.md): an optional, read-only mechanism to silence both hook layers on both Claude Code and opencode
 - [opencode integration notes](docs/opencode-integration.md): testing the `transport_error` breadcrumb path
+- [Architecture](docs/architecture.md): package layout, hook wiring, and the report lifecycle
+- [Phase 0 dogfood](docs/dogfood-phase-0.md): manual end-to-end verification transcript for the Phase 0 deliverables
 - [ROADMAP.md](./ROADMAP.md): phase status and what's next
 
 ## Not implemented yet

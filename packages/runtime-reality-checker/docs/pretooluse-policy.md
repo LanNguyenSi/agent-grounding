@@ -1,6 +1,6 @@
 # PreToolUse policy (PoC)
 
-Moved out of the package README during the README restructure; the substance is unchanged.
+A proof-of-concept `PreToolUse` policy hook that blocks a runtime-mutating tool call when critical drift is present.
 
 Beyond the library API, this package ships a PreToolUse policy hook that runs `runRealityCheck` before a defined class of runtime-mutating tool calls (compose / systemctl / kill / deploy script) and blocks when critical drift is present. The agent-grounding repo owns the policy and the spec at [`docs/policy-runtime-reality.md`](../../../docs/policy-runtime-reality.md), the harness side registers the hook (separate follow-up task).
 

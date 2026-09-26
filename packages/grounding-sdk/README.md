@@ -10,6 +10,8 @@ library call the MCP server would make.
 
 ## Install
 
+Requires Node.js >= 20.
+
 ```bash
 npm install @lannguyensi/grounding-sdk
 ```
