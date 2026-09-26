@@ -1,20 +1,18 @@
 # debug-playbook-engine
 
-Guides agents through domain-specific, ordered diagnostic sequences. Prevents hypothesis-hopping. Part of the agent-grounding stack.
+Guides agents through domain-specific, ordered diagnostic sequences.
 
-## Problem
+## Overview
 
-Agents jump between hypotheses without systematic verification:
-- Is the process running?
-- Is configuration correct?
-- Is the dependency reachable?
-- Does the architecture assumption even hold?
+Part of the agent-grounding stack. Agents jump between hypotheses without systematic verification: is the process running, is configuration correct, is the dependency reachable, does the architecture assumption even hold. debug-playbook-engine prevents hypothesis-hopping by walking a domain playbook's mandatory steps in order and gating claims behind the steps they require.
 
 ## Install
 
 ```bash
 npm install -g @lannguyensi/debug-playbook-engine
 ```
+
+Requires Node.js >= 20.
 
 ## Usage
 
@@ -29,7 +27,7 @@ debug-playbook next -d clawd-monitor -p "agent not visible"
 debug-playbook run -d clawd-monitor -p "agent not visible" --json
 ```
 
-## Example Output
+### Example output
 
 ```
 🔍 Debug Playbook: clawd-monitor.basic-connectivity
@@ -53,7 +51,7 @@ debug-playbook run -d clawd-monitor -p "agent not visible" --json
   ▶ Start with: Verify architecture summary from README
 ```
 
-## Built-in Playbooks
+### Built-in playbooks
 
 | Domain | Playbook |
 |--------|----------|
@@ -61,7 +59,7 @@ debug-playbook run -d clawd-monitor -p "agent not visible" --json
 | `github` | API connectivity: token → rate limit → repo access → permissions → verify-fix |
 | `generic` | Read docs → check process → verify config → deps → logs → verify-fix |
 
-## API
+### API
 
 ```typescript
 import { getPlaybook, initRun, recordStep, canMakeClaim } from '@lannguyensi/debug-playbook-engine';
@@ -101,5 +99,17 @@ IDs, or compose facts from multiple playbook runs before the call.
 
 1. [domain-router](../domain-router)
 2. [readme-first-resolver](../readme-first-resolver)
-3. **debug-playbook-engine** ← you are here
+3. **debug-playbook-engine** (you are here)
 4. [evidence-ledger](../evidence-ledger)
+
+## Development
+
+```bash
+npm install
+npm run build
+npm test
+```
+
+## License
+
+MIT
