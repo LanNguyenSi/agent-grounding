@@ -1,14 +1,12 @@
 # grounding-wrapper
 
-Plans grounding sessions for agents. Given a `{keyword, problem}` input, it computes:
+Plans grounding sessions for agents.
 
-1. A recommended **ordered sequence** of tools the agent should invoke
-2. A set of **active guardrails** (rules the agent must not violate)
-3. A **phase machine** the agent can advance through as it works
+## Overview
 
-It is the planning surface for the agent-grounding stack, not the enforcement surface.
+Given a `{keyword, problem}` input, grounding-wrapper computes a recommended **ordered sequence** of tools the agent should invoke, a set of **active guardrails** (rules the agent must not violate), and a **phase machine** the agent can advance through as it works. It is the planning surface for the agent-grounding stack, not the enforcement surface.
 
-## What it does NOT do
+### What it does NOT do
 
 This package is intentionally a **pure planner**. It does **not**:
 
@@ -17,15 +15,19 @@ This package is intentionally a **pure planner**. It does **not**:
 - persist sessions to disk
 - guarantee that the agent follows the plan
 
-**Enforcement is a separate concern.** A downstream Policy (typically wired via [harness](https://github.com/LanNguyenSi/harness)) is what blocks an agent's tool call when the sequence is violated or a guardrail is breached. The wrapper recommends; harness enforces. See the [Public API for enforcement](#public-api-for-enforcement) section below for the consumption contract.
+**Enforcement is a separate concern.** A downstream Policy (typically wired via [harness](https://github.com/LanNguyenSi/harness)) is what blocks an agent's tool call when the sequence is violated or a guardrail is breached. The wrapper recommends; harness enforces. See [Public API for enforcement](docs/enforcement-contract.md) for the consumption contract.
+
+## Install
+
+```bash
+npm install -g @lannguyensi/grounding-wrapper
+```
+
+Requires Node.js >= 20.
 
 ## Usage
 
 ```bash
-npm install
-npm run build
-npm link
-
 # Start a grounding session
 grounding-wrapper start -k clawd-monitor -p "agent not visible in monitor"
 
@@ -39,7 +41,7 @@ grounding-wrapper check-guardrail -k clawd-monitor -g no-root-cause-before-readm
 grounding-wrapper start -k clawd-monitor -p "agent not visible" --json
 ```
 
-## Example Output
+### Example output
 
 ```
 🧭 Grounding Wrapper: Session Started
@@ -70,7 +72,7 @@ grounding-wrapper start -k clawd-monitor -p "agent not visible" --json
 
 The output is advisory. Whether the agent actually invokes `domain-router` next is up to the agent (or a Policy that enforces it).
 
-## Guardrails
+### Guardrails
 
 | ID | Rule |
 |----|------|
@@ -80,7 +82,7 @@ The output is advisory. Whether the agent actually invokes `domain-router` next 
 | `no-network-claim-before-process-check` | No network claim before process state is verified |
 | `no-step-skipping` | Mandatory steps cannot be skipped |
 
-## Library API
+### Library API
 
 ```typescript
 import { initSession, getCurrentTools, advancePhase, isGuardrailActive } from '@lannguyensi/grounding-wrapper';
@@ -103,51 +105,7 @@ import { handleScopeChange } from '@lannguyensi/grounding-wrapper';
 const updated = handleScopeChange(session, 'new-keyword');
 ```
 
-### Exported types
-
-`GroundingInput`, `GroundingSession`, `GroundingStep`, `GroundingPhase`, `GuardrailId`. All types and functions are in `src/lib.ts`.
-
-## Public API for enforcement
-
-A typical pipeline that wants to *enforce* what this package recommends consumes the planner output and writes to a separate signal store (e.g. the evidence-ledger) that a Policy then reads.
-
-A worked example for a harness Policy author:
-
-```ts
-// 1. The agent (or a session-start hook) computes the plan once
-const session = initSession({ keyword, problem });
-
-// 2. The hook emits one ledger entry per planned step, prefixed for grep-ability:
-//    grounding:plan:<sessionId>:<stepIndex>:<tool>
-//      payload: { phase, mandatory, description }
-//
-//    plus one entry per active guardrail:
-//    grounding:guardrail:<sessionId>:<guardrailId>
-//
-// 3. A harness PreToolUse Policy then matches tool calls against the plan:
-//
-//    name: enforce-grounding-sequence
-//    triggers: [ tool == 'Bash' && command =~ /^gh pr merge/ ]
-//    requiresEval:
-//      tag: grounding:guardrail:${session}:no-step-skipping
-//      mustBe: cleared        # i.e. an explicit clearance entry exists
-//    onMiss:
-//      decision: block
-//      reason:  "grounding: step <n> not completed, see grounding:plan:* entries"
-```
-
-The contract this package owes a downstream enforcer:
-
-- **Stable shape**: `GroundingSession` is the source of truth; fields are not renamed without a major-version bump.
-- **Pure**: `initSession` is deterministic in `keyword`+`problem` modulo `id` and `started_at`. No filesystem or network.
-- **Input invariants**: `initSession` rejects keywords that would produce a degenerate session id or `resolved_scope`. A valid keyword is a non-empty string of at most `KEYWORD_MAX_LENGTH` (64) characters whose slug-normalised form (`toLowerCase()`, `[^a-z0-9]+` collapsed to `-`, leading/trailing `-` trimmed) is non-empty. So empty, whitespace-only, pure-CJK / pure-symbol, and oversize keywords throw a typed `Error`; `validateKeyword` is exported for callers that want to pre-flight the same check.
-- **Idempotent advance**: `advancePhase` past `complete` is a no-op (covered by tests).
-- **Terminal phase status**: when `advancePhase` transitions to `complete`, `phase_status.complete` is set to `'done'` (not left at `'pending'`). Consumers reading `phase_status` over the wire see a shape symmetric with every other transitioned-out phase.
-
-The contract this package does **not** owe:
-
-- Writing to the evidence-ledger. That is the caller's job.
-- Knowing about harness, agent-tasks, or any specific enforcer. The output is plain JSON.
+Exported types: `GroundingInput`, `GroundingSession`, `GroundingStep`, `GroundingPhase`, `GuardrailId`. All types and functions are in `src/lib.ts`.
 
 ## The full grounding stack
 
@@ -160,6 +118,22 @@ The contract this package does **not** owe:
 | 5 | [evidence-ledger](../evidence-ledger) | Fact tracking |
 | 6 | [claim-gate](../claim-gate) | Claim gating |
 | 7 | [hypothesis-tracker](../hypothesis-tracker) | Hypothesis management |
-| **→** | **grounding-wrapper** | **Plans / recommends the entry path; enforcement is external** |
+| -> | **grounding-wrapper** | **Plans / recommends the entry path; enforcement is external** |
 
-`runtime-reality-checker` is inserted at position 4 only for process/service-type keywords (those containing `monitor`, `agent`, `service`, `server`, or `gateway`); for other keywords `buildMandatorySequence` omits it and `evidence-ledger`/`claim-gate` shift up. The order above matches the Example Output for a service keyword.
+`runtime-reality-checker` is inserted at position 4 only for process/service-type keywords (those containing `monitor`, `agent`, `service`, `server`, or `gateway`); for other keywords `buildMandatorySequence` omits it and `evidence-ledger`/`claim-gate` shift up. The order above matches the example output for a service keyword.
+
+## Documentation
+
+- [Public API for enforcement](docs/enforcement-contract.md): the consumption contract a harness Policy author relies on
+
+## Development
+
+```bash
+npm install
+npm run build
+npm test
+```
+
+## License
+
+MIT

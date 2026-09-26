@@ -205,3 +205,17 @@ integration, and policy evolve without churning the stable diagnostic
 policies. The `MergeApprovalResult` shape intentionally mirrors
 `ClaimResult`, so consumers that already parse claim-gate output do not
 need a second parser.
+
+## Development
+
+Requires Node.js >= 20.
+
+```bash
+npm install
+npm run build
+npm test
+```
+
+## License
+
+MIT

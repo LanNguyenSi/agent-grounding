@@ -1,6 +1,18 @@
 # hypothesis-tracker
 
-Track competing hypotheses during debugging. Prevents agents from silently replacing one wrong guess with another by requiring explicit evidence and verification steps.
+Track competing hypotheses during debugging.
+
+## Overview
+
+hypothesis-tracker prevents agents from silently replacing one wrong guess with another by requiring explicit evidence and verification steps. Each hypothesis carries its own required checks, evidence entries, and status (unverified, supported, or rejected), so a debugging session keeps a visible record of what was considered and why it was ruled in or out.
+
+## Install
+
+```bash
+npm install @lannguyensi/hypothesis-tracker
+```
+
+Requires Node.js >= 20.
 
 ## Usage
 
@@ -67,3 +79,7 @@ npm run build    # TypeScript build
 npm test         # Run tests (vitest)
 npm run lint     # Type check
 ```
+
+## License
+
+MIT

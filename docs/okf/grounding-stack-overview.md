@@ -3,7 +3,7 @@ type: overview
 title: The grounding stack — where to read, and how releases are split
 description: "Pointer doc: docs/architecture.md diagrams the whole stack (moved out of the root README in the README refresh); this entry adds the release topology (four version-locked packages under one root tag, eight independently-versioned ones) that the diagram does not show."
 tags: [overview, monorepo, releases, versioning, pointer]
-timestamp: 2026-09-26T04:44:00Z
+timestamp: 2026-09-26T06:03:00Z
 sources:
   - docs/architecture.md
   - CHANGELOG.md
@@ -104,5 +104,5 @@ That server registers the seven assessment lifecycle operations
 It uses the producer-owned assessment store, with no generic runtime, ledger,
 or solution-verdict tools. It is part of the same package and release lane,
 with separate startup configuration and deployment qualification. The package
-[README](../../packages/grounding-mcp/README.md#restricted-assessment-mcp)
+[receipt codec reference](../../packages/grounding-mcp/docs/grounding-receipt-codec.md#restricted-assessment-mcp)
 documents setup, byte transport, and consumer/activation boundaries.

@@ -46,117 +46,11 @@ A phase that ends up with `'skipped'` status (because no steps mapped to it for 
 
 ## Solution-acceptance gate
 
-Verifier-gated "done": completion is **earned from a real preflight run, not claimed**. `solution_evaluate` runs `preflight run <repoPath> --json` (the agent-preflight check battery: lint / typecheck / test / audit / secret) and records a verdict marker for an id, pinned to the git HEAD it was produced at. `solution_gate` then allows only when a ready verdict exists at the *current* HEAD.
-
-The verdict marker is the contract a consumer (e.g. harness, gating task-finishing tools) reads:
-
-```json
-{ "id": "task-42", "head": "<40-hex sha>", "ready": true, "confidence": 0.9, "blockers": [], "timestamp": "...", "source": "preflight", "alg": "hmac-sha256-v1", "signature": "<64-hex HMAC-SHA256>" }
-```
-
-`solution_evaluate`'s MCP response returns the verdict as it looked *before* signing (the 7-key shape above, minus `alg`/`signature`); the on-disk marker file additionally carries `alg` and `signature`, added by `writeVerdict` (see "Verdict marker signing" below) after the response value was already built.
-
-The MCP response also includes advisory `diagnostics` for that same fresh preflight invocation. `diagnostics.payload` preserves the original parsed JSON, including additive fields, while `availability`, `complete`, `execution` (`exitCode`, `signal`, and an optional error), and `issues` explain whether the documented preflight result shape was present. A complete diagnostic requires `ready`, `confidence`, `checks`, `blockers`, `warnings`, `limitations`, `durationMs`, and `timestamp`, with valid nested check fields. It also records execution anomalies such as an unexpected exit code or signal. `complete` does not mean `ready`, sufficient coverage, independently trusted evidence, or cacheability; acknowledged and skipped checks remain visible in the payload.
-
-Verdict production has a smaller mandatory core: the payload must be an object with a boolean `ready`, a finite `confidence` in `[0,1]`, and a string-array `blockers`; a ready result must have no blockers. The only accepted execution pairings are exit `0` with `ready:true` and exit `1` with `ready:false`, with no signal or execution error. Any other exit, signal, invocation error, malformed JSON, or malformed core returns an error and cannot produce a ready verdict. Advisory-field incompleteness stays in diagnostics and does not create another verdict policy.
-
-Diagnostics are response-only: they are neither part of the verdict nor written into, signed in, or consumed from the marker. `solution_evaluate` starts one preflight process only after its id and HEAD checks pass; it does not rerun preflight to produce diagnostics.
-
-When a caller already has complete diagnostics, it may omit a duplicate run only when the repository, working directory, configuration, required coverage, tool, and environment scope are identical and unchanged, and all installed requirements remain honored. This does not authorize caching or reusing diagnostics as evidence.
-
-Anti-hacking contract:
-
-1. **Derived, not claimed**: `ready` comes from preflight's real run; the caller supplies no result.
-2. **Producer != solver**: `solution_evaluate` runs preflight; evaluation arguments supply neither check results nor configuration overrides. preflight loads the repository's configured policy, including its clean-state checks.
-3. **HEAD-pinned**: a verdict counts only at the HEAD it was produced at; any rework shifts HEAD and invalidates a green verdict.
-4. **No stale green**: each valid-id evaluation removes its prior same-id marker before returning an error or writing its new verdict. This is a sequential guarantee when marker storage is writable; a deletion I/O error is returned explicitly and the old marker may remain. It does not serialize concurrent writers or repair id collisions.
-
-The marker lives outside the agent-writable evidence-ledger on purpose (a ledger row is forgeable via `ledger_add`). Requirements / knobs: the `preflight` binary on `PATH` (override with `SOLUTION_PREFLIGHT_BIN`). For writable marker storage, a failed valid-id evaluation removes its earlier same-id marker before returning an error; if deletion fails, the error says the old marker may remain.
-
-### Verdict marker signing (0.8.0)
-
-Since 0.8.0, `writeVerdict` signs the marker unconditionally (HMAC-SHA256, no unsigned fallback) before writing it: `alg` is the versioned tag `hmac-sha256-v1`, and `signature` is computed over the marker's fields with the key at the path `SOLUTION_VERDICT_SIGNING_KEY` points to (projected by harness at apply time; primary since 0.8.0), else at `<harness-home>/harness.generated/.approval-signing.key` (see Storage above; the key is created on first use if absent, at whichever path is in effect). A signature-checking consumer (e.g. harness) rejects a naive hand-typed JSON file, one with no `alg`/`signature` at all or a wrong signature, as forged.
-
-This closes casual/accidental forgery, and it closes silent tampering: mutating any signed field after signing (intentionally or by a bug) invalidates the signature and is rejected. It does **not** close a shell-capable, same-UID forger: the signing key is read (and, on a fresh machine, first created) under the SAME UID that runs `grounding-mcp` and the same UID a shell-capable agent runs under, so such an agent could still read that key and compute a valid signature itself, exactly the same same-UID threat model the harness consumer's own signing already documents. This is pragmatic defense-in-depth, not a new authorization boundary. Composing additional ground-truth (CI, review, unresolved hypotheses from the session) into the verdict is the next layer.
-
-The verdict pins to the committed HEAD, so edits made after a green `solution_evaluate` do not shift HEAD: re-run it after any change. preflight's own clean-worktree check fails a dirty tree, so a fresh `solution_evaluate` on uncommitted work yields a not-ready verdict.
-
-### Progress notifications while `solution_evaluate` runs
-
-`solution_evaluate` runs one real preflight invocation in-band with the request (awaited, not backgrounded: lint / typecheck / test / audit / secret detection against the target repo), which can easily take longer than the MCP SDK's default 60s request timeout. While that invocation is pending, the tool sends a `notifications/progress` ping roughly every 10s (mirrors agent-preflight's own `preflight_run`/`preflight_batch` convention) — but **only** when your client attaches a `progressToken` to the request; passing an `onprogress` callback (e.g. `client.callTool(..., { onprogress })` in the TypeScript SDK) does that automatically. Each ping's `progress` is a plain monotonically increasing tick count meaning "still running" — never a fabricated percentage, and never a signal about any check's outcome.
-
-Attaching `onprogress` alone only gets you the pings. For the heartbeat to actually help a slow run survive, your client also needs to **reset (or otherwise extend) its own request timeout on progress** — pass `resetTimeoutOnProgress: true` in the same call's request options (TypeScript SDK), or raise the request's own `timeout` outright. Without one of those two, the pings arrive but the client's timeout still fires on schedule regardless.
-
-What this heartbeat does **not** fix, and does not claim to fix:
-
-- A client-side hard total deadline (the SDK's own `maxTotalTimeout`, or an equivalent enforced elsewhere) is not extended by progress at all, by design — it is a ceiling, not a soft timeout.
-- A client that drops the connection, or otherwise never sees the ping, gets no benefit; a disconnect mid-run is not repaired by this feature.
-- Some clients treat their tool timeout as a hard limit that progress does not extend, regardless of `resetTimeoutOnProgress` on the underlying MCP request. This heartbeat cannot repair that: it is scoped to the MCP request/response layer this server controls, not every host's own tool-call timeout policy layered on top of it.
-- None of this changes what "done" means: a slow but eventually-`ready` verdict is exactly as durable, and exactly as re-runnable after HEAD moves, as a fast one. The heartbeat only helps a well-behaved, progress-aware client avoid abandoning the call before that verdict comes back — it does not make a timed-out call's result durable, and it does not retry or resume one on your behalf.
-
-### Attempt lifecycle: when to poll, and when to retry
-
-A `preflight` run can outlive the deadline of the call that started it. Since the attempt lifecycle landed, `solution_evaluate` waits only up to an internal bound and then hands back a handle instead of blocking further:
-
-```json
-{ "status": "running", "attemptId": "<server-generated uuid>", "id": "task-42", "pollAfterMs": 5000 }
-```
-
-The `preflight` process keeps running to completion in the background; only that one request stopped waiting. When the run finishes inside the bound, the response is exactly today's `solution_evaluate` payload plus `status` (`completed` or `failed`) and `attemptId`, which an existing caller can ignore.
-
-**The bound is 45 seconds by default and it is configurable.** The governing deadline is your CLIENT's own per-call wall-clock limit, not a constant this server can know: the MCP SDK's 60s default request timeout is one such limit, but a host may enforce a shorter one that progress notifications do not extend. 45s keeps a deliberate margin under that SDK default while leaving room for a slower client wall; lower it (`createServer({ attemptWaitBoundMs })`) if the client in use cuts calls earlier.
-
-**Polling.** Ask `solution_evaluate_status` or `solution_evaluate_result` with the SAME `id` you evaluated. Pass the `attemptId` you were given, or omit it to resolve the latest attempt for that id, which is the recovery path when your own call timed out before it ever returned a handle. Wait `pollAfterMs` between polls. Both tools are read-only: neither ever starts a `preflight` process.
-
-**Ids too long to use.** All three tools, `solution_evaluate` included, bound `id` at 200 characters: the same bound is enforced on all three tools up front, in each tool's own schema and, belt and braces, again at the registry's own entry point so a library caller that bypasses the MCP schema still gets refused before any filesystem call. 200 is what a verdict id has to fit into, since every id becomes a file name (marker, attempt log, lock anchor, compaction temp file) inside the verdict dir, and the longest of those names runs about 48 characters past the id itself. An id over the bound is a schema rejection on every tool, not a payload. An id that passes the bound but is still unusable, `..` for instance, comes back as `{"status":"unknown","id":"..","error":"..."}` on the two lookups (and as the ordinary `{status:"failed", error}` payload from `solution_evaluate`) rather than as a tool error: `unknown`/`failed` is the honest answer (no attempt could be identified, and none was recorded). An id is never a path: `sanitizeVerdictId` reduces it to one safe segment first, so `../../etc/passwd` is simply an id that nothing ever ran.
-
-**Never re-call `solution_evaluate` as a stall workaround.** A second call for an id whose attempt is still live joins that attempt and returns its `attemptId`; it does not start a second `preflight` run, in this process or in another one. `forceNewAttempt: true` is refused while an attempt is live (`{status:"refused", error}`) rather than honored, because honoring it would put two runs on the same marker. A genuinely new attempt becomes possible only once the previous one is terminal and the id's lock is free again, at which point an ordinary `solution_evaluate` call starts one with a new `attemptId`.
-
-| Status | Meaning | What to do |
-| --- | --- | --- |
-| `running` | An attempt is live and named by `attemptId`. | Keep polling after `pollAfterMs`. |
-| `running-unconfirmed` | The id's lock is held but no attempt row names it yet (a holder that has not written its start record, a reconciliation pass, or a lock left behind by a killed process). | Keep polling. It resolves by itself, either into `running` or once the lock library reclaims the lock as stale. It is neither an error nor a licence to retry. |
-| `completed` / `failed` | Terminal. `failed` covers every error path `solution_evaluate` already had, plus an attempt whose holder lost its lock (`outcomeClass: "compromised"`, no marker written). | Read the result; re-run only after fixing something. |
-| `unknown` | The attempt's fate was never established: its row still read `running` when a liveness check found the id's lock free. Never upgraded to a success afterwards. | Start a fresh attempt. The `unknown` status alone does not license one; the lock does. |
-| `expired` | The attempt finished, and its detail has since been pruned by the retention window. | Start a fresh attempt if you still need a verdict. |
-
-**What the lock does and does not buy.** Mutual exclusion is delegated to `proper-lockfile`, acquired with no retries against a per-id anchor file next to the marker. Acquired means this process runs the attempt; `ELOCKED` means a holder is alive, so the caller joins instead of spawning. The invariant is scoped: at most one live `preflight` process per sanitized id per HOST while each holder's heartbeat keeps its lock fresh. It buys avoided waste and one in-flight handle to join. It does NOT buy gate safety, and it is not needed for it: `solution_gate` fails closed on a missing, unparseable, not-ready, or HEAD-mismatched marker, which is where every duplicate-run outcome lands.
-
-**Retention.** An attempt's records are compacted into a small tombstone once they are older than the retention window (24h by default, and always at least 100x the advertised `pollAfterMs`, so a caller polling at the advertised cadence can never have its target pruned between two polls). A pruned terminal attempt reads `expired`; a pruned `unknown` attempt keeps reading `unknown`, because pruning must never launder an unestablished fate into an established one.
-
-### Orchestrator-workflow (OW) process-completeness arm
-
-Beyond preflight's technical checks, `solution_evaluate` also folds in **OW process-completeness**: it reads the repo's active OW run and requires the handoff to be accepted, the review to recommend accept, and no unresolved high/critical findings. This flows into the **same** verdict fields, `ready` and `blockers` (each OW blocker is prefixed `orchestrator-workflow: `), so the OW arm adds no verdict field of its own. `ready` is true only when **both** preflight is ready **and** there are no OW blockers.
-
-**Active-run resolution is pointer-first.** The worktree root (found by walking up from the repo path for the nearest `.git` entry) may carry a `.ai/run` file — plain text, first non-empty line is the absolute path of the run directory OW is actively working. An optional second pointer line (for example `base=<sha>`) is ignored; the named run directory's own `00-goal.md`/`06-handoff.md`/`05-review-findings.md` files are the source of truth, never the pointer file itself. When present, that pointer **wins outright** over the newest-run scan of `<repoPath>/.ai/runs/`: a run is session-shaped (the worktree the agent is sitting in), while the newest-by-date scan is only a best-effort proxy, and the scan is consulted only when no `.ai/run` file exists at all. A pointer file that exists but does not resolve (unreadable, empty, a relative path, or a target that is missing / not a directory / not a dated run directory) is a **distinct fail-closed blocker** — it never silently falls back to the scan, since a broken pointer left behind is itself a signal something is wrong. A symlinked pointer target is resolved to its real directory before those checks run, and the worktree root itself is found by the presence of any `.git` entry, including a dangling symlink. `.ai/run` is written by the orchestrator-workflow kit at run creation, alongside `.ai/runs/`, and should be gitignored the same way.
-
-The active run must also **claim the current change** (0.6.0): a run whose `00-goal.md` carries a `<!-- solution-acceptance: run-base = <sha> -->` marker (the repo HEAD at run creation) binds precisely — the recorded base must resolve, be an ancestor of the current HEAD, and not lie behind the fork point of the current change (merge-base with the remote default branch). The marker may also be **keyed per repo**, `<!-- solution-acceptance: run-base[<repo-basename>] = <sha> -->`, since a monorepo/fleet run can bind more than one repo. Keyed markers follow a **grammar**, not a single regex: a well-formed keyed marker must be a WHOLE LINE (leading/trailing whitespace only) matching that exact HTML-comment shape. The strict shape is exact — lowercase `solution-acceptance:` and `run-base`, no whitespace before the colon, exactly two dashes in the comment opener — the same exactness the legacy unkeyed matcher already demands. The separate loose net that decides whether a line was an *attempt* at a keyed marker is deliberately more tolerant: case-insensitive (`RUN-BASE[`), whitespace allowed around the colon (`solution-acceptance : run-base[`) and before the bracket (`run-base [alpha]`), one or more dashes in the comment opener (`<!--- `). A line the loose net catches but the strict shape rejects is **malformed** and is collected as its own explicit blocker instead of silently degrading to the legacy date heuristic. A strict match whose key is itself a placeholder (`<repo-basename>`-style, angle brackets around the whole key) is a documentation example, not a marker, and is ignored entirely — not counted as present, not malformed; an example that itself deviates from the strict shape (case, colon spacing, comment opener) is an attempt like any other and blocks as malformed. Both nets stay anchored at the LINE START and require the literal tokens `solution-acceptance`, a colon and `run-base[`; that anchoring and exactness widen the strict shape's own tokens (case, spacing, dash count), not the line position. A THIRD, position-independent check closes the line-position residual: **any line anywhere in the file** (a list bullet (`- <!-- ... -->`), a marker embedded in prose, a bare `run-base[alpha] = <sha>` with no comment wrapper, an attempt preceded by leading text, or a whole-line comment deviating in those tokens, the colon omitted) that names BOTH exact, case-sensitive tokens `solution-acceptance` and `run-base` is also collected as **malformed**, unless it is already accepted as a well-formed keyed or unkeyed marker. The rationale: an attempted-but-unreadable marker is worse than no marker at all, so it must block rather than fall through silently. **Quotation exemption is a heuristic, not a CommonMark parser:** a phrase occurrence that is entirely inside a single-backtick inline code span (the span may cross one or more consecutive non-blank line breaks, but never a blank line, a code span cannot contain a paragraph break) or entirely inside a fenced code block (a fence closes only on a later line whose delimiter is the same character and at least as long as the opener's; an opener with no matching closer fences nothing, fail-closed; a blockquoted fence's `> ` prefix is not recognised as a fence at all) reads as a quotation of the marker syntax, not an attempted marker, and does not trip this check. Only this third, phrase-level net is quoting-aware; this is a deliberate asymmetry: a genuine keyed-attempt at the line start, well-formed or malformed, is read or blocked inside a fence exactly as outside it. A phrase occurrence that survives quoting removal, including a second, unquoted mention on a line that also carries a code span, still blocks. A purely quoted unkeyed marker that is the only occurrence of the marker tokens in the file is still resolved by the legacy substring matcher (`matchMarker`), which is not quote-aware at all; that is an accepted residual. A well-formed legacy unkeyed marker line is explicitly exempt from this check: exemption tracks what the legacy resolver actually reads a value from (a line starting with the HTML comment opener, `solution-acceptance:`, `run-base`, `=`, and a non-whitespace value, whatever follows on the line, an unkeyed marker whose value is followed by a trailing annotation included), not a stricter whole-line-only shape, so an ordinary unkeyed marker that resolves a value is never ALSO reported malformed for it, and is never misread as an attempted-but-broken keyed one merely for naming both tokens. Anchored by a corpus measurement, see CHANGELOG 0.10.0. A malformed line reports one of two distinct reasons: a keyed-shape attempt (`run-base[` at the line start) keeps the keyed-grammar hint; a bare phrase mention (prose, a quoted marker, a bullet-wrapped attempt) gets a different message naming the tokens found, so it does not point an operator at bracket syntax they never attempted. A well-formed marker (keyed or unkeyed) that still carries the `TODO` placeholder stays fail-open, per the orchestrator-workflow kit's own documented contract. With NO UNQUOTED line anywhere naming both marker tokens, the run stays truly **markerless** and falls through to the legacy date heuristic below (fail-open by design, the kit's documented markerless path). Resolution of well-formed keyed markers tries the worktree's own basename first, then — for a linked git worktree — the main repository's basename (resolved via the worktree's `.git` `gitdir:` file), matching each candidate key against the recorded keys case-insensitively, and the first key whose well-formed keyed marker is present decides, without falling through to a later key or to the legacy unkeyed marker. A keyed marker that IS selected but still carries the `TODO` placeholder resolves to absent (the legacy heuristic path below) exactly like an unkeyed `TODO` marker — it does not fall through to a later key or to the unkeyed marker either. Only when no well-formed keyed marker matches any candidate key does the unkeyed marker apply; when keyed markers exist but none matches any candidate key and no unkeyed marker exists either, the reader itself blocks with an explicit reason naming the keys found and the keys tried (each bounded — keys truncated to 64 chars / 10 shown, malformed-line excerpts truncated to 80 chars with up to 5 excerpts shown per reason category — so a goal file with many or very long keys cannot blow up the message), and the binding check below skips its date heuristic for that case — one blocker, never two, and never a silent fall-through to the date heuristic. The same skip applies when malformed marker lines were found and nothing else resolved a value (`malformed` takes priority over the unmatched-keyed case); when a malformed line coexists with a value that WAS selected, that value is still used, but the malformed blocker is reported alongside it, so the run is still incomplete. Documented asymmetry: the legacy unkeyed `run-base` marker is matched as a substring anywhere in the file (not line-anchored) and resolves values exactly as before; only the keyed grammar itself was hardened; a well-formed unkeyed marker line is exempt from the phrase check above. A legacy run without any applicable marker (or with one still carrying `TODO`) is downgraded tolerantly to a day-granular date check: it blocks only when the run dir's date prefix is older than the author date of the first commit of the current change. Either way a stale accepted run can no longer keep the gate green for later, unrelated work; the fail directions and residuals (same-day staleness for legacy runs, no fork-point check without a remote, deliberate false-block when evaluating at an already-pushed default-branch tip — the gate is pre-merge by design) are documented on `owBindingBlockers` in `src/solution-verdict.ts`. The `run-base` marker (keyed and unkeyed) is written by the orchestrator-workflow kit; markerless runs stay on the heuristic path.
-
-**Review-method axis (0.12.0).** The orchestrator-workflow kit (0.32.0) has every reviewer briefing name an obligation set, `review_method: normal | rigorous | adversarial`, and records it per round above the Findings table as `<!-- review-method[<round>] = normal|rigorous|adversarial -->` (`<round>` is a free-form key: a bare round number, or a per-task-and-round key like `T-004-R2` when one review file covers several tasks). The kit template has no dedicated marker yet for the reviewer's OWN returned `method_applied` (it is transferred into free prose by hand today), so this reader defines the counterpart machine grammar it requires: `<!-- method-applied[<round>] = normal|rigorous|adversarial -->`, using the identical round key. A round whose `review-method[<round>]` is declared is checked against a recorded `method_applied` with the same key (case-insensitive): `normal < rigorous < adversarial`, and a WEAKER or ABSENT record is an explicit named blocker; an equal or STRONGER one passes. A review file with no well-formed `review-method[...]` marker at all, and NO marker-shaped mention of either field either (no near-miss wrapper, no wrapper-less line), is unaffected (backward compatible): the comparison, and the requirement to also record `method_applied`, only activate once a round declares a method. The malformed and conflict nets below run unconditionally, before that backward-compatible early return, so a file with a malformed or wrapper-less `review-method[...]`/`method-applied[...]` mention but zero genuine markers still blocks on that mention alone. Parsing is occurrence-scoped, not whole-line-scoped like the `run-base` grammar above: real runs pack several rounds onto one line (`<!-- review-method[T-001-R1] = rigorous --> <!-- review-method[T-001-R2] = rigorous -->`), so each `<!-- ... -->` occurrence is matched independently. A key that is itself the template's own placeholder (`<round>`) is a documentation example and is skipped entirely, matching the `run-base` marker's own placeholder-key treatment; a well-formed-looking occurrence whose value is not exactly one of the three words (including the template's own pipe-joined legend value used with a real key) or a case/spacing near-miss of the wrapper (`Review-Method[`, `<!--- review-method[`) is **malformed** and is reported as its own blocker rather than silently ignored, mirroring the run-base marker's malformed-line discipline; a *wrapper-less* line (`review-method[R1] = adversarial` with no HTML comment at all) is caught the same way, mirroring the `run-base` phrase net's own fail-closed discipline for an unwrapped attempt. Malformed excerpts carry their 1-based line number (`line N: ...`), matching the `run-base` malformed-line reporting above.
-
-The kit template as SHIPPED carries no `method-applied[<round>]` marker at all: only its own prose line immediately below the declaration, `Method: normal | rigorous | adversarial (...)`. A run authored exactly from that template therefore has no explicit `method_applied` record, so the reader also accepts that prose line as a FALLBACK record: the next non-blank line after a `review-method[<round>]` occurrence, and only when that line starts with `Method:` (case as in the template), is read the same way, its value token (the text up to the first whitespace, `(`, `.`, `!`, or `?`) must be exactly one of the three words; the template's own unfilled `normal | rigorous | adversarial` legend is recognized as the placeholder and skipped (never misread as the value `normal`), and a filled-in but non-matching value (`Method: thorough (...)`) is its own malformed-record blocker. `method-applied[<round>]` stays the explicit, preferred channel; when BOTH it and the prose line exist for a round and disagree, that is a named conflict, not a first-wins pick.
-
-Two restrictions keep the prose fallback from clearing a round it does not describe. **Trailing text:** a recognized value token only counts when the text after it is empty, end-of-sentence punctuation only, or a single balanced parenthetical aside followed only by end-of-sentence punctuation (the template's own filled shape, `Method: adversarial (briefing and return match).`). A qualified, multi-round sentence such as `Method: rigorous for every round except T-007 R1 and T-010 R1 (adversarial); ...` has `rigorous` as its first token but is not a record of the immediately preceding round, so it is a malformed record rather than silently read as `rigorous`; text appended after the aside closes (`Method: adversarial (x) but actually normal`) and an aside that never closes (`Method: adversarial (`) are malformed for the same reason. An aside that nests a second pair of parentheses (`Method: adversarial (see the note (below)).`) is also a malformed record: the grammar accepts one balanced pair only, the outcome is fail-closed with a named reason, and the template's shape is never nested; write the aside without inner parentheses. **One round per line:** the prose fallback is only read when the declaration's own line carries exactly one distinct `review-method[...]` round; several rounds packed onto one shared line followed by one `Method:` summary line fall through to the "no matching record" (absent) reason, the same outcome as if no `Method:` line followed at all. Distinct rounds are counted, not raw occurrences, so an agreeing duplicate declaration of one round on the same line does not spoil its own gate. Two accepted residuals: a fenced code block between the declaration and its `Method:` line is blanked by the quoting strip and so is skipped over rather than treated as intervening content that would break the "next line" adjacency; and only `05-review-findings.md` is read at all, so a `method-applied[<round>]` recorded in `03-decisions.md` or `04-implementation-summary.md` instead is invisible to this check (the criterion this reader enforces allows either channel, but only this one file is consulted). The corpus replay behind these restrictions is recorded in the CHANGELOG.
-
-**Cross-repo obligation:** the shipped `packages/orchestrator-workflow/assets/templates/05-review-findings.md` should add `<!-- method-applied[<round>] = normal|rigorous|adversarial -->` next to its existing `review-method[<round>]` marker and `Method:` line; until it does, a run authored under kit 0.32.0 with a FILLED `Method: <value> (...)` line (in the restricted sense above) passes via this fallback, and a run recording neither channel for a round needs only one line added (the marker, or filling in `Method:`) to migrate. An orphan `method-applied[<round>]` with no matching declared round is silently ignored (there is nothing to check it against); a round whose declared and recorded keys merely differ in spelling (`review-method[T-003 R1]` vs `method-applied[R1]`) names the mismatched keys actually present in the file in its "no matching record" reason, the same way the `run-base` key-mismatch reason above does.
-
-Quoting is a deliberate asymmetry from the `run-base` grammar above: there, only the position-independent phrase net is quoting-aware, and a genuine well-formed keyed marker still resolves even inside a fence. Here, EVERY net (strict, loose, and the wrapper-less net) runs against the same quoting-stripped text (`stripQuotedMarkdownText`, generalized from the `run-base`-only helper this reused); a marker sitting inside a fenced code block or an inline code span (quoted in prose, or inside a findings-table cell) is never live, full stop; there is no "still resolves" residual on this axis. Duplicate markers for one round are tolerated when they agree (first occurrence wins, as before) but block, named, when they disagree; a silent first-wins pick is exactly the failure mode this closes. Per-round reasons are bounded (`joinBounded`) rather than one reason per round: the "no matching record" and "weaker" cases each collapse into a single reason per category naming the affected rounds. Anchored by a corpus measurement of real `05-review-findings.md` files authored under kit 0.32.0, see CHANGELOG 0.12.0 for the corpus, the exact figures and the reader's before/after replay.
-
-Knob, `<repoPath>/.ai/solution-acceptance.json`:
-
-```json
-{ "orchestratorWorkflow": "auto" }
-```
-
-| Value | Behavior |
-| --- | --- |
-| `auto` (default) | Gate on OW completeness only when an active run is found (via the pointer or the scan); a repo with no run is unaffected. |
-| `on` | As `auto`, and additionally block when no active run is found at all — no `.ai/run` pointer and no `.ai/runs/` run directory. |
-| `off` | Never gate on OW; preflight alone decides. |
-
-Fail-SAFE: a missing, unreadable, unparseable, or invalid config resolves to `auto` (never silently `off`), so a malformed file cannot disable the gate. A repo with no active run under the default `auto` knob produces a verdict byte-identical to the pre-OW output.
+Verifier-gated "done": completion is earned from a real preflight run, not claimed. `solution_evaluate` runs preflight against a repo and records a HEAD-pinned, signed verdict marker for an id; `solution_gate` allows only when a ready verdict exists at the current HEAD. See [Solution-acceptance gate reference](docs/solution-acceptance-gate.md) for the full anti-hacking contract, verdict marker signing, progress notifications, attempt lifecycle, and the orchestrator-workflow process-completeness arm.
 
 ## Install + register
+
+Requires Node.js >= 20. `solution_evaluate` also requires the `preflight` binary (from `agent-preflight`) on PATH, or `SOLUTION_PREFLIGHT_BIN` pointing at it; it fails closed (writes no verdict) when neither is available.
 
 ```bash
 npm install -g @lannguyensi/grounding-mcp
@@ -276,177 +170,12 @@ This server is meant to run on the agent's local machine via stdio. There's no a
 
 ## Grounding receipt codec
 
-The package also contains an unregistered `grounding-receipt/v1` library
-primitive and a versioned conformance corpus. It serializes a strict,
-Ed25519-signed documentary assessment and accepts only explicit key objects;
-it does not load keys, inspect sessions, or grant any task or claim action.
-Its assessment provenance is always `agent_asserted`. See the [receipt contract
-document](../../docs/okf/grounding-receipt-contract.md) for the signature,
-policy-digest, and consumer-boundary details.
+The package also contains an unregistered `grounding-receipt/v1` library primitive and a versioned conformance corpus for a strict, Ed25519-signed documentary assessment (always `agent_asserted` provenance), plus a separate, restricted `grounding-assessment-mcp` binary that serves it. See [Grounding receipt codec reference](docs/grounding-receipt-codec.md) for the wire format, the authoritative assessment store's session/dossier/claim contract, and the restricted assessment MCP's tool surface.
 
-The [vendored repository contract](contracts/grounding-receipt-v1/README.md)
-defines every field and nested schema, canonical payload order, exact Ed25519
-signature input, inclusive 32 KiB wire / 16 KiB payload limits, and stable
-`invalid`, `unsupported`, `untrusted` errors. Its manifest pins immutable pass,
-fail, negative and boundary bytes plus declarative policy vectors. The public
-`00..1f` test seed is deliberately unsafe. The corpus and codec add no npm
-exports or runtime endpoint. Verifying a correctly signed fail receipt succeeds;
-context binding, clocks, issuer admission and task decisions require a separate
-consumer.
+## Documentation
 
-### Authoritative assessment store
-
-`grounding-assessment-store.ts` implements the separate producer evaluator as
-a library wired by the restricted entrypoint below. Construction requires an absolute producer directory,
-explicit issuer and key identifiers, an Ed25519 private `KeyObject`, and bounded
-producer metadata. It does not discover keys, import legacy sessions, or read
-the solver's default ledger or session home. The static policy module uses
-frozen rules coupled to the codec's policy identity; it does not read contract
-files or live wrapper/claim-gate rules at runtime.
-
-`createSession({challenge, keyword, problem})` validates the challenge before
-the first step and permanently binds the session to its audience, project,
-task, and subject. Changes to that binding need a new session. Challenges also
-carry attempt ID, nonce, context revision, workflow target, pinned policy, and
-safe epoch-second creation/expiry times. Their lifetime is at most 24 hours;
-fresh operations allow at most 60 seconds of creation-time clock skew and no
-expiry grace. The consumer must authenticate those fields against its own
-attempt record. Another attempt for an unchanged subject may use the session
-with a different workflow edge.
-
-`getSession({sessionId})` returns a detached snapshot including dossier entries,
-claim, completion events, and derived current phase. `advance` requires
-`sessionId`, `expectedRevision`, and `expectedPhase`; `addDossierEntry` requires
-the first two plus `kind`, `content`, and `source`; `setClaim` requires the first
-two plus `text`. Unknown fields, caller phase arrays, skipped flags, origins,
-claim types, and supplied assessment decisions are rejected. A real mutation
-increments the revision once. Advancing `complete` and setting the identical
-claim are revision-preserving no-ops after CAS succeeds. Only the producer's
-empty runtime phase can be skipped. Completion events are documentary agent
-confirmations made through this API, not observed tool execution.
-
-Entries can be `fact`, `hypothesis`, `rejected`, or `unknown`, always with
-`agent_asserted` provenance. Source is inert text. At least one nonblank fact
-and a nonblank claim are necessary, alongside mandatory completion events and
-the prerequisites selected from the claim's text. Rejected alternatives supply
-the alternatives prerequisite. Even invented but structurally valid statements
-can satisfy this documentary policy. The digest's fixed projection includes
-session identity/revision, binding, keyword/problem, events, concrete entries
-and provenance, claim, and computed claim evaluation.
-
-`exportReceipt({sessionId, expectedRevision, challenge})` evaluates the owned
-snapshot and signs either a pass or a regular policy failure. It does not
-advance the session. It stores the assessed snapshot and exact wire bytes in
-one terminal attempt record. Exact retries return those bytes even after later
-session mutations, receipt expiry, or restart, without consulting the clock.
-A changed session, revision, or challenge field on that attempt conflicts;
-unsupported policy or malformed input is rejected before lookup. A fresh
-attempt evaluates the current matching revision. Receipt expiry never exceeds
-challenge expiry or 900 seconds from evaluation. Validation, signing, locking,
-and storage failures return errors, not another attempt's receipt.
-
-All reads and mutations use a global cross-process `proper-lockfile` lock and
-one versioned JSON state file. Writes use an exclusive same-directory temporary
-file, file fsync, atomic rename, and directory fsync. A failure after rename
-can mean the commit occurred: retry the exact export to recover its stored
-bytes; for ordinary mutations, read the current revision before deciding what
-to do next. Malformed or unknown-version state is never reset automatically.
-Lock ownership loss and cleanup failures are errors.
-
-The lock has no time-based takeover. A suspended writer retains exclusion;
-an unclean exit leaves the store busy. Recovery requires the operator to stop
-and confirm every potential writer is dead before removing the producer
-directory's `store.lock` directory. There is no force-unlock API. Restart after
-this quiescent recovery retains committed terminals and removes abandoned
-temporary state files. These guarantees require a local filesystem with the
-documented atomic rename/fsync and locking behavior; host power-loss and OS
-isolation qualification remain deployment responsibilities. File modes are
-defense in depth, not isolation from another process running as the same user.
-
-Bounds are 64 raw UTF-16 units for keyword, 8,192 each for problem, entry content
-and claim, and 1,024 for source; text rejects unpaired surrogates. A store holds
-at most 128 sessions, 256 entries per session, 256 terminal attempts, and 8 MiB
-of encoded state. Capacity and safe-integer revision exhaustion fail explicitly;
-there is no automatic terminal pruning or lifecycle migration. The library itself adds no transport registration, key loader, consumer
-enforcement, or deployment approval. The separate entrypoint below supplies
-explicit local configuration and MCP registration.
-
-### Restricted assessment MCP
-
-`grounding-assessment-mcp` is a separate stdio binary for the producer store.
-It loads `GROUNDING_ASSESSMENT_CONFIG`, which must select an absolute JSON file.
-For example, an operator-provisioned configuration has this exact shape:
-
-```json
-{
-  "issuer": "assessment.example",
-  "kid": "signing-key-1",
-  "privateKeyPath": "/srv/assessment/issuer.pem",
-  "stateDirectory": "/srv/assessment/state",
-  "policy": {
-    "id": "debug-evidence-assessment/v1",
-    "revision": "1",
-    "sha256": "50c68e4070b5c36c2bd166f61f83377df717253f30933fe05825386d605325a4"
-  }
-}
-```
-
-The private key must be an existing Ed25519 private PEM key. Issuer and key
-identifiers are 1–128 ASCII letters, digits, dots, underscores, colons, or
-hyphens. Key and state paths must be absolute. Configuration and key reads
-are each capped at 64 KiB and reject invalid UTF-8. Unknown fields (including
-nested policy fields), wrong policy identity, invalid keys, missing files,
-and relative paths fail before service registration. Startup failures exit
-nonzero with a fixed error on stderr and no MCP output or default state.
-There is no key generation, home-directory fallback, network discovery, or
-automatic consumer trust registration.
-
-```bash
-GROUNDING_ASSESSMENT_CONFIG=/srv/assessment/config.json grounding-assessment-mcp
-```
-
-The configuration is trusted startup input. Tool callers cannot supply issuer,
-key, filesystem, execution, or policy-authority overrides. The normal
-`grounding-mcp` binary retains its existing session/ledger/verdict contract;
-configure the restricted binary separately, with its explicit issuer input.
-`--version` (also `-v`) prints the package version without loading that input.
-
-The complete tool surface is:
-
-| Tool | Required arguments |
-| --- | --- |
-| `assessment_start` | `challenge`, `keyword`, `problem` |
-| `assessment_status` | `sessionId` |
-| `assessment_advance` | `sessionId`, `expectedRevision`, `expectedPhase` |
-| `assessment_dossier_add` | `sessionId`, `expectedRevision`, `kind`, `content`, `source` |
-| `assessment_dossier_read` | `sessionId` |
-| `assessment_claim_set` | `sessionId`, `expectedRevision`, `text` |
-| `assessment_export` | `sessionId`, `expectedRevision`, `challenge` |
-
-`challenge` is the strict object described by the store and
-[receipt contract](contracts/grounding-receipt-v1/README.md): audience, project
-and task UUIDs, attempt UUID, nonce, context revision, target, subject, pinned
-policy, and epoch-second creation/expiry times. The server rejects unknown
-fields before dispatch, including nested challenge/target/subject/policy
-fields. Status returns session ID, revision, and current phase. Dossier read
-returns the fixed documentary projection and computed claim evaluation.
-Advance confirms only the current phase; the producer derives its tools and
-provenance. Facts, claim text, and path- or command-shaped source text stay
-`agent_asserted` documentary data; they trigger no file reads or execution.
-
-Every operation uses the assessment store. Export returns one MCP text content
-item containing the exact UTF-8 receipt wire string; clients preserve that
-string's UTF-8 bytes without JSON-wrapping or reserializing the envelope.
-An identical retry preserves bytes even after restart. Changed attempt inputs
-conflict. Policy failures produce signed `fail` receipts; invalid input or a
-storage/evaluation failure returns an MCP error, never an earlier receipt.
-The store limits and quiescent recovery procedure above apply unchanged.
-
-This producer interface does not approve production activation. Consumer issuer
-admission, context checks, freshness, active-attempt supersession, and task
-transitions require separate consumer enforcement. Deployment must separately
-qualify key access, filesystem semantics, process/OS isolation, and rollout;
-a signature or a temporary-key transport test does not establish those facts.
+- [Solution-acceptance gate reference](docs/solution-acceptance-gate.md): verdict marker signing, progress notifications, attempt lifecycle, orchestrator-workflow process-completeness arm
+- [Grounding receipt codec reference](docs/grounding-receipt-codec.md): wire format, authoritative assessment store, restricted assessment MCP
 
 ## Development
 
@@ -471,3 +200,7 @@ Two test files cover the verb surface and they catch different bugs, so a new ve
 - `tests/hypothesis-mcp-roundtrip.test.ts` drives the same verbs through a real `Client` + `InMemoryTransport` pair against `createServer()`. It is the only place that exercises representative wrapper-only error branches (`no_store_for_session`, `hypothesis_not_found`, `check_index_out_of_range`, `hypothesis_not_found_or_rejected`) and the zod schema bounds (`.min(1)`, `.max(4096)`) end-to-end. Wrapper branches that exist only in `server.ts` are invisible to a library-level test. Sibling permutations of the same error code across other verbs are intentionally not duplicated, the goal is one assertion per distinct branch, not full matrix coverage.
 
 If a new verb introduces a structured error payload that does not exist in the underlying library (most verbs that have one do), add a roundtrip case that asserts the exact `{ error: '<code>', ... }` shape, not just `isError`.
+
+## License
+
+MIT

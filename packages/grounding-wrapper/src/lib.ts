@@ -6,8 +6,8 @@
  * the seven downstream tools (domain-router, readme-first-resolver,
  * debug-playbook-engine, evidence-ledger, claim-gate, runtime-reality-checker,
  * hypothesis-tracker). Enforcement of the recommendation is the caller's
- * job (typically a harness Policy). See README.md for the consumption
- * contract.
+ * job (typically a harness Policy). See docs/enforcement-contract.md for
+ * the consumption contract.
  */
 
 export type GroundingPhase =
@@ -66,7 +66,7 @@ export const KEYWORD_MAX_LENGTH = 64;
 
 /**
  * Validate a keyword for `initSession`. Throws when the keyword would
- * produce a degenerate session id / `resolved_scope` (the README's
+ * produce a degenerate session id / `resolved_scope` (docs/enforcement-contract.md's
  * `Public API for enforcement` contract documents these invariants).
  *
  * Rules:

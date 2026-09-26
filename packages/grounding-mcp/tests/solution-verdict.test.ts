@@ -279,8 +279,8 @@ describe('evaluateSolution (producer)', () => {
     expect(res.error).toBeUndefined();
     expect(res.markerPath).not.toBeNull();
 
-    // Response divergence, documented on `EvaluateResult` and in the README's
-    // "Solution-acceptance gate" section: the MCP response's `verdict` is the
+    // Response divergence, documented on `EvaluateResult` and in
+    // docs/solution-acceptance-gate.md: the MCP response's `verdict` is the
     // PRE-SIGNING object `writeVerdict` was called with, not the signed
     // marker it wrote to disk.
     expect(res.verdict).not.toHaveProperty('alg');

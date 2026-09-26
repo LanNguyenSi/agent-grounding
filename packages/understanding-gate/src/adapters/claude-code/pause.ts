@@ -28,8 +28,8 @@ export function warnIndefiniteFromCorruptExpiry(): void {
 
 // Read-only, best-effort check of a pause sentinel file. The shape and the
 // "absent/parsable" semantics below are chosen to match how a pause
-// sentinel of this shape is read elsewhere -- see the "Pause sentinel"
-// section of this package's own README for the documented shape and
+// sentinel of this shape is read elsewhere -- see this package's own
+// docs/pause-sentinel.md for the documented shape and
 // semantics. no file, an unreadable file, a non-regular file (see the
 // statSync guard, which keeps this from blocking forever on a FIFO;
 // statSync follows symlinks, so a sentinel path that is itself a symlink

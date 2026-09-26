@@ -719,7 +719,7 @@ export function createServer(
   // .preflight.json, not caller input) and records a HEAD-pinned verdict
   // marker outside the agent-writable ledger; solution_gate passes only when a
   // ready verdict exists at the current HEAD. See solution-verdict.ts for the
-  // anti-hacking contract and README for the marker contract harness consumes.
+  // anti-hacking contract and docs/solution-acceptance-gate.md for the marker contract harness consumes.
   //
   // ALL THREE tools below (solution_evaluate and both lookups) bound `id` at
   // MAX_ID_FILENAME_LENGTH (see solution-attempt-log.ts for the derivation): an

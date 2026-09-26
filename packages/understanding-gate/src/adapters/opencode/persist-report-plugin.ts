@@ -303,7 +303,7 @@ function enforceBeforeToolExecute(
   // settings.json equivalent, so the plugin re-reads the sentinel FILE
   // on every gated tool call, but the env var itself is whatever
   // opencode's process was launched with -- nothing in this package
-  // projects it there today (see README's "Pause sentinel" opencode
+  // projects it there today (see docs/pause-sentinel.md's opencode
   // subsection). A force-bypass decision is NOT treated as an override
   // here: it falls through to the force_bypass audit branch below (which
   // already returns a silent allow) so it keeps its own `force_bypass`

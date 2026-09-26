@@ -3,7 +3,7 @@ type: invariant
 title: Grounding receipt and assessment contract
 description: Portable documentary assessments, authoritative producer snapshots, immutable attempts, and the boundary between signature verification and issuer or task authority.
 tags: [grounding-mcp, receipt, contract, trust-boundary]
-timestamp: 2026-09-07T09:06:37Z
+timestamp: 2026-09-26T06:03:00Z
 sources:
   - packages/grounding-mcp/src/grounding-receipt.ts
   - packages/grounding-mcp/contracts/grounding-receipt-v1/README.md
@@ -68,7 +68,7 @@ The stable lock has no time-based takeover. Unclean exit recovery requires
 operator-confirmed quiescence of all writers before removing the lock. File
 fsync, atomic rename, and directory fsync define the commit boundary; an error
 after rename requires retry/read reconciliation. Corrupt state and exhausted
-capacity fail explicitly. The [package documentation](../../packages/grounding-mcp/README.md#authoritative-assessment-store)
+capacity fail explicitly. The [package documentation](../../packages/grounding-mcp/docs/grounding-receipt-codec.md#authoritative-assessment-store)
 specifies configuration, limits, retry behavior, and recovery. Filesystem and
 OS isolation qualification, production key lifecycle, and consumer enforcement
 remain separate responsibilities. The restricted transport is described below.
