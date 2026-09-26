@@ -2,6 +2,25 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-26, README refresh: the root README was restructured (the
+  package feature list replaced with a single package table, and the
+  architecture diagram, "why this exists", "where this fits", and the
+  restricted-producer pointer moved to the new `docs/architecture.md`;
+  the full per-package npm install list and the sample CLI output moved
+  to the new `docs/installation.md`). `grounding-stack-overview.md` lists
+  `README.md` under sources and its "Read this first" section pointed at
+  the README's mermaid diagram by line range, so it was re-verified and
+  re-stamped: the `sources` entry changed from `README.md` to
+  `docs/architecture.md`, the pointer text and link now target
+  `../architecture.md`, and the citation now reads
+  `docs/architecture.md:5-42#"helpers --> el"` (the diagram moved but its
+  text is unchanged). Every other citation in the doc (`CHANGELOG.md:9-30`,
+  `.github/workflows/ci.yml:463-479`, `package.json:30`, the three
+  `packages/grounding-mcp/*` files, and the version numbers `0.13.0` /
+  `0.6.0` / `0.3.2` / `0.1.6`) was checked against HEAD and still resolves;
+  none needed re-pointing. No other bundle doc's `sources` list the root
+  README.
+
 - 2026-09-24, task ed96b766: re-stamped `grounding-stack-overview.md` after
   the `@lannguyensi/grounding-mcp` `0.13.0` release
   (`packages/grounding-mcp/package.json`) made it sources-fresh STALE. Every
@@ -2164,7 +2183,9 @@
   Re-verified in review round 2: the doc's cited content
   (the README diagram in lines 13 through 49, the `package.json` workspaces/build:deps
   facts it describes narratively) is unchanged by de995f0's edits (those
-  landed at README.md:200-202 and in package.json's `scripts` block,
+  landed in README.md (a two-line addition, at what was then lines
+  200-202; that range predates the 2026-09-26 README restructure below
+  and no longer applies) and in package.json's `scripts` block,
   neither touching what the doc cites), so this was a stale-timestamp
   false positive, not stale content; the doc's frontmatter `timestamp:`
   was re-stamped to postdate this fix commit and re-verified clean:
