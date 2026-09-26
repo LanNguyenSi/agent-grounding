@@ -14,10 +14,11 @@
   `docs/architecture.md`, the pointer text and link now target
   `../architecture.md`, and the citation now reads
   `docs/architecture.md:5-41#"helpers --> el"` (the diagram moved but its
-  text is unchanged; the range was corrected in review round 2 from
-  5-42, which put the anchor one line short of the closing mermaid
-  fence, so the anchor sat on the second-to-last line as
-  `okf-kit check --require-anchors` requires). Every other citation in
+  text is unchanged; an earlier draft of this citation read `5-42`,
+  which put the anchor one line short of the closing mermaid fence, so
+  the anchor did not sit on the cited range's last line as
+  `okf-kit check --require-anchors` requires; corrected to `5-41`, the
+  line the anchor text actually occupies). Every other citation in
   the doc (`CHANGELOG.md:9-30`, `.github/workflows/ci.yml:463-479`,
   `package.json:30`, the three `packages/grounding-mcp/*` files, and the
   version numbers `0.13.0` / `0.6.0` / `0.3.2` / `0.1.6`) was checked
