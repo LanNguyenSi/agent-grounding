@@ -1,12 +1,12 @@
 # claim-gate
 
-Policy engine that prevents AI agents from making strong claims without verified evidence. Evaluates diagnostic claims against prerequisite checks and blocks premature conclusions.
+Policy engine that prevents AI agents from making strong claims without verified evidence.
 
-## How It Works
+## Overview
 
-When an agent wants to claim "the root cause is X", claim-gate checks whether the agent has completed the required steps first (read docs, checked processes, gathered evidence, considered alternatives). If prerequisites are missing, the claim is blocked with specific next steps.
+claim-gate evaluates diagnostic claims against prerequisite checks and blocks premature conclusions. When an agent wants to claim "the root cause is X", claim-gate checks whether the agent has completed the required steps first (read docs, checked processes, gathered evidence, considered alternatives). If prerequisites are missing, the claim is blocked with specific next steps.
 
-## Claim Types
+## Claim types
 
 | Type | Required Prerequisites |
 |------|----------------------|
@@ -20,7 +20,15 @@ When an agent wants to claim "the root cause is X", claim-gate checks whether th
 | `token` | config, evidence |
 | `generic` | evidence |
 
-## CLI Usage
+## Install
+
+```bash
+npm install -g @lannguyensi/claim-gate
+```
+
+Requires Node.js >= 20.
+
+## Usage
 
 ```bash
 # Check if a claim is allowed
@@ -34,7 +42,7 @@ claim-gate check "Network is unreachable" --health --process --json
 claim-gate policies
 ```
 
-### Context Flags
+### Context flags
 
 | Flag | Meaning |
 |------|---------|
@@ -45,7 +53,7 @@ claim-gate policies
 | `--evidence` | At least one supporting evidence exists |
 | `--alternatives` | Alternative hypotheses considered |
 
-## Library Usage
+### Library usage
 
 ```typescript
 import { evaluateClaim, isAllowed } from "@lannguyensi/claim-gate";
@@ -58,7 +66,7 @@ const result = evaluateClaim("The root cause is a DNS issue", {
   alternatives_considered: false,
 });
 
-console.log(result.allowed);    // false — missing evidence + alternatives
+console.log(result.allowed);    // false - missing evidence + alternatives
 console.log(result.score);      // 60 (3/5 prerequisites met)
 console.log(result.next_steps); // ["Collect evidence", "Consider alternatives"]
 ```
@@ -71,3 +79,7 @@ npm run build    # TypeScript build
 npm test         # Run tests (vitest)
 npm run lint     # Type check
 ```
+
+## License
+
+MIT
