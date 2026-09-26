@@ -114,3 +114,16 @@ well-defined, just based on fewer inputs.
 
 For the full MCP tool surface, use `grounding-mcp` directly. This SDK
 is the in-process ergonomic alternative.
+
+## Development
+
+```bash
+npm install
+npm run build    # TypeScript build
+npm test         # Run tests (vitest)
+npm run lint     # Type check
+```
+
+## License
+
+MIT
