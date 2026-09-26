@@ -65,4 +65,4 @@ The motivating incident lives in an internal logbook: an agent investigated two 
 
 ## Restricted documentary assessment producer
 
-The `grounding-mcp` package also supplies `grounding-assessment-mcp`, a separate seven-tool stdio entrypoint for portable signed documentary assessments. It requires explicit issuer configuration and uses its own assessment store. See [configuration, tools, and activation boundaries](../packages/grounding-mcp/README.md#restricted-assessment-mcp). The existing `grounding-mcp` session, ledger, and verdict tools retain their current contract.
+The `grounding-mcp` package also supplies `grounding-assessment-mcp`, a separate seven-tool stdio entrypoint for portable signed documentary assessments. It requires explicit issuer configuration and uses its own assessment store. See [configuration, tools, and activation boundaries](../packages/grounding-mcp/docs/grounding-receipt-codec.md#restricted-assessment-mcp). The existing `grounding-mcp` session, ledger, and verdict tools retain their current contract.

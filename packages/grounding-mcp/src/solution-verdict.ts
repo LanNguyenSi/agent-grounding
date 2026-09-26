@@ -104,7 +104,7 @@ export interface GateResult {
  * `markerPath` directly (JSON.parse) if the signed on-disk shape is what's
  * needed — `readVerdict` deliberately reconstructs only the 7 pinned
  * fields and drops `alg`/`signature`. See "Verdict marker signing" in
- * README.md.
+ * docs/solution-acceptance-gate.md.
  */
 export interface EvaluateResult {
   verdict: Verdict | null;
