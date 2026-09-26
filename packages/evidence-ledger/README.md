@@ -1,26 +1,31 @@
-# Evidence Ledger
+# evidence-ledger
 
-> Structured evidence tracking for agent debugging sessions.
+Structured evidence tracking for agent debugging sessions.
 
-Stop mixing facts, guesses, and rejected ideas during debugging. The Evidence Ledger forces you to be explicit about what you *know*, what you *suspect*, and what you've *ruled out*.
+## Overview
 
-## Why
+Stop mixing facts, guesses, and rejected ideas during debugging. Evidence Ledger forces you to be explicit about what you *know*, what you *suspect*, and what you have *ruled out*. Agents (and humans) frequently state a guess as fact ("the database is probably down", based on nothing); Evidence Ledger enforces a discipline instead:
 
-Agents (and humans) frequently make the same mistake during debugging:
-
-> "The database is probably down" (stated as fact, based on nothing)
-
-Evidence Ledger enforces a discipline:
 - **Facts** require a source
 - **Hypotheses** are tracked separately from facts
 - **Rejected hypotheses stay visible**: so you don't re-investigate dead ends
 - **Unknowns are acknowledged**: not quietly assumed away
+
+## Key features
+
+- Facts, hypotheses, rejections, and unknowns tracked as distinct entry types with sources and confidence
+- Named sessions, so concurrent debugging tasks do not mix entries
+- JSON export for handoff to another agent or human
+- Age-based pruning with a dry-run mode, for long-running dogfood machines
+- `policy_decision` entries for an orchestrator/gate audit trail, exempt from pruning by default
 
 ## Install
 
 ```bash
 npm install -g @lannguyensi/evidence-ledger
 ```
+
+Requires Node.js >= 20.
 
 ## Usage
 
@@ -54,7 +59,7 @@ ledger sessions
 ledger clear --session "nginx-debug-2026-04-02"
 ```
 
-## Example Output
+### Example output
 
 ```
 📋 Evidence Ledger — session: default
@@ -73,70 +78,14 @@ ledger clear --session "nginx-debug-2026-04-02"
   ✗ [#2] network configuration is root cause [rejected: nginx test passed] MED
 ```
 
-## Export Format
-
-```json
-{
-  "session": "default",
-  "exportedAt": "2026-04-02T20:45:00.000Z",
-  "facts": [
-    { "content": "process is not running", "source": "ps aux", "confidence": "high" }
-  ],
-  "hypotheses": [...],
-  "rejected_hypotheses": [...],
-  "unknowns": [...]
-}
-```
-
-## Retention
-
-The ledger grows monotonically, `ledger fact` / `hypothesis` / `unknown` only ever append. Long-running dogfood machines will accumulate stale sessions that slow queries and dilute summaries. Use `prune` to bound the database by age:
-
-```bash
-# Inspect what would go, don't touch the DB yet
-ledger prune --older-than 30d --dry-run
-
-# Actually delete entries whose created_at is older than 30 days
-ledger prune --older-than 30d
-
-# Machine-readable output for scheduled runs
-ledger prune --older-than 30d --json
-# → {"deleted":42,"scanned":1337,"cutoff":"2026-03-24 09:07:00","dryRun":false}
-```
-
-Accepted units for `--older-than`: `s`, `m`, `h`, `d`. Deletion runs inside an `IMMEDIATE` transaction so concurrent readers never observe a partial sweep. An entry is eligible only once it is *strictly* older than the cutoff — an entry exactly `--older-than` old right now is kept, not deleted.
-
-`policy_decision` rows (the orchestrator's audit trail of allow/deny/warn decisions, see [Entry Types](#entry-types)) are **exempt from pruning by default**, regardless of age, so an audit or incident review always has the full decision history. Pass `--include-policy-decisions` to prune them too:
-
-```bash
-ledger prune --older-than 30d --include-policy-decisions
-```
-
-Typical cron usage:
-
-```cron
-# Prune weekly, keep the last 30 days
-0 3 * * 0  ledger prune --older-than 30d --json >> ~/.evidence-ledger/prune.log 2>&1
-```
-
-`prune` does not `VACUUM` automatically: `VACUUM` takes an exclusive lock on the database and would stall every other CLI invocation. After a large purge, reclaim disk manually:
-
-```bash
-sqlite3 ~/.evidence-ledger/ledger.db 'VACUUM;'
-```
-
-### Scope today
-
-Only age-based pruning is implemented. Tag-based and task-id-based keep-lists (`--keep-tagged`, `--keep-task-id`) would require schema changes and are intentionally deferred until a concrete use case appears.
-
-## Programmatic API
+### Programmatic API
 
 ```typescript
 import { getDb, addEntry, rejectHypothesis, getSummary } from '@lannguyensi/evidence-ledger';
 
 const db = getDb(); // persists to ~/.evidence-ledger/ledger.db
 // Path resolution: the default is always ~/.evidence-ledger/ledger.db.
-// The module reads NO environment variable (and never has) — pass an
+// The module reads NO environment variable (and never has) -- pass an
 // explicit path to getDb(dbPath) instead. EVIDENCE_LEDGER_DB is honored
 // one layer up by grounding-mcp and review-claim-gate, which forward it
 // as an explicit dbPath.
@@ -145,7 +94,7 @@ const db = getDb(); // persists to ~/.evidence-ledger/ledger.db
 // argument, or with a path naming the same database (relative and
 // absolute forms are equivalent; ':memory:' is compared literally),
 // returns that handle. Calling it with a DIFFERENT explicit path while
-// a handle is open throws ("ledger already open at X, requested Y —
+// a handle is open throws ("ledger already open at X, requested Y --
 // call resetDb() first to switch to a different path.") instead of
 // silently returning the wrong database; call resetDb() to re-point.
 // Identity is fixed at open time (a relative path is resolved against
@@ -160,15 +109,9 @@ const summary = getSummary(db, 'debug-session');
 console.log(summary.facts, summary.hypotheses);
 ```
 
-## Entry Types
+## Retention
 
-| Type | Icon | Description |
-|------|------|-------------|
-| `fact` | ✓ | Confirmed observation with a verifiable source |
-| `hypothesis` | ? | Possible explanation, not yet confirmed or rejected |
-| `rejected` | ✗ | Disproven hypothesis, kept visible to avoid re-investigation |
-| `unknown` | ~ | Something that still needs clarification |
-| `policy_decision` | ⚖ | Orchestrator/gate audit decision (allow/deny/warn); bucketed separately from the four evidence types, exempt from `prune` by default |
+The ledger grows monotonically: `ledger fact` / `hypothesis` / `unknown` only ever append. Long-running dogfood machines will accumulate stale sessions that slow queries and dilute summaries. Use `prune` to bound the database by age. See [Retention and export reference](docs/retention-and-export.md) for the full `prune` flag reference, entry-type table, and JSON export shape.
 
 ## Rules (from the spec)
 
@@ -176,10 +119,17 @@ console.log(summary.facts, summary.hypotheses);
 - Root causes only when: direct evidence exists AND counter-hypotheses have been checked
 - Rejected hypotheses remain visible, never deleted
 
-## Tests
+## Documentation
+
+- [Retention and export reference](docs/retention-and-export.md): `prune` flags, cron usage, entry-type table, JSON export shape
+
+## Development
 
 ```bash
-npm test
+npm install
+npm run build    # TypeScript build
+npm test         # Run tests (vitest)
+npm run lint     # Type check
 ```
 
 ## License
