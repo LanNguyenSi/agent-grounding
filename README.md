@@ -2,60 +2,45 @@
 
 **Verification and debugging framework for AI agents.**
 
-Stop agents from acting on stale assumptions, making unsupported claims, or silently switching hypotheses mid-investigation. A workspace of TypeScript packages (understanding-gate, evidence ledger, claim gate, hypothesis tracker, runtime reality checker, debug playbook engine, readme-first resolver, domain router, grounding-wrapper, grounding-sdk, review-claim-gate, MCP server) that an agent harness wires into its session and tool-call lifecycle.
+## Overview
+
+Stop agents from acting on stale assumptions, making unsupported claims, or silently switching hypotheses mid-investigation. A workspace of TypeScript packages that an agent harness wires into its session and tool-call lifecycle: a PreToolUse gate that blocks destructive commands until claims are grounded, plus MCP, SDK, and CLI surfaces over a shared evidence ledger.
 
 > Most agent tooling helps a model *talk* about a problem. `agent-grounding` makes it *prove* what it has actually checked, what it has only assumed, and what it has ruled out, before the next destructive command runs.
 
-## Architecture
+`agent-grounding` is the **Validate** stage of the [Project OS](https://github.com/LanNguyenSi/project-pilot) Human-Agent Dev Lifecycle; see [docs/architecture.md](docs/architecture.md) for the full pipeline and the diagram of how the packages below connect.
 
-Agents reach the stack two ways: a **PreToolUse gate** that blocks destructive commands until claims are grounded, and **access surfaces** (MCP, SDK, CLI) over a shared evidence ledger.
+## Packages
 
-```mermaid
-flowchart LR
-    subgraph clients["Agent harness / MCP clients"]
-        direction TB
-        cc["Claude Code"]
-        oc["OpenCode"]
-        hn["harness"]
-    end
+| Package | Purpose | Link |
+|---------|---------|------|
+| understanding-gate | Asks agents to produce an Understanding Report before acting; PreToolUse blocking of destructive tools until it is approved | [packages/understanding-gate](packages/understanding-gate) |
+| runtime-reality-checker | Compares actual runtime state against documentation | [packages/runtime-reality-checker](packages/runtime-reality-checker) |
+| claim-gate | Blocks strong claims without verified evidence | [packages/claim-gate](packages/claim-gate) |
+| hypothesis-tracker | Tracks competing hypotheses, requires evidence to switch | [packages/hypothesis-tracker](packages/hypothesis-tracker) |
+| debug-playbook-engine | Guides agents through domain-specific diagnostic sequences | [packages/debug-playbook-engine](packages/debug-playbook-engine) |
+| evidence-ledger | Structured evidence tracking during debugging | [packages/evidence-ledger](packages/evidence-ledger) |
+| grounding-wrapper | Plans grounding sessions (tool sequence, guardrails, phases); pure planner, enforcement is external | [packages/grounding-wrapper](packages/grounding-wrapper) |
+| readme-first-resolver | Forces agents to read primary docs before any analysis | [packages/readme-first-resolver](packages/readme-first-resolver) |
+| domain-router | Routes keywords to correct repos, components, and docs scope | [packages/domain-router](packages/domain-router) |
+| grounding-sdk | `verify`/`track`/`validate`, ergonomic in-process facade over the stack | [packages/grounding-sdk](packages/grounding-sdk) |
+| review-claim-gate | `merge_approval` gate for PR-review subagents, fails closed unless tests pass, the checklist is complete, and evidence-ledger has an entry | [packages/review-claim-gate](packages/review-claim-gate) |
+| grounding-mcp | JSON-RPC MCP server exposing `ledger_add` / `ledger_summary` / `claim_evaluate_from_session` to any MCP-speaking client; also ships the restricted `grounding-assessment-mcp` producer (see [docs/architecture.md](docs/architecture.md)) | [packages/grounding-mcp](packages/grounding-mcp) |
 
-    subgraph gate["Pre-execution gate · PreToolUse"]
-        direction TB
-        ug["understanding-gate<br/>report approved before destructive tools"]
-        rrc["runtime-reality-checker<br/>blocks compose / systemctl / kill on drift"]
-    end
+## Quick start
 
-    subgraph core["Verification core"]
-        direction TB
-        cg["claim-gate"]
-        ht["hypothesis-tracker"]
-        helpers["grounding-wrapper · domain-router<br/>readme-first-resolver<br/>debug-playbook-engine · review-claim-gate"]
-        el[("evidence-ledger<br/>~/.evidence-ledger/ledger.db")]
-    end
-
-    subgraph surfaces["Access surfaces"]
-        direction TB
-        mcp["grounding-mcp · JSON-RPC<br/>ledger_add · ledger_summary · claim_evaluate"]
-        sdk["grounding-sdk<br/>verify / track / validate"]
-        cli["evidence-ledger CLI"]
-    end
-
-    clients --> gate
-    clients --> surfaces
-    gate --> core
-    surfaces --> core
-    cg --> el
-    ht --> el
-    helpers --> el
-```
-
-## Try it in 60 seconds
+Requires Node.js 20 or later and npm.
 
 ```bash
 git clone https://github.com/LanNguyenSi/agent-grounding && cd agent-grounding
 npm install && npm run build
+```
 
-# Run the demo against a scratch session so it doesn't pollute the default ledger
+Every package is also published under the `@lannguyensi/` scope and installable directly from npm; see [docs/installation.md](docs/installation.md) for the full per-package list.
+
+## Usage
+
+```bash
 LEDGER="node packages/evidence-ledger/dist/cli.js"
 $LEDGER clear --session readme-demo  # no-op on first run
 
@@ -72,150 +57,29 @@ $LEDGER hypothesis "OOM killer terminated the process" \
 $LEDGER show --session readme-demo
 ```
 
-`evidence-ledger` is the headline package: every fact carries a source, every hypothesis lives separately from facts, rejected hypotheses stay visible, unknowns are acknowledged. The CLI is one of three surfaces; there's also a typed library API (`@lannguyensi/evidence-ledger`) and a JSON-RPC server (`grounding-mcp`) that any MCP client can call. Entries land in `~/.evidence-ledger/ledger.db`; per-session isolation keeps demo data out of your real debugging sessions.
+The `readme-demo` session keeps demo entries out of your real sessions.
 
-## What a run looks like
+`evidence-ledger` is the headline package: every fact carries a source, every hypothesis lives separately from facts, rejected hypotheses stay visible, unknowns are acknowledged. The CLI is one of three surfaces; there's also a typed library API (`@lannguyensi/evidence-ledger`) and a JSON-RPC server (`grounding-mcp`) that any MCP client can call. Entries land in `~/.evidence-ledger/ledger.db`; see [docs/installation.md](docs/installation.md) for sample output.
 
-```
-✓ Fact recorded:
+## Documentation
 
-  ✓ [#26] process is not running (ps aux | grep clawd-monitor)  HIGH
+- [docs/architecture.md](docs/architecture.md): the stack diagram, why the framework exists, where it fits in Project OS, and the restricted assessment producer.
+- [docs/installation.md](docs/installation.md): the full per-package npm install list and sample CLI output.
+- [docs/policy-runtime-reality.md](docs/policy-runtime-reality.md): the design for wiring `runtime-reality-checker` as a harness PreToolUse policy.
+- [docs/design/](docs/design): design notes for specific subsystems (e.g. the `solution_evaluate` call lifecycle).
+- [docs/testing/](docs/testing): rollout and dogfood notes for specific test suites.
+- [docs/okf/](docs/okf): the curated knowledge bundle (cross-file semantics, invariants, runbooks); CI-gated, see `docs/okf/log.md` for its history.
 
-? Hypothesis added:
+## Development and contributing
 
-  ? [#27] OOM killer terminated the process (dmesg output)  MED
-
-
-📋 Evidence Ledger — session: readme-demo
-   2 entries total
-
-✓ FACTS (1)
-  ✓ [#26] process is not running (ps aux | grep clawd-monitor)  HIGH
-
-? HYPOTHESES (1)
-  ? [#27] OOM killer terminated the process (dmesg output)  MED
+```sh
+npm install
+npm run build
+npm test -w packages/<name>
 ```
 
-(Entry IDs autoincrement globally across sessions, so your numbers will differ.)
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full build topology, the single-package test/build commands, and the release-cut checklist.
 
-Same data via `ledger export --session readme-demo` produces structured JSON for hand-off to another agent or a human. Same data via `grounding-mcp`'s `ledger_summary` verb is what `harness explain --trace` and `harness audit` consume to replay policy decisions; see [the harness integration](https://github.com/LanNguyenSi/harness) for the wiring.
+## License
 
-## Install from npm
-
-Every package is published under the `@lannguyensi/` scope and installable directly:
-
-```bash
-# Library APIs (claim-gate, evidence-ledger, grounding-wrapper, and
-# review-claim-gate ship both a library and a CLI; the CLI install
-# below exposes the bin, this install just adds the importable API)
-npm install @lannguyensi/claim-gate
-npm install @lannguyensi/evidence-ledger
-npm install @lannguyensi/grounding-sdk
-npm install @lannguyensi/grounding-wrapper
-npm install @lannguyensi/hypothesis-tracker
-npm install @lannguyensi/review-claim-gate
-npm install @lannguyensi/runtime-reality-checker
-
-# CLIs (install globally to expose the bin)
-npm install -g @lannguyensi/claim-gate               # → claim-gate
-npm install -g @lannguyensi/debug-playbook-engine    # → debug-playbook
-npm install -g @lannguyensi/domain-router            # → domain-router
-npm install -g @lannguyensi/evidence-ledger          # → ledger
-npm install -g @lannguyensi/grounding-wrapper        # → grounding-wrapper
-npm install -g @lannguyensi/readme-first-resolver    # → readme-first
-npm install -g @lannguyensi/review-claim-gate        # → review-claim-gate
-npm install -g @lannguyensi/understanding-gate       # → understanding-gate
-
-# MCP server (install globally or invoke via npx)
-npm install -g @lannguyensi/grounding-mcp            # → grounding-mcp
-```
-
-The `git clone` workflow above is for hacking on the monorepo itself; downstream consumers install only what they need from npm.
-
-## Next steps
-
-| If you want to... | Read |
-|------|------|
-| Track facts / hypotheses / rejected ideas / unknowns during a debugging session | [`packages/evidence-ledger`](packages/evidence-ledger) |
-| Block strong claims until evidence backs them | [`packages/claim-gate`](packages/claim-gate) |
-| Manage competing hypotheses and require evidence to switch between them | [`packages/hypothesis-tracker`](packages/hypothesis-tracker) |
-| Compare actual runtime state against documentation | [`packages/runtime-reality-checker`](packages/runtime-reality-checker) |
-| Guide an agent through a domain-specific diagnostic sequence | [`packages/debug-playbook-engine`](packages/debug-playbook-engine) |
-| Force an agent to read primary docs before any analysis | [`packages/readme-first-resolver`](packages/readme-first-resolver) |
-| Route a keyword to the right repos / components / docs scope | [`packages/domain-router`](packages/domain-router) |
-| Use a single ergonomic facade (`verify` / `track` / `validate`) over the stack | [`packages/grounding-sdk`](packages/grounding-sdk) |
-| Gate `merge_approval` on tests + checklist + evidence-ledger entry | [`packages/review-claim-gate`](packages/review-claim-gate) |
-| Ask agents to produce an Understanding Report before acting | [`packages/understanding-gate`](packages/understanding-gate) |
-| Wire the stack into an MCP-speaking client (Claude Code, Codex, OpenCode) | [`packages/grounding-mcp`](packages/grounding-mcp) |
-| Plan the agent entry path (sequence, guardrails, phases) for downstream enforcement | [`packages/grounding-wrapper`](packages/grounding-wrapper) |
-
-## Packages
-
-### Pre-execution
-| Package | Description |
-|---------|-------------|
-| [understanding-gate](packages/understanding-gate) | Asks agents to produce an Understanding Report before acting. Phase 2 (enforcement) shipped: prompt-hook gate, structured report parsing + persistence, and PreToolUse blocking of destructive tools until the report is approved. Published as [`@lannguyensi/understanding-gate`](https://www.npmjs.com/package/@lannguyensi/understanding-gate) |
-
-### Verification
-| Package | Description |
-|---------|-------------|
-| [runtime-reality-checker](packages/runtime-reality-checker) | Compares actual runtime state against documentation |
-| [claim-gate](packages/claim-gate) | Blocks strong claims without verified evidence |
-| [hypothesis-tracker](packages/hypothesis-tracker) | Tracks competing hypotheses, requires evidence to switch |
-
-### Debugging
-| Package | Description |
-|---------|-------------|
-| [debug-playbook-engine](packages/debug-playbook-engine) | Guides agents through domain-specific diagnostic sequences |
-| [evidence-ledger](packages/evidence-ledger) | Structured evidence tracking during debugging |
-| [grounding-wrapper](packages/grounding-wrapper) | Plans grounding sessions (recommended tool sequence, guardrails, phases). Pure planner; enforcement is external. |
-| [readme-first-resolver](packages/readme-first-resolver) | Forces agents to read primary docs before any analysis |
-| [domain-router](packages/domain-router) | Routes keywords to correct repos, components and docs scope |
-
-### SDK
-| Package | Description |
-|---------|-------------|
-| [grounding-sdk](packages/grounding-sdk) | `verify`/`track`/`validate`, ergonomic in-process facade over the stack |
-| [review-claim-gate](packages/review-claim-gate) | `merge_approval` gate for PR-review subagents, fails closed unless tests pass, the checklist is complete, and ≥1 evidence-ledger entry exists |
-
-### Integration
-| Package | Description |
-|---------|-------------|
-| [grounding-mcp](packages/grounding-mcp) | JSON-RPC MCP server that exposes `ledger_add` / `ledger_summary` / `claim_evaluate_from_session` to any MCP-speaking client |
-
-## Why this exists
-
-AI agents are good at generating plausible explanations. They're bad at verifying them. This framework enforces discipline:
-
-- **Don't assume**: check runtime state before diagnosing.
-- **Don't claim**: gate strong assertions behind evidence.
-- **Don't forget**: track all hypotheses, don't silently drop them.
-- **Don't skip steps**: follow diagnostic playbooks in order.
-- **Don't guess scope**: route to the correct domain first.
-
-The motivating incident lives in an internal logbook: an agent investigated two `agent-grounding` tasks against a checkout that was 16 commits behind origin, declared both "stale" because the relevant directories didn't exist locally, and only caught the drift hours later when a third task forced a fresh `git pull`. Two corrections had to be walked back. The check that would have caught it (`git fetch && git status` before any structural claim) is exactly what `runtime-reality-checker` + `claim-gate` enforce, given a runtime that consults them.
-
-## Status
-
-Experimental, functional tools with tests, APIs may evolve. Each package has its own README with install + usage; this top-level README is a routing index. Build/contribution notes live in [CONTRIBUTING.md](./CONTRIBUTING.md).
-
-The curated `docs/okf/` knowledge bundle is CI-gated: `.github/workflows/ci.yml`'s `okf-anchor-guard` job runs [`okf-kit`](https://github.com/LanNguyenSi/agent-dx/tree/master/packages/okf-kit)'s `check --require-anchors`, which requires every full citation into an in-repo file to carry a string or heading anchor pinned to the cited range so a line-number shift can't silently drift a citation. One rule has no full `okf-kit` equivalent and stays a small repo-local script: `okf-kit`'s own `test-range-straddles-block` (part of `--require-anchors`) only enforces the "exactly one test" half, that a `*.test.ts` citation's range does not straddle into a sibling or outer block; it does not require the range to start on that test's own `describe(`/`it(`/`test(` head or end on that test's own closing `});`, so a range that starts and ends entirely mid-body would pass `okf-kit` clean. `scripts/check-okf-test-citation-shape.js` adds that missing head-to-close half on top: together the two enforce that a `*.test.ts` citation spans exactly one test, head to close. Two more repo-local scripts guard the guard itself, both in the same job: `scripts/check-okf-kit-pin.js` couples every `npm install -g okf-kit@...` pin across `.github/workflows/*.yml` so they can't silently diverge, and `scripts/check-okf-selectors.js` couples the Citation guard step's own `jq` selectors and its blocking-verdict line to `okf-kit`'s JSON finding shape (fixtures under `scripts/fixtures/okf-selectors/`, themselves version-coupled to the pin above via `fixture-version.json`), so a future `okf-kit` rename of `ruleId`/`severity`/`file`/the `[rule]` message suffix, a dropped blocking condition, or a pin bump left un-regenerated all get caught instead of the guard silently selecting 0 findings and going green. See `docs/okf/log.md` for the migration history and measurements.
-
-## Where this fits
-
-`agent-grounding` is the **Validate** stage of the [Project OS](https://github.com/LanNguyenSi/project-pilot) Human-Agent Dev Lifecycle:
-
-- [agent-planforge](https://github.com/LanNguyenSi/agent-planforge) plans
-- [agent-tasks](https://github.com/LanNguyenSi/agent-tasks) coordinates
-- **agent-grounding** verifies
-- [agent-preflight](https://github.com/LanNguyenSi/agent-preflight) gates pushes
-- [harness](https://github.com/LanNguyenSi/harness) declares + enforces the policy boundary that calls into all of the above
-
-## Restricted documentary assessment producer
-
-The grounding-mcp package also supplies `grounding-assessment-mcp`, a separate
-seven-tool stdio entrypoint for portable signed documentary assessments. It
-requires explicit issuer configuration and uses its own assessment store. See
-[configuration, tools, and activation boundaries](packages/grounding-mcp/README.md#restricted-assessment-mcp).
-The existing `grounding-mcp` session, ledger, and verdict tools retain their
-current contract.
+[MIT](./LICENSE). Experimental: functional tools with tests, APIs may evolve. Each package has its own README with install and usage; this top-level README is a routing index.
