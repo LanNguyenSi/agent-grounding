@@ -1,19 +1,18 @@
 # domain-router
 
-Routes a keyword or problem to the correct repos, components, and documentation scope. Part of the agent-grounding stack.
+Routes a keyword or problem to the correct repos, components, and documentation scope.
 
-## Problem
+## Overview
 
-Agents often jump to random logs, processes, or services without first clarifying:
-- Which system is actually meant?
-- Which repos are relevant?
-- Which documents should be read first?
+Part of the agent-grounding stack. Agents often jump to random logs, processes, or services without first clarifying which system is actually meant, which repos are relevant, and which documents should be read first. domain-router answers that up front, given a keyword and a workspace root.
 
 ## Install
 
 ```bash
 npm install -g @lannguyensi/domain-router
 ```
+
+Requires Node.js >= 20.
 
 ## Usage
 
@@ -31,7 +30,7 @@ domain-router impact -k clawd-monitor -w /projects
 domain-router impact -k clawd-monitor -w /projects --json
 ```
 
-## Example Output
+### Example output
 
 ```
 🗂  Domain Router — "clawd-monitor"
@@ -59,7 +58,7 @@ domain-router impact -k clawd-monitor -w /projects --json
     - network diagnosis before process check
 ```
 
-## API
+### API
 
 ```typescript
 import { route } from '@lannguyensi/domain-router';
@@ -69,12 +68,24 @@ const result = route({
   workspace: '/projects',
   context: { host: 'vps-01', problem_hint: 'agent not visible' }
 });
-// → { domain, primary_repos, related_components, priority_files, forbidden_initial_jumps, confidence }
+// -> { domain, primary_repos, related_components, priority_files, forbidden_initial_jumps, confidence }
 ```
 
 ## Part of the grounding stack
 
-1. **domain-router** ← you are here
+1. **domain-router** (you are here)
 2. [readme-first-resolver](../readme-first-resolver)
 3. [debug-playbook-engine](../debug-playbook-engine)
 4. [evidence-ledger](../evidence-ledger)
+
+## Development
+
+```bash
+npm install
+npm run build
+npm test
+```
+
+## License
+
+MIT
