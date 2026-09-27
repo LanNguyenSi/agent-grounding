@@ -2089,7 +2089,8 @@ describe('ledger tools: true arrival order at the transport (0a8645d2)', () => {
 // four and twelve requests (SDK Client ids and raw frames), how long an
 // arrival stamp is kept (`ledgerArrivalStampCount`, a test seam exported by
 // src/server.ts), and what happens to a request whose stamp is gone (the
-// "Missing stamp" paragraph of the "Ledger request serialization" comment).
+// "Missing stamp" paragraph of the "Arrival-ordered request routing"
+// comment).
 
 type RawRpcResponse = { result?: unknown; error?: unknown };
 
@@ -2362,16 +2363,24 @@ describe('ledger tools: batches, stamp lifetime and missing stamps (0a8645d2)', 
 // grounding session store (session-store.ts): grounding_advance's schema
 // (one key) and claim_evaluate_from_session's schema (two-to-three keys)
 // resolve zod validation in a different number of microtask ticks, so a
-// pipelined pair can have its handlers invoked out of arrival order. Unlike
-// `grounding_guardrail_check` (reads only `active_guardrails`, fixed at
-// `grounding_start` time and never touched by `advancePhase`, so its own
-// output cannot observably differ with or without ordering), the read that
-// actually reflects a `grounding_advance` write is
+// pipelined pair can have its handlers invoked out of arrival order. Against
+// a `grounding_advance` write, `grounding_guardrail_check` is no witness (it
+// reads only `active_guardrails`, fixed at `grounding_start` time and never
+// touched by `advancePhase`); the read that actually reflects that write is
 // `claim_evaluate_from_session`'s derived `readme_read` context flag
 // (`deriveContext` -> `phaseSatisfied(session, 'doc-reading')`, true only
 // once `doc-reading`'s `phase_status` is `'done'`).
 //
-// Setup for both tests below: `grounding_start` then one AWAITED
+// `grounding_start` does have an observable ordering pair, because the
+// session id it creates is predictable: `generateSessionId` (grounding-wrapper
+// lib.ts) returns `gs-<keyword slug, at most 16 chars>-<Date.now() in base
+// 36>`. With the clock pinned by `vi.setSystemTime` (Date only, no fake
+// timers, so the queue's `setImmediate` barrier still fires), a request
+// pipelined with a `grounding_start` can name the id that start is about to
+// create: a `grounding_guardrail_check` or `grounding_advance` that arrives
+// after the start finds the session, one that arrives before it does not.
+//
+// Setup for the grounding_advance / claim_evaluate_from_session tests below: `grounding_start` then one AWAITED
 // `grounding_advance` moves the session from `scope-resolution` (active) to
 // `doc-reading` (active); `readme_read` is still false at that point. The
 // SECOND `grounding_advance` (marks `doc-reading` done, moves to
@@ -2410,6 +2419,7 @@ describe('grounding session tools: true arrival order at the transport', () => {
   });
 
   afterEach(async () => {
+    vi.useRealTimers();
     await rfClient.close();
     await rfServer.close();
     resetLedgerDb();
@@ -2475,6 +2485,48 @@ describe('grounding session tools: true arrival order at the transport', () => {
       const result = parseToolResult(claimRaw) as { derivedContext: { readme_read: boolean } };
       expect(result.derivedContext.readme_read).toBe(true);
     }
+  });
+
+  // Pinned clock for the three grounding_start pairs below; the afterEach
+  // restores the real Date with `vi.useRealTimers()`.
+  const FIXED_START_MS = 1_790_000_000_000;
+  const predictedStartId = (keyword: string) => `gs-${keyword}-${FIXED_START_MS.toString(36)}`;
+
+  it('a grounding_guardrail_check pipelined AFTER a grounding_start (FALLING numeric ids) finds the session the start created', async () => {
+    vi.setSystemTime(FIXED_START_MS);
+    const keyword = 'ord-start-chk';
+    const sessionId = predictedStartId(keyword);
+    const [startRaw, checkRaw] = await Promise.all([
+      callToolRaw(9000, 'grounding_start', { keyword, problem: 'start then check' }),
+      callToolRaw(7, 'grounding_guardrail_check', { sessionId, guardrail: 'no-step-skipping' }),
+    ]);
+    expect((parseToolResult(startRaw) as { sessionId: string }).sessionId).toBe(sessionId);
+    expect((checkRaw as { isError?: boolean }).isError).not.toBe(true);
+    expect(parseToolResult(checkRaw)).toMatchObject({ sessionId, guardrail: 'no-step-skipping' });
+  });
+
+  it('a grounding_guardrail_check pipelined BEFORE a grounding_start (STRING ids) does not find the session', async () => {
+    vi.setSystemTime(FIXED_START_MS);
+    const keyword = 'ord-chk-start';
+    const sessionId = predictedStartId(keyword);
+    const [checkRaw, startRaw] = await Promise.all([
+      callToolRaw('check-first', 'grounding_guardrail_check', { sessionId, guardrail: 'no-step-skipping' }),
+      callToolRaw('start-second', 'grounding_start', { keyword, problem: 'check then start' }),
+    ]);
+    expect((parseToolResult(startRaw) as { sessionId: string }).sessionId).toBe(sessionId);
+    expect((checkRaw as { isError?: boolean }).isError).toBe(true);
+  });
+
+  it('a grounding_advance pipelined BEFORE a grounding_start (STRING ids) does not find the session', async () => {
+    vi.setSystemTime(FIXED_START_MS);
+    const keyword = 'ord-adv-start';
+    const sessionId = predictedStartId(keyword);
+    const [advanceRaw, startRaw] = await Promise.all([
+      callToolRaw('advance-first', 'grounding_advance', { sessionId }),
+      callToolRaw('start-second', 'grounding_start', { keyword, problem: 'advance then start' }),
+    ]);
+    expect((parseToolResult(startRaw) as { sessionId: string }).sessionId).toBe(sessionId);
+    expect((advanceRaw as { isError?: boolean }).isError).toBe(true);
   });
 
   it('keeps a session arrival stamp only for a grounding_* / claim_evaluate_from_session tools/call still in flight', async () => {

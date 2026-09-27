@@ -235,7 +235,8 @@ const evidenceTextSchema = z
 // summary callback ran before the add callback; the same shape is
 // reproduced for `Promise.all([hypothesis_record, hypothesis_list])` and
 // for the grounding-session pairs below, see the "true arrival order"
-// test blocks in tests/ for the measured repeat counts).
+// test blocks in tests/grounding-gate-mcp-roundtrip.test.ts for the
+// measured repeat counts).
 //
 // Two orders that look like arrival order are not:
 //   - The JSON-RPC request id's own VALUE. Nothing in JSON-RPC requires
@@ -293,15 +294,16 @@ const evidenceTextSchema = z
 // Queue. Each handler of a routed tool hands `{requestId, run}` to `enqueue()`,
 // which buffers entries and, on the first entry of a new batch, schedules
 // a `setImmediate` barrier. The barrier fires after the current microtask
-// queue drains, so every ledger request that arrived in the same
-// event-loop turn has reached `enqueue()` by then (the dispatch up to
+// queue drains, so every routed request for that store that arrived in the
+// same event-loop turn has reached `enqueue()` by then (the dispatch up to
 // `enqueue()`, validation included, is microtask-only). `drain`
 // computes each entry's sort key exactly once, reading its stamp without
 // removing it, sorts on those precomputed keys, and chains each entry's
 // `run()` onto one shared tail promise, so entry N only starts once entry
-// N-1's ledger work has finished. Keys are never computed inside the sort comparator: a
-// comparator is called more than once per element, and one that changed
-// the stamps would change an element's key in the middle of the sort.
+// N-1's routed work has finished. Keys are never computed inside the sort
+// comparator: a comparator is called more than once per element, and one
+// that changed the stamps would change an element's key in the middle of
+// the sort.
 //
 // Missing stamp. An entry whose stamp is absent when its batch drains
 // (evicted by the cap, or a client that reuses an in-flight request id,
@@ -338,7 +340,8 @@ const evidenceTextSchema = z
 // and `enqueueLedgerRequest` back-to-back before awaiting either (see its
 // handler below), so both calls land in the same in-flight batch as any
 // sibling request that also enqueues synchronously at invocation time
-// (the property the "true arrival order" tests below depend on). An
+// (the property the "true arrival order" tests in
+// tests/grounding-gate-mcp-roundtrip.test.ts depend on). An
 // `await` inserted between the two enqueue calls would delay the second
 // one to a LATER macrotask, moving it out of that batch and defeating the
 // sort for the store it reaches late.
