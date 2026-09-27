@@ -121,8 +121,8 @@
 //     attempted-but-unreadable marker is worse than no marker at all: it
 //     signals the run intended to bind a `run-base` and failed, which must
 //     block rather than silently fall through to the legacy date heuristic.
-//     QUOTATION EXEMPTION (orchestrator decision D-027, round 2 of task
-//     6da2c230, amending round 1's fence choice above; round 3 tightened both
+//     QUOTATION EXEMPTION (orchestrator decision D-027, round 2,
+//     amending round 1's fence choice above; round 3 tightened both
 //     nets below): a phrase occurrence that is entirely inside backtick-
 //     delimited inline code, or entirely inside a FENCED code block, reads as
 //     a QUOTATION of the marker syntax, not an attempted marker, and does not
@@ -199,7 +199,7 @@
 //     line-anchored (a substring match anywhere in the file), resolves values
 //     exactly as before this change, and is unaffected by the keyed grammar
 //     hardening. The phrase check's UNKEYED exemption tracks that same
-//     resolver grammar (round 2 of task 6da2c230, review finding 1): a line
+//     resolver grammar (round 2, review finding 1): a line
 //     is exempt when it starts (after optional leading whitespace) with
 //     `<!--` followed by `solution-acceptance:` (whitespace, no space before
 //     the colon, the exact literal `matchMarker` requires), whitespace,

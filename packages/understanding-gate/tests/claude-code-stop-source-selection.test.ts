@@ -38,7 +38,7 @@ describe("looksLikeReportAttempt", () => {
   });
 });
 
-describe("selectReportText (task 0a3227fe)", () => {
+describe("selectReportText", () => {
   // AC 1: the regression that made this whole path dead. The agent wrote
   // the report mid-turn, then kept working, so the payload's
   // last_assistant_message is the closing sentence and the report only

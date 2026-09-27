@@ -180,7 +180,7 @@ describe("runStatus", () => {
     expect(r.stdout).toContain("2026-05-02");
   });
 
-  // agent-grounding 5120938c, review round 2: a harness-expired entry's
+  // Review round 2: a harness-expired entry's
   // displayed timestamp must be the expiry time, not the earlier approval
   // time that preceded the expiry -- otherwise "expired @ <time>" reads as
   // when the (no-longer-current) approval happened.

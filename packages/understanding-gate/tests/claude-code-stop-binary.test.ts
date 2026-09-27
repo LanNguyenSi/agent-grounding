@@ -228,10 +228,10 @@ describe("claude-code Stop binary (end-to-end)", () => {
 });
 
 
-// Wiring coverage for stop.ts itself (task 0a3227fe). selectReportText is
+// Wiring coverage for stop.ts itself. selectReportText is
 // unit-tested in isolation; these assert the binary actually feeds it the
 // payload field and a lazy transcript closure, which a unit test cannot see.
-describe("claude-code Stop binary: source selection + session binding (task 0a3227fe)", () => {
+describe("claude-code Stop binary: source selection + session binding", () => {
   /** A transcript where the report is mid-turn and the LAST assistant text is a closing sentence. */
   function writeMidTurnTranscript(reportText: string): void {
     const lines = [

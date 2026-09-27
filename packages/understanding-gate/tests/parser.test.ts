@@ -115,7 +115,7 @@ describe("parseReport: full round-trip", () => {
     expect(r.report.approvalStatus).toBe("pending");
   });
 
-  it("consumer regression: markdown taskid wins over defaults.taskId gap-fill (agent-tasks 2078873e)", () => {
+  it("consumer regression: markdown taskid wins over defaults.taskId gap-fill", () => {
     // harness's stdin-report.ts passes `taskId: sessionId` purely as a
     // gap-filler per the documented contract ("metadata overrides defaults
     // if present"). 0.4.7-0.4.8 (PR #143) broke this: a caller-supplied
@@ -130,7 +130,7 @@ describe("parseReport: full round-trip", () => {
     expect(r.report.taskId).toBe("t-x");
   });
 
-  it("metadata block overrides defaults, including taskId gap-fill (agent-tasks 2078873e)", () => {
+  it("metadata block overrides defaults, including taskId gap-fill", () => {
     // mode/riskLevel/taskId: the markdown's Metadata block wins over
     // caller-supplied defaults uniformly. defaults.taskId is gap-fill
     // only (FULL_MARKDOWN's Metadata block says "taskId: ug-test-1", so
@@ -182,7 +182,7 @@ describe("parseReport: missing sections", () => {
   });
 });
 
-// agent-tasks be98cd96: a live report had `## Verification Plan` and
+// A live report had `## Verification Plan` and
 // `## Prior Art` present as German prose (no bullets); the parser rejected
 // it with reason=missing_sections listing both keys, indistinguishable
 // from "the agent never wrote these sections at all". `## Open Questions`
@@ -233,7 +233,7 @@ mode: grill_me
 riskLevel: medium
 `;
 
-describe("parseReport: kind-mismatch diagnosis (agent-tasks be98cd96)", () => {
+describe("parseReport: kind-mismatch diagnosis", () => {
   it("RED-test baseline: reproduces the incident shape -- reason=missing_sections with exactly verificationPlan + priorArt", () => {
     // This assertion documents today's (pre-fix) observable behaviour
     // verbatim, per the task contract's red-test-first requirement. It
@@ -736,7 +736,7 @@ describe("parseReport: malformed metadata", () => {
   });
 });
 
-// agent-tasks/eaac8fe5: fast_confirm-mode reports come from a 5-bullet
+// fast_confirm-mode reports come from a 5-bullet
 // prompt with no `# Understanding Report` heading. The parser maps the
 // bullet prefixes to the canonical sections and validates against the
 // fast_confirm-relaxed schema (derivedTodos + acceptanceCriteria not
@@ -987,7 +987,7 @@ describe("parseReport: bold-label section headers (discovery C1)", () => {
 });
 
 
-describe("parseReport: sessionId is not agent-settable (task 0a3227fe)", () => {
+describe("parseReport: sessionId is not agent-settable", () => {
   it("ignores a `sessionId` key in the Metadata block", () => {
     // Session binding is written by the adapters from the runtime's own
     // session id. If markdown could set it, an agent could aim its
@@ -1041,9 +1041,9 @@ describe("parseReport: sessionId is not agent-settable (task 0a3227fe)", () => {
   });
 });
 
-describe("parseReport: taskId is not agent-settable when a caller boundTaskId is present (agent-grounding e2e065e6, agent-tasks 2078873e)", () => {
+describe("parseReport: taskId is not agent-settable when a caller boundTaskId is present", () => {
   // Block-direction integrity finding from the adversarial review of the
-  // C1 self-approval fix (agent-tasks 3a994d92). An agent's Understanding
+  // self-approval fix. An agent's Understanding
   // Report is always forced to approvalStatus: pending, so it can never
   // self-approve (security-self-approval.test.ts). But without this
   // binding, an agent could still forge `taskid: <other task>` in its
@@ -1058,7 +1058,7 @@ describe("parseReport: taskId is not agent-settable when a caller boundTaskId is
   // 0.4.7-0.4.8 (PR #143) implemented this security property by making
   // ANY caller-supplied defaults.taskId win, which broke the documented
   // gap-fill contract for legitimate callers (see the "consumer
-  // regression" test above). agent-tasks 2078873e moved the winning
+  // regression" test above). A later fix moved the winning
   // behaviour to the dedicated defaults.boundTaskId field instead;
   // defaults.taskId reverted to gap-fill.
   it("prefers boundTaskId over `taskid` in the Metadata block", () => {

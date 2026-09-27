@@ -98,7 +98,7 @@ export function looksLikeReportAttempt(text: string): boolean {
  * Caveat worth knowing: some Claude Code builds do not persist mid-turn
  * assistant text to the transcript at all, in which case no source has
  * the report and nothing can be captured here. The reliable channel is
- * then the operator's approve command (harness task 61fd36db).
+ * then the operator's approve command.
  */
 export function selectReportText(
   payloadText: string,
@@ -187,7 +187,7 @@ export function handleStop(
   // "pending" by parseReport regardless of what the metadata block contains.
   // taskId is bound via `boundTaskId`, not `taskId`: it must win over an
   // agent-authored `taskid` key in the report's own Metadata block (see the
-  // taskId binding comment in parser.ts, agent-tasks 2078873e).
+  // taskId binding comment in parser.ts).
   const defaults: ParseDefaults = {
     boundTaskId: input.env.UNDERSTANDING_GATE_TASK_ID || input.sessionId,
     createdAt: deps.now().toISOString(),
@@ -232,7 +232,7 @@ export function handleStop(
       // Optional on ParseError (not every producer in the test suite sets
       // it), so default defensively. parseReport() itself always
       // populates it -- see the ParseError.malformedSections doc comment
-      // in core/parser.ts (agent-tasks be98cd96).
+      // in core/parser.ts.
       malformedSections: result.error.malformedSections ?? [],
       schemaErrors: result.error.schemaErrors,
       message: result.error.message,

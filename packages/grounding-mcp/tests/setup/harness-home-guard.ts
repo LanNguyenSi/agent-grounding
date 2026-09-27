@@ -1,5 +1,5 @@
 // Package-wide regression guard (F1, review round 1; hardened in round 2,
-// R2-M2, task 9b6c4beb / grounding-mcp CHANGELOG 0.8.0): a vitest
+// R2-M2): a vitest
 // `setupFiles` entry that pins HARNESS_HOME to a per-test-file tempdir
 // UNCONDITIONALLY, at module top-level (not inside `beforeAll`), so a test
 // file that forgets its own HARNESS_HOME isolation can never fall through
@@ -61,8 +61,8 @@ const guardDisabled = process.env[DISABLE_ENV] === '1';
 // Captured BEFORE the override below, whatever it was (ambient/real, another
 // tempdir, or unset) — this is what `afterAll` restores.
 const savedHarnessHome = process.env.HARNESS_HOME;
-// Same net for the signing-key env projection (SOLUTION_VERDICT_SIGNING_KEY,
-// task d0daa18a): an ambient projection from the operator's harness apply
+// Same net for the signing-key env projection (SOLUTION_VERDICT_SIGNING_KEY):
+// an ambient projection from the operator's harness apply
 // must never leak into tests, or every signing test would silently use the
 // operator's REAL key file. Deleted per file, restored in afterAll.
 const savedSigningKeyEnv = process.env.SOLUTION_VERDICT_SIGNING_KEY;

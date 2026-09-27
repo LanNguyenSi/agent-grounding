@@ -16,8 +16,8 @@ export type RiskLevel = "low" | "medium" | "high" | "critical";
 // `approvalStatus` enum is spread from this array (`enum: [...APPROVAL_STATUSES]`),
 // not hand-copied, so removing a member here removes it from the
 // runtime-validated JSON Schema in the same edit -- there is no second
-// place that can drift out of sync with the union (agent-grounding
-// 5120938c, review round 2; guarded by tests/schema.test.ts, which
+// place that can drift out of sync with the union (review round 2;
+// guarded by tests/schema.test.ts, which
 // ajv-validates a harness-expired fixture against the real schema).
 export const APPROVAL_STATUSES = [
   "pending",

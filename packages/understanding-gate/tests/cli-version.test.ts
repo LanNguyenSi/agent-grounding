@@ -4,8 +4,8 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 // Regression guard: `understanding-gate --version` must return the
-// version in package.json, not a stale literal. Pre-PR (agent-tasks/73092e5e)
-// the CLI hardcoded "0.2.3" via .version("0.2.3") and drifted past 0.3.0
+// version in package.json, not a stale literal. Previously the CLI
+// hardcoded "0.2.3" via .version("0.2.3") and drifted past 0.3.0
 // when the release bumped only package.json.
 
 const PKG_ROOT = resolve(__dirname, "..");

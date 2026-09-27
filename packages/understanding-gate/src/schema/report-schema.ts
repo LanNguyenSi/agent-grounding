@@ -13,7 +13,7 @@
 // the fields that ARE present. Agents in fast_confirm mode that
 // nevertheless emit a full Report still parse cleanly: the relaxed
 // schema is a strict superset of inputs the strict schema accepts.
-// Rationale: see agent-tasks/eaac8fe5.
+// Rationale: the fast_confirm prompt cannot emit fields it never asks for.
 
 import { APPROVAL_STATUSES } from "./types.js";
 
@@ -91,7 +91,7 @@ export const UNDERSTANDING_REPORT_SCHEMA = {
       items: { type: "string", minLength: 1 },
     },
     requiresHumanApproval: { type: "boolean" },
-    // "expired" (agent-grounding 5120938c): written externally by the
+    // "expired": written externally by the
     // harness's understanding-before-execution runtime pack
     // (expirePersistedReport()), never by this package's own parser/CLI.
     // Included here so a harness-expired persisted report -- which

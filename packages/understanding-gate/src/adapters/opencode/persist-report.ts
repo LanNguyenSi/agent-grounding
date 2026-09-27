@@ -93,7 +93,7 @@ export function handlePersistReport(
   // hard-resets it to "pending" so only the operator CLI can approve.
   // taskId is bound via `boundTaskId`, not `taskId`: it must win over an
   // agent-authored `taskid` key in the report's own Metadata block (see the
-  // taskId binding comment in parser.ts, agent-tasks 2078873e).
+  // taskId binding comment in parser.ts).
   const defaults: ParseDefaults = {
     boundTaskId: input.env.UNDERSTANDING_GATE_TASK_ID || input.sessionId,
     createdAt: deps.now().toISOString(),
@@ -134,8 +134,7 @@ export function handlePersistReport(
       // Optional on ParseError (not every producer in the test suite sets
       // it), so default defensively -- same rationale as the Claude Code
       // adapter's log writer (handle-stop.ts), see the
-      // ParseError.malformedSections doc comment in core/parser.ts
-      // (agent-tasks be98cd96).
+      // ParseError.malformedSections doc comment in core/parser.ts.
       malformedSections: result.error.malformedSections ?? [],
       schemaErrors: result.error.schemaErrors,
       message: result.error.message,

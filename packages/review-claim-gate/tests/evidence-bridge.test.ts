@@ -259,7 +259,7 @@ describe("defaultEvidenceFilePath", () => {
     );
   });
 
-  // Audit H1 follow-up (agent-tasks 2878a962), residual #2: on Windows,
+  // Windows drive-relative-path follow-up: on Windows,
   // `path.win32.isAbsolute("C:foo")` is false — that form is
   // drive-relative, not absolute — so it slipped past the `isAbsolute`
   // guard. Assert the explicit reject regardless of host platform (the

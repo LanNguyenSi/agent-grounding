@@ -99,8 +99,8 @@ describe("persistReportPlugin: end-to-end", () => {
     expect(files[0]).toMatch(/-session-int-[0-9a-f]{8}\.json$/);
   });
 
-  // Regression net for the opencode double-fire dedupe (agent-grounding
-  // 973281e1): opencode's own `message.updated` fires twice for the same
+  // Regression net for the opencode double-fire dedupe: opencode's own
+  // `message.updated` fires twice for the same
   // finished assistant message (docs/testing/opencode-npm-dogfood.md,
   // Finding 3, ~105ms apart, `now()` differs between the two fires). Two
   // events for the same sessionID+messageID, each with a distinct `now()`,
@@ -153,7 +153,7 @@ describe("persistReportPlugin: end-to-end", () => {
     expect(files).toHaveLength(1);
   });
 
-  // Fix-Runde 2 (agent-grounding 973281e1, Finding 1): the dedupe key is
+  // Follow-up fix (dedupe-key finding): the dedupe key is
   // now claimed only after a fetch has returned usable text, not before
   // the fetch is attempted (see the closure comment in
   // persist-report-plugin.ts). Accepted consequence of that ordering: if
@@ -246,7 +246,7 @@ describe("persistReportPlugin: end-to-end", () => {
     expect(files).toHaveLength(1);
   });
 
-  // Reviewer recommendation (agent-grounding 973281e1, Fix-Runde 2):
+  // Reviewer recommendation (from the same follow-up fix):
   // guards against a future simplification of the dedupe key down to
   // just `sessionID` (dropping the messageID half), which would wrongly
   // collapse two distinct finished messages in the same session into one
