@@ -7,6 +7,10 @@
 - The `solution_evaluate` tool description now points agents at
   `docs/solution-acceptance-gate.md` for progress-notification and timeout
   detail, instead of the README section that content moved out of.
+- That pointer is now also given as an absolute GitHub URL, since `files`
+  in package.json does not ship the `docs/` directory: an npm-only
+  consumer reading the plain-text MCP tool description has no repo
+  checkout to resolve a bare relative path against.
 
 ## 0.13.0, 2026-09-23
 
