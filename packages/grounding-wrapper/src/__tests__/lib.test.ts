@@ -123,7 +123,7 @@ describe('initSession', () => {
   });
 });
 
-describe('validateKeyword (task 7db33828)', () => {
+describe('validateKeyword', () => {
   it('accepts a normal ASCII keyword', () => {
     expect(() => validateKeyword('clawd-monitor')).not.toThrow();
   });
@@ -162,7 +162,7 @@ describe('validateKeyword (task 7db33828)', () => {
   });
 });
 
-describe('initSession — input validation (task 7db33828)', () => {
+describe('initSession — input validation', () => {
   it('throws on empty keyword instead of emitting "gs--<ts>"', () => {
     expect(() => initSession({ keyword: '', problem: 'test' })).toThrow(/must not be empty/);
   });
@@ -210,7 +210,7 @@ describe('advancePhase', () => {
     expect(session.current_phase).toBe('complete');
   });
 
-  it("sets phase_status['complete'] to 'done' on transition to terminal phase (task 9a258d6d)", () => {
+  it("sets phase_status['complete'] to 'done' on transition to terminal phase", () => {
     const session = initSession({ keyword: 'simple-tool', problem: 'test' });
     expect(session.phase_status.complete).toBe('pending');
     while (session.current_phase !== 'complete') advancePhase(session);

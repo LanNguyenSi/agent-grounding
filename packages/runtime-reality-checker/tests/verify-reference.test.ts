@@ -22,7 +22,7 @@ function seed(root: string, relPath: string, content = ""): string {
   return full;
 }
 
-// Review follow-up (agent-tasks e4c970b2, LOW): probe symlink support
+// Review follow-up (LOW severity): probe symlink support
 // ONCE at module load and gate the symlink-dependent tests with
 // `it.skipIf`, instead of each test creating the symlink and silently
 // `return`-ing early on EPERM. A bare early `return` inside a test body
@@ -101,8 +101,8 @@ describe("verifyMemoryReference — kind: path", () => {
   });
 });
 
-// Parity follow-up (agent-tasks e4c970b2): review-claim-gate's
-// evidence-path guard (agent-tasks 2878a962) was hardened with a
+// Parity follow-up: review-claim-gate's
+// evidence-path guard was hardened with a
 // realpath-based containment backstop because lexical `resolve()`
 // alone does not follow symlinks. verifyPath's containment check had
 // the same gap — a committed symlink inside repoRoot pointing outside
@@ -216,7 +216,7 @@ describe("verifyMemoryReference — kind: path symlink escape (realpath containm
     },
   );
 
-  // Review follow-up (agent-tasks e4c970b2, MEDIUM): ENOTDIR ("a path
+  // Review follow-up (MEDIUM severity): ENOTDIR ("a path
   // segment that should be a directory is actually a file") must be
   // treated like ENOENT — structurally not there, not an escape — and
   // must NOT propagate as a throw. Concrete regression case from the
@@ -238,7 +238,7 @@ describe("verifyMemoryReference — kind: path symlink escape (realpath containm
     }
   });
 
-  // Review follow-up (agent-tasks e4c970b2, MEDIUM): any OTHER
+  // Review follow-up (MEDIUM severity): any OTHER
   // unexpected realpath errno (ELOOP from a symlink cycle, in this
   // case) must NOT propagate out of `verifyMemoryReference` — it is
   // total by design. It must instead surface as a fail-closed RESULT.

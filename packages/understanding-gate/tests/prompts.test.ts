@@ -51,7 +51,7 @@ describe("prompt snippets", () => {
   });
 
   it("full + grill-me templates instruct sections 3-10 as markdown lists with an explicit empty form", () => {
-    // Regression (agent-tasks/111fc7d9): the parser types report sections
+    // Regression: the parser types report sections
     // 3-9 as `kind: "list"`; a prose-paragraph body parses to an empty
     // list and the whole report is rejected `missing_sections`. The
     // templates previously used mixed verbs ("Define", "State", "Mention",
@@ -178,7 +178,7 @@ describe("prompt roundtrip: parseReport accepts what the template asks for", () 
   });
 
   it("a report with prose (non-list) bodies for sections 3-9 is rejected (the contract the prompt fix exists for)", () => {
-    // This is the exact failure mode agent-tasks/111fc7d9 fixed at the
+    // This is the exact failure mode the prompt-wording fix addressed at the
     // prompt layer: the parser types sections 3-9 as `kind: "list"`, so
     // a prose-paragraph body parses to an empty list and the report is
     // rejected `missing_sections`. The prompt fix steers agents to

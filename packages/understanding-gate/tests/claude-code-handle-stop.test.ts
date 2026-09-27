@@ -310,7 +310,7 @@ describe("truncateForLog", () => {
 });
 
 describe("handleStop: fast_confirm bullet routing", () => {
-  // agent-tasks/eaac8fe5: fast_confirm bullets no longer dead-end in a
+  // fast_confirm bullets no longer dead-end in a
   // breadcrumb. The handler routes them to parseReport, which now maps
   // the 5 bullet prefixes to canonical sections + validates against the
   // fast_confirm-relaxed schema. The breadcrumb has been replaced by
@@ -540,7 +540,7 @@ requiresHumanApproval: true
 });
 
 
-describe("handleStop: session binding cannot be forged (task 0a3227fe)", () => {
+describe("handleStop: session binding cannot be forged", () => {
   it("stamps the sessionId from the hook payload, ignoring any `sessionId` the agent wrote in Metadata", () => {
     // The parser's METADATA_KEYS whitelist has no `sessionid` entry, so
     // agent markdown cannot reach the field. Assert the end-to-end

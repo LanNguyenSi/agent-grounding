@@ -273,7 +273,7 @@ describe("loadReport", () => {
   });
 });
 
-describe("expiredAt persistence (agent-grounding 5120938c)", () => {
+describe("expiredAt persistence", () => {
   it("round-trips expiredAt through saveReport -> loadReport -> listReports", () => {
     // Shape written in place by the harness's understanding-before-
     // execution runtime pack (expirePersistedReport()): approvalStatus
@@ -380,7 +380,7 @@ describe("saveReport: atomicity", () => {
 // test files (vitest uses esbuild; this pin is harmless either way).
 void utimesSync;
 
-describe("sessionId persistence (task 0a3227fe)", () => {
+describe("sessionId persistence", () => {
   it("round-trips sessionId through saveReport → loadReport → listReports", () => {
     const report: UnderstandingReport = {
       ...baseReport,

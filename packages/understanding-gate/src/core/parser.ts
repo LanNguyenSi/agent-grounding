@@ -18,9 +18,9 @@
 // persisted taskId regardless of the markdown -- e.g. so an agent-authored
 // `taskid` can never redirect a report onto another task's approval -- pass
 // `defaults.boundTaskId` instead; it wins over both the markdown's `taskid`
-// key and defaults.taskId (see the merge-order comment below,
-// agent-grounding e2e065e6, and agent-tasks 2078873e, which restored the
-// gap-fill contract that PR #143 / 0.4.7-0.4.8 broke). approvalStatus is
+// key and defaults.taskId (see the merge-order comment below; this
+// restored the gap-fill contract that PR #143 / 0.4.7-0.4.8 broke).
+// approvalStatus is
 // always forced to "pending" by parseReport regardless of defaults or
 // metadata; only the operator CLI approve flow (withApprovalStatus) may
 // flip it.
@@ -60,7 +60,7 @@ export type ParseDefaults = {
 //   schema_violation -> required-property names from the ajv errors
 //   invalid_metadata -> empty
 //
-// `malformedSections` (additive, agent-tasks be98cd96): only ever populated
+// `malformedSections` (additive): only ever populated
 // on `reason: "missing_sections"`, and always a SUBSET of `missing`. A key
 // lands here when its heading WAS found and its body was non-blank, but
 // zero bullet items could be parsed out of it (e.g. the agent wrote prose
@@ -160,7 +160,7 @@ const METADATA_ALIASES = ["metadata"];
 // Pre-compiled validators. Module-level because compilation is the slow
 // step and the schemas are static. Two schemas: the strict default and a
 // fast_confirm variant that drops derivedTodos + acceptanceCriteria from
-// `required` (agent-tasks/eaac8fe5).
+// `required` for the more compact fast_confirm report shape.
 let cachedValidator: ValidateFunction | null = null;
 let cachedFastConfirmValidator: ValidateFunction | null = null;
 function getValidator(mode: UnderstandingGateMode | undefined): ValidateFunction {
@@ -180,7 +180,7 @@ function getValidator(mode: UnderstandingGateMode | undefined): ValidateFunction
   return cachedValidator;
 }
 
-// Fast-confirm bullet → section mapping (agent-tasks/eaac8fe5). The
+// Fast-confirm bullet → section mapping. The
 // fast_confirm prompt emits 5 single-line bullets with no
 // `# Understanding Report` heading or 9-section structure. Map prefixes
 // to the corresponding canonical section so the existing collector +
@@ -289,7 +289,7 @@ export function parseReport(
   // to parse the 5-bullet shape the fast_confirm prompt emits. The
   // existing section-walk below still runs for the canonical sections;
   // this just pre-seeds `collected` so an unstructured fast_confirm
-  // response persists end-to-end (agent-tasks/eaac8fe5).
+  // response persists end-to-end.
   const isFastConfirm = defaults.mode === "fast_confirm";
   if (isFastConfirm && sections.length === 0) {
     const fc = parseFastConfirmBullets(markdown);
@@ -365,10 +365,9 @@ export function parseReport(
     metadataFromMarkdown = parsed.value;
   }
 
-  // taskId binding (agent-grounding e2e065e6, block-direction integrity
-  // finding from the adversarial review of the C1 self-approval fix,
-  // agent-tasks 3a994d92; restored to gap-fill + moved to the explicit
-  // boundTaskId field in agent-tasks 2078873e, see the ParseDefaults
+  // taskId binding (block-direction integrity finding from the
+  // adversarial review of the self-approval fix; restored to gap-fill
+  // and moved to the explicit boundTaskId field, see the ParseDefaults
   // docstring). When the caller supplies a boundTaskId, it must win over an
   // agent-authored `taskid` key: the Claude Code and opencode adapters
   // (handle-stop.ts / persist-report.ts) always pass boundTaskId derived
@@ -710,8 +709,8 @@ function stripUndefined(obj: Record<string, unknown>): Record<string, unknown> {
 // subset of `missing` (see the ParseError.malformedSections doc comment).
 // Naming that subset explicitly in the message lets a schema-conformant
 // report be derived from the message alone, rather than the mismatch case
-// reading like the section was never written at all (agent-tasks
-// be98cd96): a live report had German prose under Verification Plan /
+// reading like the section was never written at all: a live report had
+// German prose under Verification Plan /
 // Prior Art (no bullets) and was rejected with a plain "missing" message
 // that gave no hint the sections were present but wrongly formed.
 function buildMissingSectionsMessage(

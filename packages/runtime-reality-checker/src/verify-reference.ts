@@ -166,8 +166,8 @@ function resolveReal(path: string): string | null {
  * (verifyPath) is responsible for turning that into a fail-closed
  * RESULT rather than letting it propagate, since
  * `verifyMemoryReference` is designed to never throw. Mirrors
- * review-claim-gate's `resolveRealOrNull` (agent-tasks 2878a962 /
- * e4c970b2), narrowed further to fold in the ENOTDIR case that
+ * review-claim-gate's `resolveRealOrNull`, narrowed further to fold in
+ * the ENOTDIR case that
  * verifyPath's absolute-path pass-through and free-form ref.value can
  * hit but review-claim-gate's taskId shape cannot.
  */
@@ -286,9 +286,9 @@ function verifyPath(
   // repo). `isAbsolute` is platform-aware so Windows drive letters and
   // POSIX `/foo` both behave.
   //
-  // Decision (agent-tasks e4c970b2, bringing this to parity with
-  // review-claim-gate's evidence-path guard / agent-tasks 2878a962):
-  // the realpath containment hardening added below applies ONLY to the
+  // Decision (bringing this to parity with review-claim-gate's
+  // evidence-path guard): the realpath containment hardening added below
+  // applies ONLY to the
   // relative-value branch. The absolute-path pass-through above is
   // intentional, pre-existing, by-design behaviour — this tool has no
   // absolute-reject (unlike review-claim-gate's evidence-path guard,
@@ -321,9 +321,9 @@ function verifyPath(
       };
     }
 
-    // Symlink-aware backstop (agent-tasks e4c970b2, parity with
-    // review-claim-gate's realpath containment / agent-tasks 2878a962):
-    // `resolve()` above is purely lexical and does not follow symlinks.
+    // Symlink-aware backstop (parity with review-claim-gate's realpath
+    // containment guard): `resolve()` above is purely lexical and does
+    // not follow symlinks.
     // A committed symlink inside repoRoot that points outside it (e.g.
     // `linked-dir -> /elsewhere`) plus a ref.value like
     // `linked-dir/secret` passes the lexical check above (its own path
@@ -340,7 +340,7 @@ function verifyPath(
     // correctly reports exists:false for a genuinely missing path
     // either way, so nothing is leaked by skipping.
     //
-    // Review follow-up (agent-tasks e4c970b2, MEDIUM): `verifyPath` —
+    // Review follow-up (MEDIUM severity): `verifyPath` —
     // and `verifyMemoryReference` as a whole — is designed to always
     // return a result and never throw (callers such as grounding-mcp's
     // tool handler do not wrap this call in a try/catch). But

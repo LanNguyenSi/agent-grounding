@@ -67,8 +67,8 @@ describe("isApproved", () => {
     expect(isApproved(entry({ approvalStatus: "rejected" }))).toBe(false);
     expect(isApproved(entry({ approvalStatus: "revision_requested" }))).toBe(false);
     // "expired" is written by the harness's understanding-before-execution
-    // runtime pack when a previously-approved report's approval ages out
-    // (agent-grounding 5120938c); it must never read as approved.
+    // runtime pack when a previously-approved report's approval ages out;
+    // it must never read as approved.
     expect(isApproved(entry({ approvalStatus: "expired" }))).toBe(false);
   });
   it("returns true only for approved", () => {
@@ -123,8 +123,8 @@ describe("withApprovalStatus", () => {
   });
 
   it("clears expiredAt when approving a previously expired report", () => {
-    // agent-grounding 5120938c review round 2: the harness stamps
-    // expiredAt on a report it rewrites to approvalStatus "expired". If a
+    // The harness stamps expiredAt on a report it rewrites to
+    // approvalStatus "expired". If a
     // human later approves that report via the CLI, the resulting
     // "approved" snapshot must not still carry expiredAt -- it would
     // read back as a self-contradictory record.

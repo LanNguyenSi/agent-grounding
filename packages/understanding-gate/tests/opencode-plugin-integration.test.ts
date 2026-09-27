@@ -99,8 +99,8 @@ describe("persistReportPlugin: end-to-end", () => {
     expect(files[0]).toMatch(/-session-int-[0-9a-f]{8}\.json$/);
   });
 
-  // Regression net for the opencode double-fire dedupe (agent-grounding
-  // 973281e1): opencode's own `message.updated` fires twice for the same
+  // Regression net for the opencode double-fire dedupe: opencode's own
+  // `message.updated` fires twice for the same
   // finished assistant message (docs/testing/opencode-npm-dogfood.md,
   // Finding 3, ~105ms apart, `now()` differs between the two fires). Two
   // events for the same sessionID+messageID, each with a distinct `now()`,
@@ -153,7 +153,7 @@ describe("persistReportPlugin: end-to-end", () => {
     expect(files).toHaveLength(1);
   });
 
-  // Fix-Runde 2 (agent-grounding 973281e1, Finding 1): the dedupe key is
+  // Follow-up fix (dedupe-key finding): the dedupe key is
   // now claimed only after a fetch has returned usable text, not before
   // the fetch is attempted (see the closure comment in
   // persist-report-plugin.ts). Accepted consequence of that ordering: if
@@ -195,11 +195,11 @@ describe("persistReportPlugin: end-to-end", () => {
     expect(logs).toHaveLength(2);
   });
 
-  // This is the actual regression protection for Finding 1: a transient
+  // Regression protection for the dedupe-key finding above: a transient
   // failure on the FIRST of opencode's two same-message fires must not
   // permanently lose the report. Mutation probe: moving
   // `processedMessages.add(dedupeKey)` back to before the fetch (its
-  // Fix-Runde-1 position) turns this red -- 0 report files instead of 1,
+  // position before the follow-up fix) turns this red -- 0 report files instead of 1,
   // because the key gets claimed on the failing first fire and the
   // succeeding second fire is then skipped as a dupe -- verified
   // manually, not asserted by this suite.
@@ -246,7 +246,7 @@ describe("persistReportPlugin: end-to-end", () => {
     expect(files).toHaveLength(1);
   });
 
-  // Reviewer recommendation (agent-grounding 973281e1, Fix-Runde 2):
+  // Reviewer recommendation (from the same follow-up fix):
   // guards against a future simplification of the dedupe key down to
   // just `sessionID` (dropping the messageID half), which would wrongly
   // collapse two distinct finished messages in the same session into one

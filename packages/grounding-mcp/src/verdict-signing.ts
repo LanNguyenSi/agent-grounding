@@ -1,5 +1,5 @@
-// Producer-side mirror of harness' HMAC marker signing (harness/f9485cc7,
-// harness/c7c3f606) for the solution-acceptance verdict marker.
+// Producer-side mirror of harness' HMAC marker signing for the
+// solution-acceptance verdict marker.
 //
 // grounding-mcp is the PRODUCER of that marker (`writeVerdict` in
 // solution-verdict.ts); harness is the CONSUMER
@@ -7,10 +7,10 @@
 // verifyVerdictSignature). This module signs with the SAME key file, the
 // SAME HMAC scheme, and the SAME canonical payload the consumer verifies
 // with, so a marker this package writes satisfies the consumer's signature
-// check without either side depending on the other's package (D-001, task
-// 9b6c4beb / grounding-mcp CHANGELOG 0.8.0: independent mirror chosen over a
-// shared package because it is consistent with the shipped consumer's own
-// design and avoids a new cross-repo architecture decision) — the same
+// check without either side depending on the other's package (D-001,
+// grounding-mcp CHANGELOG 0.8.0: independent mirror chosen over a shared
+// package because it is consistent with the shipped consumer's own design
+// and avoids a new cross-repo architecture decision) — the same
 // independent-mirroring convention `verdictDir()` / `sanitizeVerdictId()`
 // in solution-verdict.ts already use.
 //
@@ -29,7 +29,7 @@
 // Any drift here produces a marker that LOOKS signed but never verifies — a
 // silent universal deny on the harness side; keep constants and payload
 // shapes textually identical to the harness source above. ONE deliberate
-// divergence: the SOLUTION_VERDICT_SIGNING_KEY env tier (EOF, task d0daa18a).
+// divergence: the SOLUTION_VERDICT_SIGNING_KEY env tier (see EOF).
 
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
@@ -88,8 +88,8 @@ export function verdictMarkerId(id: string): string {
  * seam (`src/runtime/home-dir.ts`): an injectable override for the
  * OPERATOR's `$HOME` the tiers below the env var anchor on, defaulting to
  * `os.homedir()`. Signature-compatible with every existing zero-arg call
- * site. Added (D-005, task 9b6c4beb / grounding-mcp CHANGELOG 0.8.0: review
- * found the deeper home-resolution tiers were only exercised transitively)
+ * site. Added (D-005, grounding-mcp CHANGELOG 0.8.0: review found the
+ * deeper home-resolution tiers were only exercised transitively)
  * because `vi.spyOn(os, 'homedir')` was tried and confirmed NOT to redirect the
  * call inside this module under this package's ESM/vitest setup — an
  * explicit parameter is the only reliable test-injection point for the
@@ -303,7 +303,7 @@ export function signVerdict<
 /**
  * Env var carrying the ABSOLUTE path of the signing-key FILE, projected by
  * harness at apply time onto this MCP server's env (slice H1 of the
- * operator-decided Option 2 design, task 9b6c4beb: harness resolves its
+ * operator-decided Option 2 design: harness resolves its
  * own `<generatedDir>/.approval-signing.key` and writes the resolved path
  * here, following its `EVIDENCE_LEDGER_DB` projection pattern). When set,
  * it is authoritative and removes the one ambiguity the mirrored home

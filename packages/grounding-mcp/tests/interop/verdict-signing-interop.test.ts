@@ -268,7 +268,7 @@ describe('interop: a real writeVerdict marker vs the vendored harness verifier',
       // harness-verifier.vendored.ts's comment on
       // MISSING_APPROVED_AT_REASON / MISSING_APPROVED_BY_REASON, for why.
       // This matches harness' own golden-fixture assertion for the
-      // pre-c7c3f606 0.3.2 / 0.5.0 markers ("the real UNSIGNED ... marker
+      // pre-signing 0.3.2 / 0.5.0 markers ("the real UNSIGNED ... marker
       // is rejected as forged/unsigned, even at its own HEAD").
       const v = makeVerdict();
       const onDisk = writeAndRead(v);

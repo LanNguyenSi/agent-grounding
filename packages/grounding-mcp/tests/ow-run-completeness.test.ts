@@ -308,7 +308,7 @@ describe('readOwRunCompleteness — completeness verdict', () => {
   });
 });
 
-describe('readOwRunCompleteness — run dir with only 00/05/06 present (task b35ee391)', () => {
+describe('readOwRunCompleteness — run dir with only 00/05/06 present', () => {
   it('is judged complete with no 01-04 files on disk', () => {
     const dir = makeRun('2026-06-22-run', {
       goal: '# Goal\n\nDo the thing.\n',

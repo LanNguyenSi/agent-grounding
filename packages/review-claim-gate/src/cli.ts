@@ -82,7 +82,7 @@ export function defaultEvidenceFilePath(taskId: string, cwd = process.cwd()): st
       `task id '${taskId}' must be relative, not an absolute path`,
     );
   }
-  // Audit H1 residual (agent-tasks 2878a962): `path.win32.isAbsolute` only
+  // Windows drive-relative path guard: `path.win32.isAbsolute` only
   // treats a drive letter as absolute when followed by a separator
   // (`C:\foo`), NOT a bare `C:foo` — that form is "drive-relative", it
   // resolves against the CWD of drive C. So on Windows a taskId like

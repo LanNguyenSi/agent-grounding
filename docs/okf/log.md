@@ -2,6 +2,20 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-27, bare tracker-id references in public comments replaced by
+  behavioural wording across `packages/grounding-mcp/src/solution-verdict.ts`,
+  `packages/grounding-mcp/src/verdict-signing.ts`,
+  `packages/grounding-mcp/src/ow-run-completeness.ts`,
+  `packages/review-claim-gate/src/cli.ts` and their citing docs' other
+  sources: bare tracker ids were removed from these comments; where an id
+  carried the only explanation, it was replaced by behavioural wording or
+  by the "grounding-mcp CHANGELOG 0.8.0" / "see EOF" pointer. `solution-acceptance-verdict-contract.md`,
+  `evidence-ledger-session-key-shapes.md`,
+  `hypothesis-tracker-persistence-split.md` and
+  `claim-gate-vs-review-claim-gate.md` were re-verified against the edited
+  files (no cited anchor text or line range moved) and re-stamped; none of
+  their citations needed re-pointing.
+
 - 2026-09-27, this log's own older entries re-pointed after the
   arrival-ordered routing change: several entries below narrate earlier
   fixes to `packages/grounding-mcp/src/server.ts` (the `ledger_add`

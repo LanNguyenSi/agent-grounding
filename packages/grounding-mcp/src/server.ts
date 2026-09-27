@@ -173,7 +173,7 @@ const hypothesisIdSchema = z
 // from "nothing established yet". A local datetime with no zone is a
 // different failure: SQLite parses it without error, but it silently shifts
 // the window whenever the caller's wall-clock zone is not UTC (see the
-// CHANGELOG entry for task dde2ba58 for details). Reject both
+// CHANGELOG for details on the sinceIso validation fix). Reject both
 // classes at the schema boundary, before either reaches SQL, and normalize
 // every accepted datetime to a UTC `Z` instant via `new Date(v).toISOString()`
 // before it reaches the query, so SQLite always compares against a value it

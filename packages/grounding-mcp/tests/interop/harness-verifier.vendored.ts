@@ -13,8 +13,8 @@
 // which cannot catch a drift between the two independently-mirrored
 // implementations. Per D-001 (independent mirrors, no package dependency) /
 // D-003 (vendored interop verifier over a hand fixture, so the proof runs
-// in CI), task 9b6c4beb / grounding-mcp CHANGELOG 0.8.0: that drift is
-// exactly the risk this interop suite exists to catch.
+// in CI), grounding-mcp CHANGELOG 0.8.0: that drift is exactly the risk
+// this interop suite exists to catch.
 //
 // SOURCE STAMP — transcribed verbatim (constants, control flow, literal
 // reason strings) from:

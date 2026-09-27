@@ -254,7 +254,7 @@ describe("handlePersistReport: parse_error path", () => {
 });
 
 
-describe("handlePersistReport: session binding cannot be forged (task 0a3227fe)", () => {
+describe("handlePersistReport: session binding cannot be forged", () => {
   it("stamps the sessionId from the runtime, not from a `sessionId` the agent wrote in Metadata", () => {
     const deps = makeDeps();
     handlePersistReport(

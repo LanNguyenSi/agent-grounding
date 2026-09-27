@@ -1,6 +1,6 @@
-// Regression tests for the taskId-metadata binding vulnerability
-// (agent-grounding e2e065e6). Pre-existing, no escalation: found during the
-// adversarial review of the C1 self-approval fix (agent-tasks 3a994d92).
+// Regression tests for the taskId-metadata binding vulnerability.
+// Pre-existing, no escalation: found during the adversarial review of the
+// self-approval fix.
 //
 // Exploit: an agent's Understanding Report is always forced to
 // approvalStatus: "pending" by parseReport, so it can never self-approve
@@ -26,7 +26,7 @@
 // taskId is fully adapter/session-bound and the Metadata key can no
 // longer forge it.
 //
-// agent-tasks 2078873e: this used to be implemented via a plain
+// This used to be implemented via a plain
 // defaults.taskId, which also (wrongly) made ANY caller-supplied taskId
 // win, breaking legitimate gap-fill callers. defaults.taskId is gap-fill
 // again; this security property now lives in the dedicated

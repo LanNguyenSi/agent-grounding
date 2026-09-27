@@ -79,7 +79,7 @@ export const persistReportPlugin: OpencodePlugin = async (
   // session's lifetime is fine at this volume (one entry per finished
   // assistant message).
   //
-  // Claim timing (Fix-Runde 2, agent-grounding 973281e1, Finding 1): the
+  // Claim timing (dedupe-key finding): the
   // key is added to this set only after a fetch has actually returned
   // usable text (see below), never before the fetch is attempted.
   // Claiming eagerly, before the fetch, was tried first and found to lose

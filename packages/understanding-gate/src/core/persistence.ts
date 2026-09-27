@@ -50,8 +50,7 @@ export type ReportEntry = {
    * Set alongside approvalStatus: "expired" by the harness's
    * understanding-before-execution runtime pack (expirePersistedReport()),
    * never by this package. Absent on any report this package's own CLI
-   * produced or that predates the "expired" status (agent-grounding
-   * 5120938c).
+   * produced or that predates the "expired" status.
    */
   expiredAt?: string;
   /** Absent on reports written before v0.4.6, and on any report an adapter could not attribute. */

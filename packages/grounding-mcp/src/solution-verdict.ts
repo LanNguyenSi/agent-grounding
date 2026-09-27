@@ -75,8 +75,8 @@ export interface Verdict {
   source: string;
   /**
    * Signature algorithm tag; set by `writeVerdict`, which always signs
-   * (see `verdict-signing.ts`, D-002, task 9b6c4beb / grounding-mcp
-   * CHANGELOG 0.8.0: no fail-open "unsigned when no key" path — that would
+   * (see `verdict-signing.ts`, D-002, grounding-mcp CHANGELOG 0.8.0: no
+   * fail-open "unsigned when no key" path — that would
    * reproduce the exact producer-doesn't-sign universal-deny failure this
    * feature closes). Optional on the type only
    * because a hand-constructed `Verdict` (e.g. in `evaluateSolution`,

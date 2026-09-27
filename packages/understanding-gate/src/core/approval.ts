@@ -66,7 +66,7 @@ export function withApprovalStatus(
   // "expired" (approve or revoke), the stale timestamp must not survive
   // into the new snapshot -- otherwise saveReport would persist a
   // self-contradictory record, e.g. {status: "approved", expiredAt: ...}
-  // (agent-grounding 5120938c, review round 2).
+  // (expiredAt was found to survive a status change without this guard).
   if (status !== "expired") {
     delete next.expiredAt;
   }
