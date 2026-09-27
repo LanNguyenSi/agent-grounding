@@ -1794,8 +1794,8 @@ describe('ledger_summary: session-key regression (0a8645d2)', () => {
 // before invoking its handler, and ledger_add's and ledger_summary's
 // schemas resolve that validation in a different number of microtask
 // ticks, so the summary handler can run BEFORE the add handler even though
-// the add request was sent (and received) first. See the "Ledger request
-// serialization" comment in src/server.ts for the full mechanism and the
+// the add request was sent (and received) first. See the "Arrival-ordered
+// request routing" comment in src/server.ts for the full mechanism and the
 // fix (a queue ordered by each request's arrival stamp, recorded at the
 // transport before validation, which reflects true arrival order even
 // when handler invocation order does not).
@@ -2503,6 +2503,18 @@ describe('grounding session tools: true arrival order at the transport', () => {
     expect((parseToolResult(startRaw) as { sessionId: string }).sessionId).toBe(sessionId);
     expect((checkRaw as { isError?: boolean }).isError).not.toBe(true);
     expect(parseToolResult(checkRaw)).toMatchObject({ sessionId, guardrail: 'no-step-skipping' });
+  });
+
+  it('a grounding_advance pipelined AFTER a grounding_start (FALLING ids) finds the session', async () => {
+    vi.setSystemTime(FIXED_START_MS);
+    const keyword = 'ord-start-adv';
+    const sessionId = predictedStartId(keyword);
+    const [startRaw, advRaw] = await Promise.all([
+      callToolRaw(9000, 'grounding_start', { keyword, problem: 'start then advance' }),
+      callToolRaw(7, 'grounding_advance', { sessionId }),
+    ]);
+    expect((parseToolResult(startRaw) as { sessionId: string }).sessionId).toBe(sessionId);
+    expect((advRaw as { isError?: boolean }).isError).not.toBe(true);
   });
 
   it('a grounding_guardrail_check pipelined BEFORE a grounding_start (STRING ids) does not find the session', async () => {
