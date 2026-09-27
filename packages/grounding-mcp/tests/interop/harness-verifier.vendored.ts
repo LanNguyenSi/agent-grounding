@@ -19,7 +19,7 @@
 // SOURCE STAMP — transcribed verbatim (constants, control flow, literal
 // reason strings) from:
 //   repo:   github.com/LanNguyenSi/harness
-//   branch: origin/batch19/sign-verdict-marker
+//   branch: the approval-signing / solution-acceptance verdict-marker signing branch
 //   commit: 444908cd7aeab894e23c4600ff55518300dff06f (2026-08-19T08:37:27+02:00)
 //   files:
 //     - src/runtime/approval-signing.ts

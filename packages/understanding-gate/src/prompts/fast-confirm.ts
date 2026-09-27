@@ -1,4 +1,5 @@
-// Source: lava-ice-logs/2026-04-29/agent-harness-pre-execution-understanding-gate-architecture.md §7.2
+// Fast-confirm mode prompt: one of the three Core prompt snippets bundled at
+// build, see docs/architecture.md's "Layered view" section.
 export const FAST_CONFIRM_PROMPT = `# Fast Confirm Mode
 
 Before executing, provide a short confirmation summary:

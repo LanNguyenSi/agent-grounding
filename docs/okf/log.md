@@ -2,6 +2,45 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-27, follow-up provenance sweep (a review round's remaining hits):
+  `packages/grounding-mcp/src/verdict-signing.ts` and
+  `packages/grounding-mcp/tests/interop/harness-verifier.vendored.ts`
+  (a real branch name in a source-provenance comment replaced with a
+  neutral description; the vendored file's other SOURCE STAMP fields are
+  not a sync-test-pinned literal, checked before editing), two more
+  `packages/grounding-mcp/tests/ow-run-completeness.test.ts` byte-shape
+  comments (real run-corpus/directory names replaced with neutral
+  descriptions), a hardcoded machine-local path in
+  `packages/grounding-mcp/tests/grounding-gate-mcp-roundtrip.test.ts`
+  (now resolved dynamically from the test file's own location instead of
+  a fixed path), a fictional example path in
+  `packages/grounding-mcp/tests/setup/harness-home-guard.self.test.ts`,
+  real round keys and a count carried over from a real review-findings
+  line and a stale declaration count in
+  `packages/grounding-mcp/tests/ow-run-completeness.test.ts`, and the
+  three `packages/understanding-gate/src/prompts/{full,fast-confirm,grill-me}.ts`
+  header comments (now pointing at the package's own architecture doc
+  instead of an unpublished design document).
+  `solution-acceptance-verdict-contract.md` lists `verdict-signing.ts`,
+  `ow-run-completeness.ts` and `harness-verifier.vendored.ts` under
+  `sources`; every edit landed after its highest cited line for
+  `ow-run-completeness.ts`, none of the other two files' edits touched a
+  cited line or quote, and the citation guard reports the same 0 errors /
+  0 citations-resolve warnings / 0 unresolved-ambiguous notices as before
+  this change; re-verified and re-stamped.
+
+- 2026-09-27, org-internal provenance removed from source comments and a test
+  (`packages/understanding-gate/src/prompts/{full,fast-confirm,grill-me}.ts`
+  header comments, `packages/grounding-mcp/src/ow-run-completeness.ts` prose
+  comments, `packages/grounding-mcp/tests/ow-run-completeness.test.ts` test
+  title/comments and one pinned example line): private repository and real
+  run-directory names replaced with neutral descriptions or fictional
+  examples of the same shape. `solution-acceptance-verdict-contract.md`
+  lists `ow-run-completeness.ts` under `sources`; every edit landed after
+  its highest cited line, so no cited quote or line range shifted, and the
+  citation guard reports the same 0 errors / 0 citations-resolve warnings
+  as before this change; re-verified and re-stamped.
+
 - 2026-09-27, grounding-mcp `solution_evaluate` description: the tool
   description in `packages/grounding-mcp/src/server.ts` now also gives the
   absolute GitHub URL of `docs/solution-acceptance-gate.md`, because the npm

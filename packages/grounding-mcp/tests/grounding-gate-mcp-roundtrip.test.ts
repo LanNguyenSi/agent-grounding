@@ -1319,12 +1319,20 @@ describe('solution_gate — MCP roundtrip', () => {
   });
 
   it('allow path: ready verdict at current HEAD → allowed:true', async () => {
-    // Resolve the real HEAD of the agent-grounding repo so the verdict matches.
+    // Resolve the real HEAD of whichever checkout this test file runs from,
+    // so the verdict matches. Deriving the repo root from __dirname (rather
+    // than a fixed path) keeps this working from any checkout location.
     const { execFileSync: sync } = await import('node:child_process');
+    let repoRoot: string;
     let head: string;
     try {
+      repoRoot = sync('git', ['rev-parse', '--show-toplevel'], {
+        cwd: __dirname,
+      })
+        .toString()
+        .trim();
       head = sync('git', ['rev-parse', 'HEAD'], {
-        cwd: '/home/lan/git/pandora/agent-grounding',
+        cwd: repoRoot,
       })
         .toString()
         .trim();
@@ -1350,7 +1358,7 @@ describe('solution_gate — MCP roundtrip', () => {
       name: 'solution_gate',
       arguments: {
         id: 'gate-task-ready',
-        repoPath: '/home/lan/git/pandora/agent-grounding',
+        repoPath: repoRoot!,
       },
     });
     const result = parseToolResult(raw) as { allowed: boolean; reason: string };

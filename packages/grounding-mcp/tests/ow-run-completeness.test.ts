@@ -1349,17 +1349,16 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     ]);
   });
 
-  it('F1 (round 3): the real batch48 shape (a qualifying clause after the value, then a parenthetical) is malformed, not read as its first token', () => {
-    // Verbatim shape of .ai/runs/2026-09-12-quickwins-batch48/05-review-findings.md's
-    // summary line: the first token, `rigorous`, is not a record of the
-    // immediately-preceding round; it is the start of a sentence about OTHER
-    // rounds' exceptions.
+  it('F1 (round 3): a qualified multi-round shape (a qualifying clause after the value, then a parenthetical) is malformed, not read as its first token', () => {
+    // Shape seen in real review-findings summary lines: the first token,
+    // `rigorous`, is not a record of the immediately-preceding round; it is
+    // the start of a sentence about OTHER rounds' exceptions.
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(
         baseOpts([
-          '<!-- review-method[T-011-R3] = rigorous -->',
-          "Method: rigorous for every round except T-007 R1 and T-010 R1 (adversarial); `method_applied` matched the briefing in all 32 returns.",
+          '<!-- review-method[T-013-R3] = rigorous -->',
+          "Method: rigorous for every round except T-002 R1 and T-004 R1 (adversarial); `method_applied` matched the briefing in all 40 returns.",
           '',
         ]),
       ),
@@ -1367,7 +1366,7 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     const r = readOwRunCompleteness(repo);
     expect(r.complete).toBe(false);
     expect(r.reasons).toEqual([
-      "round(s) with a malformed 'Method:' prose record in 05-review-findings.md: 'T-011-R3' " +
+      "round(s) with a malformed 'Method:' prose record in 05-review-findings.md: 'T-013-R3' " +
         "(expected 'Method: normal|rigorous|adversarial ...' naming exactly one of the three)",
     ]);
   });
@@ -1443,7 +1442,7 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
   // one packed line's Method: summary with every round declared on it.
 
   it('F2 (round 3): three review-method declarations packed on one line, followed by ONE Method: line, resolve NONE of them (named absent, not cleared)', () => {
-    // Verbatim shape of quickwins-batch48's T-011-R1/R2/R3: three
+    // Shape seen in real review-findings files: three
     // declarations packed onto one line, one Method: summary line
     // immediately after. Before round 3, all three read that one line as
     // their own record and passed; now none do.
@@ -1451,8 +1450,8 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(
         baseOpts([
-          '<!-- review-method[T-011-R1] = rigorous --> <!-- review-method[T-011-R2] = rigorous --> ' +
-            '<!-- review-method[T-011-R3] = rigorous -->',
+          '<!-- review-method[T-013-R1] = rigorous --> <!-- review-method[T-013-R2] = rigorous --> ' +
+            '<!-- review-method[T-013-R3] = rigorous -->',
           'Method: rigorous (briefing and return match for all three rounds).',
           '',
         ]),
@@ -1461,8 +1460,8 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     const r = readOwRunCompleteness(repo);
     expect(r.complete).toBe(false);
     expect(r.reasons).toEqual([
-      "round(s) with no matching method_applied record in 05-review-findings.md: 'T-011-R1' declared 'rigorous' | " +
-        "'T-011-R2' declared 'rigorous' | 'T-011-R3' declared 'rigorous' " +
+      "round(s) with no matching method_applied record in 05-review-findings.md: 'T-013-R1' declared 'rigorous' | " +
+        "'T-013-R2' declared 'rigorous' | 'T-013-R3' declared 'rigorous' " +
         "(add '<!-- method-applied[<round>] = <value> -->' once confirmed, or fill in the immediately-following " +
         "'Method: <value>' line)",
     ]);
@@ -1500,11 +1499,11 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     expect(r.reasons).toEqual([]);
   });
 
-  it('F2: several stacked single-occurrence declaration lines followed by a summary line NOT starting with `Method:` all fall through to absent (the real memory-sync-wipe shape)', () => {
-    // Verbatim shape of .ai/runs/2026-09-11-memory-sync-wipe/05-review-findings.md:
-    // five declarations each on their OWN line (so each is single-occurrence),
+  it('F2: several stacked single-occurrence declaration lines followed by a summary line NOT starting with `Method:` all fall through to absent (a real shipped review-findings shape)', () => {
+    // Shape seen in a real shipped run's 05-review-findings.md:
+    // three declarations each on their OWN line (so each is single-occurrence),
     // followed by ONE summary line reading `Method round 1: adversarial (...)`
-    // -- which does not itself start with `Method:`, so none of the five
+    // -- which does not itself start with `Method:`, so none of the three
     // rounds' immediately-following line is a `Method:` line at all.
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
@@ -1682,14 +1681,12 @@ describe('readOwRunCompleteness — CRLF fixtures (Fix 4)', () => {
 
 describe('readOwRunCompleteness — mixed-state findings-table bypass guard', () => {
   /**
-   * Byte-identical to a real shipped run's `05-review-findings.md`
-   * (`.ai/runs/2026-07-17-better-sqlite3-node26-release/05-review-findings.md`
-   * in this workspace, itself byte-identical to the agent-dx
-   * orchestrator-workflow template of that vintage) except for the trailing
-   * `acceptance-recommendation` marker value, which each test below
-   * substitutes explicitly — this is the exact repro pair from the run plan
-   * (repro-a: TODO marker; repro-b: marker flipped to `accept`, table never
-   * touched).
+   * Byte-identical to a real shipped run's `05-review-findings.md`, itself
+   * byte-identical to the agent-dx orchestrator-workflow template of that
+   * vintage, except for the trailing `acceptance-recommendation` marker
+   * value, which each test below substitutes explicitly — this is the
+   * exact repro pair from the run plan (repro-a: TODO marker; repro-b:
+   * marker flipped to `accept`, table never touched).
    */
   function belegRunReview(recommendationValue: string): string {
     return [
@@ -2638,7 +2635,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
   });
 
   it('an unkeyed marker line with a trailing multi-repo annotation is exempt; a matching keyed marker still wins selection', () => {
-    // Byte-exact line from the real pandora run corpus (batch 33/34/35/etc):
+    // Byte-exact shape of a real unkeyed multi-repo run-base marker line:
     // this ends its value at the first whitespace ('multi-repo;'), so the
     // legacy unkeyed matcher DOES read a value from it; the earlier
     // whole-line-only exemption shape did not recognise this as an unkeyed
@@ -2666,10 +2663,9 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
   });
 
   it('an unkeyed marker whose value is followed by a trailing per-repo annotation is exempt', () => {
-    // Byte-exact line from the real pandora run corpus
-    // (2026-08-23-home-widgets-plus-five): the value ends at the first
-    // whitespace ('863800c'), with a parenthetical + more shas trailing on
-    // the same, unclosed-looking line.
+    // Byte-exact shape of a real unkeyed run-base marker line: the value
+    // ends at the first whitespace ('863800c'), with a parenthetical + more
+    // shas trailing on the same, unclosed-looking line.
     const goal = [
       '# Goal',
       '<!-- solution-acceptance: run-base = 863800c (agent-tasks); harness 031f154; codebase-oracle 23bf28e; agent-preflight bcb23ff -->',
