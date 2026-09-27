@@ -11,6 +11,33 @@
   in package.json does not ship the `docs/` directory: an npm-only
   consumer reading the plain-text MCP tool description has no repo
   checkout to resolve a bare relative path against.
+- The arrival-ordered request queue that already covered the evidence
+  ledger (`ledger_add`, `ledger_summary`, `claim_evaluate_from_session`,
+  `ledger_status`) now covers the grounding session store
+  (`grounding_start`, `grounding_advance`, `grounding_guardrail_check`,
+  `claim_evaluate_from_session`) and the hypothesis store
+  (`hypothesis_record`, `hypothesis_list`, `hypothesis_evidence`,
+  `hypothesis_check_done`, `hypothesis_reject`, `hypothesis_support`,
+  `hypothesis_reset`) too, each on its own separate queue (same
+  1024-request in-flight cap and stderr eviction log per store). Cause:
+  the MCP SDK validates every `tools/call` request's arguments
+  asynchronously before invoking its handler, and two pipelined requests
+  against schemas of different shapes can have their handlers invoked out
+  of arrival order, the same root cause already fixed for the ledger
+  tools (see 0.13.0's dde2ba58 entry and the "Arrival-ordered request
+  routing" comment in `src/server.ts`); a pipelined `hypothesis_record`
+  followed by `hypothesis_list` on the same session could return
+  `total: 0`, and a pipelined `grounding_advance` followed by
+  `claim_evaluate_from_session` could derive a stale `readme_read` flag.
+  `claim_evaluate_from_session` now enqueues its session read and its
+  ledger read synchronously, before awaiting either, so both land in the
+  same in-flight batch as any concurrent sibling on either store. Not
+  routed, and unaffected: `claim_evaluate` and `verify_memory_reference`
+  (no store touched), `solution_evaluate` / `solution_evaluate_status` /
+  `solution_evaluate_result` (the attempt registry's own synchronous
+  check-and-set join already orders duplicate attempts, independent of
+  arrival order), and `solution_gate` (reads only the already-written,
+  signed verdict marker).
 
 ## 0.13.0, 2026-09-23
 

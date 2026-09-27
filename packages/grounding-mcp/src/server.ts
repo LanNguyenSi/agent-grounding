@@ -214,20 +214,28 @@ const evidenceTextSchema = z
   .max(4096)
   .describe('What you observed (raw, not interpreted).');
 
-// ── Ledger request serialization (task 0a8645d2) ────────────────────────
+// ── Arrival-ordered request routing (task 0a8645d2, extended for every
+//    state-touching tool) ─────────────────────────────────────────────────
 //
-// The evidence ledger (better-sqlite3, fully synchronous) has no race of
-// its own. The race is upstream, in the MCP SDK's own dispatch: the
+// The evidence ledger (better-sqlite3, fully synchronous), the grounding
+// session store, and the hypothesis store (both synchronous JSON files,
+// see session-store.ts and hypothesis-store.ts) have no race of their
+// own. The race is upstream, in the MCP SDK's own dispatch: the
 // `tools/call` request handler `await`s zod schema validation
 // (`validateToolInput`) before invoking a tool's callback, and two
 // concurrently-arriving requests validate against schemas of different
-// shapes (ledger_add's 5-key object vs ledger_summary's 3-key object).
-// That difference changes how many microtask ticks each validation takes
-// to resolve, so the tool whose schema resolves faster can have ITS
-// callback invoked first, even though its JSON-RPC request arrived
-// second (seen in an instrumentation trace of a
-// `Promise.all([ledger_add, ledger_summary])` call: the summary callback
-// ran before the add callback).
+// shapes (ledger_add's 5-key object vs ledger_summary's 3-key object;
+// the same divergence exists between any two of grounding_start /
+// grounding_advance / grounding_guardrail_check / claim_evaluate_from_session,
+// and between any two hypothesis_* verbs). That difference changes how
+// many microtask ticks each validation takes to resolve, so the tool
+// whose schema resolves faster can have ITS callback invoked first, even
+// though its JSON-RPC request arrived second (seen in an instrumentation
+// trace of a `Promise.all([ledger_add, ledger_summary])` call: the
+// summary callback ran before the add callback; the same shape is
+// reproduced for `Promise.all([hypothesis_record, hypothesis_list])` and
+// for the grounding-session pairs below, see the "true arrival order"
+// test blocks in tests/ for the measured repeat counts).
 //
 // Two orders that look like arrival order are not:
 //   - The JSON-RPC request id's own VALUE. Nothing in JSON-RPC requires
@@ -301,15 +309,55 @@ const evidenceTextSchema = z
 // invokes a tool's callback directly, without a transport, has no stamp
 // either and takes this path.
 //
-// Scope. The handlers that read or write the ledger
-// (`rg 'ledgerDb\(\)|ledgerStatus\(\)' packages/grounding-mcp/src`):
-// ledger_add, ledger_summary, claim_evaluate_from_session (via
-// getSummary), and ledger_status (via ledgerStatus's own ledgerDb()
-// call). All four go through this queue, and `LEDGER_TOOL_NAMES` lists
-// the same four. `hypothesis_*` reads/writes its own separate store
-// through the same kind of SDK dispatch and is NOT ordered by this or any
-// other mechanism (same root cause, tracked as a follow-up task, out of
-// scope here): see the package README and CHANGELOG.
+// Scope: one queue per store, not one shared queue for every routed tool.
+// Correctness first: a request that touches two stores (only
+// claim_evaluate_from_session does: the grounding session, for
+// deriveContext's phase_status read, and the ledger, for its evidence
+// read) must not see its own two reads reordered against ITS OWN two
+// concurrent writers (a pipelined grounding_advance and a pipelined
+// ledger_add), which per-store queues give for free: each queue sorts
+// only the entries that share its own store, by the SAME global arrival
+// stamp a request is given at the transport (recorded once per store the
+// request's tool name belongs to, in `trackRoutedRequests` below), so a
+// multi-store request's position is independently correct in each queue
+// it participates in. One shared queue across all stores would give the
+// identical ordering guarantee (arrival stamps are global, not
+// per-queue) at strictly worse latency: a slow hypothesis batch would
+// serialize behind an unrelated ledger batch, and vice versa, for no
+// correctness gain. Latency second: three independent queues (below)
+// keep a burst on one store from blocking a concurrent burst on another.
+//
+// Every handler that enqueues onto a store's queue does so SYNCHRONOUSLY,
+// before its first `await`, exactly like `enqueueLedgerRequest` always
+// has: `claim_evaluate_from_session` calls both `enqueueSessionRequest`
+// and `enqueueLedgerRequest` back-to-back before awaiting either (see its
+// handler below), so both calls land in the same in-flight batch as any
+// sibling request that also enqueues synchronously at invocation time
+// (the property the "true arrival order" tests below depend on). An
+// `await` inserted between the two enqueue calls would delay the second
+// one to a LATER macrotask, moving it out of that batch and defeating the
+// sort for the store it reaches late.
+//
+// The stores and the tools that touch them
+// (`rg 'ledgerDb\(\)|ledgerStatus\(\)|loadSession\(|saveSession\(|getOrCreateStore\(|getStore\(|saveStore\(|resetStore\(' packages/grounding-mcp/src`):
+//   - ledger (better-sqlite3): ledger_add, ledger_summary,
+//     claim_evaluate_from_session (via getSummary), ledger_status (via
+//     ledgerStatus's own ledgerDb() call). `LEDGER_TOOL_NAMES` lists the
+//     same four (task 0a8645d2, unchanged by this extension).
+//   - grounding session (session-store.ts, one JSON file per session id):
+//     grounding_start, grounding_advance, grounding_guardrail_check,
+//     claim_evaluate_from_session (via loadSession). `SESSION_TOOL_NAMES`
+//     lists the same four.
+//   - hypothesis tracker (hypothesis-store.ts, an in-process Map backed by
+//     one JSON file per session id): hypothesis_record, hypothesis_list,
+//     hypothesis_evidence, hypothesis_check_done, hypothesis_reject,
+//     hypothesis_support, hypothesis_reset. `HYPOTHESIS_TOOL_NAMES` lists
+//     the same seven.
+//   - solution attempt registry / verdict marker (solution-attempt-log.ts,
+//     solution-verdict.ts) and the plain repo/file checks
+//     (verify_memory_reference) are NOT routed through any of these
+//     queues; see the "Not routed" note further below for why each is
+//     safe as-is.
 const LEDGER_TOOL_NAMES: ReadonlySet<string> = new Set([
   'ledger_add',
   'ledger_summary',
@@ -317,16 +365,66 @@ const LEDGER_TOOL_NAMES: ReadonlySet<string> = new Set([
   'ledger_status',
 ]);
 
-const DEFAULT_LEDGER_ARRIVAL_CAP = 1024;
+const SESSION_TOOL_NAMES: ReadonlySet<string> = new Set([
+  'grounding_start',
+  'grounding_advance',
+  'grounding_guardrail_check',
+  'claim_evaluate_from_session',
+]);
 
-// `raw` is createServer's test-oriented `ledgerArrivalCap` option: anything
+const HYPOTHESIS_TOOL_NAMES: ReadonlySet<string> = new Set([
+  'hypothesis_record',
+  'hypothesis_list',
+  'hypothesis_evidence',
+  'hypothesis_check_done',
+  'hypothesis_reject',
+  'hypothesis_support',
+  'hypothesis_reset',
+]);
+
+// Not routed, and why each is safe without this mechanism:
+//
+//   - claim_evaluate (no sessionId; context is caller-supplied, no store
+//     touched) and verify_memory_reference (reads the repo/filesystem
+//     directly, not a store this server owns) are pure: no persisted
+//     state to reorder against.
+//   - solution_evaluate / solution_evaluate_status / solution_evaluate_result:
+//     SolutionAttemptRegistry#evaluate is deliberately NOT async up to its
+//     first `await` (see its own docstring in solution-attempt-log.ts) so
+//     that two concurrent calls for the same id join under a synchronous
+//     check-and-set on `this.inFlight`, INDEPENDENT of which request's
+//     handler the SDK happens to invoke first. Routing it through a
+//     `setImmediate`-deferred queue like the three above would delay that
+//     check-and-set past the point where a concurrent duplicate call
+//     needs to observe it, breaking the exact join invariant that
+//     already makes duplicate preflight runs impossible. No tool
+//     description promises an ordering between two solution_evaluate
+//     calls, or between solution_evaluate and its two read-only lookups,
+//     beyond "a single attempt is created and correctly joined or
+//     polled", which the registry's own locking already guarantees
+//     regardless of arrival order.
+//   - solution_gate: reads only the HEAD-pinned, signed verdict marker
+//     file that a completed solution_evaluate attempt already wrote (via
+//     solution-verdict.ts's writeVerdict); it holds no queue-managed
+//     store of its own, and nothing else in this file writes that marker
+//     concurrently with a solution_gate read.
+
+const DEFAULT_ARRIVAL_CAP = 1024;
+
+// `raw` is createServer's test-oriented `<store>ArrivalCap` option: anything
 // that is not a positive safe integer falls back to the default, since a
-// cap below 1 would evict every stamp as soon as it is recorded.
-function resolveLedgerArrivalCap(raw: unknown): number {
-  return typeof raw === 'number' && Number.isSafeInteger(raw) && raw > 0 ? raw : DEFAULT_LEDGER_ARRIVAL_CAP;
+// cap below 1 would evict every stamp as soon as it is recorded. One
+// resolver shared by all three stores (`ledgerArrivalCap`,
+// `sessionArrivalCap`, `hypothesisArrivalCap`), each with the same default.
+function resolveArrivalCap(raw: unknown): number {
+  return typeof raw === 'number' && Number.isSafeInteger(raw) && raw > 0 ? raw : DEFAULT_ARRIVAL_CAP;
 }
 
-class LedgerArrivalStamps {
+// One instance per store per server (see "Server factory" below): a
+// per-request-id arrival stamp, released when the request settles (see
+// "Stamp lifetime" above), capped so a request that never settles cannot
+// grow the map without bound.
+class ArrivalStamps {
   private readonly stamps = new Map<RequestId, number>();
   private nextSeq = 0;
 
@@ -353,39 +451,74 @@ class LedgerArrivalStamps {
   }
 }
 
-const ledgerArrivalStampsByServer = new WeakMap<McpServer, LedgerArrivalStamps>();
+interface ArrivalStampGroups {
+  ledger: ArrivalStamps;
+  session: ArrivalStamps;
+  hypothesis: ArrivalStamps;
+}
 
-// Test seam, not supported API: how many ledger arrival stamps a server
-// built by `createServer` holds right now (see "Stamp lifetime" above).
-// @internal
-export function ledgerArrivalStampCount(server: McpServer): number {
-  const stamps = ledgerArrivalStampsByServer.get(server);
-  if (stamps === undefined) {
-    throw new Error('ledgerArrivalStampCount: server was not built by createServer');
+const arrivalStampsByServer = new WeakMap<McpServer, ArrivalStampGroups>();
+
+function arrivalStampCountFor(server: McpServer, pick: (groups: ArrivalStampGroups) => ArrivalStamps, label: string): number {
+  const groups = arrivalStampsByServer.get(server);
+  if (groups === undefined) {
+    throw new Error(`${label}: server was not built by createServer`);
   }
-  return stamps.size;
+  return pick(groups).size;
 }
 
-function isLedgerToolCall(message: JSONRPCMessage): message is JSONRPCRequest {
-  if (!isJSONRPCRequest(message) || message.method !== 'tools/call') return false;
+// Test seams, not supported API: how many arrival stamps a server built by
+// `createServer` holds right now for each store (see "Stamp lifetime"
+// above). @internal
+export function ledgerArrivalStampCount(server: McpServer): number {
+  return arrivalStampCountFor(server, (g) => g.ledger, 'ledgerArrivalStampCount');
+}
+export function sessionArrivalStampCount(server: McpServer): number {
+  return arrivalStampCountFor(server, (g) => g.session, 'sessionArrivalStampCount');
+}
+export function hypothesisArrivalStampCount(server: McpServer): number {
+  return arrivalStampCountFor(server, (g) => g.hypothesis, 'hypothesisArrivalStampCount');
+}
+
+interface RoutedGroup {
+  stamps: ArrivalStamps;
+  names: ReadonlySet<string>;
+  label: string;
+}
+
+function routedToolNameOf(message: JSONRPCMessage): string | undefined {
+  if (!isJSONRPCRequest(message) || message.method !== 'tools/call') return undefined;
   const name = (message.params as { name?: unknown } | undefined)?.name;
-  return typeof name === 'string' && LEDGER_TOOL_NAMES.has(name);
+  return typeof name === 'string' ? name : undefined;
 }
 
-function trackLedgerRequests(transport: Transport, stamps: LedgerArrivalStamps): void {
+// Installs one combined transport hook for every routed store: a request
+// whose tool name belongs to more than one group's `names` (only
+// claim_evaluate_from_session does today) is recorded in every matching
+// group's own stamp map, each with that map's own independent sequence
+// number — see the "Scope" comment above for why a shared global counter
+// is not needed for correctness.
+function trackRoutedRequests(transport: Transport, groups: readonly RoutedGroup[]): void {
   const priorOnMessage = transport.onmessage;
   transport.onmessage = ((message: JSONRPCMessage, extra?: MessageExtraInfo) => {
-    if (isLedgerToolCall(message)) stamps.record(message.id);
+    const name = routedToolNameOf(message);
+    if (name !== undefined) {
+      for (const group of groups) {
+        if (group.names.has(name)) group.stamps.record((message as JSONRPCRequest).id);
+      }
+    }
     priorOnMessage?.(message, extra);
   }) as typeof transport.onmessage;
   const baseSend = transport.send.bind(transport);
   transport.send = (message, options) => {
-    if (!('method' in message) && message.id !== undefined) stamps.release(message.id);
+    if (!('method' in message) && message.id !== undefined) {
+      for (const group of groups) group.stamps.release(message.id);
+    }
     return baseSend(message, options);
   };
 }
 
-interface LedgerQueueEntry {
+interface RoutedQueueEntry {
   requestId: RequestId;
   enqueueSeq: number;
   run: () => unknown;
@@ -393,10 +526,14 @@ interface LedgerQueueEntry {
   reject: (err: unknown) => void;
 }
 
-function createLedgerRequestQueue(
-  stamps: LedgerArrivalStamps,
+// One of these per store (ledger, grounding session, hypothesis), built
+// from that store's own `ArrivalStamps` instance. `label` names the store
+// in the "missing stamp" diagnostic only; it does not affect ordering.
+function createRoutedRequestQueue(
+  stamps: ArrivalStamps,
+  label: string,
 ): <T>(requestId: RequestId, run: () => T | Promise<T>) => Promise<T> {
-  let pending: LedgerQueueEntry[] = [];
+  let pending: RoutedQueueEntry[] = [];
   let barrierScheduled = false;
   let enqueueCounter = 0;
   let tail: Promise<void> = Promise.resolve();
@@ -405,14 +542,14 @@ function createLedgerRequestQueue(
   // before tier 1 (no stamp, see "Missing stamp" above; key = enqueue-call
   // order). Called once per entry per batch, from `drain`, never from the
   // sort comparator.
-  function sortKey(entry: LedgerQueueEntry): [number, number] {
+  function sortKey(entry: RoutedQueueEntry): [number, number] {
     const stamp = stamps.get(entry.requestId);
     if (stamp !== undefined) return [0, stamp];
     // eslint-disable-next-line no-console
     console.error(
-      `grounding-mcp: ledger request id ${JSON.stringify(entry.requestId)} has no recorded arrival ` +
-        'stamp (evicted by the in-flight cap, or a reused request id); running it after every stamped ' +
-        'ledger request of its batch, in enqueue-call order, which is NOT guaranteed to be arrival order.',
+      `grounding-mcp: ${label} request id ${JSON.stringify(entry.requestId)} has no recorded arrival ` +
+        `stamp (evicted by the in-flight cap, or a reused request id); running it after every stamped ` +
+        `${label} request of its batch, in enqueue-call order, which is NOT guaranteed to be arrival order.`,
     );
     return [1, entry.enqueueSeq];
   }
@@ -481,11 +618,12 @@ export function resolveProgressIntervalMs(raw: unknown): number {
 // in use cuts calls earlier than this default assumes. Each is validated the
 // same way `progressIntervalMs` is, inside the registry.
 //
-// `ledgerArrivalCap` is test-oriented too: the most ledger arrival stamps
-// the server keeps at once (default 1024, see the "Ledger request
-// serialization" comment above `LEDGER_TOOL_NAMES`), so a test can evict
-// a stamp with a handful of requests. Anything that is not a positive safe
-// integer falls back to the default. Production callers should not set it.
+// `ledgerArrivalCap`, `sessionArrivalCap` and `hypothesisArrivalCap` are
+// test-oriented too: the most arrival stamps each store's queue keeps at
+// once (default 1024 each, see the "Arrival-ordered request routing"
+// comment above `LEDGER_TOOL_NAMES`), so a test can evict a stamp with a
+// handful of requests. Anything that is not a positive safe integer falls
+// back to the default. Production callers should not set any of them.
 //
 // Spelled out field by field rather than intersected with the registry's own
 // `AttemptRegistryOptions`: intersecting it published a SECOND, undocumented
@@ -502,6 +640,8 @@ export function createServer(
     attemptLockStaleMs?: number;
     now?: () => number;
     ledgerArrivalCap?: number;
+    sessionArrivalCap?: number;
+    hypothesisArrivalCap?: number;
   } = {},
 ): McpServer {
   const progressIntervalMs = resolveProgressIntervalMs(options.progressIntervalMs);
@@ -518,59 +658,77 @@ export function createServer(
     version: PACKAGE_VERSION,
   });
 
-  // One stamp map and one queue per server instance (see the "Ledger
-  // request serialization" comment above `LEDGER_TOOL_NAMES`), not
-  // module-level singletons: tests create a fresh server per case, and
+  // One stamp map and one queue per store per server instance (see the
+  // "Arrival-ordered request routing" comment above `LEDGER_TOOL_NAMES`),
+  // not module-level singletons: tests create a fresh server per case, and
   // module-level state would leak ordering state across otherwise
   // independent test servers.
-  const ledgerArrivalStamps = new LedgerArrivalStamps(resolveLedgerArrivalCap(options.ledgerArrivalCap));
-  ledgerArrivalStampsByServer.set(server, ledgerArrivalStamps);
-  const enqueueLedgerRequest = createLedgerRequestQueue(ledgerArrivalStamps);
+  const ledgerArrivalStamps = new ArrivalStamps(resolveArrivalCap(options.ledgerArrivalCap));
+  const sessionArrivalStamps = new ArrivalStamps(resolveArrivalCap(options.sessionArrivalCap));
+  const hypothesisArrivalStamps = new ArrivalStamps(resolveArrivalCap(options.hypothesisArrivalCap));
+  arrivalStampsByServer.set(server, {
+    ledger: ledgerArrivalStamps,
+    session: sessionArrivalStamps,
+    hypothesis: hypothesisArrivalStamps,
+  });
+  const enqueueLedgerRequest = createRoutedRequestQueue(ledgerArrivalStamps, 'ledger');
+  const enqueueSessionRequest = createRoutedRequestQueue(sessionArrivalStamps, 'grounding session');
+  const enqueueHypothesisRequest = createRoutedRequestQueue(hypothesisArrivalStamps, 'hypothesis');
 
   // Wrap `connect` itself (not each individual call site) so every
   // transport this server instance is connected to (stdio in `main()`
-  // below, `InMemoryTransport` in the tests) gets `trackLedgerRequests`
+  // below, `InMemoryTransport` in the tests) gets `trackRoutedRequests`
   // installed before the SDK's own `Protocol#connect` runs. See the
-  // "Ledger request serialization" comment above `LEDGER_TOOL_NAMES` for
-  // why this must happen before, not inside, a ledger-touching handler.
+  // "Arrival-ordered request routing" comment above `LEDGER_TOOL_NAMES` for
+  // why this must happen before, not inside, a routed handler.
   const baseConnect = server.connect.bind(server);
   server.connect = (async (transport: Transport) => {
-    trackLedgerRequests(transport, ledgerArrivalStamps);
+    trackRoutedRequests(transport, [
+      { stamps: ledgerArrivalStamps, names: LEDGER_TOOL_NAMES, label: 'ledger' },
+      { stamps: sessionArrivalStamps, names: SESSION_TOOL_NAMES, label: 'grounding session' },
+      { stamps: hypothesisArrivalStamps, names: HYPOTHESIS_TOOL_NAMES, label: 'hypothesis' },
+    ]);
     return baseConnect(transport);
   }) as typeof server.connect;
 
   server.tool(
     'grounding_start',
-    'Start a new grounding session. Returns the session id, the mandatory tool sequence, and the active guardrails. Always call this BEFORE diagnosing a debug/incident task — the session enforces phase ordering and gates premature claims.',
+    'Start a new grounding session. Returns the session id, the mandatory tool sequence, and the active guardrails. Always call this BEFORE diagnosing a debug/incident task — the session enforces phase ordering and gates premature claims. Reads/writes the grounding session store, ordered by arrival at the transport relative to a concurrent/pipelined grounding_advance, grounding_guardrail_check or claim_evaluate_from_session for the same sessionId, not by request id value or invocation order; capped at 1024 grounding-session requests in flight at once (see ledger_add\'s description for the identical cap mechanism, applied here to a separate per-store queue).',
     {
       keyword: z.string().describe('Domain keyword (e.g. "agent-tasks", "deploy-panel"). Drives guardrail and playbook selection.'),
       problem: z.string().describe('One-sentence problem statement (e.g. "frontend offline after deploy").'),
       workspace: z.string().optional().describe('Optional workspace path; reserved for future scope-resolution use.'),
     },
-    async ({ keyword, problem, workspace }) => {
-      const session = initSession({ keyword, problem, workspace });
-      saveSession(session);
+    async ({ keyword, problem, workspace }, extra) => {
+      const session = await enqueueSessionRequest(extra.requestId, () => {
+        const s = initSession({ keyword, problem, workspace });
+        saveSession(s);
+        return s;
+      });
       return jsonResponse(summarizeSession(session));
     },
   );
 
   server.tool(
     'grounding_advance',
-    'Advance an existing grounding session to the next phase. Marks the current phase done and returns the updated session state.',
+    'Advance an existing grounding session to the next phase. Marks the current phase done and returns the updated session state. Ordered by arrival at the transport relative to a concurrent/pipelined grounding_start, grounding_guardrail_check or claim_evaluate_from_session for the same sessionId, see grounding_start\'s description.',
     {
       sessionId: z.string().describe('Session id returned by grounding_start.'),
     },
-    async ({ sessionId }) => {
-      const session = loadSession(sessionId);
-      advancePhase(session);
-      saveSession(session);
+    async ({ sessionId }, extra) => {
+      const session = await enqueueSessionRequest(extra.requestId, () => {
+        const s = loadSession(sessionId);
+        advancePhase(s);
+        saveSession(s);
+        return s;
+      });
       return jsonResponse(summarizeSession(session));
     },
   );
 
   server.tool(
     'grounding_guardrail_check',
-    'Check whether a specific guardrail is active for a session. Use before making a claim to avoid blocking by claim-gate.',
+    'Check whether a specific guardrail is active for a session. Use before making a claim to avoid blocking by claim-gate. Ordered by arrival at the transport relative to a concurrent/pipelined grounding_start, grounding_advance or claim_evaluate_from_session for the same sessionId, see grounding_start\'s description.',
     {
       sessionId: z.string(),
       guardrail: z.enum([
@@ -581,8 +739,8 @@ export function createServer(
         'no-step-skipping',
       ]).describe('Guardrail id to check.'),
     },
-    async ({ sessionId, guardrail }) => {
-      const session = loadSession(sessionId);
+    async ({ sessionId, guardrail }, extra) => {
+      const session = await enqueueSessionRequest(extra.requestId, () => loadSession(sessionId));
       const active = isGuardrailActive(session, guardrail as GuardrailId);
       return jsonResponse({ sessionId, guardrail, active });
     },
@@ -590,7 +748,7 @@ export function createServer(
 
   server.tool(
     'ledger_add',
-    'Append an entry to the evidence ledger for a session. Types: fact (verified), hypothesis (unverified), rejected (disproven), unknown (open question), policy_decision (Phase 5 #4 audit row, kept in a separate bucket from evidence types). A later ledger_summary call only sees this entry if it is given this exact sessionId string (case-sensitive, no normalization), and only once the write has actually happened: ledger_add, ledger_summary, claim_evaluate_from_session, and ledger_status are ordered by arrival at the transport (not by request id value or invocation order), so a ledger_summary that arrives after a ledger_add for the same sessionId sees it, also when the two calls are pipelined or made concurrently. With more than 1024 ledger requests in flight at once, the oldest loses its arrival stamp and runs after the other requests of its batch (logged to stderr). hypothesis_* tools are a separate store and are not ordered this way.',
+    'Append an entry to the evidence ledger for a session. Types: fact (verified), hypothesis (unverified), rejected (disproven), unknown (open question), policy_decision (Phase 5 #4 audit row, kept in a separate bucket from evidence types). A later ledger_summary call only sees this entry if it is given this exact sessionId string (case-sensitive, no normalization), and only once the write has actually happened: ledger_add, ledger_summary, claim_evaluate_from_session, and ledger_status are ordered by arrival at the transport (not by request id value or invocation order), so a ledger_summary that arrives after a ledger_add for the same sessionId sees it, also when the two calls are pipelined or made concurrently. With more than 1024 ledger requests in flight at once, the oldest loses its arrival stamp and runs after the other requests of its batch (logged to stderr). `hypothesis_*` tools and the `grounding_*` session tools are separate stores, each with their own identical arrival-ordering queue (not shared with this one): see the hypothesis_record and grounding_start descriptions.',
     {
       sessionId: z.string().min(1).describe('Session id: used as the ledger session namespace.'),
       type: z.enum(['fact', 'hypothesis', 'rejected', 'unknown', 'policy_decision']),
@@ -687,7 +845,7 @@ export function createServer(
 
   server.tool(
     'claim_evaluate_from_session',
-    'Like claim_evaluate, but derives the context from the linked grounding session and its ledger entries. The default path for in-session use: no manual flag-passing. Its ledger read is ordered by arrival at the transport relative to a concurrent/pipelined ledger_add for the same sessionId, see the ledger_add description.',
+    'Like claim_evaluate, but derives the context from the linked grounding session and its ledger entries. The default path for in-session use: no manual flag-passing. Both its session read and its ledger read are ordered by arrival at the transport, each relative to a concurrent/pipelined request against that same store for the same sessionId (grounding_start/grounding_advance/grounding_guardrail_check for the session read, ledger_add for the ledger read), see the grounding_start and ledger_add descriptions.',
     {
       sessionId: z.string().min(1),
       claim: z.string(),
@@ -704,8 +862,18 @@ export function createServer(
       ]).optional(),
     },
     async ({ sessionId, claim, type }, extra) => {
-      const session = loadSession(sessionId);
-      const summary = await enqueueLedgerRequest(extra.requestId, () => getSummary(ledgerDb(), sessionId));
+      // Both enqueue calls are made synchronously, back-to-back, before
+      // either is awaited: this lands this request in the SAME in-flight
+      // batch as any concurrently-dispatched sibling on either store (a
+      // pipelined grounding_advance for the session queue, a pipelined
+      // ledger_add for the ledger queue). Awaiting one before calling the
+      // other would delay the second enqueue to a later macrotask,
+      // dropping it out of that batch — see the "Scope" comment above
+      // `LEDGER_TOOL_NAMES` for why that would break arrival ordering for
+      // whichever store's enqueue call was delayed.
+      const sessionPromise = enqueueSessionRequest(extra.requestId, () => loadSession(sessionId));
+      const summaryPromise = enqueueLedgerRequest(extra.requestId, () => getSummary(ledgerDb(), sessionId));
+      const [session, summary] = await Promise.all([sessionPromise, summaryPromise]);
       const context = deriveContext(session, summary);
       const result = evaluateClaim(claim, context, type as ClaimType | undefined);
       return jsonResponse({ ...result, derivedContext: context });
@@ -851,7 +1019,7 @@ export function createServer(
 
   server.tool(
     'hypothesis_record',
-    'Add a new competing hypothesis with required verification checks. Use during debugging when you can name more than one possible cause, recording both forces explicit rejection later instead of silent substitution.',
+    'Add a new competing hypothesis with required verification checks. Use during debugging when you can name more than one possible cause, recording both forces explicit rejection later instead of silent substitution. Ordered by arrival at the transport relative to a concurrent/pipelined hypothesis_list (or any other hypothesis_* verb) for the same sessionId, not by request id value or invocation order, so a hypothesis_list that arrives after a hypothesis_record for the same sessionId sees it. Same 1024-request in-flight cap and stderr eviction log as ledger_add, on this store\'s own separate queue.',
     {
       sessionId: hypothesisSessionIdSchema,
       text: hypothesisTextSchema,
@@ -861,149 +1029,167 @@ export function createServer(
         .default([])
         .describe('Verification steps that, if completed, would confirm or reject this hypothesis (e.g. ["Run dig", "Check /etc/resolv.conf"]).'),
     },
-    async ({ sessionId, text, requiredChecks }) => {
-      const store = getOrCreateStore(sessionId);
-      const hypothesis = addHypothesis(store, text, requiredChecks);
-      saveStore(sessionId, store);
+    async ({ sessionId, text, requiredChecks }, extra) => {
+      const hypothesis = await enqueueHypothesisRequest(extra.requestId, () => {
+        const store = getOrCreateStore(sessionId);
+        const h = addHypothesis(store, text, requiredChecks);
+        saveStore(sessionId, store);
+        return h;
+      });
       return jsonResponse({ sessionId, hypothesis });
     },
   );
 
   server.tool(
     'hypothesis_list',
-    'Return all hypotheses for a session plus a status summary. Use to take stock before claiming a root cause: every unverified or unrejected hypothesis is an open alternative the claim-gate will block on.',
+    'Return all hypotheses for a session plus a status summary. Use to take stock before claiming a root cause: every unverified or unrejected hypothesis is an open alternative the claim-gate will block on. Ordered by arrival at the transport relative to a concurrent/pipelined hypothesis_record (or any other hypothesis_* verb) for the same sessionId, see the hypothesis_record description.',
     {
       sessionId: hypothesisSessionIdSchema,
     },
-    async ({ sessionId }) => {
-      const store = getStore(sessionId);
-      if (!store) {
-        return jsonResponse({
+    async ({ sessionId }, extra) => {
+      const payload = await enqueueHypothesisRequest(extra.requestId, () => {
+        const store = getStore(sessionId);
+        if (!store) {
+          return {
+            sessionId,
+            summary: { total: 0, unverified: 0, supported: 0, rejected: 0, pending_checks: 0 },
+            hypotheses: [],
+          };
+        }
+        return {
           sessionId,
-          summary: { total: 0, unverified: 0, supported: 0, rejected: 0, pending_checks: 0 },
-          hypotheses: [],
-        });
-      }
-      return jsonResponse({
-        sessionId,
-        summary: getHypothesisSummary(store),
-        hypotheses: store.hypotheses,
+          summary: getHypothesisSummary(store),
+          hypotheses: store.hypotheses,
+        };
       });
+      return jsonResponse(payload);
     },
   );
 
   server.tool(
     'hypothesis_evidence',
-    'Attach evidence to an existing hypothesis. Auto-promotes an unverified hypothesis to supported (mirrors hypothesis-tracker semantics). Use with the actual observation (log line, command output): narrative-only evidence weakens the eventual claim-gate verdict.',
+    'Attach evidence to an existing hypothesis. Auto-promotes an unverified hypothesis to supported (mirrors hypothesis-tracker semantics). Use with the actual observation (log line, command output): narrative-only evidence weakens the eventual claim-gate verdict. Ordered by arrival at the transport relative to a concurrent/pipelined hypothesis_list (or any other hypothesis_* verb) for the same sessionId, see the hypothesis_record description.',
     {
       sessionId: hypothesisSessionIdSchema,
       hypothesisId: hypothesisIdSchema,
       evidence: evidenceTextSchema,
       source: z.string().max(512).optional().describe('Where the observation came from (file path, command, log file).'),
     },
-    async ({ sessionId, hypothesisId, evidence, source }) => {
-      const store = getStore(sessionId);
-      if (!store) {
-        return jsonResponse({ error: 'no_store_for_session', sessionId });
-      }
-      const updated = addEvidence(store, hypothesisId, evidence, source);
-      if (!updated) {
-        return jsonResponse({ error: 'hypothesis_not_found', sessionId, hypothesisId });
-      }
-      saveStore(sessionId, store);
-      return jsonResponse({ sessionId, hypothesis: updated });
+    async ({ sessionId, hypothesisId, evidence, source }, extra) => {
+      const payload = await enqueueHypothesisRequest(extra.requestId, () => {
+        const store = getStore(sessionId);
+        if (!store) {
+          return { error: 'no_store_for_session' as const, sessionId };
+        }
+        const updated = addEvidence(store, hypothesisId, evidence, source);
+        if (!updated) {
+          return { error: 'hypothesis_not_found' as const, sessionId, hypothesisId };
+        }
+        saveStore(sessionId, store);
+        return { sessionId, hypothesis: updated };
+      });
+      return jsonResponse(payload);
     },
   );
 
   server.tool(
     'hypothesis_check_done',
-    'Mark one of a hypothesis\'s required_checks as completed (0-indexed). Use after actually running the check: this is how the pending_checks counter in hypothesis_list drains.',
+    'Mark one of a hypothesis\'s required_checks as completed (0-indexed). Use after actually running the check: this is how the pending_checks counter in hypothesis_list drains. Ordered by arrival at the transport relative to a concurrent/pipelined hypothesis_list (or any other hypothesis_* verb) for the same sessionId, see the hypothesis_record description.',
     {
       sessionId: hypothesisSessionIdSchema,
       hypothesisId: hypothesisIdSchema,
       checkIndex: z.number().int().min(0).describe('0-based index into required_checks.'),
     },
-    async ({ sessionId, hypothesisId, checkIndex }) => {
-      const store = getStore(sessionId);
-      if (!store) {
-        return jsonResponse({ error: 'no_store_for_session', sessionId });
-      }
-      const hypothesis = findHypothesis(store, hypothesisId);
-      if (!hypothesis) {
-        return jsonResponse({ error: 'hypothesis_not_found', sessionId, hypothesisId });
-      }
-      if (checkIndex >= hypothesis.required_checks.length) {
-        return jsonResponse({
-          error: 'check_index_out_of_range',
-          sessionId,
-          hypothesisId,
-          checkIndex,
-          availableChecks: hypothesis.required_checks.length,
-        });
-      }
-      const updated = completeCheck(store, hypothesisId, checkIndex);
-      saveStore(sessionId, store);
-      return jsonResponse({ sessionId, hypothesis: updated });
+    async ({ sessionId, hypothesisId, checkIndex }, extra) => {
+      const payload = await enqueueHypothesisRequest(extra.requestId, () => {
+        const store = getStore(sessionId);
+        if (!store) {
+          return { error: 'no_store_for_session' as const, sessionId };
+        }
+        const hypothesis = findHypothesis(store, hypothesisId);
+        if (!hypothesis) {
+          return { error: 'hypothesis_not_found' as const, sessionId, hypothesisId };
+        }
+        if (checkIndex >= hypothesis.required_checks.length) {
+          return {
+            error: 'check_index_out_of_range' as const,
+            sessionId,
+            hypothesisId,
+            checkIndex,
+            availableChecks: hypothesis.required_checks.length,
+          };
+        }
+        const updated = completeCheck(store, hypothesisId, checkIndex);
+        saveStore(sessionId, store);
+        return { sessionId, hypothesis: updated };
+      });
+      return jsonResponse(payload);
     },
   );
 
   server.tool(
     'hypothesis_reject',
-    'Reject a hypothesis with a reason. The reason is appended to the evidence list as a [rejected] entry so the rejection itself becomes auditable, not a silent delete.',
+    'Reject a hypothesis with a reason. The reason is appended to the evidence list as a [rejected] entry so the rejection itself becomes auditable, not a silent delete. Ordered by arrival at the transport relative to a concurrent/pipelined hypothesis_list (or any other hypothesis_* verb) for the same sessionId, see the hypothesis_record description.',
     {
       sessionId: hypothesisSessionIdSchema,
       hypothesisId: hypothesisIdSchema,
       reason: z.string().max(4096).optional().describe('Why the hypothesis was rejected (counter-evidence, failed check, contradiction).'),
     },
-    async ({ sessionId, hypothesisId, reason }) => {
-      const store = getStore(sessionId);
-      if (!store) {
-        return jsonResponse({ error: 'no_store_for_session', sessionId });
-      }
-      const updated = rejectHypothesis(store, hypothesisId, reason);
-      if (!updated) {
-        return jsonResponse({ error: 'hypothesis_not_found', sessionId, hypothesisId });
-      }
-      saveStore(sessionId, store);
-      return jsonResponse({ sessionId, hypothesis: updated });
+    async ({ sessionId, hypothesisId, reason }, extra) => {
+      const payload = await enqueueHypothesisRequest(extra.requestId, () => {
+        const store = getStore(sessionId);
+        if (!store) {
+          return { error: 'no_store_for_session' as const, sessionId };
+        }
+        const updated = rejectHypothesis(store, hypothesisId, reason);
+        if (!updated) {
+          return { error: 'hypothesis_not_found' as const, sessionId, hypothesisId };
+        }
+        saveStore(sessionId, store);
+        return { sessionId, hypothesis: updated };
+      });
+      return jsonResponse(payload);
     },
   );
 
   server.tool(
     'hypothesis_support',
-    'Explicitly mark a hypothesis as supported. Usually not needed: hypothesis_evidence auto-promotes on first evidence. Use this when promotion happens out-of-band (e.g. evidence is in the ledger but not yet attached).',
+    'Explicitly mark a hypothesis as supported. Usually not needed: hypothesis_evidence auto-promotes on first evidence. Use this when promotion happens out-of-band (e.g. evidence is in the ledger but not yet attached). Ordered by arrival at the transport relative to a concurrent/pipelined hypothesis_list (or any other hypothesis_* verb) for the same sessionId, see the hypothesis_record description.',
     {
       sessionId: hypothesisSessionIdSchema,
       hypothesisId: hypothesisIdSchema,
     },
-    async ({ sessionId, hypothesisId }) => {
-      const store = getStore(sessionId);
-      if (!store) {
-        return jsonResponse({ error: 'no_store_for_session', sessionId });
-      }
-      const updated = supportHypothesis(store, hypothesisId);
-      if (!updated) {
-        // null also covers a hypothesis whose required_checks are still
-        // pending — supportHypothesis refuses to confirm until they are done.
-        return jsonResponse({
-          error: 'hypothesis_not_found_rejected_or_checks_pending',
-          sessionId,
-          hypothesisId,
-        });
-      }
-      saveStore(sessionId, store);
-      return jsonResponse({ sessionId, hypothesis: updated });
+    async ({ sessionId, hypothesisId }, extra) => {
+      const payload = await enqueueHypothesisRequest(extra.requestId, () => {
+        const store = getStore(sessionId);
+        if (!store) {
+          return { error: 'no_store_for_session' as const, sessionId };
+        }
+        const updated = supportHypothesis(store, hypothesisId);
+        if (!updated) {
+          // null also covers a hypothesis whose required_checks are still
+          // pending — supportHypothesis refuses to confirm until they are done.
+          return {
+            error: 'hypothesis_not_found_rejected_or_checks_pending' as const,
+            sessionId,
+            hypothesisId,
+          };
+        }
+        saveStore(sessionId, store);
+        return { sessionId, hypothesis: updated };
+      });
+      return jsonResponse(payload);
     },
   );
 
   server.tool(
     'hypothesis_reset',
-    'Purge all hypotheses for a session. Use this when reusing a grounding sessionId for a new debug task so stale hypotheses from the previous investigation do not leak in.',
+    'Purge all hypotheses for a session. Use this when reusing a grounding sessionId for a new debug task so stale hypotheses from the previous investigation do not leak in. Ordered by arrival at the transport relative to a concurrent/pipelined hypothesis_list (or any other hypothesis_* verb) for the same sessionId, see the hypothesis_record description.',
     {
       sessionId: hypothesisSessionIdSchema,
     },
-    async ({ sessionId }) => {
-      const cleared = resetStore(sessionId);
+    async ({ sessionId }, extra) => {
+      const cleared = await enqueueHypothesisRequest(extra.requestId, () => resetStore(sessionId));
       return jsonResponse({ sessionId, cleared });
     },
   );
