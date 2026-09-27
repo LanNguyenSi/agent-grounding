@@ -2,6 +2,19 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-27, grounding-mcp routing comment rewording and new
+  `grounding_start` ordering tests: the "Arrival-ordered request routing"
+  comment in `packages/grounding-mcp/src/server.ts` now speaks of routed
+  requests and routed work instead of ledger ones and names the roundtrip
+  test file, which added three comment lines above the routed tool-name
+  sets. Every `server.ts` citation at or below that point in
+  `evidence-ledger-session-key-shapes.md`,
+  `hypothesis-tracker-persistence-split.md` and
+  `solution-acceptance-verdict-contract.md` was re-located at its new line
+  (each anchor text unchanged) and the three docs were re-stamped. The new
+  tests in `packages/grounding-mcp/tests/grounding-gate-mcp-roundtrip.test.ts`
+  sit after the test cited by `evidence-ledger-session-key-shapes.md`, so
+  that citation's head and close lines are unchanged.
 - 2026-09-27, grounding-mcp arrival-ordered request routing extended to the
   grounding session store and the hypothesis store:
   `packages/grounding-mcp/src/server.ts` grew a new comment block, a new

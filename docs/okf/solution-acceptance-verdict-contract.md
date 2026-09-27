@@ -3,7 +3,7 @@ type: invariant
 title: Solution-acceptance verdict contract — why the marker lives outside the ledger
 description: A "done" verdict is derived from a real preflight+OW run, HEAD-pinned, and written to an XDG state marker outside the agent-writable evidence-ledger because ledger rows are forgeable via ledger_add.
 tags: [solution-acceptance, verdicts, anti-hacking, trust-boundary]
-timestamp: 2026-09-27T05:41:00Z
+timestamp: 2026-09-27T06:27:15Z
 sources:
   - packages/grounding-mcp/src/solution-verdict.ts
   - packages/grounding-mcp/src/solution-attempt-log.ts
@@ -261,7 +261,7 @@ writes its HEAD-pinned verdict marker only once preflight has actually
 completed, so `solution_gate` and the two lookups below only ever see no
 marker yet or the complete, final one, never a half-written one.
 
-- **`solution_evaluate`** (registered `server.ts:909#"'solution_evaluate'"`): the producer. Runs preflight against
+- **`solution_evaluate`** (registered `server.ts:912#"'solution_evaluate'"`): the producer. Runs preflight against
   the repo, records a HEAD-pinned verdict for `id`. Args: `id` (min 1, max 200,
   `MAX_ID_FILENAME_LENGTH`, the same bound the two lookups below enforce), optional
   `repoPath` (defaults to cwd), optional `forceNewAttempt`. It no longer calls
@@ -271,7 +271,7 @@ marker yet or the complete, final one, never a half-written one.
   `evaluateSolution` underneath. Still wrapped in `withProgressPings`
   (`packages/grounding-mcp/src/progress.ts`) when the request carries a `progressToken`;
   that only sends `notifications/progress` pings and has no effect on the verdict.
-- **`solution_gate`** (registered `server.ts:984#"'solution_gate'"`): read-only checker. Resolves current HEAD
+- **`solution_gate`** (registered `server.ts:987#"'solution_gate'"`): read-only checker. Resolves current HEAD
   via `getHeadSha`, then `evaluateGate(id, head)`. Deny reasons are precise: no verdict /
   not ready + blockers / HEAD drift / unresolvable HEAD. Unchanged by the attempt
   lifecycle: it reads the signed marker and nothing else, and never consults the
