@@ -7,7 +7,8 @@ import { createAssessmentServer } from './assessment-server.js';
 import { ASSESSMENT_PACKAGE_VERSION, createAssessmentStore } from './grounding-issuer.js';
 
 async function main(): Promise<void> {
-  if (process.argv.includes('--version') || process.argv.includes('-v')) { process.stdout.write(`${ASSESSMENT_PACKAGE_VERSION}\n`); return; }
+  if (process.argv.length === 3 && ['--version', '-v'].includes(process.argv[2])) { process.stdout.write(`${ASSESSMENT_PACKAGE_VERSION}\n`); return; }
+  if (process.argv.length !== 2) throw new Error('Unexpected assessment arguments');
   const store = await createAssessmentStore();
   const server = createAssessmentServer(store);
   await server.connect(new StdioServerTransport());

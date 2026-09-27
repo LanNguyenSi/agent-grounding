@@ -64,5 +64,7 @@ export async function loadAssessmentIssuer(configPath = process.env.GROUNDING_AS
 
 export async function createAssessmentStore(configPath?: string, producer = { name: 'grounding-assessment-mcp', version: ASSESSMENT_PACKAGE_VERSION, policyBuild: ASSESSMENT_POLICY.sha256 }): Promise<GroundingAssessmentStore> {
   const { config, privateKey } = await loadAssessmentIssuer(configPath);
-  return new GroundingAssessmentStore({ directory: config.stateDirectory, issuer: config.issuer, kid: config.kid, privateKey, producer });
+  const store = new GroundingAssessmentStore({ directory: config.stateDirectory, issuer: config.issuer, kid: config.kid, privateKey, producer });
+  await store.assertReady();
+  return store;
 }

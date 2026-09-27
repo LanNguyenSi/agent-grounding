@@ -170,7 +170,7 @@ This server is meant to run on the agent's local machine via stdio. There's no a
 
 ## Grounding receipt codec
 
-The package also contains an unregistered `grounding-receipt/v1` library primitive and a versioned conformance corpus for a strict, Ed25519-signed documentary assessment (always `agent_asserted` provenance), plus a separate, restricted `grounding-assessment-mcp` binary that serves it. See [Grounding receipt codec reference](docs/grounding-receipt-codec.md) for the wire format, the authoritative assessment store's session/dossier/claim contract, and the restricted assessment MCP's tool surface.
+The package also contains an unregistered `grounding-receipt/v1` library primitive and a versioned conformance corpus for a strict, Ed25519-signed documentary assessment (always `agent_asserted` provenance), plus a separate, restricted `grounding-assessment-mcp` binary that serves it. The restricted producer requires explicitly initialized durable state; its separate `dist/assessment-init.js` operator entrypoint exclusively creates a new state directory. Ordinary startup fails on absent or invalid state. See [Grounding receipt codec reference](docs/grounding-receipt-codec.md) for initialization, recovery, the wire format, the authoritative assessment store's session/dossier/claim contract, and the restricted assessment MCP's tool surface.
 
 ## Documentation
 

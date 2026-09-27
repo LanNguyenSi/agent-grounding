@@ -3,7 +3,7 @@ type: invariant
 title: Grounding receipt and assessment contract
 description: Portable documentary assessments, authoritative producer snapshots, immutable attempts, and the boundary between signature verification and issuer or task authority.
 tags: [grounding-mcp, receipt, contract, trust-boundary]
-timestamp: 2026-09-26T06:03:00Z
+timestamp: 2026-09-27T20:46:12Z
 sources:
   - packages/grounding-mcp/src/grounding-receipt.ts
   - packages/grounding-mcp/contracts/grounding-receipt-v1/README.md
@@ -14,6 +14,9 @@ sources:
   - packages/grounding-mcp/src/grounding-assessment-store.ts
   - packages/grounding-mcp/tests/grounding-assessment-policy.test.ts
   - packages/grounding-mcp/tests/grounding-assessment-store.test.ts
+  - packages/grounding-mcp/src/assessment-init.ts
+  - packages/grounding-mcp/tests/grounding-assessment-surface.test.ts
+  - packages/grounding-mcp/tests/grounding-receipt-mcp.test.ts
   - packages/grounding-mcp/src/assessment-index.ts
   - packages/grounding-mcp/src/assessment-server.ts
   - packages/grounding-mcp/src/grounding-issuer.ts
@@ -64,6 +67,22 @@ existing attempt conflicts. A fresh attempt requires the bound subject and
 current session revision; the consumer authenticates its workflow target and
 context against its own attempt record.
 
+Ordinary startup and every transaction require valid canonical v1 state and a
+regular lock anchor in an existing dedicated directory. Missing state never
+means empty state. The separate `assessment-init.ts` operator entrypoint creates
+only a new final directory, takes the same lock before staging, and publishes
+empty v1 state exclusively with file, directory, and parent fsync. Existing
+valid, empty, or partial directories are refused without changes. Initialization
+failure retains available evidence and its lock even if state was published.
+Existing v1 stores do not require reinitialization.
+
+Directory and anchor identities are pinned for the store lifetime; the loaded
+state inode is checked within each transaction because legitimate commits
+replace it. Observable disappearance, symlinks, nonregular files, or replacement
+fail at read/commit/return boundaries. Cleanup retains an observed replacement
+lock. Path checks and rename are not one atomic filesystem operation; these
+checks make no administrator, same-user manipulation, or anti-rollback guarantee.
+
 The stable lock has no time-based takeover. Unclean exit recovery requires
 operator-confirmed quiescence of all writers before removing the lock. File
 fsync, atomic rename, and directory fsync define the commit boundary; an error
@@ -81,6 +100,9 @@ claim set, and export. Startup accepts only an operator-selected absolute
 configuration file containing an issuer, key id, absolute Ed25519 private-key
 path, absolute state directory, and the frozen policy identity. It has no
 default key/state path, key generation, discovery, or trust registration.
+Startup validates durable state under the transaction lock before connecting.
+Initialization is a separate operator command, unavailable through the normal
+launcher or any of the seven tools.
 Tool inputs cannot provide those fields. Export transmits the store's signed
 receipt as exact UTF-8 text; failed requests return no previous receipt. The
 transport does not establish consumer admission, production key lifecycle,
@@ -101,26 +123,33 @@ the assessment store.
 - Frozen documentary requirements:
   `packages/grounding-mcp/contracts/grounding-receipt-v1/policy.json:287#"minimumPredicates"`.
 - The distinction between byte-format checks and documentary meaning:
-  `packages/grounding-mcp/contracts/grounding-receipt-v1/README.md:100-103#"proves neither diagnostic truth"`.
+  `packages/grounding-mcp/contracts/grounding-receipt-v1/README.md:103#"proves neither diagnostic truth"`.
 - Authoritative creation and immutable binding:
-  `packages/grounding-mcp/src/grounding-assessment-store.ts:209#"async createSession"`.
+  `packages/grounding-mcp/src/grounding-assessment-store.ts:317#"async createSession"`.
 - Serialized atomic persistence and lock ownership:
-  `packages/grounding-mcp/src/grounding-assessment-store.ts:166#"async #transaction"`.
+  `packages/grounding-mcp/src/grounding-assessment-store.ts:250#"async #transaction"`.
 - Terminal retry fingerprint and stored receipt bytes:
-  `packages/grounding-mcp/src/grounding-assessment-store.ts:262#"async exportReceipt"`.
+  `packages/grounding-mcp/src/grounding-assessment-store.ts:370#"async exportReceipt"`.
 - Fixed snapshot assessment and documentary provenance:
   `packages/grounding-mcp/src/grounding-assessment-policy.ts:115#"export function assessSnapshot"`.
 - Explicit dossier hash projection:
   `packages/grounding-mcp/src/grounding-assessment-policy.ts:103#"export function dossierProjection"`.
 - Process concurrency around one consistent snapshot:
-  `packages/grounding-mcp/tests/grounding-assessment-store.test.ts:248-266#"await stop(child.child);"`.
+  `packages/grounding-mcp/tests/grounding-assessment-store.test.ts:266#"await stop(child.child);"`.
 - Independent frozen claim detector vector tests:
-  `packages/grounding-mcp/tests/grounding-assessment-policy.test.ts:45-47#"expect(detectClaimType(claim)).toBe(expectedType);"`.
+  `packages/grounding-mcp/tests/grounding-assessment-policy.test.ts:46#"expect(detectClaimType(claim)).toBe(expectedType);"`.
 - Restricted stdio composition root and sanitized startup failure:
-  `packages/grounding-mcp/src/assessment-index.ts:9-17#"main().catch"`.
+  `packages/grounding-mcp/src/assessment-index.ts:18#"main().catch"`.
 - Explicit issuer configuration and Ed25519 key validation:
-  `packages/grounding-mcp/src/grounding-issuer.ts:49-58#"key.asymmetricKeyType"`.
+  `packages/grounding-mcp/src/grounding-issuer.ts:58#"key.asymmetricKeyType"`.
 - Capped single-handle reads and fatal UTF-8 decoding:
-  `packages/grounding-mcp/src/grounding-issuer.ts:31-44#"fatal: true"`.
+  `packages/grounding-mcp/src/grounding-issuer.ts:44#"fatal: true"`.
 - Strict seven-tool registration and exact receipt transport:
-  `packages/grounding-mcp/src/assessment-server.ts:37-58#"catch (cause)"`.
+  `packages/grounding-mcp/src/assessment-server.ts:29#"catch (cause)"`.
+
+- Exclusive operator initialization and failure retention:
+  `packages/grounding-mcp/src/grounding-assessment-store.ts:118#"export async function initializeAssessmentState"`.
+- State readiness before registration:
+  `packages/grounding-mcp/src/grounding-issuer.ts:68#"await store.assertReady();"`.
+- Separate operator command:
+  `packages/grounding-mcp/src/assessment-init.ts:8#"async function main()"`.

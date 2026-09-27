@@ -10,6 +10,7 @@ import ts from 'typescript';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { ASSESSMENT_POLICY } from '../src/grounding-assessment-policy.js';
+import { initializeAssessmentState } from '../src/grounding-assessment-store.js';
 import { loadAssessmentIssuer } from '../src/grounding-issuer.js';
 
 const cleanup: (() => Promise<unknown> | void)[] = [];
@@ -166,7 +167,7 @@ describe('assessment producer startup and surface', () => {
   });
 
   it('N-21 actual bin symlink exposes exactly seven tools; forbidden names and path inputs have no file or process effects', async () => {
-    const f = fixture(); const bin = join(f.root, 'grounding-assessment-mcp'); symlinkSync(entrypoint, bin);
+    const f = fixture(); await initializeAssessmentState(f.state); const initial = readFileSync(join(f.state, 'state.json')); const bin = join(f.root, 'grounding-assessment-mcp'); symlinkSync(entrypoint, bin);
     const canary = join(f.root, 'private-canary'); const marker = join(f.root, 'effect-marker');
     writeFileSync(canary, 'DO-NOT-READ-SECRET');
     const guard = join(f.root, 'guard.cjs');
@@ -192,9 +193,9 @@ require('node:module').syncBuiltinESMExports();`);
       expect(existsSync(marker)).toBe(false); expect(readFileSync(canary, 'utf8')).toBe('DO-NOT-READ-SECRET');
       expect(readdirSync(f.home)).toEqual([]);
     };
-    for (const name of ['solution_evaluate', 'grounding_start', 'grounding_status', 'ledger_add', 'ledger_summary', 'claim_evaluate', 'claim_evaluate_from_session', 'exec', 'run_command', 'read_file', 'write_file', 'runtime_check', 'runtime_inspect', 'resolve_path']) {
+    for (const name of ['solution_evaluate', 'grounding_start', 'grounding_status', 'ledger_add', 'ledger_summary', 'claim_evaluate', 'claim_evaluate_from_session', 'exec', 'run_command', 'read_file', 'write_file', 'runtime_check', 'runtime_inspect', 'resolve_path', 'assessment_initialize', 'initialize', 'assessment_reset']) {
       await reject(name, { sessionId: canary, path: canary, cwd: f.home, command: `touch ${marker}` });
-      expect(existsSync(f.state)).toBe(false);
+      expect(readFileSync(join(f.state, 'state.json'))).toEqual(initial);
     }
     const now = Math.floor(Date.now() / 1000);
     const c = { audience: 'test', projectId: randomUUID(), taskId: randomUUID(), attemptId: randomUUID(), nonce: Buffer.alloc(32, 1).toString('base64url'), contextRevision: 1,
@@ -209,7 +210,7 @@ require('node:module').syncBuiltinESMExports();`);
       ['assessment_export', { sessionId: canary, expectedRevision: 1, challenge: c }],
     ];
     for (const [name, args] of pathInputs) {
-      await reject(name, args); expect(existsSync(f.state)).toBe(false);
+      await reject(name, args); expect(readFileSync(join(f.state, 'state.json'))).toEqual(initial);
     }
     const decode = (result: any) => { expect(result.isError).not.toBe(true); return JSON.parse(result.content[0].text); };
     const started = decode(await call('assessment_start', { challenge: c, keyword: 'service', problem: 'issue' }));
@@ -222,5 +223,53 @@ require('node:module').syncBuiltinESMExports();`);
     expect(dossier.entries[0]).toMatchObject({ content: inert, source: inert, origin: 'agent_asserted' });
     expect(existsSync(marker)).toBe(false); expect(readFileSync(canary, 'utf8')).toBe('DO-NOT-READ-SECRET');
     expect(readdirSync(f.home)).toEqual([]);
+  });
+});
+
+describe('assessment initialization entrypoint separation', () => {
+  const initializer = resolve(import.meta.dirname, '../dist/assessment-init.js');
+  it('initializes only through the separate operator entrypoint and refuses reinitialization', async () => {
+    const f = fixture();
+    expect(await run(f, [initializer])).toEqual({ code: 0, signal: null, timedOut: false, stdout: 'Assessment state initialized\n', stderr: '' });
+    const bytes = readFileSync(join(f.state, 'state.json'));
+    expect(await run(f, [initializer])).toEqual({ code: 1, signal: null, timedOut: false, stdout: '', stderr: 'grounding-assessment initialization failed\n' });
+    expect(readFileSync(join(f.state, 'state.json'))).toEqual(bytes);
+    expect((await run(f, [entrypoint])).code).toBe(0);
+  });
+  it.each([['--initialize'], ['--unknown'], ['--version', '--initialize']])('normal launcher rejects arguments %j without initializing', async (...args) => {
+    const f = fixture(); const result = await run(f, [entrypoint, ...args]);
+    expect(result).toEqual({ code: 1, signal: null, timedOut: false, stdout: '', stderr: 'grounding-assessment-mcp failed to start\n' });
+    expect(existsSync(f.state)).toBe(false);
+    const init = await run(f, [initializer, ...args]); expect(init.code).toBe(1); expect(init.stdout).toBe(''); expect(existsSync(f.state)).toBe(false);
+  });
+  it.each(['directory', 'state', 'anchor', 'corrupt', 'state-directory', 'state-symlink'] as const)('rejects missing or invalid %s before emitting MCP output', async (kind) => {
+    const f = fixture();
+    if (kind !== 'directory') {
+      await initializeAssessmentState(f.state);
+      if (kind === 'state' || kind === 'anchor') rmSync(join(f.state, kind === 'state' ? 'state.json' : 'store'));
+      if (kind === 'corrupt') writeFileSync(join(f.state, 'state.json'), '{bad state');
+      if (kind === 'state-directory' || kind === 'state-symlink') {
+        rmSync(join(f.state, 'state.json'));
+        if (kind === 'state-directory') mkdirSync(join(f.state, 'state.json'));
+        else symlinkSync(f.key, join(f.state, 'state.json'));
+      }
+    }
+    const result = await run(f, [entrypoint]);
+    expect(result).toEqual({ code: 1, signal: null, timedOut: false, stdout: '', stderr: 'grounding-assessment-mcp failed to start\n' });
+    if (kind === 'directory') expect(existsSync(f.state)).toBe(false);
+    if (kind === 'state') expect(existsSync(join(f.state, 'state.json'))).toBe(false);
+    if (kind === 'anchor') expect(existsSync(join(f.state, 'store'))).toBe(false);
+  });
+  it.each(['error', 'SIGTERM'] as const)('retains initialization lock evidence after child %s even after state publication', async (mode) => {
+    const f = fixture(); const guard = join(f.root, 'fail-init.cjs');
+    writeFileSync(guard, `const fs = require('node:fs/promises'); const open = fs.open; const directory = ${JSON.stringify(f.state)};
+fs.open = async (...args) => { const handle = await open(...args); if (String(args[0]) === directory) handle.sync = async () => { ${mode === 'SIGTERM' ? "process.kill(process.pid, 'SIGTERM'); await new Promise(resolve => setTimeout(resolve, 10000));" : "throw Error('injected initialization sync failure');"} }; return handle; };`);
+    const result = await run(f, [initializer], { ...f.env, NODE_OPTIONS: `--require=${guard}` });
+    expect(result.timedOut).toBe(false); expect(result.stdout).toBe('');
+    if (mode === 'error') { expect(result.code).toBe(1); expect(result.stderr).toBe('grounding-assessment initialization failed\n'); }
+    else expect(result.signal).toBe('SIGTERM');
+    expect((await fs.lstat(join(f.state, 'store.lock'))).isDirectory()).toBe(true);
+    expect(readFileSync(join(f.state, 'state.json'), 'utf8')).toBe('{"version":1,"sessions":[],"terminals":[]}');
+    expect((await run(f, [initializer])).code).toBe(1);
   });
 });
