@@ -145,7 +145,7 @@ the assessment store.
 - Capped single-handle reads and fatal UTF-8 decoding:
   `packages/grounding-mcp/src/grounding-issuer.ts:44#"fatal: true"`.
 - Strict seven-tool registration and exact receipt transport:
-  `packages/grounding-mcp/src/assessment-server.ts:29#"catch (cause)"`.
+  `packages/grounding-mcp/src/assessment-server.ts:58#"catch (cause)"`.
 
 - Exclusive operator initialization and failure retention:
   `packages/grounding-mcp/src/grounding-assessment-store.ts:118#"export async function initializeAssessmentState"`.

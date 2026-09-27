@@ -3,7 +3,7 @@ type: invariant
 title: Evidence-ledger session keys — one opaque column, two conventions
 description: The ledger `session` is a single opaque TEXT column; grounding-mcp keys it by a generated `gs-*` id while the merge-approval CI Action keys it by the PR head branch name, so evidence written under one key is invisible to a reader expecting the other.
 tags: [evidence-ledger, sessions, keys, ci, mcp]
-timestamp: 2026-09-27T14:36:00Z
+timestamp: 2026-09-27T20:50:34Z
 sources:
   - packages/evidence-ledger/src/types.ts
   - packages/evidence-ledger/src/db.ts
@@ -57,8 +57,9 @@ The tag prefixes the harness gates consume — `preflight:<repo>`, `review-subag
 ## Restricted producer sessions are separate
 
 `grounding-assessment-mcp` uses producer-owned UUID sessions in its configured
-JSON store, not the evidence-ledger `session` column. Creation binds audience,
-project, task, and subject (`packages/grounding-mcp/src/grounding-assessment-store.ts:209-217#"return { result: session, changed: true };"`).
+JSON store, not the evidence-ledger `session` column. The store must already be
+initialized; ordinary use never recreates missing state. Creation binds audience,
+project, task, and subject (`packages/grounding-mcp/src/grounding-assessment-store.ts:325#"return { result: session, changed: true };"`).
 The restricted dossier tools read and mutate that store
 (`packages/grounding-mcp/src/assessment-server.ts:45-48#"dossierProjection"`);
 they do not import `gs-*` sessions, ledger rows, or the CI branch namespace.

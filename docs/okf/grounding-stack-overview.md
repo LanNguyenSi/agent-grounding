@@ -3,12 +3,14 @@ type: overview
 title: The grounding stack — where to read, and how releases are split
 description: "Pointer doc: docs/architecture.md diagrams the whole stack (moved out of the root README in the README refresh); this entry adds the release topology (four version-locked packages under one root tag, eight independently-versioned ones) that the diagram does not show."
 tags: [overview, monorepo, releases, versioning, pointer]
-timestamp: 2026-09-26T06:03:00Z
+timestamp: 2026-09-27T20:50:34Z
 sources:
   - docs/architecture.md
   - CHANGELOG.md
   - package.json
   - packages/grounding-mcp/package.json
+  - packages/grounding-mcp/src/assessment-init.ts
+  - packages/grounding-mcp/src/grounding-issuer.ts
   - packages/grounding-mcp/src/assessment-index.ts
   - packages/grounding-mcp/src/assessment-server.ts
   - .github/workflows/ci.yml
@@ -96,9 +98,13 @@ packed-tarball --version checker unit tests" step
 
 The grounding-mcp package also has a separate `grounding-assessment-mcp` bin
 (`packages/grounding-mcp/package.json:24-26#"dist/assessment-index.js"`).
-Its composition root loads explicit issuer configuration and connects only
-the assessment server to stdio
-(`packages/grounding-mcp/src/assessment-index.ts:11-13#"StdioServerTransport"`).
+Its composition root loads explicit issuer configuration, validates initialized
+state (`packages/grounding-mcp/src/grounding-issuer.ts:68#"await store.assertReady();"`),
+and connects only the assessment server to stdio
+(`packages/grounding-mcp/src/assessment-index.ts:14#"StdioServerTransport"`).
+The separate operator entrypoint initializes only a new state directory
+(`packages/grounding-mcp/src/assessment-init.ts:11#"await initializeAssessmentState"`);
+ordinary startup and the transport cannot initialize it.
 That server registers the seven assessment lifecycle operations
 (`packages/grounding-mcp/src/assessment-server.ts:32-35#"] as const);"`).
 It uses the producer-owned assessment store, with no generic runtime, ledger,
