@@ -2,6 +2,15 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-27, grounding-mcp `solution_evaluate` description: the tool
+  description in `packages/grounding-mcp/src/server.ts` now also gives the
+  absolute GitHub URL of `docs/solution-acceptance-gate.md`, because the npm
+  package does not ship `docs/`. The edit replaced one string line in place
+  (no line shift). `solution-acceptance-verdict-contract.md` lists
+  `server.ts` under `sources`; its `solution_evaluate` registration anchor
+  and its description of the tool were re-verified against the new text and
+  still hold; re-stamped.
+
 - 2026-09-26, public package docs cleanup (removing org-internal identifiers
   and machine paths from understanding-gate and grounding-mcp docs):
   `packages/grounding-mcp/docs/solution-acceptance-gate.md` had its
