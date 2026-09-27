@@ -1,4 +1,5 @@
-// Grill-me mode prompt: the pre-execution understanding-gate architecture design.
+// Grill-me mode prompt: one of the three Core prompt snippets bundled at
+// build, see docs/architecture.md's "Layered view" section.
 //
 // 0.2.1 dogfood (2026-05-02): the original prose-only template let the
 // agent improvise its own subheadings (`**Task:**`, `**Assumptions I'm

@@ -14,8 +14,8 @@
 // independent-mirroring convention `verdictDir()` / `sanitizeVerdictId()`
 // in solution-verdict.ts already use.
 //
-// Contract mirrored, field-for-field and byte-for-byte, from harness
-// (origin/batch19/sign-verdict-marker):
+// Contract mirrored, field-for-field and byte-for-byte, from harness's
+// approval-signing / solution-acceptance verdict-marker signing module:
 //   - src/runtime/approval-signing.ts: SIGNING_ALG, SIGNING_KEY_BASENAME,
 //     signingKeyPathFor, getOrCreateSigningKey, canonicalPayload, signMarker.
 //   - src/policy-packs/builtin/solution-acceptance-runtime.ts:

@@ -1,4 +1,5 @@
-// Fast-confirm mode prompt: the pre-execution understanding-gate architecture design.
+// Fast-confirm mode prompt: one of the three Core prompt snippets bundled at
+// build, see docs/architecture.md's "Layered view" section.
 export const FAST_CONFIRM_PROMPT = `# Fast Confirm Mode
 
 Before executing, provide a short confirmation summary:

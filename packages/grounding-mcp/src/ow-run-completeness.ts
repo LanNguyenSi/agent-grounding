@@ -1636,7 +1636,7 @@ interface ReviewMethodComplianceResult {
  * (F2, corrected round 4) the round's OWN declaration line carries exactly
  * one DISTINCT well-formed `review-method[...]` round -- several rounds
  * packed onto one shared line (for example a shared
- * `T-011-R1`/`R2`/`R3` declaration) never resolve via the following `Method:` line, since
+ * `T-013-R1`/`R2`/`R3` declaration) never resolve via the following `Method:` line, since
  * one prose line cannot stand for three distinct rounds' own confirmations,
  * while the SAME round declared twice in agreement on one shared line still
  * counts as single-occurrence for this gate; such a multi-round line falls
@@ -1698,7 +1698,7 @@ function scanReviewMethodCompliance(content: string | null): ReviewMethodComplia
   // fallback is only safe to associate with a round when its declaration LINE
   // carries exactly one DISTINCT well-formed `review-method[...]` round. Real
   // runs pack several rounds' declarations onto one line followed by a single
-  // shared `Method:` summary line (e.g. `T-011-R1`/`R2`/`R3` sharing
+  // shared `Method:` summary line (e.g. `T-013-R1`/`R2`/`R3` sharing
   // one line and one following `Method:` line): reading that one prose line
   // as EACH packed round's own record would let one line silently clear every
   // round packed with it. Round 3 counted raw occurrences per line, which

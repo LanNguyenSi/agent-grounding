@@ -49,8 +49,8 @@ describe('harness-home-guard (setupFiles self-test)', () => {
     const value = process.env.HARNESS_HOME as string;
     const realHome = os.homedir();
     // Guards against both an exact match and a same-prefix sibling
-    // (`path.sep` keeps e.g. "/Users/lan2" from false-passing against
-    // "/Users/lan").
+    // (`path.sep` keeps e.g. "/Users/eve2" from false-passing against
+    // "/Users/eve").
     const withinRealHome = value === realHome || value.startsWith(realHome + path.sep);
     expect(withinRealHome).toBe(false);
   });
