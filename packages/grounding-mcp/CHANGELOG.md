@@ -24,20 +24,26 @@
   asynchronously before invoking its handler, and two pipelined requests
   against schemas of different shapes can have their handlers invoked out
   of arrival order, the same root cause already fixed for the ledger
-  tools (see 0.13.0's dde2ba58 entry and the "Arrival-ordered request
-  routing" comment in `src/server.ts`); a pipelined `hypothesis_record`
-  followed by `hypothesis_list` on the same session could return
-  `total: 0`, and a pipelined `grounding_advance` followed by
-  `claim_evaluate_from_session` could derive a stale `readme_read` flag.
-  `claim_evaluate_from_session` now enqueues its session read and its
-  ledger read synchronously, before awaiting either, so both land in the
-  same in-flight batch as any concurrent sibling on either store. Not
-  routed, and unaffected: `claim_evaluate` and `verify_memory_reference`
-  (no store touched), `solution_evaluate` / `solution_evaluate_status` /
-  `solution_evaluate_result` (the attempt registry's own synchronous
-  check-and-set join already orders duplicate attempts, independent of
-  arrival order), and `solution_gate` (reads only the already-written,
-  signed verdict marker).
+  tools (see the 0.13.0 `ledger_add`/`ledger_summary` arrival-order entry
+  and the "Arrival-ordered request routing" comment in `src/server.ts`);
+  a pipelined `hypothesis_record` followed by `hypothesis_list` on the
+  same session could return `total: 0`, and a pipelined
+  `grounding_advance` followed by `claim_evaluate_from_session` could
+  derive a stale `readme_read` flag. `claim_evaluate_from_session` now
+  enqueues its session read and its ledger read synchronously, before
+  awaiting either, so both land in the same in-flight batch as any
+  concurrent sibling on either store. `createServer` gained two more
+  test-oriented cap options for the new queues, `sessionArrivalCap` and
+  `hypothesisArrivalCap` (same default and semantics as the existing
+  `ledgerArrivalCap`), and the package now also exports
+  `sessionArrivalStampCount` and `hypothesisArrivalStampCount` as test
+  seams, not supported API, alongside the existing
+  `ledgerArrivalStampCount`. Not routed, and unaffected: `claim_evaluate`
+  and `verify_memory_reference` (no store touched), `solution_evaluate` /
+  `solution_evaluate_status` / `solution_evaluate_result` (the attempt
+  registry's own synchronous check-and-set join already orders duplicate
+  attempts, independent of arrival order), and `solution_gate` (reads
+  only the already-written, signed verdict marker).
 
 ## 0.13.0, 2026-09-23
 

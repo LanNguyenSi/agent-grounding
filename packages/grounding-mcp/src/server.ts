@@ -214,8 +214,8 @@ const evidenceTextSchema = z
   .max(4096)
   .describe('What you observed (raw, not interpreted).');
 
-// ── Arrival-ordered request routing (task 0a8645d2, extended for every
-//    state-touching tool) ─────────────────────────────────────────────────
+// ── Arrival-ordered request routing (extended to every state-touching
+//    tool) ────────────────────────────────────────────────────────────────
 //
 // The evidence ledger (better-sqlite3, fully synchronous), the grounding
 // session store, and the hypothesis store (both synchronous JSON files,
@@ -260,17 +260,19 @@ const evidenceTextSchema = z
 //     ... isJSONRPCRequest(message) ? this._onrequest(message, extra) ...
 //   };
 //
-// `trackLedgerRequests` below installs that `onmessage` (and a `send`
+// `trackRoutedRequests` below installs that `onmessage` (and a `send`
 // wrapper, see "Stamp lifetime") on a transport before `Protocol#connect`
 // runs; `createServer` wraps `server.connect` so this happens for every
 // transport the server is connected to (stdio in `main()`,
 // `InMemoryTransport` in the tests). It stamps only a JSON-RPC request
 // (`isJSONRPCRequest`, the check the SDK routes requests by) whose method
-// is `tools/call` and whose `params.name` is in `LEDGER_TOOL_NAMES`, with a
-// per-server sequence number that rises by one per stamped request.
+// is `tools/call` and whose `params.name` is in one of the routed name
+// sets (`LEDGER_TOOL_NAMES`, `SESSION_TOOL_NAMES`, `HYPOTHESIS_TOOL_NAMES`),
+// with a per-store sequence number that rises by one per stamped request
+// on that store.
 //
-// Stamp lifetime. Two releases and a cap keep the map down to ledger
-// requests that are still in flight:
+// Stamp lifetime. Two releases and a cap keep each store's map down to
+// routed requests that are still in flight:
 //   - `send` wrapper: released when the server sends the JSON-RPC response
 //     (a message with an `id` and no `method`) for that id. The SDK sends
 //     one for a completed call, for a tool error, and for a call that fails
@@ -283,12 +285,12 @@ const evidenceTextSchema = z
 //   - cap: neither release fires for a request that gets no response
 //     (cancelled, or cut off by the transport closing) AND never reaches
 //     the queue (it fails validation, say), so its stamp would stay.
-//     `LedgerArrivalStamps` therefore holds at most `cap` stamps (default
-//     `DEFAULT_LEDGER_ARRIVAL_CAP`): recording one more evicts the oldest,
+//     `ArrivalStamps` therefore holds at most `cap` stamps (default
+//     `DEFAULT_ARRIVAL_CAP`): recording one more evicts the oldest,
 //     since a Map iterates in insertion order and a stamp is inserted when
 //     its request arrives.
 //
-// Queue. Each ledger handler hands `{requestId, run}` to `enqueue()`,
+// Queue. Each handler of a routed tool hands `{requestId, run}` to `enqueue()`,
 // which buffers entries and, on the first entry of a new batch, schedules
 // a `setImmediate` barrier. The barrier fires after the current microtask
 // queue drains, so every ledger request that arrived in the same
@@ -315,17 +317,20 @@ const evidenceTextSchema = z
 // deriveContext's phase_status read, and the ledger, for its evidence
 // read) must not see its own two reads reordered against ITS OWN two
 // concurrent writers (a pipelined grounding_advance and a pipelined
-// ledger_add), which per-store queues give for free: each queue sorts
-// only the entries that share its own store, by the SAME global arrival
-// stamp a request is given at the transport (recorded once per store the
-// request's tool name belongs to, in `trackRoutedRequests` below), so a
-// multi-store request's position is independently correct in each queue
-// it participates in. One shared queue across all stores would give the
-// identical ordering guarantee (arrival stamps are global, not
-// per-queue) at strictly worse latency: a slow hypothesis batch would
-// serialize behind an unrelated ledger batch, and vice versa, for no
-// correctness gain. Latency second: three independent queues (below)
-// keep a burst on one store from blocking a concurrent burst on another.
+// ledger_add), which per-store queues give for free: each of the three
+// `ArrivalStamps` instances below keeps its OWN `nextSeq` counter, a
+// per-store sequence number, not a value shared across stores. A
+// multi-store request is recorded once per matching group (in
+// `trackRoutedRequests` below), getting one independent sequence number
+// per store it belongs to, and each queue sorts only the entries that
+// share its own store, comparing sequence numbers only within that one
+// store, never across stores. So a multi-store request's position is
+// independently correct in each queue it participates in. One shared
+// queue across all stores would give the identical ordering guarantee at
+// strictly worse latency: a slow hypothesis batch would serialize behind
+// an unrelated ledger batch, and vice versa, for no correctness gain.
+// Latency second: three independent queues (below) keep a burst on one
+// store from blocking a concurrent burst on another.
 //
 // Every handler that enqueues onto a store's queue does so SYNCHRONOUSLY,
 // before its first `await`, exactly like `enqueueLedgerRequest` always
@@ -343,7 +348,7 @@ const evidenceTextSchema = z
 //   - ledger (better-sqlite3): ledger_add, ledger_summary,
 //     claim_evaluate_from_session (via getSummary), ledger_status (via
 //     ledgerStatus's own ledgerDb() call). `LEDGER_TOOL_NAMES` lists the
-//     same four (task 0a8645d2, unchanged by this extension).
+//     same four (unchanged by this extension).
 //   - grounding session (session-store.ts, one JSON file per session id):
 //     grounding_start, grounding_advance, grounding_guardrail_check,
 //     claim_evaluate_from_session (via loadSession). `SESSION_TOOL_NAMES`
@@ -399,10 +404,13 @@ const HYPOTHESIS_TOOL_NAMES: ReadonlySet<string> = new Set([
 //     needs to observe it, breaking the exact join invariant that
 //     already makes duplicate preflight runs impossible. No tool
 //     description promises an ordering between two solution_evaluate
-//     calls, or between solution_evaluate and its two read-only lookups,
-//     beyond "a single attempt is created and correctly joined or
-//     polled", which the registry's own locking already guarantees
-//     regardless of arrival order.
+//     calls, or between solution_evaluate and its two read-only lookups:
+//     the attempt registry already joins a duplicate call for the same
+//     id onto the one running attempt, and solution_evaluate writes its
+//     HEAD-pinned verdict marker only once preflight has actually
+//     completed, so a lookup either finds no marker yet (attempt still
+//     running) or the complete, final one, never a half-written marker a
+//     reordered read could observe.
 //   - solution_gate: reads only the HEAD-pinned, signed verdict marker
 //     file that a completed solution_evaluate attempt already wrote (via
 //     solution-verdict.ts's writeVerdict); it holds no queue-managed
@@ -496,7 +504,7 @@ function routedToolNameOf(message: JSONRPCMessage): string | undefined {
 // whose tool name belongs to more than one group's `names` (only
 // claim_evaluate_from_session does today) is recorded in every matching
 // group's own stamp map, each with that map's own independent sequence
-// number — see the "Scope" comment above for why a shared global counter
+// number; see the "Scope" comment above for why a shared global counter
 // is not needed for correctness.
 function trackRoutedRequests(transport: Transport, groups: readonly RoutedGroup[]): void {
   const priorOnMessage = transport.onmessage;
@@ -868,7 +876,7 @@ export function createServer(
       // pipelined grounding_advance for the session queue, a pipelined
       // ledger_add for the ledger queue). Awaiting one before calling the
       // other would delay the second enqueue to a later macrotask,
-      // dropping it out of that batch — see the "Scope" comment above
+      // dropping it out of that batch; see the "Scope" comment above
       // `LEDGER_TOOL_NAMES` for why that would break arrival ordering for
       // whichever store's enqueue call was delayed.
       const sessionPromise = enqueueSessionRequest(extra.requestId, () => loadSession(sessionId));
