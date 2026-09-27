@@ -3,6 +3,13 @@
 // (docs/solution-acceptance-gate.md), not a "see README" pointer into a
 // section that moved out of README.md. A mutant that reverts the pointer
 // back to "see README" must fail this test.
+//
+// The description also names an absolute GitHub URL for that doc, since
+// the npm package does not ship `docs/`: a plain-text MCP tool description
+// has no base to resolve a relative path against, so an npm-only consumer
+// (no repo checkout) can only reach the doc through a fully qualified URL.
+// A mutant that drops the URL and leaves only the bare relative path must
+// fail this test too.
 
 import { describe, expect, it } from 'vitest';
 
@@ -27,6 +34,9 @@ describe('solution_evaluate tool description pointer', () => {
       const description = tool?.description ?? '';
       expect(description).toContain('docs/solution-acceptance-gate.md');
       expect(description).not.toMatch(/see README\.?$/);
+      expect(description).toContain(
+        'https://github.com/LanNguyenSi/agent-grounding/blob/master/packages/grounding-mcp/docs/solution-acceptance-gate.md',
+      );
     } finally {
       await client.close();
       await server.close();
