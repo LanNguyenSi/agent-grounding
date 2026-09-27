@@ -3,7 +3,7 @@ type: invariant
 title: Solution-acceptance verdict contract — why the marker lives outside the ledger
 description: A "done" verdict is derived from a real preflight+OW run, HEAD-pinned, and written to an XDG state marker outside the agent-writable evidence-ledger because ledger rows are forgeable via ledger_add.
 tags: [solution-acceptance, verdicts, anti-hacking, trust-boundary]
-timestamp: 2026-09-27T04:22:35Z
+timestamp: 2026-09-27T04:53:00Z
 sources:
   - packages/grounding-mcp/src/solution-verdict.ts
   - packages/grounding-mcp/src/solution-attempt-log.ts
@@ -250,7 +250,15 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
 
 ### The four MCP tools (server.ts, version read from package.json at `server.ts:104#"const PACKAGE_VERSION = readPackageVersion();"`)
 
-- **`solution_evaluate`** (registered `server.ts:733#"'solution_evaluate'"`): the producer. Runs preflight against
+None of the four is routed through grounding-mcp's arrival-ordered request
+queue (the mechanism `ledger_add`, the `grounding_*` session tools and the
+`hypothesis_*` tools use, see `server.ts`'s "Arrival-ordered request routing"
+comment's "Not routed" note, task 9e87d761): `solution_evaluate`'s own
+same-process check-and-set join (below) already orders duplicate attempts
+independent of arrival order, and `solution_gate` reads only the already-
+written signed marker.
+
+- **`solution_evaluate`** (registered `server.ts:901#"'solution_evaluate'"`): the producer. Runs preflight against
   the repo, records a HEAD-pinned verdict for `id`. Args: `id` (min 1, max 200,
   `MAX_ID_FILENAME_LENGTH`, the same bound the two lookups below enforce), optional
   `repoPath` (defaults to cwd), optional `forceNewAttempt`. It no longer calls
@@ -260,7 +268,7 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
   `evaluateSolution` underneath. Still wrapped in `withProgressPings`
   (`packages/grounding-mcp/src/progress.ts`) when the request carries a `progressToken`;
   that only sends `notifications/progress` pings and has no effect on the verdict.
-- **`solution_gate`** (registered `server.ts:808#"'solution_gate'"`): read-only checker. Resolves current HEAD
+- **`solution_gate`** (registered `server.ts:976#"'solution_gate'"`): read-only checker. Resolves current HEAD
   via `getHeadSha`, then `evaluateGate(id, head)`. Deny reasons are precise: no verdict /
   not ready + blockers / HEAD drift / unresolvable HEAD. Unchanged by the attempt
   lifecycle: it reads the signed marker and nothing else, and never consults the
