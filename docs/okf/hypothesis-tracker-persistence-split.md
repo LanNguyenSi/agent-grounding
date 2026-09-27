@@ -3,7 +3,7 @@ type: invariant
 title: Hypothesis state — one library, two consumers, two persistence shapes
 description: hypothesis-tracker is a pure in-memory library; grounding-mcp keeps a disk-backed LRU cache under ~/.grounding-mcp/hypotheses/ (since PR #139) while understanding-gate persists to hypotheses.json, and inside the library addEvidence and supportHypothesis disagree on whether required_checks gate promotion.
 tags: [hypothesis-tracker, persistence, grounding-mcp, understanding-gate]
-timestamp: 2026-09-27T04:53:00Z
+timestamp: 2026-09-27T05:41:00Z
 sources:
   - packages/hypothesis-tracker/src/lib.ts
   - packages/grounding-mcp/src/hypothesis-store.ts
@@ -81,9 +81,9 @@ form of support; see the doc-comment at `lib.ts:115-123#"or already-rejected hyp
 volatile design (PR #139, 2026-07-13): the Map stays the hot path, but a cache miss (e.g.
 right after a restart) hydrates from disk via `loadStoreFromDisk` (`hypothesis-store.ts:132#"function loadStoreFromDisk"`);
 writers save via `saveStore` (atomic tmp+rename, `hypothesis-store.ts:165-171#"renameSync(tmp, final);"`), which
-server.ts's `hypothesis_*` verbs call after every successful mutation (`server.ts:1036#"saveStore(sessionId, store);"`,
-`server.ts:1088#"saveStore(sessionId, store);"`, `server.ts:1123#"saveStore(sessionId, store);"`,
-`server.ts:1148#"saveStore(sessionId, store);"`, `server.ts:1178#"saveStore(sessionId, store);"`).
+server.ts's `hypothesis_*` verbs call after every successful mutation (`server.ts:1044#"saveStore(sessionId, store);"`,
+`server.ts:1096#"saveStore(sessionId, store);"`, `server.ts:1131#"saveStore(sessionId, store);"`,
+`server.ts:1156#"saveStore(sessionId, store);"`, `server.ts:1186#"saveStore(sessionId, store);"`).
 **A grounding-mcp process restart no longer loses hypothesis state** — it
 now has disk backing at parity with the session store and the evidence ledger
 (`packages/grounding-mcp/README.md:118#"the root cause is the backend container's missing OPENAI_API_KEY env var"`).
@@ -103,21 +103,21 @@ themselves.
 
 Seven verbs, registered by name:
 
-- `hypothesis_record` (`server.ts:1021#"'hypothesis_record',"`): add a competing hypothesis with required checks
-- `hypothesis_list` (`server.ts:1044#"'hypothesis_list',"`): all hypotheses for a session + status summary
-- `hypothesis_evidence` (`server.ts:1070#"'hypothesis_evidence',"`): attach evidence; **auto-promotes** (the `addEvidence` path above)
-- `hypothesis_check_done` (`server.ts:1096#"'hypothesis_check_done',"`): mark a `required_checks[i]` done; drains `pending_checks`
-- `hypothesis_reject` (`server.ts:1131#"'hypothesis_reject',"`): reject with reason (appended as `[rejected]` evidence)
-- `hypothesis_support` (`server.ts:1156#"'hypothesis_support',"`): explicit support; the checks-gated path; error
-  `hypothesis_not_found_rejected_or_checks_pending` when it returns null (`server.ts:1173#"error: 'hypothesis_not_found_rejected_or_checks_pending' as const,"`)
-- `hypothesis_reset` (`server.ts:1186#"'hypothesis_reset',"`): purge a session's hypotheses (MCP counterpart of `resetStore`), also deletes the on-disk file (`hypothesis-store.ts:257-261#"return existedInMemory || existedOnDisk;"`)
+- `hypothesis_record` (`server.ts:1029#"'hypothesis_record',"`): add a competing hypothesis with required checks
+- `hypothesis_list` (`server.ts:1052#"'hypothesis_list',"`): all hypotheses for a session + status summary
+- `hypothesis_evidence` (`server.ts:1078#"'hypothesis_evidence',"`): attach evidence; **auto-promotes** (the `addEvidence` path above)
+- `hypothesis_check_done` (`server.ts:1104#"'hypothesis_check_done',"`): mark a `required_checks[i]` done; drains `pending_checks`
+- `hypothesis_reject` (`server.ts:1139#"'hypothesis_reject',"`): reject with reason (appended as `[rejected]` evidence)
+- `hypothesis_support` (`server.ts:1164#"'hypothesis_support',"`): explicit support; the checks-gated path; error
+  `hypothesis_not_found_rejected_or_checks_pending` when it returns null (`server.ts:1181#"error: 'hypothesis_not_found_rejected_or_checks_pending' as const,"`)
+- `hypothesis_reset` (`server.ts:1194#"'hypothesis_reset',"`): purge a session's hypotheses (MCP counterpart of `resetStore`), also deletes the on-disk file (`hypothesis-store.ts:257-261#"return existedInMemory || existedOnDisk;"`)
 
 All seven verbs are also ordered by arrival at the transport relative to a
 concurrent/pipelined call against any other `hypothesis_*` verb for the same
 sessionId (not by request id value or invocation order), on a queue separate
-from the evidence-ledger's own (task 9e87d761: each verb enqueues via
-`enqueueHypothesisRequest` (`server.ts:376-382#"'hypothesis_reset',"`, the
-routed tool-name set) before its store read/write).
+from the evidence-ledger's own: each verb enqueues via
+`enqueueHypothesisRequest` (`server.ts:381-387#"'hypothesis_reset',"`, the
+routed tool-name set) before its store read/write.
 
 Writers use `getOrCreateStore`; mutating verbs other than record require an existing store and
 return `{ error: 'no_store_for_session' }` rather than creating one.

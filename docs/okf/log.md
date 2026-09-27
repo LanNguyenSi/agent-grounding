@@ -3,11 +3,15 @@
 <!-- Add new entries at the top, newest first. -->
 
 - 2026-09-27, grounding-mcp arrival-ordered request routing extended to the
-  grounding session store and the hypothesis store (task 9e87d761):
+  grounding session store and the hypothesis store:
   `packages/grounding-mcp/src/server.ts` grew a new comment block, a new
   session-store queue and a new hypothesis-store queue, shifting most of
   the file's line numbers below the point where the existing "Ledger
-  request serialization" comment used to start.
+  request serialization" comment used to start; a later revision on this
+  same branch also reworded parts of that comment block (stale identifier
+  names, an inaccurate "global stamp" claim, an inaccurate `solution_*`
+  rationale) and rewrote a "Not routed" paragraph, shifting the same lines
+  again.
   `evidence-ledger-session-key-shapes.md` and
   `hypothesis-tracker-persistence-split.md` both list `server.ts` under
   `sources` with line-pinned citations into it; every cited anchor text
@@ -20,16 +24,21 @@
   also cites a test in
   `packages/grounding-mcp/tests/grounding-gate-mcp-roundtrip.test.ts`
   (the `preflight:` incidental-match example); that file grew five lines
-  at its own import block, shifting the cited test's full-block range
-  by six lines; re-pointed to the test's actual head/close lines, quoted
-  text unchanged. `hypothesis-tracker-persistence-split.md` also gained
+  at its own import block, shifting the cited test's full-block range so
+  it now spans lines 677-691. An earlier revision on this branch had
+  re-pointed that citation to 677-690, one line short of the test's actual
+  closing `});`, which failed `check:okf-test-citation-shape`; corrected
+  here to the exact head/close lines, quoted text unchanged.
+  `hypothesis-tracker-persistence-split.md` also gained
   one new sentence noting the hypothesis verbs are now ordered the same
   way the ledger verbs already were.
   `solution-acceptance-verdict-contract.md` lists `server.ts` (two
   line-pinned citations, `solution_evaluate`'s and `solution_gate`'s own
   registration lines, re-pointed to their new lines, quoted text
-  unchanged) and `packages/grounding-mcp/README.md` (whole-file source
-  reference only, no line-pinned citation into it) under `sources`; this
+  unchanged, except for its "Not routed" summary paragraph, reworded to
+  match the corrected rationale in `server.ts`'s own comment) and
+  `packages/grounding-mcp/README.md` (whole-file source reference only,
+  no line-pinned citation into it) under `sources`; this
   task's README edit (new ordering sentences on the `grounding_*` and
   `hypothesis_*` rows) does not touch anything this doc cites, so its
   other claims were re-verified against HEAD and still hold. Added one
