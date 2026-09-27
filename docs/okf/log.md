@@ -2,6 +2,18 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-27, org-internal provenance removed from source comments and a test
+  (`packages/understanding-gate/src/prompts/{full,fast-confirm,grill-me}.ts`
+  header comments, `packages/grounding-mcp/src/ow-run-completeness.ts` prose
+  comments, `packages/grounding-mcp/tests/ow-run-completeness.test.ts` test
+  title/comments and one pinned example line): private repository and real
+  run-directory names replaced with neutral descriptions or fictional
+  examples of the same shape. `solution-acceptance-verdict-contract.md`
+  lists `ow-run-completeness.ts` under `sources`; every edit landed after
+  its highest cited line, so no cited quote or line range shifted, and the
+  citation guard reports the same 0 errors / 0 citations-resolve warnings
+  as before this change; re-verified and re-stamped.
+
 - 2026-09-26, public package docs cleanup (removing org-internal identifiers
   and machine paths from understanding-gate and grounding-mcp docs):
   `packages/grounding-mcp/docs/solution-acceptance-gate.md` had its
