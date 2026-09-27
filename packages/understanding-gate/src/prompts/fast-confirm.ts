@@ -1,4 +1,4 @@
-// Source: lava-ice-logs/2026-04-29/agent-harness-pre-execution-understanding-gate-architecture.md §7.2
+// Fast-confirm mode prompt: the pre-execution understanding-gate architecture design.
 export const FAST_CONFIRM_PROMPT = `# Fast Confirm Mode
 
 Before executing, provide a short confirmation summary:

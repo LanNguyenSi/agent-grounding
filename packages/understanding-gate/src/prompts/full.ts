@@ -1,4 +1,4 @@
-// Source: lava-ice-logs/2026-04-29/agent-harness-pre-execution-understanding-gate-architecture.md §7.1
+// Full mode prompt: the pre-execution understanding-gate architecture design.
 export const FULL_PROMPT = `# Pre-Execution Understanding Gate
 
 You have identified a task.

@@ -1511,9 +1511,9 @@ export const OW_REVIEW_METHOD_PLACEHOLDER_MARKER =
  * a qualifying clause, a second value, an unrelated sentence, text trailing
  * an aside's closing paren other than punctuation, or an aside that never
  * closes -- means the token was not actually naming the round's method, it
- * was just the first word of unrelated prose (the real batch48 line this
- * guards against: `Method: rigorous for every round except T-007 R1 and
- * T-010 R1 (adversarial); ...`, where a bare first-token read would wrongly
+ * was just the first word of unrelated prose (the shape this guards
+ * against: `Method: rigorous for every round except R1 and R2
+ * (adversarial); ...`, where a bare first-token read would wrongly
  * record `rigorous`). Round 3's original `\(.*` half accepted anything after
  * an opening paren verbatim, including text appended after the aside closes
  * (`Method: adversarial (x) but actually normal`) and an aside that never
@@ -1630,13 +1630,13 @@ interface ReviewMethodComplianceResult {
  * parenthetical aside followed only by end-of-sentence punctuation -- a
  * qualified or multi-clause sentence whose first word merely happens to be
  * one of the three values (`Method: rigorous for every round except ...
- * (adversarial); ...`, the real shape found in `quickwins-batch48`) is a
+ * (adversarial); ...`, a shape seen in real review-findings files) is a
  * malformed record, not silently read as that first word, and neither is an
  * aside that never closes or that has trailing text after it closes; and
  * (F2, corrected round 4) the round's OWN declaration line carries exactly
  * one DISTINCT well-formed `review-method[...]` round -- several rounds
- * packed onto one shared line (also `quickwins-batch48`'s
- * `T-011-R1`/`R2`/`R3`) never resolve via the following `Method:` line, since
+ * packed onto one shared line (for example a shared
+ * `T-011-R1`/`R2`/`R3` declaration) never resolve via the following `Method:` line, since
  * one prose line cannot stand for three distinct rounds' own confirmations,
  * while the SAME round declared twice in agreement on one shared line still
  * counts as single-occurrence for this gate; such a multi-round line falls
@@ -1698,7 +1698,7 @@ function scanReviewMethodCompliance(content: string | null): ReviewMethodComplia
   // fallback is only safe to associate with a round when its declaration LINE
   // carries exactly one DISTINCT well-formed `review-method[...]` round. Real
   // runs pack several rounds' declarations onto one line followed by a single
-  // shared `Method:` summary line (e.g. batch48's `T-011-R1`/`R2`/`R3` sharing
+  // shared `Method:` summary line (e.g. `T-011-R1`/`R2`/`R3` sharing
   // one line and one following `Method:` line): reading that one prose line
   // as EACH packed round's own record would let one line silently clear every
   // round packed with it. Round 3 counted raw occurrences per line, which
