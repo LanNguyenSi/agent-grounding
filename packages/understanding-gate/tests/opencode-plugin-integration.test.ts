@@ -195,11 +195,11 @@ describe("persistReportPlugin: end-to-end", () => {
     expect(logs).toHaveLength(2);
   });
 
-  // This is the actual regression protection for Finding 1: a transient
+  // Regression protection for the dedupe-key finding above: a transient
   // failure on the FIRST of opencode's two same-message fires must not
   // permanently lose the report. Mutation probe: moving
   // `processedMessages.add(dedupeKey)` back to before the fetch (its
-  // Fix-Runde-1 position) turns this red -- 0 report files instead of 1,
+  // position before the follow-up fix) turns this red -- 0 report files instead of 1,
   // because the key gets claimed on the failing first fire and the
   // succeeding second fire is then skipped as a dupe -- verified
   // manually, not asserted by this suite.

@@ -7,10 +7,9 @@
   `packages/grounding-mcp/src/verdict-signing.ts`,
   `packages/grounding-mcp/src/ow-run-completeness.ts`,
   `packages/review-claim-gate/src/cli.ts` and their citing docs' other
-  sources: a bare id following "D-00N"/"F1"/"R2-M2" decision labels became
-  the behavioural reason already stated alongside it, or the
-  "grounding-mcp CHANGELOG 0.8.0" / "see EOF" pointer that carried the
-  same information without the id. `solution-acceptance-verdict-contract.md`,
+  sources: bare tracker ids were removed from these comments; where an id
+  carried the only explanation, it was replaced by behavioural wording or
+  by the "grounding-mcp CHANGELOG 0.8.0" / "see EOF" pointer. `solution-acceptance-verdict-contract.md`,
   `evidence-ledger-session-key-shapes.md`,
   `hypothesis-tracker-persistence-split.md` and
   `claim-gate-vs-review-claim-gate.md` were re-verified against the edited
