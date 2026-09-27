@@ -41,7 +41,13 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { ErrorCode, ProgressNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 
-import { createServer, ledgerArrivalStampCount, resolveProgressIntervalMs } from '../src/server.js';
+import {
+  createServer,
+  ledgerArrivalStampCount,
+  sessionArrivalStampCount,
+  hypothesisArrivalStampCount,
+  resolveProgressIntervalMs,
+} from '../src/server.js';
 import {
   withProgressPings,
   DEFAULT_PROGRESS_MESSAGE,
@@ -1788,8 +1794,8 @@ describe('ledger_summary: session-key regression (0a8645d2)', () => {
 // before invoking its handler, and ledger_add's and ledger_summary's
 // schemas resolve that validation in a different number of microtask
 // ticks, so the summary handler can run BEFORE the add handler even though
-// the add request was sent (and received) first. See the "Ledger request
-// serialization" comment in src/server.ts for the full mechanism and the
+// the add request was sent (and received) first. See the "Arrival-ordered
+// request routing" comment in src/server.ts for the full mechanism and the
 // fix (a queue ordered by each request's arrival stamp, recorded at the
 // transport before validation, which reflects true arrival order even
 // when handler invocation order does not).
@@ -2083,7 +2089,8 @@ describe('ledger tools: true arrival order at the transport (0a8645d2)', () => {
 // four and twelve requests (SDK Client ids and raw frames), how long an
 // arrival stamp is kept (`ledgerArrivalStampCount`, a test seam exported by
 // src/server.ts), and what happens to a request whose stamp is gone (the
-// "Missing stamp" paragraph of the "Ledger request serialization" comment).
+// "Missing stamp" paragraph of the "Arrival-ordered request routing"
+// comment).
 
 type RawRpcResponse = { result?: unknown; error?: unknown };
 
@@ -2347,6 +2354,705 @@ describe('ledger tools: batches, stamp lifetime and missing stamps (0a8645d2)', 
     expect(factsOf(first)).toBe(1);
     expect(factsOf(second)).toBe(1);
     expect(errorSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ── grounding session tools: true arrival order at the transport ───────────
+//
+// Same defect class as the ledger arrival-order block above, applied to the
+// grounding session store (session-store.ts): grounding_advance's schema
+// (one key) and claim_evaluate_from_session's schema (two-to-three keys)
+// resolve zod validation in a different number of microtask ticks, so a
+// pipelined pair can have its handlers invoked out of arrival order. Against
+// a `grounding_advance` write, `grounding_guardrail_check` is no witness (it
+// reads only `active_guardrails`, fixed at `grounding_start` time and never
+// touched by `advancePhase`); the read that actually reflects that write is
+// `claim_evaluate_from_session`'s derived `readme_read` context flag
+// (`deriveContext` -> `phaseSatisfied(session, 'doc-reading')`, true only
+// once `doc-reading`'s `phase_status` is `'done'`).
+//
+// `grounding_start` does have an observable ordering pair, because the
+// session id it creates is predictable: `generateSessionId` (grounding-wrapper
+// lib.ts) returns `gs-<keyword slug, at most 16 chars>-<Date.now() in base
+// 36>`. With the clock pinned by `vi.setSystemTime` (Date only, no fake
+// timers, so the queue's `setImmediate` barrier still fires), a request
+// pipelined with a `grounding_start` can name the id that start is about to
+// create: a `grounding_guardrail_check` or `grounding_advance` that arrives
+// after the start finds the session, one that arrives before it does not.
+//
+// Setup for the grounding_advance / claim_evaluate_from_session tests below: `grounding_start` then one AWAITED
+// `grounding_advance` moves the session from `scope-resolution` (active) to
+// `doc-reading` (active); `readme_read` is still false at that point. The
+// SECOND `grounding_advance` (marks `doc-reading` done, moves to
+// `playbook-loading`) is the one pipelined against
+// `claim_evaluate_from_session` below.
+
+describe('grounding session tools: true arrival order at the transport', () => {
+  let rfTmpRoot: string;
+  let prevRfSessionsDir: string | undefined;
+  let prevRfLedgerDb: string | undefined;
+  let rfHarnessHomeTmp: string;
+  let prevRfHarnessHome: string | undefined;
+  let rfClient: Client;
+  let rfServer: ReturnType<typeof createServer>;
+  let callToolRaw: ReturnType<typeof createRawFrameCaller>;
+
+  beforeEach(async () => {
+    rfTmpRoot = mkdtempSync(join(tmpdir(), 'grounding-mcp-session-arrival-'));
+    prevRfSessionsDir = process.env.GROUNDING_MCP_SESSIONS_DIR;
+    prevRfLedgerDb = process.env.EVIDENCE_LEDGER_DB;
+    process.env.GROUNDING_MCP_SESSIONS_DIR = join(rfTmpRoot, 'sessions');
+    process.env.EVIDENCE_LEDGER_DB = join(rfTmpRoot, 'ledger.db');
+    prevRfHarnessHome = process.env.HARNESS_HOME;
+    rfHarnessHomeTmp = mkdtempSync(join(tmpdir(), 'grounding-mcp-session-arrival-harness-home-'));
+    process.env.HARNESS_HOME = rfHarnessHomeTmp;
+
+    resetLedgerDb();
+    resetStores();
+
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    rfServer = createServer();
+    await rfServer.connect(serverTransport);
+    rfClient = new Client({ name: 'session-arrival-order-test', version: '0.0.0' });
+    await rfClient.connect(clientTransport);
+    callToolRaw = createRawFrameCaller(clientTransport);
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    await rfClient.close();
+    await rfServer.close();
+    resetLedgerDb();
+    resetStores();
+    if (prevRfSessionsDir === undefined) delete process.env.GROUNDING_MCP_SESSIONS_DIR;
+    else process.env.GROUNDING_MCP_SESSIONS_DIR = prevRfSessionsDir;
+    if (prevRfLedgerDb === undefined) delete process.env.EVIDENCE_LEDGER_DB;
+    else process.env.EVIDENCE_LEDGER_DB = prevRfLedgerDb;
+    if (prevRfHarnessHome === undefined) delete process.env.HARNESS_HOME;
+    else process.env.HARNESS_HOME = prevRfHarnessHome;
+    rmSync(rfTmpRoot, { recursive: true, force: true });
+    rmSync(rfHarnessHomeTmp, { recursive: true, force: true });
+  });
+
+  async function startAtDocReading(): Promise<string> {
+    const startRaw = await rfClient.callTool({
+      name: 'grounding_start',
+      arguments: { keyword: `session-arrival-${crypto.randomUUID()}`, problem: 'session arrival-order check' },
+    });
+    const { sessionId } = parseToolResult(startRaw) as { sessionId: string };
+    await rfClient.callTool({ name: 'grounding_advance', arguments: { sessionId } });
+    return sessionId;
+  }
+
+  it('a claim_evaluate_from_session pipelined AFTER a grounding_advance (STRING ids) sees the advanced phase', async () => {
+    const sessionId = await startAtDocReading();
+    const [, claimRaw] = await Promise.all([
+      callToolRaw('sess-adv', 'grounding_advance', { sessionId }),
+      callToolRaw('sess-claim', 'claim_evaluate_from_session', {
+        sessionId,
+        claim: 'the root cause is a missing env var',
+        type: 'root_cause',
+      }),
+    ]);
+    const result = parseToolResult(claimRaw) as { derivedContext: { readme_read: boolean } };
+    expect(result.derivedContext.readme_read).toBe(true);
+  });
+
+  it('a claim_evaluate_from_session pipelined BEFORE a grounding_advance (FALLING numeric ids) does not see the advanced phase', async () => {
+    const sessionId = await startAtDocReading();
+    const [claimRaw] = await Promise.all([
+      callToolRaw(9000, 'claim_evaluate_from_session', {
+        sessionId,
+        claim: 'the root cause is a missing env var',
+        type: 'root_cause',
+      }),
+      callToolRaw(7, 'grounding_advance', { sessionId }),
+    ]);
+    const result = parseToolResult(claimRaw) as { derivedContext: { readme_read: boolean } };
+    expect(result.derivedContext.readme_read).toBe(false);
+  });
+
+  it('20 repeated pipelined grounding_advance + claim_evaluate_from_session pairs all see the advance', async () => {
+    for (let i = 0; i < 20; i++) {
+      const sessionId = await startAtDocReading();
+      const [, claimRaw] = await Promise.all([
+        rfClient.callTool({ name: 'grounding_advance', arguments: { sessionId } }),
+        rfClient.callTool({
+          name: 'claim_evaluate_from_session',
+          arguments: { sessionId, claim: 'the root cause is a missing env var', type: 'root_cause' },
+        }),
+      ]);
+      const result = parseToolResult(claimRaw) as { derivedContext: { readme_read: boolean } };
+      expect(result.derivedContext.readme_read).toBe(true);
+    }
+  });
+
+  // Pinned clock for the three grounding_start pairs below; the afterEach
+  // restores the real Date with `vi.useRealTimers()`.
+  const FIXED_START_MS = 1_790_000_000_000;
+  const predictedStartId = (keyword: string) => `gs-${keyword}-${FIXED_START_MS.toString(36)}`;
+
+  it('a grounding_guardrail_check pipelined AFTER a grounding_start (FALLING numeric ids) finds the session the start created', async () => {
+    vi.setSystemTime(FIXED_START_MS);
+    const keyword = 'ord-start-chk';
+    const sessionId = predictedStartId(keyword);
+    const [startRaw, checkRaw] = await Promise.all([
+      callToolRaw(9000, 'grounding_start', { keyword, problem: 'start then check' }),
+      callToolRaw(7, 'grounding_guardrail_check', { sessionId, guardrail: 'no-step-skipping' }),
+    ]);
+    expect((parseToolResult(startRaw) as { sessionId: string }).sessionId).toBe(sessionId);
+    expect((checkRaw as { isError?: boolean }).isError).not.toBe(true);
+    expect(parseToolResult(checkRaw)).toMatchObject({ sessionId, guardrail: 'no-step-skipping' });
+  });
+
+  it('a grounding_advance pipelined AFTER a grounding_start (FALLING ids) finds the session', async () => {
+    vi.setSystemTime(FIXED_START_MS);
+    const keyword = 'ord-start-adv';
+    const sessionId = predictedStartId(keyword);
+    const [startRaw, advRaw] = await Promise.all([
+      callToolRaw(9000, 'grounding_start', { keyword, problem: 'start then advance' }),
+      callToolRaw(7, 'grounding_advance', { sessionId }),
+    ]);
+    expect((parseToolResult(startRaw) as { sessionId: string }).sessionId).toBe(sessionId);
+    expect((advRaw as { isError?: boolean }).isError).not.toBe(true);
+  });
+
+  it('a grounding_guardrail_check pipelined BEFORE a grounding_start (STRING ids) does not find the session', async () => {
+    vi.setSystemTime(FIXED_START_MS);
+    const keyword = 'ord-chk-start';
+    const sessionId = predictedStartId(keyword);
+    const [checkRaw, startRaw] = await Promise.all([
+      callToolRaw('check-first', 'grounding_guardrail_check', { sessionId, guardrail: 'no-step-skipping' }),
+      callToolRaw('start-second', 'grounding_start', { keyword, problem: 'check then start' }),
+    ]);
+    expect((parseToolResult(startRaw) as { sessionId: string }).sessionId).toBe(sessionId);
+    expect((checkRaw as { isError?: boolean }).isError).toBe(true);
+  });
+
+  it('a grounding_advance pipelined BEFORE a grounding_start (STRING ids) does not find the session', async () => {
+    vi.setSystemTime(FIXED_START_MS);
+    const keyword = 'ord-adv-start';
+    const sessionId = predictedStartId(keyword);
+    const [advanceRaw, startRaw] = await Promise.all([
+      callToolRaw('advance-first', 'grounding_advance', { sessionId }),
+      callToolRaw('start-second', 'grounding_start', { keyword, problem: 'advance then start' }),
+    ]);
+    expect((parseToolResult(startRaw) as { sessionId: string }).sessionId).toBe(sessionId);
+    expect((advanceRaw as { isError?: boolean }).isError).toBe(true);
+  });
+
+  it('keeps a session arrival stamp only for a grounding_* / claim_evaluate_from_session tools/call still in flight', async () => {
+    expect(sessionArrivalStampCount(rfServer)).toBe(0);
+    const sessionId = await startAtDocReading();
+
+    // grounding_start is stamped while in flight.
+    const startInFlight = callToolRaw('life-start', 'grounding_start', {
+      keyword: `session-life-${crypto.randomUUID()}`,
+      problem: 'session stamp lifetime',
+    });
+    expect(sessionArrivalStampCount(rfServer)).toBe(1);
+    await startInFlight;
+    expect(sessionArrivalStampCount(rfServer)).toBe(0);
+
+    // grounding_advance is stamped while in flight.
+    const advanceInFlight = callToolRaw('life-advance', 'grounding_advance', { sessionId });
+    expect(sessionArrivalStampCount(rfServer)).toBe(1);
+    await advanceInFlight;
+    expect(sessionArrivalStampCount(rfServer)).toBe(0);
+
+    // grounding_guardrail_check is stamped while in flight.
+    const guardrailInFlight = callToolRaw('life-guardrail', 'grounding_guardrail_check', {
+      sessionId,
+      guardrail: 'no-step-skipping',
+    });
+    expect(sessionArrivalStampCount(rfServer)).toBe(1);
+    await guardrailInFlight;
+    expect(sessionArrivalStampCount(rfServer)).toBe(0);
+
+    // claim_evaluate_from_session is stamped (on this store) while in flight.
+    const claimInFlight = callToolRaw('life-claim', 'claim_evaluate_from_session', {
+      sessionId,
+      claim: 'x',
+    });
+    expect(sessionArrivalStampCount(rfServer)).toBe(1);
+    await claimInFlight;
+    expect(sessionArrivalStampCount(rfServer)).toBe(0);
+  });
+});
+
+// ── hypothesis tools: true arrival order at the transport ──────────────────
+//
+// Same defect class again, applied to the hypothesis store
+// (hypothesis-store.ts): hypothesis_record's schema (three keys, one with a
+// default) and hypothesis_list's schema (one key) resolve zod validation in
+// a different number of microtask ticks, so a pipelined
+// `Promise.all([hypothesis_record, hypothesis_list])` can have its handlers
+// invoked out of arrival order, the same shape that was fixed for
+// `ledger_add`/`ledger_summary`. The other five hypothesis_* verbs
+// (evidence, check_done, reject, support, reset) each get one pipelined
+// pair against hypothesis_list too, each proving that specific verb is
+// wired into the same queue: a hypothesisId used by evidence/check_done/
+// reject/support is minted by an earlier AWAITED hypothesis_record call
+// (hypothesis_record's own response is the only way to learn it), so only
+// the WRITE half of each of those pairs can be pipelined against the READ.
+
+describe('hypothesis tools: true arrival order at the transport', () => {
+  let rfTmpRoot: string;
+  let prevRfSessionsDir: string | undefined;
+  let prevRfLedgerDb: string | undefined;
+  let prevRfHypothesesDir: string | undefined;
+  let rfClient: Client;
+  let rfServer: ReturnType<typeof createServer>;
+  let callToolRaw: ReturnType<typeof createRawFrameCaller>;
+
+  beforeEach(async () => {
+    rfTmpRoot = mkdtempSync(join(tmpdir(), 'grounding-mcp-hypothesis-arrival-'));
+    prevRfSessionsDir = process.env.GROUNDING_MCP_SESSIONS_DIR;
+    prevRfLedgerDb = process.env.EVIDENCE_LEDGER_DB;
+    prevRfHypothesesDir = process.env.GROUNDING_MCP_HYPOTHESES_DIR;
+    process.env.GROUNDING_MCP_SESSIONS_DIR = join(rfTmpRoot, 'sessions');
+    process.env.EVIDENCE_LEDGER_DB = join(rfTmpRoot, 'ledger.db');
+    process.env.GROUNDING_MCP_HYPOTHESES_DIR = join(rfTmpRoot, 'hypotheses');
+
+    resetLedgerDb();
+    resetStores();
+
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    rfServer = createServer();
+    await rfServer.connect(serverTransport);
+    rfClient = new Client({ name: 'hypothesis-arrival-order-test', version: '0.0.0' });
+    await rfClient.connect(clientTransport);
+    callToolRaw = createRawFrameCaller(clientTransport);
+  });
+
+  afterEach(async () => {
+    await rfClient.close();
+    await rfServer.close();
+    resetLedgerDb();
+    resetStores();
+    if (prevRfSessionsDir === undefined) delete process.env.GROUNDING_MCP_SESSIONS_DIR;
+    else process.env.GROUNDING_MCP_SESSIONS_DIR = prevRfSessionsDir;
+    if (prevRfLedgerDb === undefined) delete process.env.EVIDENCE_LEDGER_DB;
+    else process.env.EVIDENCE_LEDGER_DB = prevRfLedgerDb;
+    if (prevRfHypothesesDir === undefined) delete process.env.GROUNDING_MCP_HYPOTHESES_DIR;
+    else process.env.GROUNDING_MCP_HYPOTHESES_DIR = prevRfHypothesesDir;
+    rmSync(rfTmpRoot, { recursive: true, force: true });
+  });
+
+  it('pipelined hypothesis_record then hypothesis_list (STRING ids) still sees the record', async () => {
+    const sessionId = 'hs-arrival-string-ids';
+    const [, listRaw] = await Promise.all([
+      callToolRaw('hs-0', 'hypothesis_record', { sessionId, text: 'DNS is failing' }),
+      callToolRaw('hs-1', 'hypothesis_list', { sessionId }),
+    ]);
+    const result = parseToolResult(listRaw) as { summary: { total: number } };
+    expect(result.summary.total).toBe(1);
+  });
+
+  it('pipelined hypothesis_record then hypothesis_list (FALLING numeric ids) still sees the record', async () => {
+    const sessionId = 'hs-arrival-falling-ids';
+    const [, listRaw] = await Promise.all([
+      callToolRaw(9000, 'hypothesis_record', { sessionId, text: 'DNS is failing' }),
+      callToolRaw(7, 'hypothesis_list', { sessionId }),
+    ]);
+    const result = parseToolResult(listRaw) as { summary: { total: number } };
+    expect(result.summary.total).toBe(1);
+  });
+
+  it('a hypothesis_list pipelined BEFORE a hypothesis_record does not see it', async () => {
+    const sessionId = 'hs-arrival-record-after-list';
+    const [listRaw] = await Promise.all([
+      callToolRaw('hs-list-first', 'hypothesis_list', { sessionId }),
+      callToolRaw('hs-record-after', 'hypothesis_record', { sessionId, text: 'DNS is failing' }),
+    ]);
+    const result = parseToolResult(listRaw) as { summary: { total: number } };
+    expect(result.summary.total).toBe(0);
+  });
+
+  it('20 repeated pipelined hypothesis_record + hypothesis_list pairs on fresh sessions all see the record', async () => {
+    for (let i = 0; i < 20; i++) {
+      const sessionId = `hs-arrival-batch-${i}`;
+      const [, listRaw] = await Promise.all([
+        rfClient.callTool({ name: 'hypothesis_record', arguments: { sessionId, text: `hypothesis ${i}` } }),
+        rfClient.callTool({ name: 'hypothesis_list', arguments: { sessionId } }),
+      ]);
+      const result = parseToolResult(listRaw) as { summary: { total: number } };
+      expect(result.summary.total).toBe(1);
+    }
+  });
+
+  it('a pipelined hypothesis_evidence (auto-promotion) + hypothesis_list reflects it in the summary', async () => {
+    const sessionId = 'hs-arrival-evidence';
+    const recordRaw = await rfClient.callTool({
+      name: 'hypothesis_record',
+      arguments: { sessionId, text: 'DNS is failing', requiredChecks: [] },
+    });
+    const { hypothesis } = parseToolResult(recordRaw) as { hypothesis: { id: string } };
+    const [, listRaw] = await Promise.all([
+      callToolRaw('hs-evidence', 'hypothesis_evidence', { sessionId, hypothesisId: hypothesis.id, evidence: 'dig returned NXDOMAIN' }),
+      callToolRaw('hs-list-evidence', 'hypothesis_list', { sessionId }),
+    ]);
+    const result = parseToolResult(listRaw) as { summary: { supported: number } };
+    expect(result.summary.supported).toBe(1);
+  });
+
+  it('a pipelined hypothesis_check_done + hypothesis_list reflects the drained pending_checks', async () => {
+    const sessionId = 'hs-arrival-check-done';
+    const recordRaw = await rfClient.callTool({
+      name: 'hypothesis_record',
+      arguments: { sessionId, text: 'DNS is failing', requiredChecks: ['Run dig'] },
+    });
+    const { hypothesis } = parseToolResult(recordRaw) as { hypothesis: { id: string } };
+    const [, listRaw] = await Promise.all([
+      callToolRaw(9000, 'hypothesis_check_done', { sessionId, hypothesisId: hypothesis.id, checkIndex: 0 }),
+      callToolRaw(7, 'hypothesis_list', { sessionId }),
+    ]);
+    const result = parseToolResult(listRaw) as { summary: { pending_checks: number } };
+    expect(result.summary.pending_checks).toBe(0);
+  });
+
+  it('a pipelined hypothesis_reject + hypothesis_list reflects the rejection', async () => {
+    const sessionId = 'hs-arrival-reject';
+    const recordRaw = await rfClient.callTool({
+      name: 'hypothesis_record',
+      arguments: { sessionId, text: 'DNS is failing' },
+    });
+    const { hypothesis } = parseToolResult(recordRaw) as { hypothesis: { id: string } };
+    const [, listRaw] = await Promise.all([
+      callToolRaw('hs-reject', 'hypothesis_reject', { sessionId, hypothesisId: hypothesis.id, reason: 'ruled out' }),
+      callToolRaw('hs-list-reject', 'hypothesis_list', { sessionId }),
+    ]);
+    const result = parseToolResult(listRaw) as { summary: { rejected: number } };
+    expect(result.summary.rejected).toBe(1);
+  });
+
+  it('a pipelined hypothesis_support + hypothesis_list reflects the support', async () => {
+    const sessionId = 'hs-arrival-support';
+    const recordRaw = await rfClient.callTool({
+      name: 'hypothesis_record',
+      arguments: { sessionId, text: 'DNS is failing', requiredChecks: [] },
+    });
+    const { hypothesis } = parseToolResult(recordRaw) as { hypothesis: { id: string } };
+    const [, listRaw] = await Promise.all([
+      callToolRaw(9000, 'hypothesis_support', { sessionId, hypothesisId: hypothesis.id }),
+      callToolRaw(7, 'hypothesis_list', { sessionId }),
+    ]);
+    const result = parseToolResult(listRaw) as { summary: { supported: number } };
+    expect(result.summary.supported).toBe(1);
+  });
+
+  it('a pipelined hypothesis_reset + hypothesis_list reflects the purge', async () => {
+    const sessionId = 'hs-arrival-reset';
+    await rfClient.callTool({ name: 'hypothesis_record', arguments: { sessionId, text: 'DNS is failing' } });
+    const [, listRaw] = await Promise.all([
+      callToolRaw('hs-reset', 'hypothesis_reset', { sessionId }),
+      callToolRaw('hs-list-reset', 'hypothesis_list', { sessionId }),
+    ]);
+    const result = parseToolResult(listRaw) as { summary: { total: number } };
+    expect(result.summary.total).toBe(0);
+  });
+
+  it('keeps a hypothesis arrival stamp only for a hypothesis_* tools/call still in flight', async () => {
+    expect(hypothesisArrivalStampCount(rfServer)).toBe(0);
+    const sessionId = 'hs-stamp-lifetime';
+    const inFlight = callToolRaw('hs-life-record', 'hypothesis_record', { sessionId, text: 'in flight' });
+    expect(hypothesisArrivalStampCount(rfServer)).toBe(1);
+    await inFlight;
+    expect(hypothesisArrivalStampCount(rfServer)).toBe(0);
+  });
+});
+
+// ── hypothesis tools: a list pipelined BEFORE a write does not see it ───────
+//
+// The block above pairs a WRITE pipelined before hypothesis_list (the list
+// sees it). These pairs invert that direction for the five hypothesis_*
+// verbs not already covered by the "a hypothesis_list pipelined BEFORE a
+// hypothesis_record does not see it" case above: a hypothesis_list
+// pipelined BEFORE hypothesis_evidence / hypothesis_check_done /
+// hypothesis_reject / hypothesis_support / hypothesis_reset must NOT see
+// that write, proving each verb is itself wired into the hypothesis queue
+// (a verb whose own handler bypassed enqueueHypothesisRequest and ran
+// synchronously would let a list arriving first still observe it, since a
+// synchronous write completes before the pipelined list's queued read
+// ever runs).
+
+describe('hypothesis tools: a list pipelined before a write does not see it', () => {
+  let rfTmpRoot: string;
+  let prevRfSessionsDir: string | undefined;
+  let prevRfLedgerDb: string | undefined;
+  let prevRfHypothesesDir: string | undefined;
+  let rfClient: Client;
+  let rfServer: ReturnType<typeof createServer>;
+  let callToolRaw: ReturnType<typeof createRawFrameCaller>;
+
+  beforeEach(async () => {
+    rfTmpRoot = mkdtempSync(join(tmpdir(), 'grounding-mcp-hypothesis-list-first-'));
+    prevRfSessionsDir = process.env.GROUNDING_MCP_SESSIONS_DIR;
+    prevRfLedgerDb = process.env.EVIDENCE_LEDGER_DB;
+    prevRfHypothesesDir = process.env.GROUNDING_MCP_HYPOTHESES_DIR;
+    process.env.GROUNDING_MCP_SESSIONS_DIR = join(rfTmpRoot, 'sessions');
+    process.env.EVIDENCE_LEDGER_DB = join(rfTmpRoot, 'ledger.db');
+    process.env.GROUNDING_MCP_HYPOTHESES_DIR = join(rfTmpRoot, 'hypotheses');
+
+    resetLedgerDb();
+    resetStores();
+
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    rfServer = createServer();
+    await rfServer.connect(serverTransport);
+    rfClient = new Client({ name: 'hypothesis-list-first-test', version: '0.0.0' });
+    await rfClient.connect(clientTransport);
+    callToolRaw = createRawFrameCaller(clientTransport);
+  });
+
+  afterEach(async () => {
+    await rfClient.close();
+    await rfServer.close();
+    resetLedgerDb();
+    resetStores();
+    if (prevRfSessionsDir === undefined) delete process.env.GROUNDING_MCP_SESSIONS_DIR;
+    else process.env.GROUNDING_MCP_SESSIONS_DIR = prevRfSessionsDir;
+    if (prevRfLedgerDb === undefined) delete process.env.EVIDENCE_LEDGER_DB;
+    else process.env.EVIDENCE_LEDGER_DB = prevRfLedgerDb;
+    if (prevRfHypothesesDir === undefined) delete process.env.GROUNDING_MCP_HYPOTHESES_DIR;
+    else process.env.GROUNDING_MCP_HYPOTHESES_DIR = prevRfHypothesesDir;
+    rmSync(rfTmpRoot, { recursive: true, force: true });
+  });
+
+  it('a hypothesis_list pipelined BEFORE hypothesis_evidence does not see it', async () => {
+    const sessionId = 'hs-list-first-evidence';
+    const recordRaw = await rfClient.callTool({
+      name: 'hypothesis_record',
+      arguments: { sessionId, text: 'DNS is failing', requiredChecks: [] },
+    });
+    const { hypothesis } = parseToolResult(recordRaw) as { hypothesis: { id: string } };
+    const [listRaw] = await Promise.all([
+      callToolRaw('list-first', 'hypothesis_list', { sessionId }),
+      callToolRaw('evidence-after', 'hypothesis_evidence', {
+        sessionId,
+        hypothesisId: hypothesis.id,
+        evidence: 'dig returned NXDOMAIN',
+      }),
+    ]);
+    const result = parseToolResult(listRaw) as { summary: { supported: number } };
+    expect(result.summary.supported).toBe(0);
+  });
+
+  it('a hypothesis_list pipelined BEFORE hypothesis_check_done does not see it', async () => {
+    const sessionId = 'hs-list-first-check-done';
+    const recordRaw = await rfClient.callTool({
+      name: 'hypothesis_record',
+      arguments: { sessionId, text: 'DNS is failing', requiredChecks: ['Run dig'] },
+    });
+    const { hypothesis } = parseToolResult(recordRaw) as { hypothesis: { id: string } };
+    const [listRaw] = await Promise.all([
+      callToolRaw('list-first', 'hypothesis_list', { sessionId }),
+      callToolRaw('check-after', 'hypothesis_check_done', {
+        sessionId,
+        hypothesisId: hypothesis.id,
+        checkIndex: 0,
+      }),
+    ]);
+    const result = parseToolResult(listRaw) as { summary: { pending_checks: number } };
+    expect(result.summary.pending_checks).toBe(1);
+  });
+
+  it('a hypothesis_list pipelined BEFORE hypothesis_reject does not see it', async () => {
+    const sessionId = 'hs-list-first-reject';
+    const recordRaw = await rfClient.callTool({
+      name: 'hypothesis_record',
+      arguments: { sessionId, text: 'DNS is failing' },
+    });
+    const { hypothesis } = parseToolResult(recordRaw) as { hypothesis: { id: string } };
+    const [listRaw] = await Promise.all([
+      callToolRaw('list-first', 'hypothesis_list', { sessionId }),
+      callToolRaw('reject-after', 'hypothesis_reject', {
+        sessionId,
+        hypothesisId: hypothesis.id,
+        reason: 'ruled out',
+      }),
+    ]);
+    const result = parseToolResult(listRaw) as { summary: { rejected: number } };
+    expect(result.summary.rejected).toBe(0);
+  });
+
+  it('a hypothesis_list pipelined BEFORE hypothesis_support does not see it', async () => {
+    const sessionId = 'hs-list-first-support';
+    const recordRaw = await rfClient.callTool({
+      name: 'hypothesis_record',
+      arguments: { sessionId, text: 'DNS is failing', requiredChecks: [] },
+    });
+    const { hypothesis } = parseToolResult(recordRaw) as { hypothesis: { id: string } };
+    const [listRaw] = await Promise.all([
+      callToolRaw('list-first', 'hypothesis_list', { sessionId }),
+      callToolRaw('support-after', 'hypothesis_support', { sessionId, hypothesisId: hypothesis.id }),
+    ]);
+    const result = parseToolResult(listRaw) as { summary: { supported: number } };
+    expect(result.summary.supported).toBe(0);
+  });
+
+  it('a hypothesis_list pipelined BEFORE hypothesis_reset does not see it', async () => {
+    const sessionId = 'hs-list-first-reset';
+    await rfClient.callTool({ name: 'hypothesis_record', arguments: { sessionId, text: 'DNS is failing' } });
+    const [listRaw] = await Promise.all([
+      callToolRaw('list-first', 'hypothesis_list', { sessionId }),
+      callToolRaw('reset-after', 'hypothesis_reset', { sessionId }),
+    ]);
+    const result = parseToolResult(listRaw) as { summary: { total: number } };
+    expect(result.summary.total).toBe(1);
+  });
+
+  it('hypothesis_record then hypothesis_reset pipelined, then an awaited hypothesis_list, ends at total 0', async () => {
+    const sessionId = 'hs-record-reset-pipelined';
+    await Promise.all([
+      callToolRaw(9000, 'hypothesis_record', { sessionId, text: 'DNS is failing' }),
+      callToolRaw(7, 'hypothesis_reset', { sessionId }),
+    ]);
+    const listRaw = await rfClient.callTool({ name: 'hypothesis_list', arguments: { sessionId } });
+    const result = parseToolResult(listRaw) as { summary: { total: number } };
+    expect(result.summary.total).toBe(0);
+  });
+});
+
+// ── cross-store: ledger_status, claim_evaluate_from_session and ledger_add
+//    pipelined together ─────────────────────────────────────────────────────
+//
+// claim_evaluate_from_session's handler enqueues its session read and its
+// ledger read synchronously, back-to-back, before awaiting either (see the
+// comment at its registration in src/server.ts). A mutant that inserted an
+// `await` between those two enqueue calls would delay the second (ledger)
+// enqueue to a later macrotask, moving it out of the batch a concurrently
+// pipelined ledger_add and ledger_status land in; a claim that then reads
+// the ledger AFTER that later ledger_add has already committed would
+// wrongly see it. Looping five times, each iteration's ledger_add lands
+// AFTER that same iteration's claim in arrival order (so within-iteration
+// evidence must stay invisible to the claim), while every PRIOR
+// iteration's ledger_add has already committed by the time the next
+// iteration starts (so has_evidence must be true from iteration 1 on).
+
+describe('cross-store: ledger_status, claim_evaluate_from_session and ledger_add pipelined', () => {
+  let rfTmpRoot: string;
+  let prevRfSessionsDir: string | undefined;
+  let prevRfLedgerDb: string | undefined;
+  let rfClient: Client;
+  let rfServer: ReturnType<typeof createServer>;
+  let callToolRaw: ReturnType<typeof createRawFrameCaller>;
+
+  beforeEach(async () => {
+    rfTmpRoot = mkdtempSync(join(tmpdir(), 'grounding-mcp-cross-store-triple-'));
+    prevRfSessionsDir = process.env.GROUNDING_MCP_SESSIONS_DIR;
+    prevRfLedgerDb = process.env.EVIDENCE_LEDGER_DB;
+    process.env.GROUNDING_MCP_SESSIONS_DIR = join(rfTmpRoot, 'sessions');
+    process.env.EVIDENCE_LEDGER_DB = join(rfTmpRoot, 'ledger.db');
+
+    resetLedgerDb();
+    resetStores();
+
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    rfServer = createServer();
+    await rfServer.connect(serverTransport);
+    rfClient = new Client({ name: 'cross-store-triple-test', version: '0.0.0' });
+    await rfClient.connect(clientTransport);
+    callToolRaw = createRawFrameCaller(clientTransport);
+  });
+
+  afterEach(async () => {
+    await rfClient.close();
+    await rfServer.close();
+    resetLedgerDb();
+    resetStores();
+    if (prevRfSessionsDir === undefined) delete process.env.GROUNDING_MCP_SESSIONS_DIR;
+    else process.env.GROUNDING_MCP_SESSIONS_DIR = prevRfSessionsDir;
+    if (prevRfLedgerDb === undefined) delete process.env.EVIDENCE_LEDGER_DB;
+    else process.env.EVIDENCE_LEDGER_DB = prevRfLedgerDb;
+    rmSync(rfTmpRoot, { recursive: true, force: true });
+  });
+
+  it('claim never sees the ledger_add pipelined alongside it in the same iteration, but does see every prior one', async () => {
+    const startRaw = await rfClient.callTool({
+      name: 'grounding_start',
+      arguments: { keyword: `cross-store-${crypto.randomUUID()}`, problem: 'cross-store triple check' },
+    });
+    const { sessionId } = parseToolResult(startRaw) as { sessionId: string };
+    for (let i = 0; i < 5; i++) {
+      const [, claimRaw] = await Promise.all([
+        callToolRaw(`status-${i}`, 'ledger_status', {}),
+        callToolRaw(`claim-${i}`, 'claim_evaluate_from_session', { sessionId, claim: 'x', type: 'root_cause' }),
+        callToolRaw(`add-${i}`, 'ledger_add', { sessionId, type: 'fact', content: `fact-${i}` }),
+      ]);
+      const result = parseToolResult(claimRaw) as { derivedContext: { has_evidence: boolean } };
+      expect(result.derivedContext.has_evidence).toBe(i > 0);
+    }
+  });
+});
+
+// ── a throwing queued run does not stall its store's queue ──────────────────
+//
+// A run that throws inside a routed queue (drain's per-entry try/catch,
+// released in a `finally`, see the "Stamp lifetime" comment above) must
+// reject only its own promise and must not block a sibling request queued
+// in the same batch. Pipelines a `grounding_advance` for an unknown
+// sessionId (throws inside loadSession) against a valid `grounding_advance`
+// for a real session.
+
+describe('a throwing queued run does not stall its store queue', () => {
+  let rfTmpRoot: string;
+  let prevRfSessionsDir: string | undefined;
+  let prevRfLedgerDb: string | undefined;
+  let rfClient: Client;
+  let rfServer: ReturnType<typeof createServer>;
+  let callToolRaw: ReturnType<typeof createRawFrameCaller>;
+
+  beforeEach(async () => {
+    rfTmpRoot = mkdtempSync(join(tmpdir(), 'grounding-mcp-error-isolation-'));
+    prevRfSessionsDir = process.env.GROUNDING_MCP_SESSIONS_DIR;
+    prevRfLedgerDb = process.env.EVIDENCE_LEDGER_DB;
+    process.env.GROUNDING_MCP_SESSIONS_DIR = join(rfTmpRoot, 'sessions');
+    process.env.EVIDENCE_LEDGER_DB = join(rfTmpRoot, 'ledger.db');
+
+    resetLedgerDb();
+    resetStores();
+
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    rfServer = createServer();
+    await rfServer.connect(serverTransport);
+    rfClient = new Client({ name: 'error-isolation-test', version: '0.0.0' });
+    await rfClient.connect(clientTransport);
+    callToolRaw = createRawFrameCaller(clientTransport);
+  });
+
+  afterEach(async () => {
+    await rfClient.close();
+    await rfServer.close();
+    resetLedgerDb();
+    resetStores();
+    if (prevRfSessionsDir === undefined) delete process.env.GROUNDING_MCP_SESSIONS_DIR;
+    else process.env.GROUNDING_MCP_SESSIONS_DIR = prevRfSessionsDir;
+    if (prevRfLedgerDb === undefined) delete process.env.EVIDENCE_LEDGER_DB;
+    else process.env.EVIDENCE_LEDGER_DB = prevRfLedgerDb;
+    rmSync(rfTmpRoot, { recursive: true, force: true });
+  });
+
+  it('a throwing grounding_advance (unknown sessionId) pipelined with a valid one still lets the valid one complete', async () => {
+    const startRaw = await rfClient.callTool({
+      name: 'grounding_start',
+      arguments: { keyword: `error-isolation-${crypto.randomUUID()}`, problem: 'error isolation check' },
+    });
+    const { sessionId } = parseToolResult(startRaw) as { sessionId: string };
+    const [badRaw, okRaw] = await Promise.all([
+      callToolRaw('bad', 'grounding_advance', { sessionId: 'gs-does-not-exist-error-isolation' }),
+      callToolRaw('ok', 'grounding_advance', { sessionId }),
+    ]);
+    expect((badRaw as ToolTextResponse).isError).toBe(true);
+    const okResult = parseToolResult(okRaw) as { currentPhase: string };
+    expect(okResult.currentPhase).toBe('doc-reading');
+    // The queue is still usable afterwards.
+    const after = await rfClient.callTool({
+      name: 'grounding_guardrail_check',
+      arguments: { sessionId, guardrail: 'no-step-skipping' },
+    });
+    const afterResult = parseToolResult(after) as { sessionId: string };
+    expect(afterResult.sessionId).toBe(sessionId);
   });
 });
 

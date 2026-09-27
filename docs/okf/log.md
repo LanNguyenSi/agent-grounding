@@ -2,6 +2,68 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-27, grounding-mcp routing comment rewording and new
+  `grounding_start` ordering tests: the "Arrival-ordered request routing"
+  comment in `packages/grounding-mcp/src/server.ts` now speaks of routed
+  requests and routed work instead of ledger ones and names the roundtrip
+  test file, which added three comment lines above the routed tool-name
+  sets. Every `server.ts` citation at or below that point in
+  `evidence-ledger-session-key-shapes.md`,
+  `hypothesis-tracker-persistence-split.md` and
+  `solution-acceptance-verdict-contract.md` was re-located at its new line
+  (each anchor text unchanged) and the three docs were re-stamped. The new
+  tests in `packages/grounding-mcp/tests/grounding-gate-mcp-roundtrip.test.ts`
+  sit after the test cited by `evidence-ledger-session-key-shapes.md`, so
+  that citation's head and close lines are unchanged.
+- 2026-09-27, grounding-mcp arrival-ordered request routing extended to the
+  grounding session store and the hypothesis store:
+  `packages/grounding-mcp/src/server.ts` grew a new comment block, a new
+  session-store queue and a new hypothesis-store queue, shifting most of
+  the file's line numbers below the point where the existing "Ledger
+  request serialization" comment used to start; a later revision on this
+  same branch also reworded parts of that comment block (stale identifier
+  names, an inaccurate "global stamp" claim, an inaccurate `solution_*`
+  rationale) and rewrote a "Not routed" paragraph, shifting the same lines
+  again.
+  `evidence-ledger-session-key-shapes.md` and
+  `hypothesis-tracker-persistence-split.md` both list `server.ts` under
+  `sources` with line-pinned citations into it; every cited anchor text
+  (the `sessionId` param doc, the `addEntry` call site, each `saveStore`
+  call, each `hypothesis_*` registration line, the
+  `hypothesis_not_found_rejected_or_checks_pending` error literal, which
+  itself grew an `as const`) was re-located at its new line and
+  re-pointed; none of the quoted text itself needed to change apart from
+  that one `as const` addition. `evidence-ledger-session-key-shapes.md`
+  also cites a test in
+  `packages/grounding-mcp/tests/grounding-gate-mcp-roundtrip.test.ts`
+  (the `preflight:` incidental-match example); that file grew five lines
+  at its own import block, shifting the cited test's full-block range so
+  it now spans lines 677-691. An earlier revision on this branch had
+  re-pointed that citation to 677-690, one line short of the test's actual
+  closing `});`, which failed `check:okf-test-citation-shape`; corrected
+  here to the exact head/close lines, quoted text unchanged.
+  `hypothesis-tracker-persistence-split.md` also gained
+  one new sentence noting the hypothesis verbs are now ordered the same
+  way the ledger verbs already were.
+  `solution-acceptance-verdict-contract.md` lists `server.ts` (two
+  line-pinned citations, `solution_evaluate`'s and `solution_gate`'s own
+  registration lines, re-pointed to their new lines, quoted text
+  unchanged, except for its "Not routed" summary paragraph, reworded to
+  match the corrected rationale in `server.ts`'s own comment) and
+  `packages/grounding-mcp/README.md` (whole-file source reference only,
+  no line-pinned citation into it) under `sources`; this
+  task's README edit (new ordering sentences on the `grounding_*` and
+  `hypothesis_*` rows) does not touch anything this doc cites, so its
+  other claims were re-verified against HEAD and still hold. Added one
+  sentence naming the four tools this task's routing extension does NOT
+  cover (`solution_evaluate` and its two lookups, `solution_gate`) and
+  why, matching the equivalent "Not routed" note added to `server.ts`
+  itself. All three re-stamped.
+  `packages/grounding-mcp/CHANGELOG.md` and `README.md` also gained a new
+  `[Unreleased]` entry and new tool-catalog sentences describing the same
+  change; neither is cited by a line-pinned anchor from any bundle doc
+  beyond the `README.md` whole-file reference already covered above.
+
 - 2026-09-27, follow-up provenance sweep (a review round's remaining hits):
   `packages/grounding-mcp/src/verdict-signing.ts` and
   `packages/grounding-mcp/tests/interop/harness-verifier.vendored.ts`
