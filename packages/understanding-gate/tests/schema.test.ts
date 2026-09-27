@@ -78,8 +78,9 @@ describe("UNDERSTANDING_REPORT_SCHEMA", () => {
 
   it("accepts a harness-expired report (approvalStatus: 'expired' + expiredAt)", () => {
     // Shape written by the harness's understanding-before-execution
-    // runtime pack (expirePersistedReport()): it rewrites a persisted report's approvalStatus to "expired" and
-    // sets expiredAt, in place, leaving every other field untouched.
+    // runtime pack (expirePersistedReport()): it rewrites a persisted
+    // report's approvalStatus to "expired" and sets expiredAt, in place,
+    // leaving every other field untouched.
     // Consumers that validate a persisted report against this schema
     // (e.g. an exhaustive parser/guard) must not reject that shape.
     const validate = makeValidator();
@@ -190,7 +191,7 @@ describe("UNDERSTANDING_REPORT_SCHEMA_FAST_CONFIRM", () => {
   // level assertion above (including the expired-report acceptance) was
   // already exercised against the fast_confirm variant's data by
   // reference, just never compiled and validated explicitly through this
-  // variant's own ajv instance. This block closes that gap (review round 2).
+  // variant's own ajv instance. This block closes that gap.
   it("compiles cleanly with ajv strict:true", () => {
     expect(() => makeFastConfirmValidator()).not.toThrow();
   });

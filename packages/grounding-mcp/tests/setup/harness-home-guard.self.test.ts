@@ -61,10 +61,10 @@ describe('harness-home-guard (setupFiles self-test)', () => {
 
   // The assertion above is vacuously green in a clean environment (the
   // variable is undefined whether or not the guard deletes it), so this
-  // child-process probe makes the delete line load-bearing in default CI
-  // (review round 1): a child vitest run of THIS file with
-  // an ambient sentinel exported must stay green (the guard clears it
-  // before module load) and must not create anything at the sentinel path.
+  // child-process probe makes the delete line load-bearing in default CI:
+  // a child vitest run of THIS file with an ambient sentinel exported must
+  // stay green (the guard clears it before module load) and must not
+  // create anything at the sentinel path.
   // GUARD_PROBE_CHILD breaks the recursion: the child skips this spawner.
   it.skipIf(process.env.GUARD_PROBE_CHILD === '1')(
     'clears an ambient SOLUTION_VERDICT_SIGNING_KEY before tests run (child-process probe)',

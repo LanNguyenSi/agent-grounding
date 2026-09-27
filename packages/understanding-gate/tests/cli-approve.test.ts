@@ -180,8 +180,8 @@ describe("runStatus", () => {
     expect(r.stdout).toContain("2026-05-02");
   });
 
-  // Review round 2: a harness-expired entry's
-  // displayed timestamp must be the expiry time, not the earlier approval
+  // A harness-expired entry's displayed timestamp must be the expiry
+  // time, not the earlier approval
   // time that preceded the expiry -- otherwise "expired @ <time>" reads as
   // when the (no-longer-current) approval happened.
   it("shows the expiredAt timestamp, not approvedAt, for an expired entry", () => {

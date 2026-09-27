@@ -178,7 +178,7 @@ describe("prompt roundtrip: parseReport accepts what the template asks for", () 
   });
 
   it("a report with prose (non-list) bodies for sections 3-9 is rejected (the contract the prompt fix exists for)", () => {
-    // This is the exact failure mode a prompt-wording fix fixed at the
+    // This is the exact failure mode the prompt-wording fix addressed at the
     // prompt layer: the parser types sections 3-9 as `kind: "list"`, so
     // a prose-paragraph body parses to an empty list and the report is
     // rejected `missing_sections`. The prompt fix steers agents to

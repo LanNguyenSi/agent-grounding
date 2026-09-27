@@ -3,7 +3,7 @@
 // signing-key resolution + getOrCreate never touches the host's real
 // ~/.harness (or ~/.claude fallback) — see D-001 (independent mirror, no
 // package dependency) / D-002 (unconditional signing, no unsigned
-// fallback).
+// fallback), grounding-mcp CHANGELOG 0.8.0.
 //
 // The `resolveHarnessHome` precedence tiers beyond the HARNESS_HOME env
 // override (~/.harness-exists, ~/.claude-legacy, default-create) mirror
@@ -560,7 +560,7 @@ describe('resolveSigningKeyPath / SOLUTION_VERDICT_SIGNING_KEY (env primary)', (
   });
 });
 
-describe('resolveSigningKeyPath hardening (review round 1)', () => {
+describe('resolveSigningKeyPath hardening (empty and non-absolute env values)', () => {
   it('an empty-string env value falls back to the mirrored resolution', () => {
     process.env[SIGNING_KEY_ENV] = '';
     expect(resolveSigningKeyPath()).toBe(signingKeyPathFor(resolveGeneratedDir()));

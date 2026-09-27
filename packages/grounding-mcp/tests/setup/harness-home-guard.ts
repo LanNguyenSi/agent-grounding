@@ -1,5 +1,5 @@
 // Package-wide regression guard (F1, review round 1; hardened in round 2,
-// R2-M2): a vitest
+// R2-M2, grounding-mcp CHANGELOG 0.8.0): a vitest
 // `setupFiles` entry that pins HARNESS_HOME to a per-test-file tempdir
 // UNCONDITIONALLY, at module top-level (not inside `beforeAll`), so a test
 // file that forgets its own HARNESS_HOME isolation can never fall through

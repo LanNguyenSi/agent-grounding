@@ -1697,7 +1697,12 @@ describe('solution_evaluate_status / solution_evaluate_result (MCP roundtrip)', 
   });
 });
 
-// ── ledger_summary regression: concurrent add+summary undercounts ──────────
+// ── ledger_summary: sequential session-key coverage ─────────────────────────
+//
+// Pins the sequential (add-then-await-summary) case as always-true, so a
+// regression here narrows whether a later finding is a concurrency race or
+// a plain session-key bug; see the "concurrent ledger_add + ledger_summary"
+// describe block below for the actual concurrent-request regression test.
 //
 // Appended at the end of the file (not inlined into the ledger_summary
 // describe block above) so it never shifts any other test's line number:
@@ -1805,7 +1810,7 @@ describe('ledger_add + ledger_summary: concurrent requests', () => {
     const sessionId = 'gs-concurrent-0a8645d2';
     // Fire both calls without awaiting the first: this is what the
     // sequential tests above never exercise. Deterministically triggered
-    // the defect 20/20 runs on this task's base commit (fe8fa4f), both
+    // the defect 20/20 runs on the pre-fix commit (fe8fa4f), both
     // through this exact InMemoryTransport + Promise.all shape and over
     // real pipelined stdio (scripts/repro-ledger-summary-count.mjs's
     // pipelined case).
@@ -1883,11 +1888,12 @@ describe('ledger tools: sessionId must be non-empty', () => {
 
 // ── ledger tools: true arrival order at the transport ──────────────────────
 //
-// An earlier fix for this task keyed the queue's sort order by the
-// JSON-RPC request id's own VALUE (falling back to enqueue-call order for
-// a non-numeric id). Both are wrong for an id shape a real client is free
-// to use: a string id, a UUID, or a client that hands out falling numeric
-// ids. The tests below send raw JSON-RPC frames directly over the
+// An earlier version of the ledger_summary undercount fix keyed the
+// queue's sort order by the JSON-RPC request id's own VALUE (falling back
+// to enqueue-call order for a non-numeric id). Both are wrong for an id
+// shape a real client is free to use: a string id, a UUID, or a client
+// that hands out falling numeric ids. The tests below send raw JSON-RPC
+// frames directly over the
 // InMemoryTransport (bypassing the SDK Client's own auto-incrementing
 // numeric request ids, the one id shape the earlier value-sort happened
 // to get right) so the id shape is fully controlled.
