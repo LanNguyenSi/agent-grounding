@@ -135,9 +135,9 @@ the assessment store.
 - Explicit dossier hash projection:
   `packages/grounding-mcp/src/grounding-assessment-policy.ts:103#"export function dossierProjection"`.
 - Process concurrency around one consistent snapshot:
-  `packages/grounding-mcp/tests/grounding-assessment-store.test.ts:266#"await stop(child.child);"`.
+  `packages/grounding-mcp/tests/grounding-assessment-store.test.ts:249-267#"await stop(child.child);"`.
 - Independent frozen claim detector vector tests:
-  `packages/grounding-mcp/tests/grounding-assessment-policy.test.ts:46#"expect(detectClaimType(claim)).toBe(expectedType);"`.
+  `packages/grounding-mcp/tests/grounding-assessment-policy.test.ts:45-47#"expect(detectClaimType(claim)).toBe(expectedType);"`.
 - Restricted stdio composition root and sanitized startup failure:
   `packages/grounding-mcp/src/assessment-index.ts:18#"main().catch"`.
 - Explicit issuer configuration and Ed25519 key validation:
