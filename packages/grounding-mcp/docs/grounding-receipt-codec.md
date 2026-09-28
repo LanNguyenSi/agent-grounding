@@ -71,13 +71,33 @@ attempt evaluates the current matching revision. Receipt expiry never exceeds
 challenge expiry or 900 seconds from evaluation. Validation, signing, locking,
 and storage failures return errors, not another attempt's receipt.
 
+Ordinary use requires an existing initialized `state.json` and regular `store`
+lock anchor in a dedicated directory. Neither startup nor any transaction
+creates that directory or anchor, treats a missing state file as empty, or
+repairs invalid state. `assertReady()` validates the state under the transaction
+lock; the restricted entrypoint awaits this before connecting stdio. Existing
+canonical v1 stores with their lock anchor remain usable without initialization.
+
 All reads and mutations use a global cross-process `proper-lockfile` lock and
 one versioned JSON state file. Writes use an exclusive same-directory temporary
 file, file fsync, atomic rename, and directory fsync. A failure after rename
 can mean the commit occurred: retry the exact export to recover its stored
 bytes; for ordinary mutations, read the current revision before deciding what
 to do next. Malformed or unknown-version state is never reset automatically.
-Lock ownership loss and cleanup failures are errors.
+Lock ownership loss and cleanup failures are errors. The store pins the directory
+and anchor device/inode identities for its lifetime and checks the loaded state
+inode within each transaction. Legitimate commits replace the state inode, so
+it is captured anew under the lock on each transaction. Required files must be
+regular files, not symlinks; the state read uses a single capped handle with
+no-follow/nonblocking flags. Checks surround reads, rename, and successful
+returns while the lock is held. Observable deletion or replacement fails; a
+lost directory/anchor/lock identity causes cleanup to retain the lock evidence.
+
+These checks cannot make a pathname check and rename one atomic operation.
+Another process with filesystem authority can change a path in that gap or
+after the final check. They do not protect against a malicious administrator,
+same-user filesystem manipulation, or restoring an older valid backup. Restore
+and writer exclusion require operator control; there is no anti-rollback claim.
 
 The lock has no time-based takeover. A suspended writer retains exclusion;
 an unclean exit leaves the store busy. Recovery requires the operator to stop
@@ -127,6 +147,33 @@ nonzero with a fixed error on stderr and no MCP output or default state.
 There is no key generation, home-directory fallback, network discovery, or
 automatic consumer trust registration.
 
+Before first startup, an operator must explicitly initialize a **new** final
+state directory. Its parent must already exist. From the repository root after
+building the package, run the separate operator entrypoint:
+
+```bash
+GROUNDING_ASSESSMENT_CONFIG=/srv/assessment/config.json node packages/grounding-mcp/dist/assessment-init.js
+```
+
+For an installed package, use that package's `dist/assessment-init.js` path.
+This entrypoint accepts no arguments and validates the same explicit config
+and existing key. It creates the final directory exclusively (mode `0700`),
+creates the anchor and canonical empty v1 state with mode `0600`, and uses the
+same no-takeover lock before staging state. State publication is exclusive;
+file, directory, and parent-directory fsync precede successful lock release.
+It refuses every existing final directory, including valid, empty, partial,
+and symlink locations. It never overwrites, adopts, repairs, or resets them.
+
+An initialization failure leaves the new directory and available evidence in
+place. Once its lock has been created, that lock is retained on failure and
+unclean exit, including failure after publishing state; a valid-looking state
+file alone does not establish successful initialization. A crash around lock
+release can also leave the store busy. Stop and confirm all writers are dead
+before inspecting partial initialization or restoring state. Preserve failure
+evidence and reconcile committed state before any manual lock removal; never
+rerun initialization to repair that directory. There is no recovery or reset
+transport operation.
+
 ```bash
 GROUNDING_ASSESSMENT_CONFIG=/srv/assessment/config.json grounding-assessment-mcp
 ```
@@ -135,7 +182,10 @@ The configuration is trusted startup input. Tool callers cannot supply issuer,
 key, filesystem, execution, or policy-authority overrides. The normal
 `grounding-mcp` binary retains its existing session/ledger/verdict contract;
 configure the restricted binary separately, with its explicit issuer input.
-`--version` (also `-v`) prints the package version without loading that input.
+`--version` (also `-v`) alone prints the package version without loading that
+input. Other arguments, including `--initialize` and mixed version flags, are
+rejected. Initialization is unavailable through this launcher and its seven
+tools; grant access to the operator entrypoint separately.
 
 The complete tool surface is:
 

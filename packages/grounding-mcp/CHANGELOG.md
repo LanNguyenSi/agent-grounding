@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- Restricted assessment startup and every store transaction now require valid
+  initialized state. Missing directories, lock anchors, and state files fail
+  without recreating authority. A separate operator entrypoint creates only a
+  new state directory, exclusively and durably, and retains failure evidence.
+  Directory, anchor, and per-transaction state identity checks detect observable
+  replacement while preserving existing v1 stores and exact terminal retries.
+
 - The `solution_evaluate` tool description now points agents at
   `docs/solution-acceptance-gate.md` for progress-notification and timeout
   detail, instead of the README section that content moved out of.

@@ -1,5 +1,6 @@
 /** Producer-owned persistence only. Transport registration and issuer isolation are separate. */
 import fs from 'node:fs/promises';
+import nativeFs, { constants, type Stats } from 'node:fs';
 import path from 'node:path';
 import { createHash, KeyObject, randomUUID } from 'node:crypto';
 import lockfile from 'proper-lockfile';
@@ -93,8 +94,80 @@ function checkState(state: State): void {
   }
 }
 
+type Identity = Pick<Stats, 'dev' | 'ino'>;
+function sameIdentity(a: Identity, b: Identity): boolean { return a.dev === b.dev && a.ino === b.ino; }
+async function checkedIdentity(file: string, kind: 'file' | 'directory', expected?: Identity): Promise<Stats> {
+  const stat = await fs.lstat(file);
+  if (!(kind === 'file' ? stat.isFile() : stat.isDirectory()) || expected && !sameIdentity(stat, expected)) fail('storage', 'Assessment storage identity changed');
+  return stat;
+}
+async function syncDirectory(directory: string): Promise<void> {
+  const handle = await fs.open(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  try { await handle.sync(); } finally { await handle.close(); }
+}
+
+function retainingLockFilesystem(retain: () => boolean, rejectRetained = false) {
+  return {
+    ...nativeFs,
+    rmdir: (file: nativeFs.PathLike, callback: nativeFs.NoParamCallback) => { if (retain()) callback(rejectRetained ? new AssessmentStoreError('storage', 'Store lock ownership lost') : null); else nativeFs.rmdir(file, callback); },
+    rmdirSync: (file: nativeFs.PathLike) => { if (!retain()) nativeFs.rmdirSync(file); },
+  };
+}
+
+/** Operator-only creation. The final directory must not exist, even if empty. */
+export async function initializeAssessmentState(directory: string): Promise<void> {
+  if (typeof directory !== 'string' || !path.isAbsolute(directory)) fail('invalid', 'Explicit absolute producer directory required');
+  directory = path.resolve(directory);
+  let release: (() => Promise<void>) | undefined;
+  // Keep failure evidence even when proper-lockfile cleans up acquisition or process exit.
+  let retainLock = true;
+  const initializationFs = retainingLockFilesystem(() => retainLock);
+  try {
+    await fs.mkdir(directory, { mode: 0o700 });
+    const identity = await checkedIdentity(directory, 'directory');
+    const target = path.join(directory, 'store');
+    const anchor = await fs.open(target, 'wx', 0o600);
+    try { await anchor.sync(); } finally { await anchor.close(); }
+    const anchorIdentity = await checkedIdentity(target, 'file');
+    let compromised: Error | undefined;
+    release = await lockfile.lock(target, { realpath: false, stale: Infinity, update: 2000, retries: 0, fs: initializationFs, onCompromised: (error) => { compromised = error; } });
+    const lockIdentity = await checkedIdentity(`${target}.lock`, 'directory');
+    const owned = async () => {
+      if (compromised) throw compromised;
+      await checkedIdentity(directory, 'directory', identity);
+      await checkedIdentity(target, 'file', anchorIdentity);
+      await checkedIdentity(`${target}.lock`, 'directory', lockIdentity);
+      if (compromised) throw compromised;
+    };
+    const temporary = path.join(directory, `.state-${randomUUID()}.tmp`);
+    const state = await fs.open(temporary, 'wx', 0o600);
+    try { await state.writeFile(JSON.stringify({ version: 1, sessions: [], terminals: [] })); await state.sync(); }
+    finally { await state.close(); }
+    const stateIdentity = await checkedIdentity(temporary, 'file');
+    await owned();
+    // A hard link publishes exclusively; rename could overwrite an unexpected state file.
+    await fs.link(temporary, path.join(directory, 'state.json'));
+    await checkedIdentity(path.join(directory, 'state.json'), 'file', stateIdentity);
+    await fs.unlink(temporary);
+    await syncDirectory(directory);
+    await syncDirectory(path.dirname(directory));
+    await owned();
+    await checkedIdentity(path.join(directory, 'state.json'), 'file', stateIdentity);
+    retainLock = false;
+  } catch (error) {
+    if (error instanceof AssessmentStoreError) throw error;
+    fail('storage', 'Assessment state initialization failed');
+  } finally {
+    if (release) {
+      try { await release(); } catch { fail('storage', 'Assessment initialization lock release failed'); }
+    }
+  }
+}
+
 export class GroundingAssessmentStore {
   #directory: string;
+  #directoryIdentity?: Identity;
+  #anchorIdentity?: Identity;
   #issuer: string;
   #kid: string;
   #key: KeyObject;
@@ -118,12 +191,17 @@ export class GroundingAssessmentStore {
     return now;
   }
 
-  async #read(directory: string): Promise<State> {
-    let handle;
-    try { handle = await fs.open(path.join(directory, 'state.json'), 'r'); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { version: 1, sessions: [], terminals: [] }; throw error; }
+  /** Checks readiness under the same lock used by every operation. Never initializes. */
+  async assertReady(): Promise<void> { await this.#transaction(() => ({ result: undefined, changed: false })); }
+
+  async #read(directory: string): Promise<{ state: State; identity: Identity }> {
+    const filename = path.join(directory, 'state.json');
+    const identity = await checkedIdentity(filename, 'file');
+    const handle = await fs.open(filename, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     try {
-      const size = (await handle.stat()).size;
+      const opened = await handle.stat();
+      if (!opened.isFile() || !sameIdentity(identity, opened)) fail('storage', 'Assessment state identity changed');
+      const size = opened.size;
       if (size > STORE_LIMITS.stateBytes) fail('storage', 'State exceeds byte limit');
       const bytes = Buffer.alloc(size + 1);
       let length = 0;
@@ -138,11 +216,12 @@ export class GroundingAssessmentStore {
       if (JSON.stringify(decoded) !== raw) fail('storage', 'Noncanonical state');
       const state = stateSchema.parse(decoded);
       checkState(state);
-      return state;
+      await checkedIdentity(filename, 'file', identity);
+      return { state, identity };
     } finally { await handle.close(); }
   }
 
-  async #write(directory: string, state: State, owned: () => Promise<void>): Promise<void> {
+  async #write(directory: string, state: State, owned: () => Promise<void>, loaded: Identity): Promise<Identity> {
     const bytes = Buffer.from(JSON.stringify(state));
     if (bytes.length > STORE_LIMITS.stateBytes) fail('limit', 'State capacity exceeded');
     const temporary = path.join(directory, `.state-${randomUUID()}.tmp`);
@@ -153,10 +232,15 @@ export class GroundingAssessmentStore {
       await handle.sync();
       await handle.close(); handle = undefined;
       await owned();
+      await checkedIdentity(path.join(directory, 'state.json'), 'file', loaded);
+      const committed = await checkedIdentity(temporary, 'file');
       await fs.rename(temporary, path.join(directory, 'state.json'));
-      const parent = await fs.open(directory, 'r');
-      try { await parent.sync(); } finally { await parent.close(); }
       await owned();
+      await checkedIdentity(path.join(directory, 'state.json'), 'file', committed);
+      await syncDirectory(directory);
+      await owned();
+      await checkedIdentity(path.join(directory, 'state.json'), 'file', committed);
+      return committed;
     } finally {
       try { if (handle) await handle.close(); }
       finally { await fs.unlink(temporary).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error; }); }
@@ -165,29 +249,53 @@ export class GroundingAssessmentStore {
 
   async #transaction<T>(operation: (state: State) => { result: T; changed: boolean }): Promise<T> {
     try {
-      await fs.mkdir(this.#directory, { recursive: true, mode: 0o700 });
+      const location = await checkedIdentity(this.#directory, 'directory', this.#directoryIdentity);
+      this.#directoryIdentity ??= location;
       const directory = await fs.realpath(this.#directory);
+      await checkedIdentity(directory, 'directory', this.#directoryIdentity);
       const target = path.join(directory, 'store');
-      const handle = await fs.open(target, 'a', 0o600); await handle.close();
+      const anchor = await checkedIdentity(target, 'file', this.#anchorIdentity);
+      this.#anchorIdentity ??= anchor;
       let compromised: Error | undefined;
-      const release = await lockfile.lock(target, { stale: Infinity, update: 2000, retries: { retries: 400, minTimeout: 10, maxTimeout: 50, factor: 1.2 }, onCompromised: (error) => { compromised = error; } });
+      let identity: Identity | undefined;
+      // Unlock also runs from a synchronous exit hook. Never remove a replacement lock.
+      const retainLock = () => {
+        try {
+          const intact = (file: string, expected: Identity | undefined, kind: 'file' | 'directory') => {
+            const stat = nativeFs.lstatSync(file);
+            return !!expected && (kind === 'file' ? stat.isFile() : stat.isDirectory()) && sameIdentity(stat, expected);
+          };
+          return !!compromised || !intact(this.#directory, this.#directoryIdentity, 'directory') ||
+            !intact(directory, this.#directoryIdentity, 'directory') || !intact(target, this.#anchorIdentity, 'file') ||
+            !intact(`${target}.lock`, identity, 'directory');
+        } catch { return true; }
+      };
+      const release = await lockfile.lock(target, { realpath: false, stale: Infinity, update: 2000, retries: { retries: 400, minTimeout: 10, maxTimeout: 50, factor: 1.2 }, fs: retainingLockFilesystem(retainLock, true), onCompromised: (error) => { compromised = error; } });
+      let failed = false;
       try {
-        const identity = await fs.stat(`${target}.lock`);
+        identity = await checkedIdentity(`${target}.lock`, 'directory');
         const owned = async (): Promise<void> => {
           if (compromised) throw compromised;
-          const current = await fs.stat(`${target}.lock`);
-          if (identity.ino !== current.ino || identity.dev !== current.dev || compromised) fail('storage', 'Store lock ownership lost');
+          await checkedIdentity(this.#directory, 'directory', this.#directoryIdentity);
+          await checkedIdentity(directory, 'directory', this.#directoryIdentity);
+          await checkedIdentity(target, 'file', this.#anchorIdentity);
+          await checkedIdentity(`${target}.lock`, 'directory', identity);
+          if (compromised) throw compromised;
         };
         await owned();
+        const { state, identity: loaded } = await this.#read(directory);
         for (const name of await fs.readdir(directory)) {
           if (/^\.state-[0-9a-f-]{36}\.tmp$/.test(name)) await fs.unlink(path.join(directory, name));
         }
-        const state = await this.#read(directory);
         const { result, changed } = operation(state);
         await owned();
-        if (changed) await this.#write(directory, state, owned);
-        return structuredClone(result);
-      } finally { await release(); }
+        const finalIdentity = changed ? await this.#write(directory, state, owned, loaded) : loaded;
+        const detached = structuredClone(result);
+        await owned();
+        await checkedIdentity(path.join(directory, 'state.json'), 'file', finalIdentity);
+        return detached;
+      } catch (error) { failed = true; throw error; }
+      finally { if (failed) await release().catch(() => {}); else await release(); }
     } catch (error) {
       if (error instanceof AssessmentStoreError) throw error;
       fail('storage', 'Assessment storage transaction failed');

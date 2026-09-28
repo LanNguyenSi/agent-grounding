@@ -6,7 +6,7 @@ import { fork, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import lockfile from 'proper-lockfile';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { GroundingAssessmentStore, STORE_LIMITS, type AssessmentChallenge } from '../src/grounding-assessment-store.js';
+import { GroundingAssessmentStore, initializeAssessmentState, STORE_LIMITS, type AssessmentChallenge } from '../src/grounding-assessment-store.js';
 import { ASSESSMENT_POLICY, assessSnapshot, currentPhase, type AssessmentSnapshot } from '../src/grounding-assessment-policy.js';
 import { verifyReceipt } from '../src/grounding-receipt.js';
 
@@ -22,7 +22,8 @@ function storeAt(directory: string, clock = () => 1000) {
   return new GroundingAssessmentStore({ directory, issuer: 'issuer.test', kid: 'key.test', privateKey: keys.privateKey, producer, clock });
 }
 async function fixture(keyword = 'service') {
-  const directory = await fs.mkdtemp(path.join(tmpdir(), 'assessment-')); directories.push(directory);
+  const parent = await fs.realpath(await fs.mkdtemp(path.join(tmpdir(), 'assessment-'))); directories.push(parent);
+  const directory = path.join(parent, 'state'); await initializeAssessmentState(directory);
   const store = storeAt(directory); const c = challenge();
   const session = await store.createSession({ challenge: c, keyword, problem: 'Investigate a reported behavior' });
   return { directory, store, c, session };
@@ -316,10 +317,10 @@ describe('serialization, durability and fail-closed storage', () => {
     for (const fault of ['write', 'sync', 'rename', 'ownership']) {
       if (fault === 'rename') vi.spyOn(fs, 'rename').mockRejectedValueOnce(new Error('injected rename failure'));
       else if (fault === 'ownership') {
-        const stat = fs.stat; let count = 0;
-        vi.spyOn(fs, 'stat').mockImplementation(async (...args) => {
+        const stat = fs.lstat; let count = 0;
+        vi.spyOn(fs, 'lstat').mockImplementation(async (...args) => {
           const result = await stat(...args);
-          if (String(args[0]).endsWith('store.lock') && ++count === 4) return { ...result, ino: Number(result.ino) + 1 } as never;
+          if (String(args[0]).endsWith('store.lock') && ++count === 4) return Object.assign(result, { ino: Number(result.ino) + 1 }) as never;
           return result;
         });
       } else {
@@ -442,5 +443,159 @@ describe('bounded validation and producer configuration', () => {
     await expect(store.addDossierEntry({ ...entry(extra), content: 'x'.repeat(STORE_LIMITS.content) })).rejects.toMatchObject({ code: 'limit' });
     expect(createHash('sha256').update(await fs.readFile(filename)).digest('hex')).toBe(createHash('sha256').update(JSON.stringify(aggregate)).digest('hex'));
     expect(space).toBeGreaterThan(0);
+  });
+});
+
+describe('explicit durable state lifecycle', () => {
+  async function unusedDirectory() {
+    const parent = await fs.realpath(await fs.mkdtemp(path.join(tmpdir(), 'assessment-init-'))); directories.push(parent);
+    return path.join(parent, 'state');
+  }
+  it('requires initialization on first use and never creates absent directories or anchors', async () => {
+    const directory = await unusedDirectory();
+    await expect(storeAt(directory).assertReady()).rejects.toMatchObject({ code: 'storage' });
+    await expect(storeAt(directory).createSession({ challenge: challenge(), keyword: 'plain', problem: 'issue' })).rejects.toMatchObject({ code: 'storage' });
+    await expect(fs.lstat(directory)).rejects.toMatchObject({ code: 'ENOENT' });
+    await fs.mkdir(directory);
+    await expect(storeAt(directory).assertReady()).rejects.toMatchObject({ code: 'storage' });
+    expect(await fs.readdir(directory)).toEqual([]);
+  });
+
+  it('initializes exclusively with restrictive modes and durable empty v1 state', async () => {
+    const directory = await unusedDirectory(); const open = fs.open; const synced: string[] = [];
+    vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+      const handle = await open(...args); const sync = handle.sync.bind(handle);
+      handle.sync = async () => { synced.push(String(args[0])); await sync(); }; return handle;
+    });
+    const outcomes = await Promise.allSettled([initializeAssessmentState(directory), initializeAssessmentState(directory)]);
+    expect(outcomes.map((outcome) => outcome.status).sort()).toEqual(['fulfilled', 'rejected']);
+    expect(await fs.readFile(path.join(directory, 'state.json'), 'utf8')).toBe('{"version":1,"sessions":[],"terminals":[]}');
+    expect((await fs.stat(directory)).mode & 0o777).toBe(0o700);
+    for (const file of ['store', 'state.json']) expect((await fs.stat(path.join(directory, file))).mode & 0o777).toBe(0o600);
+    expect(synced).toContain(path.join(directory, 'store'));
+    expect(synced.some((file) => file.endsWith('.tmp'))).toBe(true);
+    expect(synced.slice(-2)).toEqual([directory, path.dirname(directory)]);
+    await storeAt(directory).assertReady();
+  });
+
+  it.each(['empty', 'partial', 'valid'] as const)('refuses an existing %s directory without changing it', async (kind) => {
+    const directory = await unusedDirectory();
+    if (kind === 'valid') await initializeAssessmentState(directory);
+    else { await fs.mkdir(directory); if (kind === 'partial') await fs.writeFile(path.join(directory, 'store'), 'evidence'); }
+    const names = await fs.readdir(directory);
+    const before = await Promise.all(names.map((name) => fs.readFile(path.join(directory, name))));
+    await expect(initializeAssessmentState(directory)).rejects.toMatchObject({ code: 'storage' });
+    expect(await fs.readdir(directory)).toEqual(names);
+    expect(await Promise.all(names.map((name) => fs.readFile(path.join(directory, name))))).toEqual(before);
+  });
+
+  it('requires an existing parent and does not adopt a legacy directory symlink', async () => {
+    const directory = await unusedDirectory();
+    await expect(initializeAssessmentState(path.join(directory, 'child'))).rejects.toMatchObject({ code: 'storage' });
+    await expect(fs.lstat(directory)).rejects.toMatchObject({ code: 'ENOENT' });
+    const { directory: existing } = await fixture(); await fs.symlink(existing, directory);
+    await expect(storeAt(directory).assertReady()).rejects.toMatchObject({ code: 'storage' });
+    await expect(initializeAssessmentState(directory)).rejects.toMatchObject({ code: 'storage' });
+  });
+
+  it('opens an existing canonical v1 store without initialization', async () => {
+    const directory = await unusedDirectory(); await fs.mkdir(directory);
+    await fs.writeFile(path.join(directory, 'store'), '');
+    await fs.writeFile(path.join(directory, 'state.json'), '{"version":1,"sessions":[],"terminals":[]}');
+    const store = storeAt(directory); await store.assertReady();
+    const session = await store.createSession({ challenge: challenge(), keyword: 'plain', problem: 'issue' });
+    expect((await storeAt(directory).getSession({ sessionId: session.id })).revision).toBe(1);
+  });
+
+  it.each(['state.json', 'store', 'directory'] as const)('never recreates %s deleted after use', async (removed) => {
+    const { directory, store, c, session } = await fixture();
+    const wire = await store.exportReceipt({ ...request(session), challenge: c }); expect(wire.length).toBeGreaterThan(0);
+    const target = removed === 'directory' ? directory : path.join(directory, removed);
+    await fs.rm(target, { recursive: true });
+    for (const action of [() => store.getSession({ sessionId: session.id }), () => store.exportReceipt({ ...request(session), challenge: c }), () => store.createSession({ challenge: c, keyword: 'plain', problem: 'issue' })]) {
+      await expect(action()).rejects.toMatchObject({ code: 'storage' });
+      await expect(fs.lstat(target)).rejects.toMatchObject({ code: 'ENOENT' });
+    }
+  });
+
+  it.each(['state.json', 'store'] as const)('rejects nonregular and symlink %s without touching its target', async (name) => {
+    const { directory, store } = await fixture(); const filename = path.join(directory, name); const saved = `${filename}.saved`;
+    await fs.rename(filename, saved); const bytes = await fs.readFile(saved);
+    await fs.mkdir(filename); await expect(store.assertReady()).rejects.toMatchObject({ code: 'storage' });
+    await fs.rmdir(filename); await fs.symlink(saved, filename);
+    await expect(storeAt(directory).assertReady()).rejects.toMatchObject({ code: 'storage' });
+    expect(await fs.readFile(saved)).toEqual(bytes);
+  });
+
+  it('pins directory and anchor identity across transactions but permits valid state commits', async () => {
+    const { directory, store, session } = await fixture();
+    await storeAt(directory).addDossierEntry(entry(session)); await store.assertReady();
+    const saved = `${directory}.saved`; await fs.rename(directory, saved); await initializeAssessmentState(directory);
+    await expect(store.assertReady()).rejects.toMatchObject({ code: 'storage' });
+    const fresh = storeAt(directory); await fresh.assertReady();
+    await fs.rename(path.join(directory, 'store'), path.join(directory, 'store.saved')); await fs.writeFile(path.join(directory, 'store'), '');
+    await expect(fresh.assertReady()).rejects.toMatchObject({ code: 'storage' });
+  });
+
+  it.each(['read', 'before commit', 'after commit'] as const)('rejects loaded state replacement at %s boundary', async (boundary) => {
+    const { directory, store, session } = await fixture(); const filename = path.join(directory, 'state.json'); const saved = `${filename}.saved`;
+    const substitute = async () => { const bytes = await fs.readFile(filename); await fs.rename(filename, saved); await fs.writeFile(filename, bytes); };
+    if (boundary === 'read') {
+      const open = fs.open;
+      vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+        const handle = await open(...args);
+        if (String(args[0]) === filename) { const close = handle.close.bind(handle); handle.close = async () => { await close(); await substitute(); }; }
+        return handle;
+      });
+      await expect(store.getSession({ sessionId: session.id })).rejects.toMatchObject({ code: 'storage' });
+    } else if (boundary === 'before commit') {
+      const altered = storeAt(directory, () => { throw new Error('unused'); }); await altered.assertReady();
+      const open = fs.open;
+      vi.spyOn(fs, 'open').mockImplementation(async (...args) => { const handle = await open(...args); if (String(args[0]).endsWith('.tmp')) await substitute(); return handle; });
+      await expect(altered.addDossierEntry(entry(session))).rejects.toMatchObject({ code: 'storage' });
+      expect(JSON.parse(await fs.readFile(filename, 'utf8')).sessions[0].revision).toBe(1);
+    } else {
+      const rename = fs.rename;
+      vi.spyOn(fs, 'rename').mockImplementationOnce(async (...args) => { await rename(...args); await substitute(); });
+      await expect(store.addDossierEntry(entry(session))).rejects.toMatchObject({ code: 'storage' });
+    }
+  });
+
+  it.each(['release', 'SIGTERM'] as const)('retains a replaced lock on %s cleanup', async (mode) => {
+    const { directory, session } = await fixture();
+    const child = await worker(directory, 'before'); child.send('addDossierEntry', entry(session)); await child.next('boundary');
+    const lock = path.join(directory, 'store.lock'); await fs.rename(lock, `${lock}.saved`); await fs.mkdir(lock);
+    const identity = await fs.lstat(lock);
+    if (mode === 'release') { child.child.send({ type: 'resume' }); expect((await child.next('error')).code).toBe('storage'); }
+    await stop(child.child, 'SIGTERM');
+    expect((await fs.lstat(lock)).ino).toBe(identity.ino);
+  });
+
+  it('rejects a replaced initialization state while retaining the published evidence', async () => {
+    const directory = await unusedDirectory(); const link = fs.link;
+    vi.spyOn(fs, 'link').mockImplementationOnce(async (...args) => {
+      await link(...args); await fs.rename(args[1], `${args[1]}.saved`); await fs.writeFile(args[1], '{}');
+    });
+    await expect(initializeAssessmentState(directory)).rejects.toMatchObject({ code: 'storage' });
+    expect(await fs.readFile(path.join(directory, 'state.json'), 'utf8')).toBe('{}');
+    expect((await fs.lstat(path.join(directory, 'store.lock'))).isDirectory()).toBe(true);
+  });
+
+  it('retains partial initialization and its lock after staging or post-publication failure', async () => {
+    for (const phase of ['stage', 'directory-sync']) {
+      const directory = await unusedDirectory(); const open = fs.open;
+      vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+        const handle = await open(...args);
+        if (phase === 'stage' ? String(args[0]).endsWith('.tmp') : String(args[0]) === directory) vi.spyOn(handle, 'sync').mockRejectedValueOnce(new Error('injected init sync failure'));
+        return handle;
+      });
+      await expect(initializeAssessmentState(directory)).rejects.toMatchObject({ code: 'storage' }); vi.restoreAllMocks();
+      expect((await fs.lstat(path.join(directory, 'store.lock'))).isDirectory()).toBe(true);
+      await expect(lockfile.lock(path.join(directory, 'store'), { stale: Infinity, retries: 0 })).rejects.toMatchObject({ code: 'ELOCKED' });
+      await expect(initializeAssessmentState(directory)).rejects.toMatchObject({ code: 'storage' });
+      const lock = lockfile.lock;
+      vi.spyOn(lockfile, 'lock').mockImplementation((file, options) => lock(file, { ...options, retries: 0 }));
+      await expect(storeAt(directory).assertReady()).rejects.toMatchObject({ code: 'storage' }); vi.restoreAllMocks();
+    }
   });
 });
