@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## 0.14.0, 2026-09-28
+
 ### Fixed
 
 - Restricted assessment startup and every store transaction now require valid
