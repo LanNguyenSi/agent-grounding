@@ -2,7 +2,7 @@
 
 <!-- Add new entries at the top, newest first. -->
 
-- 2026-09-29T06:18:25Z, remaining bare tracker ids removed from comments,
+- 2026-09-29T06:29:32Z, remaining bare tracker ids removed from comments,
   prose and fixture values outside `packages/*/src`:
   `.github/workflows/ci.yml` comments, the `scripts/check-*.js` guards and
   their tests, `packages/grounding-mcp/vitest.config.ts`, the ledger
