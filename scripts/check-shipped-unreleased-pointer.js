@@ -5,7 +5,7 @@
  * A release cut moves the `## [Unreleased]` section's notes under a new
  * dated heading and leaves `## [Unreleased]` empty. Any file that SHIPS in
  * the package's npm tarball and still says something like "see CHANGELOG
- * [Unreleased]" now points at nothing. Task d51ae64b found this several
+ * [Unreleased]" now points at nothing. This was found several
  * ways across one cut and this check's own build-out: the README, a
  * comment in `dist/ow-run-completeness.js` (carried over from a source
  * comment -- tsc keeps comments in emitted JS/d.ts), and a package's
@@ -83,12 +83,12 @@ const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g;
 // a prose line that merely LOOKS like a keep-a-changelog link reference
 // (e.g. "[Unreleased]: see the next release") is NOT excluded from the
 // pointer scan: an earlier, URL-less shape excluded it, producing a false
-// negative (task d51ae64b).
+// negative.
 const LINK_REF_RE = /^\[Unreleased\]:\s*(https?:\/\/|\.{0,2}\/)\S*/i;
 const BRACKETED_POINTER_RE = /\[Unreleased\]/;
 const BAREWORD_POINTER_RE = /\bUnreleased\b/;
 
-// Explicit, small binary-extension exclusion (task d51ae64b):
+// Explicit, small binary-extension exclusion:
 // everything else shipped is treated as scannable text.
 // Kept deliberately short -- this repo's packages ship JS/TS build output
 // and docs, not media -- rather than trying to be an exhaustive MIME table.

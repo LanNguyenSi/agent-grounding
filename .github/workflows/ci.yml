@@ -321,8 +321,8 @@ jobs:
         # needs to actually verify a package's checksum instead of silently
         # trusting whatever tarball the registry hands back. Catches a
         # regenerated-from-a-bad-source or hand-edited lockfile drifting
-        # back into the state task eefeb6a9 found and fixed (304 of 603
-        # entries missing one or both fields as of 2026-07-27).
+        # back into the state an earlier regeneration found and fixed (304 of
+        # 603 entries missing one or both fields as of 2026-07-27).
         run: npm run check:lockfile-integrity
 
       - name: Lockfile integrity checker unit tests
@@ -356,9 +356,9 @@ jobs:
         # imported somewhere under that package's src/ — the phantom-dep
         # class check-pins.js is explicitly blind to (it only covers
         # internal @lannguyensi/* pins). Catches a re-added phantom
-        # dependency, or a revert of one already removed (see task a5cd84a0
-        # / the glob and js-yaml phantom deps found in domain-router and
-        # readme-first-resolver during the ca2aceff review).
+        # dependency, or a revert of one already removed (the glob and js-yaml
+        # phantom deps found in domain-router and readme-first-resolver during
+        # an earlier review).
         run: npm run check:deps
 
       - name: Dependency consistency checker unit tests
@@ -374,7 +374,7 @@ jobs:
         # root LICENSE, lists it in "files" where that field is set, and
         # actually ships it in `npm pack --dry-run --json`'s own reported
         # file list, the ground truth for what a real publish would tarball.
-        # task ae26b625: a copied file per package, not a prepack step, so
+        # A copied file per package, not a prepack step, so
         # this check and the release-exception classifier below stay
         # untouched by it.
         run: npm run check:package-license
@@ -428,7 +428,7 @@ jobs:
 
       - name: CHANGELOG duplicate-heading check
         # Asserts no dated CHANGELOG section (## X, DATE or ## [X] - DATE)
-        # carries the same ### <Kind> heading twice (task d51ae64b: the
+        # carries the same ### <Kind> heading twice (the
         # grounding-mcp 0.12.0 cut did this for ### Added and ### Changed,
         # and nothing mechanical caught it). Pure text parsing, no build
         # needed, so this runs alongside the other pre-Build checks.
@@ -462,7 +462,7 @@ jobs:
 
       - name: grounding-mcp packed-tarball --version check
         # Repeats, in CI, the "works from the published tarball" manual
-        # verification behind PR #226 (task ed06b4c8): packs
+        # verification behind PR #226: packs
         # @lannguyensi/grounding-mcp AND its version-locked @lannguyensi/*
         # sibling dependencies, installs every tarball together into one
         # scratch consumer directory outside the repo tree, and asserts the
@@ -503,7 +503,7 @@ jobs:
       - name: grounding-mcp packed-tarball entry-shape check
         # Sibling to the --version check above: asserts the SAME packed
         # tarball ships exactly package.json/README.md/CHANGELOG.md plus its
-        # built dist/, nothing under src/, and no test file (task d51ae64b).
+        # built dist/, nothing under src/, and no test file.
         # Runs after Build for the same reason as the --version check: a
         # meaningful assertion needs the real dist/ output packed alongside
         # the manifest files, not just a `files`-list shape check. See
@@ -522,7 +522,7 @@ jobs:
         # `npm pack --dry-run` file list, minus package.json, LICENSE*, and
         # a small binary-extension exclusion -- not an allowlist of known
         # kinds) pointing at CHANGELOG.md's [Unreleased] section while that
-        # section is empty (task d51ae64b: chasing README/CHANGELOG/dist one
+        # section is empty (chasing README/CHANGELOG/dist one
         # kind at a time kept missing a next one, e.g. a shipped
         # ROADMAP.md, so this check drops the per-kind allowlist entirely
         # and adds a coverage invariant so an empty or malformed

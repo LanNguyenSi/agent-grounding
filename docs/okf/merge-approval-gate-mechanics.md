@@ -3,7 +3,7 @@ type: runbook
 title: Merge-approval gate — labels, keys, and when it actually blocks
 description: How the merge-approval Check-Run maps five review:* PR labels (OR'd with a data-driven pure-release exception) to merge_approval booleans, keys evidence by the PR HEAD BRANCH NAME, and blocks only when required by an applicable branch-protection rule or ruleset.
 tags: [merge-approval, review-claim-gate, ci, runbook, labels]
-timestamp: 2026-09-26T06:30:00Z
+timestamp: 2026-09-29T06:29:32Z
 sources:
   - .github/workflows/merge-approval.yml
   - scripts/release-exception.js
@@ -262,7 +262,7 @@ the action falls through to the committed-file auto-detect above, so a
 committed `.agent-grounding/evidence/<task-id>.jsonl` in the PR branch,
 with at least one valid JSONL entry, already satisfies `evidence_logged`
 in CI today, no label required (`merge-approval-rollout.md:79-85#"for the task id."`,
-follow-up task `5ea6d7cf` tracks history).
+a tracker follow-up task tracks history).
 
 ## When it actually blocks (two states — know which is live)
 

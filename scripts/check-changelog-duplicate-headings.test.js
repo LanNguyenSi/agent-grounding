@@ -160,7 +160,7 @@ test('isAllowlisted: false when ALLOWLIST is empty (today\'s real state)', () =>
 });
 
 test('isAllowlisted: an injected allowlist (not the module-level ALLOWLIST) is consulted when passed', () => {
-  const allowlist = [{ file: 'CHANGELOG.md', version: '0.1.0', kind: 'Added', reason: 'pre-existing, task d51ae64b' }];
+  const allowlist = [{ file: 'CHANGELOG.md', version: '0.1.0', kind: 'Added', reason: 'pre-existing' }];
   assert.equal(isAllowlisted('CHANGELOG.md', '0.1.0', 'Added', allowlist), true);
   assert.equal(isAllowlisted('CHANGELOG.md', '0.1.0', 'Changed', allowlist), false);
   assert.equal(isAllowlisted('CHANGELOG.md', '0.1.0', 'Added'), false, 'the module-level ALLOWLIST is untouched');
@@ -274,7 +274,7 @@ test('run: fails loudly on zero CHANGELOG.md files found (vacuous-pass guard)', 
   }
 });
 
-test('run: real repo sanity check -- clean today (no pre-existing duplicate or ambiguous heading survives, task d51ae64b)', () => {
+test('run: real repo sanity check -- clean today (no pre-existing duplicate or ambiguous heading survives)', () => {
   const rootDir = path.join(__dirname, '..');
   assert.equal(run(rootDir), 0);
 });

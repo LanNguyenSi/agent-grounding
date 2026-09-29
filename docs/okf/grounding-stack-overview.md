@@ -3,7 +3,7 @@ type: overview
 title: The grounding stack — where to read, and how releases are split
 description: "Pointer doc: docs/architecture.md diagrams the whole stack (moved out of the root README in the README refresh); this entry adds the release topology (four version-locked packages under one root tag, eight independently-versioned ones) that the diagram does not show."
 tags: [overview, monorepo, releases, versioning, pointer]
-timestamp: 2026-09-27T20:50:34Z
+timestamp: 2026-09-29T06:18:25Z
 sources:
   - docs/architecture.md
   - CHANGELOG.md
@@ -48,7 +48,7 @@ anyone who assumes one monorepo means one version:
 - `@lannguyensi/understanding-gate` (tags `understanding-gate-vX.Y.Z`, published
   by `publish-understanding-gate.yml`, so its cadence never bumps the four
   locked packages)
-- `@lannguyensi/grounding-mcp` (`0.13.0`)
+- `@lannguyensi/grounding-mcp` (`0.14.0`)
 - `@lannguyensi/runtime-reality-checker` (`0.3.2`)
 - `@lannguyensi/review-claim-gate` (`0.1.6`)
 - `@lannguyensi/grounding-sdk`, `@lannguyensi/debug-playbook-engine`,
@@ -59,7 +59,7 @@ Consequences an agent gets wrong without this:
 - Bumping one of the four locked packages means bumping all four; a PR that
   bumps only `claim-gate` breaks the lock invariant.
 - A grounding-mcp change does NOT require a root-tag release, and vice versa.
-- Version numbers across packages carry no relationship: `grounding-mcp@0.13.0`
+- Version numbers across packages carry no relationship: `grounding-mcp@0.14.0`
   is not "newer than" `evidence-ledger@0.6.0` in any meaningful sense.
 
 The root `package.json` is private (`agent-grounding`, workspaces `packages/*`);

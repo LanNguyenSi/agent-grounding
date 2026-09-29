@@ -120,9 +120,9 @@ test('passes when every third-party entry carries resolved + integrity', () => {
 });
 
 test('negative control: flags an entry missing both resolved and integrity', () => {
-  // Reproduces the exact bug class from task eefeb6a9: an entry with a
+  // Reproduces the exact bug class from the lockfile regeneration: an entry with a
   // version but no resolved/integrity, as found in package-lock.json before
-  // the eefeb6a9 regeneration (e.g. the 12
+  // the lockfile regeneration (e.g. the 12
   // packages/*/node_modules/{ansi-styles,chalk,commander} entries).
   const entries = [
     { key: 'packages/domain-router/node_modules/chalk', value: { version: '4.1.2', license: 'MIT' } },
@@ -523,7 +523,7 @@ test('run(): the real repo package-lock.json passes with a plausible number of c
   const lock = JSON.parse(fs.readFileSync(path.join(rootDir, 'package-lock.json'), 'utf8'));
   const entries = collectThirdPartyEntries(lock);
   // Sanity floor, not an exact pin: this repo had 603 third-party entries
-  // at the time this test was written (task eefeb6a9). A loader bug that
+  // at the time this test was written. A loader bug that
   // silently returned near-nothing (e.g. 1 entry) would pass a bare `> 0`
   // check but still be broken — this floor catches that without hardcoding
   // an exact count that would need updating on every dependency change.

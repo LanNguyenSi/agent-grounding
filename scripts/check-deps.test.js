@@ -206,7 +206,7 @@ test('passes when every declared external dependency is imported', () => {
 });
 
 test('negative control: flags a declared dependency that is never imported (phantom dep)', () => {
-  // Reproduces the exact bug class from task ca2aceff: js-yaml declared in
+  // Reproduces the exact bug class from an earlier review: js-yaml declared in
   // dependencies but never imported anywhere under src/.
   const workspaces = [
     {

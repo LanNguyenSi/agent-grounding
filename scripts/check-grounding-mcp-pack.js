@@ -2,7 +2,7 @@
 /**
  * grounding-mcp packed-tarball `--version` check.
  *
- * PR #226 (task ed06b4c8) made `packages/grounding-mcp/src/server.ts` read
+ * PR #226 made `packages/grounding-mcp/src/server.ts` read
  * its served version from the package's own `package.json` at runtime
  * (`new URL('../package.json', import.meta.url)`) instead of a hardcoded
  * `PACKAGE_VERSION` source constant, specifically so a release bump touches
@@ -11,8 +11,8 @@
  * `node dist/server.js --version` from a scratch directory outside the
  * repo) but nothing in CI repeated it, a future change to `files`, `bin`,
  * the build layout, or a bundler step could silently break the relative
- * `../package.json` resolution and nothing would notice until a release
- * (task d341afd5).
+ * `../package.json` resolution and nothing would notice until a release.
+ * That gap is what this check closes.
  *
  * This script repeats that manual verification as an automated check:
  *

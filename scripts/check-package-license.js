@@ -4,7 +4,7 @@
  *
  * Every publishable (`private` !== true) `packages/*` workspace member is
  * supposed to ship the repo's MIT LICENSE text inside its own published
- * tarball (task ae26b625: a copied file per package, not a prepack step, so
+ * tarball (a copied file per package, not a prepack step, so
  * the merge-approval `pure_release` path, which classifies a release PR
  * purely from its changed-file list, see `scripts/release-exception.js`, and
  * the publish workflows stay untouched). Nothing previously asserted that

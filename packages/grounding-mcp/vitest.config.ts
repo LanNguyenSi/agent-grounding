@@ -11,7 +11,7 @@ export default defineConfig({
     // the rationale and tests/setup/harness-home-guard.self.test.ts for
     // the self-test that fails if this entry is removed. The guard also
     // clears an ambient SOLUTION_VERDICT_SIGNING_KEY projection per test
-    // file (task d0daa18a), restored in afterAll.
+    // file, restored in afterAll.
     setupFiles: ['./tests/setup/harness-home-guard.ts'],
     coverage: {
       provider: 'v8',

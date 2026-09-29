@@ -2,6 +2,33 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-29T06:29:32Z, remaining bare tracker ids removed from comments,
+  prose and fixture values outside `packages/*/src`:
+  `.github/workflows/ci.yml` comments, the `scripts/check-*.js` guards and
+  their tests, `packages/grounding-mcp/vitest.config.ts`, the ledger
+  round-trip test's sessionId fixtures, the wrapper dogfood README, the
+  solution-evaluate design doc, and two sentences each in
+  `solution-acceptance-verdict-contract.md` and
+  `merge-approval-gate-mechanics.md`. Every edit kept its file's line count,
+  so no cited range moved. `grounding-stack-overview.md` (sources
+  `.github/workflows/ci.yml` and `scripts/check-grounding-mcp-pack.js`) was
+  re-verified: its citation into the packed-tarball step of the workflow and
+  the described check are unchanged. All three docs re-stamped. Also: tracker
+  ids in `docs/testing/*.md` replaced by behavioural wording (dates and
+  verified facts kept), blank filler comment lines and awkward phrases in
+  `scripts/check-changelog-duplicate-headings.js`,
+  `scripts/check-grounding-mcp-pack.js`, `scripts/check-deps.js` and
+  `.github/workflows/ci.yml` reworded with unchanged line counts, so no cited
+  range moved; `merge-approval-rollout.md` also kept its line count, so the
+  ranges cited into it still resolve. `grounding-stack-overview.md` was
+  corrected: it named `@lannguyensi/grounding-mcp` `0.13.0` in two places
+  while `packages/grounding-mcp/package.json` is `0.14.0`; the other version
+  claims (`runtime-reality-checker` `0.3.2`, `review-claim-gate` `0.1.6`,
+  `evidence-ledger` `0.6.0`) match their package.json. Recorded ledger data
+  under `.agent-grounding/` is untouched. `merge-approval-gate-mechanics.md`
+  (source `docs/testing/merge-approval-rollout.md`) re-verified and both docs
+  re-stamped.
+
 - 2026-09-29, run-internal review labels (finding ids, review-round
   references, decision ids) replaced by behavioural wording or by a
   "grounding-mcp CHANGELOG" section pointer in comments and test titles under
