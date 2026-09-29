@@ -2,15 +2,16 @@
 
 <!-- Add new entries at the top, newest first. -->
 
-- 2026-09-29T06:16:46Z, tracker ids in `docs/testing/*.md` replaced by behavioural wording
-  (dates and verified facts kept), blank filler comment lines and awkward
-  phrases in `scripts/check-changelog-duplicate-headings.js`,
+- 2026-09-29T06:18:25Z, tracker ids in `docs/testing/*.md` replaced by
+  behavioural wording (dates and verified facts kept), blank filler comment
+  lines and awkward phrases in `scripts/check-changelog-duplicate-headings.js`,
   `scripts/check-grounding-mcp-pack.js`, `scripts/check-deps.js` and
   `.github/workflows/ci.yml` reworded with unchanged line counts, so no cited
-  range moved. `grounding-stack-overview.md` was corrected: it named
-  `@lannguyensi/grounding-mcp` `0.13.0` in two places while
-  `packages/grounding-mcp/package.json` is `0.14.0`; the other version claims
-  (`runtime-reality-checker` `0.3.2`, `review-claim-gate` `0.1.6`,
+  range moved; `merge-approval-rollout.md` also kept its line count, so the
+  ranges cited into it still resolve. `grounding-stack-overview.md` was
+  corrected: it named `@lannguyensi/grounding-mcp` `0.13.0` in two places
+  while `packages/grounding-mcp/package.json` is `0.14.0`; the other version
+  claims (`runtime-reality-checker` `0.3.2`, `review-claim-gate` `0.1.6`,
   `evidence-ledger` `0.6.0`) match their package.json. Recorded ledger data
   under `.agent-grounding/` is untouched. `merge-approval-gate-mechanics.md`
   (source `docs/testing/merge-approval-rollout.md`) re-verified and both docs
