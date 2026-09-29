@@ -151,7 +151,7 @@ every marker `writeVerdict` actually puts on disk carries both, unconditionally.
 Since 0.8.0, `writeVerdict` (`solution-verdict.ts:207#"return target;"`) no longer writes the 7 pinned
 fields alone: it calls `signVerdict(resolveGeneratedDir(), verdict)` (`solution-verdict.ts:204#"signVerdict(resolveGeneratedDir()"`, from the
 new `src/verdict-signing.ts`) BEFORE writing, and persists the signed copy. There is no
-unsigned fallback: signing is unconditional (D-002, task 9b6c4beb / grounding-mcp
+unsigned fallback: signing is unconditional (D-002, grounding-mcp
 CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly the
 "producer doesn't sign" universal-deny failure mode this feature exists to close.
 
@@ -166,10 +166,10 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
   `resolveGeneratedDir()` (`verdict-signing.ts:131#"export function resolveGeneratedDir"`) is `<harness-home>/harness.generated`
   (`GENERATED_DIRNAME`, `verdict-signing.ts:46#"= 'harness.generated'"`), so the full path is
   `<harness-home>/harness.generated/.approval-signing.key`.
-- **Env projection (primary since 0.8.0, task d0daa18a)**: when
+- **Env projection (primary since 0.8.0)**: when
   `$SOLUTION_VERDICT_SIGNING_KEY` is set (an absolute path to the key FILE,
   projected by harness at apply time following its `EVIDENCE_LEDGER_DB`
-  pattern; slice H1 of the task-9b6c4beb Option-2 design),
+  pattern; slice H1 of the Option-2 design),
   `resolveSigningKeyPath()` (`SIGNING_KEY_ENV`, end of verdict-signing.ts)
   returns it verbatim and the mirrored resolution below is the FALLBACK for
   non-harness-managed setups. `getOrCreateSigningKey` (`verdict-signing.ts:156-189#"fs.readFileSync(filePath), filePath, created: false"`)
@@ -230,7 +230,7 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
   `packages/grounding-mcp/tests/interop/verdict-signing-interop.test.ts`, describe
   block "signature AND alg both removed, timestamp/source still valid => STILL
   forged:true, not the carve-out", which matches harness' own golden-fixture assertion
-  for its pre-`c7c3f606` 0.3.2/0.5.0 markers. This is the exact mechanism behind the
+  for its 0.3.2/0.5.0 markers from before the consumer wiring. This is the exact mechanism behind the
   CHANGELOG 0.8.0 release-sequencing warning: releasing the harness consumer before
   every producer is on 0.8.0 denies the completion gate universally, not selectively.
 - **Drift guard: the interop suite (`packages/grounding-mcp/tests/interop/`).**
@@ -350,7 +350,7 @@ OW run files under `<repoPath>/.ai/runs/`:
   `TODO`, unknown all block (fail-closed). All tables are parsed (appended second-round
   tables count); a findings section with content but no table yields an explicit format
   blocker (`findingsFormatBlocker`, `ow-run-completeness.ts:1265#"function findingsFormatBlocker"`).
-- **Mixed-state bypass guard** (task `8f173547`): completeness above is not enough —
+- **Mixed-state bypass guard**: completeness above is not enough:
   an operator could flip the acceptance markers to an accepted value without ever
   transferring the reviewer's findings into the table. `scanFindings` (`ow-run-completeness.ts:1163-1220#"  return scan;"`)
   additionally tracks whether the shipped review template's placeholder/legend row
@@ -536,7 +536,7 @@ AND no `.ai/runs/` dir), the `on` knob names both channels in its blocker
   documented threat model. The residual comment at `solution-verdict.ts:26#"wiring follow-up."` (unchanged
   since before 0.8.0) still names "signing... is the harness wiring follow-up" as the
   next step for this specific residual; that step is what this task's producer-side
-  half delivers, paired with the harness CONSUMER wiring (task `c7c3f606`, merge-held
+  half delivers, paired with the harness CONSUMER wiring (a separate task, merge-held
   pending the release sequencing in the grounding-mcp 0.8.0 CHANGELOG entry). The
   ledger-forge hole was closed earlier (marker moved outside the ledger); the
   shell-forge hole is now *harder* (a forger needs the shared key, not just a text

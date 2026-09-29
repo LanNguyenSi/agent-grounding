@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Reproduction script for tracker task 0a8645d2: "ledger_add then
+// Reproduction script for the reported defect: "ledger_add then
 // ledger_summary reports 0 facts".
 //
 // Runs against the BUILT server (dist/server.js) over real stdio
@@ -257,7 +257,7 @@ function factsCount(summaryRaw) {
 // this array, not by prose alone.
 const SESSION_ID_SHAPES = [
   'gs-repro-shape-basic',
-  'fix/0a8645d2-ledger-summary-count', // branch-name-shaped, contains a slash
+  'fix/a1b2c3-ledger-summary-count', // branch-name-shaped, contains a slash
   '  gs-repro-shape-padded  ', // leading/trailing whitespace
   'GS-REPRO-SHAPE-UPPER', // uppercase
   'default',
@@ -331,7 +331,7 @@ async function runConfig({ label, serverPath }) {
     const server = startServer(serverPath, scratchHome);
     await server.init();
     await server.callTool('ledger_add', { sessionId: 'gs-agent-grounding-abc123', type: 'fact', content: 'added under gs-* id', confidence: 'high' });
-    const summary = await server.callTool('ledger_summary', { sessionId: 'fix/0a8645d2-ledger-summary-count' });
+    const summary = await server.callTool('ledger_summary', { sessionId: 'fix/a1b2c3-ledger-summary-count' });
     const counts = factsCount(summary);
     const isZero = counts && counts.facts === 0;
     console.log(`[${label}] [mismatched sessionId, intended] counts.facts=${counts?.facts} -> ${isZero ? 'OK (zero, as documented)' : 'UNEXPECTED NON-ZERO'}`);

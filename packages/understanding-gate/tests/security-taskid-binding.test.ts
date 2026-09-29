@@ -80,7 +80,7 @@ supplies its own default.
 - this test
 
 ### 10. Prior art
-- mirrors the sessionId-forgery regression (task 0a3227fe)
+- mirrors the sessionId-forgery regression
 
 ## Metadata
 taskid: ${VICTIM_TASK_ID}

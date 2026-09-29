@@ -467,14 +467,14 @@ test('brace-expansion resolved-version guard: walks up to the nearest ANCESTOR n
 });
 
 // ── Advisory floor guard (curated CVEs) ────────────────────────────────────
-// Task 03068fb2 / reviewer-MEDIUM from ce7c1d32: the js-yaml floor raise to
+// Reviewer finding on the earlier change: the js-yaml floor raise to
 // ^4.3.1 (GHSA-5p4m-2wfm-xmqj) was purely declarative — nothing in CI caught
 // a revert, because npm audit reads the lockfile (which kept resolving
 // 4.3.1 either way), not the declared range. These tests exercise
 // collectAdvisoryFloorViolations() directly against in-memory fixtures, plus
 // one "current real repo state passes" check.
 
-test('advisory floor guard: reproduces the ce7c1d32 revert — declared range AND root override both flagged', () => {
+test('advisory floor guard: reproduces the js-yaml floor revert -- declared range AND root override both flagged', () => {
   // Exact shape the reviewer's mutation probe used: domain-router's
   // dependency floor reverted to ^4.1.0, root override reverted to ^4.2.0.
   // Both surfaces intersect the closed GHSA-5p4m-2wfm-xmqj range (<4.3.1),

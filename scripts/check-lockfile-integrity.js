@@ -2,7 +2,7 @@
 /**
  * Lockfile integrity check.
  *
- * Task eefeb6a9: on 2026-07-27, 304 of 603 third-party entries in
+ * On 2026-07-27, 304 of 603 third-party entries in
  * package-lock.json carried no `resolved` and/or no `integrity` field
  * (the lockfile had apparently been generated at some point offline or
  * against a mirror). `npm ci` cannot verify the checksum of an entry that
@@ -56,7 +56,7 @@
  * pulled from a source that does not publish either field, such as a git
  * dependency pinned by commit rather than a tarball). Empty today — every
  * third-party entry in this repo's package-lock.json carries both fields as
- * of the eefeb6a9 regeneration. Every entry here needs an explicit `reason`
+ * of the lockfile regeneration. Every entry here needs an explicit `reason`
  * — this is meant to stay small and auditable, not become a blanket
  * suppression list that quietly re-legitimizes the exact drift this script
  * exists to catch. `run()` validates at startup that every entry actually
@@ -294,7 +294,7 @@ function run(rootDir = path.join(__dirname, '..'), allowlist = ALLOWLIST) {
     console.error(
       '\nFix: remove the affected key(s) from package-lock.json\'s "packages" map and run ' +
         '`npm install --package-lock-only` to force npm to re-fetch full registry metadata for ' +
-        'exactly those entries (see task eefeb6a9). Before/after, diff the resolved name@version set ' +
+        'exactly those entries. Before/after, diff the resolved name@version set ' +
         'across the whole lockfile to confirm no dependency version moved. If an entry genuinely ' +
         'cannot carry resolved/integrity, add it to the ALLOWLIST in scripts/check-lockfile-integrity.js ' +
         'with a documented reason instead of leaving it unexplained.',

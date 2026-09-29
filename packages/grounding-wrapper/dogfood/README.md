@@ -1,6 +1,6 @@
 # dogfood/
 
-Captured CLI output from real `grounding-wrapper` invocations. Used as evidence in the hardening PR (agent-tasks/839b51f9) that the CLI produces the output advertised by `README.md`. Not part of the published npm artifact.
+Captured CLI output from real `grounding-wrapper` invocations. Used as evidence in the hardening PR that the CLI produces the output advertised by `README.md`. Not part of the published npm artifact.
 
 Regenerate after CLI changes:
 

@@ -72,7 +72,7 @@ longer holds the lock by the time it runs; the actual guarantee, that any
 `reconciled-unknown` record for an `attemptId` supersedes a later
 `terminal` record for the same `attemptId` regardless of order, is now
 stated as a reader rule every consumer of the log must implement. The
-sibling task (tracker `8c9a99fc`) is re-measured and found landed: PR #212
+sibling task is re-measured and found landed: PR #212
 merged to master as `df9722d` (2026-09-05 20:02:33Z), adding progress-ping
 support this document's section 1 and section 3 now cite instead of
 describing as absent or as a coordination risk; section 10 and brief 02
@@ -104,7 +104,7 @@ and append-only retry history"), which this document is scoped to.
 Out of scope, by the same source document's ordering and by explicit task
 boundary: broader parser/error-hardening (follow-up 3, merged as PR #211,
 master `eefd18fe`, 2026-09-05 18:40Z) and provenance-/snapshot-bound
-result reuse (follow-up 4, owned by tracker tasks `dd7f8b18` / `65f86c2a`).
+result reuse (follow-up 4, owned by separate tracker tasks).
 This document records the interfaces the lifecycle needs from an eventual
 evidence ledger without designing that ledger.
 
@@ -217,7 +217,7 @@ support the latter.
 
 ## 3. What "standard progress" solves, and what it does not
 
-The sibling task (agent-grounding tracker id `8c9a99fc`) proposed adding
+The sibling task (an agent-grounding tracker task) proposed adding
 standard MCP progress
 notifications during `solution_evaluate`, mirroring the pattern already
 shipped in `agent-preflight/src/mcp.ts` (`withProgressPings`,
@@ -226,7 +226,7 @@ shipped in `agent-preflight/src/mcp.ts` (`withProgressPings`,
 Re-measured for round 5, 2026-09-05, with `gh pr view 212
 --json number,title,mergedAt,createdAt,mergeCommit` and `git log --oneline
 -1 df9722d`: that work has LANDED. PR #212, opened 2026-09-05 19:38:29Z
-from branch `feat/8c9a99fc-evaluate-progress` (the same branch a prior
+from that task's feature branch (the same branch a prior
 round of this document found only locally present, never pushed), merged
 2026-09-05 20:02:33Z as master `df9722d`, adding exactly
 `packages/grounding-mcp/src/progress.ts` (`withProgressPings`,
@@ -1459,7 +1459,7 @@ under it, and a lock it cannot acquire is someone else's business.
   running a fresh one for a genuinely new retry, and it never lets a
   caller skip invoking `preflight` altogether. Provenance-/snapshot-bound
   reuse of a COMPLETED result across separate invocations is explicitly
-  out of scope here and stays with tracker tasks `dd7f8b18` / `65f86c2a`;
+  out of scope here and stays with separate tracker tasks;
   this document records only that those tasks will need the `attemptId`
   and attempt-log interfaces described above as inputs, without designing
   their evidence schema.
@@ -1601,7 +1601,7 @@ document. Their real labels, after this round's changes:
    and README updates that teach a solving agent when to poll versus retry,
    plus documentation of the standard-progress ergonomics layer from
    section 3, which has ITSELF now shipped independently of this design
-   (PR #212, master `df9722d`, the sibling task `8c9a99fc`'s own scope,
+   (PR #212, master `df9722d`, the sibling task's own scope,
    merged 2026-09-05 20:02:33Z, ahead of and independent from brief 01).
    Status: **split**, RESCOPED this round: section A (documentation) is
    still implementation-ready. Section B is NO LONGER an implementation

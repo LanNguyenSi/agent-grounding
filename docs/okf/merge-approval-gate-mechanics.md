@@ -262,7 +262,7 @@ the action falls through to the committed-file auto-detect above, so a
 committed `.agent-grounding/evidence/<task-id>.jsonl` in the PR branch,
 with at least one valid JSONL entry, already satisfies `evidence_logged`
 in CI today, no label required (`merge-approval-rollout.md:79-85#"for the task id."`,
-follow-up task `5ea6d7cf` tracks history).
+a tracker follow-up task tracks history).
 
 ## When it actually blocks (two states — know which is live)
 

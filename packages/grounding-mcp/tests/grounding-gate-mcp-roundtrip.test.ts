@@ -1729,7 +1729,7 @@ describe('ledger_summary: session-key regression', () => {
     } as const;
 
     for (const [type, bucket] of Object.entries(typeToBucket)) {
-      const sessionId = `gs-regression-0a8645d2-${type}`;
+      const sessionId = `gs-regression-ledger-count-${type}`;
       await client.callTool({
         name: 'ledger_add',
         arguments: { sessionId, type, content: `regression entry of type ${type}` },
@@ -1757,7 +1757,7 @@ describe('ledger_summary: session-key regression', () => {
     });
     const raw = await client.callTool({
       name: 'ledger_summary',
-      arguments: { sessionId: 'fix/0a8645d2-ledger-summary-count' },
+      arguments: { sessionId: 'fix/a1b2c3-ledger-summary-count' },
     });
     const result = parseToolResult(raw) as { counts: { facts: number } };
     expect(result.counts.facts).toBe(0);
@@ -1807,7 +1807,7 @@ describe('ledger_summary: session-key regression', () => {
 
 describe('ledger_add + ledger_summary: concurrent requests', () => {
   it('a summary sent without awaiting a concurrent add for the same sessionId still sees it', async () => {
-    const sessionId = 'gs-concurrent-0a8645d2';
+    const sessionId = 'gs-concurrent-ledger-count';
     // Fire both calls without awaiting the first: this is what the
     // sequential tests above never exercise. Deterministically triggered
     // the defect 20/20 runs on the pre-fix commit (fe8fa4f), both
@@ -1832,7 +1832,7 @@ describe('ledger_add + ledger_summary: concurrent requests', () => {
     // A single run of the test above cannot rule out a flaky pass;
     // repeats the same shape 20 times, each on its own sessionId.
     for (let i = 0; i < 20; i++) {
-      const sessionId = `gs-concurrent-0a8645d2-${i}`;
+      const sessionId = `gs-concurrent-ledger-count-${i}`;
       const [, summaryRaw] = await Promise.all([
         client.callTool({
           name: 'ledger_add',

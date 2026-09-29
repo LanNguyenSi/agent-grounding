@@ -23,8 +23,8 @@
  *
  * Also flags, separately and NOT allowlist-suppressible, any "## " heading
  * that looks version-shaped (a semver-like `X.Y.Z` token) but matches
- * neither the dated-section shape above nor the Unreleased heading (task
- * d51ae64b): leaving such a heading silently unscanned would let a real
+ * neither the dated-section shape above nor the Unreleased heading:
+ * leaving such a heading silently unscanned would let a real
  * duplicate ### heading inside it hide forever. See DATED_HEADING_RE's
  * docblock for which shapes are recognised vs. rejected.
  *
@@ -40,7 +40,7 @@ const path = require('path');
 
 // Matches "## 0.2.2, 2026-05-03", "## [0.2.2] - 2026-05-03", and the same
 // two shapes with an en dash (\u2013) or em dash (\u2014) in place of the
-// separator comma/hyphen (task d51ae64b). The plain ASCII hyphen was
+// separator comma/hyphen. The plain ASCII hyphen was
 // already matched as a separator before this check widened the class;
 // en dash (\u2013) and em dash (\u2014) were not, so the lazy
 // version-capture group ([^\],]+?) did not stop before one and absorbed
@@ -59,7 +59,7 @@ const UNRELEASED_HEADING_RE = /^##\s*\[?unreleased\]?\s*$/i;
 // matches neither DATED_HEADING_RE nor the Unreleased heading is ambiguous:
 // it looks like a release section, but this check cannot tell which
 // version/date it names, so any duplicate ### heading inside it would go
-// unscanned. Decision (task d51ae64b): fail visibly instead
+// unscanned. Decision: fail visibly instead
 // of silently skipping it -- a release cut can trivially reformat the
 // heading into one of the two supported shapes, whereas a silent skip lets
 // a real duplicate hide forever. Only a parenthesised date
@@ -74,8 +74,8 @@ const SEMVER_TOKEN_RE = /\d+\.\d+\.\d+/;
  * `{ file: repo-relative path, version: the dated heading's version token
  * as captured by DATED_HEADING_RE, kind: the exact trimmed ### heading
  * text, reason: string }`. Empty today: no known pre-existing duplicate
- * survives in this repo (verified when this check was introduced, task
- * d51ae64b).
+ * survives in this repo (verified when this check was introduced).
+ *
  */
 const ALLOWLIST = [];
 
