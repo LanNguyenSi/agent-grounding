@@ -1013,12 +1013,12 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     expect(r.reasons).toEqual([]);
   });
 
-  // --- Round 2 (review finding F1): the shipped kit template's own prose
+  // --- the shipped kit template's own prose
   // `Method:` fallback, since the template does not ship a `method-applied[...]`
   // marker yet. Fixtures below reproduce the template's real text verbatim
   // (packages/orchestrator-workflow/assets/templates/05-review-findings.md).
 
-  it('F1: a template-conformant run (marker + UNFILLED prose legend, no method-applied marker) still fails, named absent (P7: the legend is not a value)', () => {
+  it('a template-conformant run (marker + UNFILLED prose legend, no method-applied marker) still fails, named absent (P7: the legend is not a value)', () => {
     // This is the literal shape of the real `agent-dx-external-prs` run under
     // kit 0.32.0: the template's own placeholder sentence, never filled in.
     makeRun('2026-06-22-run', {
@@ -1042,13 +1042,13 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     ]);
   });
 
-  it('F1: a template-conformant run with the prose Method: line FILLED IN (no method-applied marker) passes via the fallback', () => {
+  it('a template-conformant run with the prose Method: line FILLED IN (no method-applied marker) passes via the fallback', () => {
     // The parenthetical aside must close on the SAME physical `Method:` line
-    // to resolve (round 4, `PROSE_METHOD_TRAILING` requires a balanced
-    // aside): a real Method: line does not wrap its aside across markdown
-    // lines the way this fixture did before round 4 (that shape, an aside
-    // never closed on its own line, is now malformed -- see the round-4
-    // fixtures below).
+    // to resolve (`PROSE_METHOD_TRAILING` requires a balanced aside): a real
+    // Method: line does not wrap its aside across markdown lines the way
+    // this fixture originally did (that shape, an aside never closed on
+    // its own line, is now malformed -- see the fixtures
+    // below).
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(
@@ -1065,7 +1065,7 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     expect(r.reasons).toEqual([]);
   });
 
-  it('F1: a filled prose Method: line recording a WEAKER value than declared still fails, named weaker', () => {
+  it('a filled prose Method: line recording a WEAKER value than declared still fails, named weaker', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(
@@ -1080,7 +1080,7 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     ]);
   });
 
-  it('F1: a Method: line naming none of the three words is a malformed prose record, named', () => {
+  it('a Method: line naming none of the three words is a malformed prose record, named', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(
@@ -1095,7 +1095,7 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     ]);
   });
 
-  it('F1: an explicit method-applied marker and a disagreeing prose Method: line is a named conflict, neither wins silently', () => {
+  it('an explicit method-applied marker and a disagreeing prose Method: line is a named conflict, neither wins silently', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(
@@ -1116,7 +1116,7 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     ]);
   });
 
-  it('F1: an orphan method-applied marker with no matching declared round is silently ignored (documented)', () => {
+  it('an orphan method-applied marker with no matching declared round is silently ignored (documented)', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(baseOpts(['<!-- method-applied[T-005] = adversarial -->', ''])),
@@ -1126,7 +1126,7 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     expect(r.reasons).toEqual([]);
   });
 
-  it('F1 (missing_tests): a key-spelling drift between review-method and method-applied names the recorded keys, not just "no record"', () => {
+  it('a key-spelling drift between review-method and method-applied names the recorded keys, not just "no record"', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(
@@ -1143,9 +1143,9 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     ]);
   });
 
-  // --- Round 2 (review finding F2): quoted markers must not become live declarations.
+  // --- quoted markers must not become live declarations.
 
-  it('F2: a review-method marker inside a fenced code block is quoted, not a live declaration', () => {
+  it('a review-method marker inside a fenced code block is quoted, not a live declaration', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(
@@ -1157,7 +1157,7 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     expect(r.reasons).toEqual([]);
   });
 
-  it('F2: a review-method marker inside inline code (e.g. quoted in a findings-table cell) is quoted, not a live declaration', () => {
+  it('a review-method marker inside inline code (e.g. quoted in a findings-table cell) is quoted, not a live declaration', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(
@@ -1169,9 +1169,9 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     expect(r.reasons).toEqual([]);
   });
 
-  // --- Round 2 (review finding F3): duplicate markers for one round.
+  // --- duplicate markers for one round.
 
-  it('F3: identical duplicate review-method markers for one round are tolerated', () => {
+  it('identical duplicate review-method markers for one round are tolerated', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(
@@ -1188,7 +1188,7 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     expect(r.reasons).toEqual([]);
   });
 
-  it('F3: conflicting duplicate review-method markers for one round is a named blocker (declared-first ordering)', () => {
+  it('conflicting duplicate review-method markers for one round is a named blocker (declared-first ordering)', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(
@@ -1207,7 +1207,7 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     ]);
   });
 
-  it('F3: conflicting duplicate review-method markers, values in the OPPOSITE order, still names both and blocks', () => {
+  it('conflicting duplicate review-method markers, values in the OPPOSITE order, still names both and blocks', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(
@@ -1226,7 +1226,7 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     ]);
   });
 
-  it('F3: identical duplicate method-applied markers for one round are tolerated', () => {
+  it('identical duplicate method-applied markers for one round are tolerated', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(
@@ -1243,7 +1243,7 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     expect(r.reasons).toEqual([]);
   });
 
-  it('F3: conflicting duplicate method-applied markers for one round is a named blocker', () => {
+  it('conflicting duplicate method-applied markers for one round is a named blocker', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(
@@ -1275,9 +1275,9 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     expect(r.reasons).toHaveLength(2);
   });
 
-  // --- Round 2 (review finding F4): a wrapper-less marker line must not be invisible.
+  // --- a wrapper-less marker line must not be invisible.
 
-  it('F4: a wrapper-less review-method[R1] = ... line (no HTML comment) is a named malformed marker, not invisible', () => {
+  it('a wrapper-less review-method[<round>] = ... line (no HTML comment) is a named malformed marker, not invisible', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(baseOpts(['review-method[T-005] = adversarial', ''])),
@@ -1290,7 +1290,7 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     ]);
   });
 
-  it('F4: a wrapper-less method-applied[R1] = ... line (no HTML comment) is a named malformed marker, not invisible', () => {
+  it('a wrapper-less method-applied[<round>] = ... line (no HTML comment) is a named malformed marker, not invisible', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(
@@ -1308,9 +1308,9 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     ).toBe(true);
   });
 
-  // --- Round 2 (review finding F5): per-round reasons are bounded, not unbounded.
+  // --- per-round reasons are bounded, not unbounded.
 
-  it('F5: more than 5 absent rounds collapse into ONE bounded reason (joinBounded, "+N more")', () => {
+  it('more than 5 absent rounds collapse into ONE bounded reason (joinBounded, "+N more")', () => {
     const methodLines: string[] = [];
     for (let i = 1; i <= 7; i++) methodLines.push(`<!-- review-method[T-00${i}] = adversarial -->`);
     methodLines.push('');
@@ -1325,12 +1325,12 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     expect(r.reasons[0]).toContain('(+2 more)');
   });
 
-  // --- Round 3 (review finding F1): a Method: line whose first token merely
+  // --- a Method: line whose first token merely
   // happens to be one of the three words, but is actually the start of a
   // qualified, multi-round sentence, is a malformed record, not a silent
   // first-word read.
 
-  it("F1 (round 3): a qualified Method: sentence naming a different round's exception is a malformed prose record, not read as its first word", () => {
+  it("a qualified Method: sentence naming a different round's exception is a malformed prose record, not read as its first word", () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(
@@ -1349,7 +1349,7 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     ]);
   });
 
-  it('F1 (round 3): a qualified multi-round shape (a qualifying clause after the value, then a parenthetical) is malformed, not read as its first token', () => {
+  it('a qualified multi-round shape (a qualifying clause after the value, then a parenthetical) is malformed, not read as its first token', () => {
     // Shape seen in real review-findings summary lines: the first token,
     // `rigorous`, is not a record of the immediately-preceding round; it is
     // the start of a sentence about OTHER rounds' exceptions.
@@ -1371,7 +1371,7 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     ]);
   });
 
-  it('F1 (round 3): a value token followed only by end-of-sentence punctuation still resolves', () => {
+  it('a value token followed only by end-of-sentence punctuation still resolves', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(
@@ -1383,7 +1383,7 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     expect(r.reasons).toEqual([]);
   });
 
-  it('F1 (round 3): the template shape, a value followed by a balanced parenthetical aside and a full stop, still resolves', () => {
+  it('the template shape, a value followed by a balanced parenthetical aside and a full stop, still resolves', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(
@@ -1399,8 +1399,8 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     expect(r.reasons).toEqual([]);
   });
 
-  it('F1 (round 4): text appended AFTER a closed parenthetical aside is a malformed record, not silently accepted', () => {
-    // Round 3's `\(.*` trailing half accepted anything after an opening paren
+  it('text appended AFTER a closed parenthetical aside is a malformed record, not silently accepted', () => {
+    // An earlier `\(.*` trailing half accepted anything after an opening paren
     // verbatim, so `Method: adversarial (x) but actually normal` wrongly
     // resolved to `adversarial`. The aside now must be the whole remainder.
     makeRun('2026-06-22-run', {
@@ -1421,8 +1421,8 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     ]);
   });
 
-  it('F1 (round 4): an unterminated parenthetical aside is a malformed record, not silently accepted', () => {
-    // Round 3's `\(.*` trailing half also accepted an aside that never
+  it('an unterminated parenthetical aside is a malformed record, not silently accepted', () => {
+    // An earlier `\(.*` trailing half also accepted an aside that never
     // closes at all (`Method: adversarial (`).
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
@@ -1438,13 +1438,13 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     ]);
   });
 
-  // --- Round 3 (review finding F2): the prose fallback must not associate
+  // --- the prose fallback must not associate
   // one packed line's Method: summary with every round declared on it.
 
-  it('F2 (round 3): three review-method declarations packed on one line, followed by ONE Method: line, resolve NONE of them (named absent, not cleared)', () => {
+  it('three review-method declarations packed on one line, followed by ONE Method: line, resolve NONE of them (named absent, not cleared)', () => {
     // Shape seen in real review-findings files: three
     // declarations packed onto one line, one Method: summary line
-    // immediately after. Before round 3, all three read that one line as
+    // immediately after. Previously all three read that one line as
     // their own record and passed; now none do.
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
@@ -1467,7 +1467,7 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     ]);
   });
 
-  it('F2 (round 3): a SINGLE review-method declaration on its own line still resolves via the following Method: line', () => {
+  it('a SINGLE review-method declaration on its own line still resolves via the following Method: line', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(
@@ -1479,11 +1479,11 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     expect(r.reasons).toEqual([]);
   });
 
-  it('F2 (round 4): the SAME round declared twice in agreement on one shared line still resolves (duplicates are tolerated, not a multi-round line)', () => {
-    // Round 3 counted raw occurrences per line, so an agreeing same-round
-    // duplicate on one line wrongly tripped the multi-round "several rounds
-    // packed onto one line" path and fell through to absent, even though
-    // review finding F3 documents such duplicates as tolerated.
+  it('the SAME round declared twice in agreement on one shared line still resolves (duplicates are tolerated, not a multi-round line)', () => {
+    // Counting raw occurrences per line would let an agreeing same-round
+    // duplicate on one line wrongly trip the multi-round "several rounds
+    // packed onto one line" path and fall through to absent, even though
+    // such duplicates are documented as tolerated.
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(
@@ -1499,7 +1499,7 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     expect(r.reasons).toEqual([]);
   });
 
-  it('F2: several stacked single-occurrence declaration lines followed by a summary line NOT starting with `Method:` all fall through to absent (a real shipped review-findings shape)', () => {
+  it('several stacked single-occurrence declaration lines followed by a summary line NOT starting with `Method:` all fall through to absent (a real shipped review-findings shape)', () => {
     // Shape seen in a real shipped run's 05-review-findings.md:
     // three declarations each on their OWN line (so each is single-occurrence),
     // followed by ONE summary line reading `Method round 1: adversarial (...)`
@@ -1527,7 +1527,7 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     ]);
   });
 
-  it('F2 (round 4): two DISTINCT rounds declared on one shared line still resolve NEITHER via the following Method: line', () => {
+  it('two DISTINCT rounds declared on one shared line still resolve NEITHER via the following Method: line', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(
@@ -1548,11 +1548,11 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
     ]);
   });
 
-  // --- Round 3 (review finding F4): a malformed/wrapper-less method-applied
+  // --- a malformed/wrapper-less method-applied
   // mention with NO review-method marker anywhere in the file still blocks;
   // the file is "unaffected" only with zero marker-shaped mentions at all.
 
-  it('F4 (round 3): a wrapper-less method-applied[...] line with NO review-method marker anywhere still blocks (not silently "unaffected")', () => {
+  it('a wrapper-less method-applied[...] line with NO review-method marker anywhere still blocks (not silently "unaffected")', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
       review: reviewDocNoFindings(baseOpts(['method-applied[T-005] = adversarial', ''])),
@@ -1645,7 +1645,7 @@ describe('readOwRunCompleteness — CRLF fixtures (Fix 4)', () => {
     ).toBe(true);
   });
 
-  it('F4 (round 3): the review-method axis (marker plus Method: prose fallback) parses under CRLF line endings', () => {
+  it('the review-method axis (marker plus Method: prose fallback) parses under CRLF line endings', () => {
     const handoff = [
       '# Operator Handoff',
       '',
@@ -2159,18 +2159,18 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     expect(r.runBase).toBe('aaaaaaa');
   });
 
-  it('a prose line quoting a concrete keyed marker inside a single backtick span is exempt (D-027 quotation)', () => {
+  it('a prose line quoting a concrete keyed marker inside a single backtick span is exempt (quotation)', () => {
     // The quoted key is deliberately the ROOT BASENAME itself and the quoted
     // value a concrete sha: an un-anchored strict grammar would match
     // mid-line and wrongly select 'aaaaaaa' instead of falling through to the
     // unkeyed marker. A placeholder-shaped key would not discriminate here —
     // the placeholder filter would drop it either way. That SELECTION
     // behavior is unaffected either way: the quoting line still isn't a
-    // marker, so 'bbbbbbb' still wins. Round 1 additionally blocked the
-    // quoting line as an attempted marker embedded in prose. Round 2's D-027
-    // (review finding 2, measured against the real corpus: this exact
-    // pattern self-blocked two real run directories that only ever quoted
-    // the marker syntax) narrows that: the whole phrase here sits INSIDE one
+    // marker, so 'bbbbbbb' still wins. The quoting line used to be blocked
+    // as an attempted marker embedded in prose; the quotation exemption
+    // (grounding-mcp CHANGELOG 0.10.0, measured against the real corpus:
+    // this exact pattern self-blocked two real run directories that only
+    // ever quoted the marker syntax) narrows that: the whole phrase here sits INSIDE one
     // backtick pair that opens and closes on this same line, so it reads as
     // a quotation, not an attempted marker, and does not block.
     const root = namedRoot('alpha');
@@ -2194,7 +2194,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
   });
 
   it('the same quoted marker also naming both tokens again OUTSIDE the backticks still blocks (negative control)', () => {
-    // Negative control for D-027 (review finding 2): a code span on the line
+    // Negative control for the quotation exemption: a code span on the line
     // does not blanket-exempt the whole line; only the phrase occurrence
     // that is actually inside it. A second, unquoted mention of both tokens
     // on the same line still trips the phrase check.
@@ -2240,7 +2240,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     expect(r.runBaseKind).toBe('malformed');
     expect(r.runBase).toBeNull();
     expect(r.complete).toBe(false);
-    // Phrase-only hit (review finding 5): no `run-base[` bracket syntax was
+    // Phrase-only hit: no `run-base[` bracket syntax was
     // ever attempted, so this must NOT get the keyed-marker-shape hint:
     // that hint names a fix ('run-base[<key>] = <sha>') this line never
     // tried and would mislead an operator.
@@ -2429,13 +2429,13 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
   });
 
   it('keyed marker line without the colon blocks as malformed (fail-closed follow-up)', () => {
-    // This is the exact residual the loose net left standing (review round
-    // 4): the loose net requires the literal colon, so a colon-less attempt
+    // This is the exact residual the loose net left standing: the loose net requires the literal
+    // colon, so a colon-less attempt
     // was markerless (fail-open, legacy heuristic). The follow-up phrase
     // check closes it: the line still names both marker tokens, so it now
     // blocks instead of falling through. It is caught by the phrase net, not
     // the keyed loose net (which requires the literal colon), so it gets the
-    // phrase-only reason (review finding 5), not the keyed-shape hint.
+    // phrase-only reason, not the keyed-shape hint.
     const root = namedRoot('alpha');
     const goal = ['# Goal', '<!-- solution-acceptance run-base[alpha] = aaaaaaa -->', ''].join(
       '\n',
@@ -2508,7 +2508,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     // marker, so it now ALSO blocks as an attempted marker with leading
     // text. Caught by the phrase net (the keyed loose net is anchored at
     // the line start and "note " breaks that anchor), so it gets the
-    // phrase-only reason (review finding 5), not the keyed-shape hint.
+    // phrase-only reason, not the keyed-shape hint.
     const root = namedRoot('alpha');
     const goal = [
       '# Goal',
@@ -2556,8 +2556,8 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     // read as markerless (fail-open). The fail-closed phrase check closes
     // this: the line still names both marker tokens, so it blocks instead.
     // Caught by the phrase net (the bullet breaks the keyed loose net's
-    // line-start anchor), so it gets the phrase-only reason (review finding
-    // 5), not the keyed-shape hint.
+    // line-start anchor), so it gets the phrase-only reason, not the
+    // keyed-shape hint.
     const root = namedRoot('alpha');
     const goal = ['# Goal', '- <!-- solution-acceptance: run-base[alpha] = aaaaaaa -->', ''].join(
       '\n',
@@ -2684,9 +2684,9 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     expect(r.reasons).toEqual([]);
   });
 
-  it('a phrase-carrying attempt inside a fenced code block is exempt (D-027 quotation)', () => {
-    // Round 1's choice, "a fence is not an excuse for an unreadable marker",
-    // is amended by round 2's D-027 (review finding 2): a fenced code block
+  it('a phrase-carrying attempt inside a fenced code block is exempt (quotation)', () => {
+    // The earlier choice, "a fence is not an excuse for an unreadable marker",
+    // was amended (grounding-mcp CHANGELOG 0.10.0): a fenced code block
     // reads as a quotation of the marker syntax, not an attempted marker, so
     // it no longer trips the phrase check. Nothing else in this goal file
     // resolves a run-base marker, so the run falls through to the ordinary
@@ -2738,7 +2738,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
   });
 
   it('a tilde-delimited fence around a phrase-carrying bullet is exempt', () => {
-    // Round 3 mutation probe (i): disabling the fence branch of
+    // Disabling the fence branch of
     // stripQuotedMarkdownText turns this red (the bullet would then block).
     const goal = ['# Goal', '~~~', '- <!-- solution-acceptance: run-base[alpha] = aaaaaaa -->', '~~~', ''].join(
       '\n',
@@ -2803,7 +2803,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
   });
 
   it('a tilde run inside a backtick fence does not close it: the bullet after it is still exempt', () => {
-    // Round 3 mutation probe (iii): dropping the delimiter char/length
+    // Dropping the delimiter char/length
     // matching (falling back to "any fence marker toggles") would make the
     // inner '~~~' close the outer '```' fence, leaving the bullet unexempt
     // and this test red.
@@ -2851,7 +2851,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
   });
 
   it('stray backticks separated from the bullet by blank lines do not pair across the paragraph break (blocks)', () => {
-    // Round 3 mutation probe (ii): restoring the whole-file, paragraph-
+    // Restoring the whole-file, paragraph-
     // unaware span regex would pair these two stray backticks across the
     // blank lines and blank out the bullet's phrase, turning this red.
     const goal = [
@@ -2939,7 +2939,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
   it('a fenced well-formed keyed marker is still selected as the binding (documented asymmetry, pinned)', () => {
     // Only the phrase net is quoting-aware: a genuine well-formed keyed
     // marker attempt is read the same way whether or not it sits inside a
-    // fence. This pins that residual behaviour, unchanged from before D-027.
+    // fence. This pins that residual behaviour, unchanged from before the quotation exemption.
     const root = namedRoot('alpha');
     const goal = [
       '# Goal',
@@ -3144,7 +3144,7 @@ describe('readOwRunCompleteness — worktree-local run pointer', () => {
     const wt1Gitdir = path.join(mainRoot, '.git', 'worktrees', 'wt1');
     fs.mkdirSync(wt1Gitdir, { recursive: true });
     // Present, but resolves to a basename that is NOT `.git` — must fall
-    // through to the gitdir-path fallback instead of giving up (F6).
+    // through to the gitdir-path fallback instead of giving up.
     fs.writeFileSync(path.join(wt1Gitdir, 'commondir'), 'not-a-git-dir', 'utf8');
     fs.mkdirSync(wt1Root, { recursive: true });
     fs.writeFileSync(path.join(wt1Root, '.git'), `gitdir: ${wt1Gitdir}\n`, 'utf8');

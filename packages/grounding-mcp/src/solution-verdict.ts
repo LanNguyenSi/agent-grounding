@@ -75,7 +75,7 @@ export interface Verdict {
   source: string;
   /**
    * Signature algorithm tag; set by `writeVerdict`, which always signs
-   * (see `verdict-signing.ts`, D-002, grounding-mcp CHANGELOG 0.8.0: no
+   * (see `verdict-signing.ts`, grounding-mcp CHANGELOG 0.8.0: no
    * fail-open "unsigned when no key" path — that would
    * reproduce the exact producer-doesn't-sign universal-deny failure this
    * feature closes). Optional on the type only
@@ -189,7 +189,7 @@ export async function getHeadSha(repoPath: string): Promise<string | null> {
  * Write (or overwrite) the verdict marker. Always signs the marker first
  * (mirrors the harness consumer's `verifyVerdictSignature`, see
  * `verdict-signing.ts`): the on-disk marker carries `alg` + `signature` in
- * addition to the 7 pinned fields. No unsigned fallback (D-002) — signing
+ * addition to the 7 pinned fields. No unsigned fallback: signing
  * always requires (and, on first use, creates) the shared harness signing
  * key, so this can fail if the key file cannot be read or written. Returns
  * the marker's path.

@@ -212,7 +212,7 @@ describe("defaultEvidenceFilePath", () => {
     );
   });
 
-  // Audit H1: taskId is caller-controlled (Action wires it to the PR
+  // taskId is caller-controlled (Action wires it to the PR
   // branch name; consumers may wire it to other untrusted fields), so a
   // traversal must not escape the evidence dir. The guard rejects rather
   // than silently reading an out-of-tree file.
@@ -273,7 +273,7 @@ describe("defaultEvidenceFilePath", () => {
     );
   });
 
-  // Audit H1 follow-up, residual #1: `resolve()` used for containment is
+  // Follow-up residual of the traversal guard: `resolve()` used for containment is
   // lexical only and does not follow symlinks. A PR author who controls
   // the committed tree could commit a symlink *inside* the evidence dir
   // that points outside it, then pick a taskId that walks through it.

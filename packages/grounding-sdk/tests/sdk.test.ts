@@ -173,7 +173,7 @@ describe("deriveContextFromSession", () => {
     expect(ctx.process_checked).toBe(false);
   });
 
-  it("collapses process/config/health onto the single runtime-inspection phase (M2)", () => {
+  it("collapses process/config/health onto the single runtime-inspection phase", () => {
     // Documented intentional mapping: the phase model has ONE runtime
     // phase, so the three runtime signals move together. Pinning this keeps
     // the coarse contract honest and would catch an accidental divergence

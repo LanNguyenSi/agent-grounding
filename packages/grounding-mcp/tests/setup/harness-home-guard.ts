@@ -1,16 +1,16 @@
-// Package-wide regression guard (F1, review round 1; hardened in round 2,
-// R2-M2, grounding-mcp CHANGELOG 0.8.0): a vitest
+// Package-wide regression guard (grounding-mcp CHANGELOG 0.8.0): a
+// vitest
 // `setupFiles` entry that pins HARNESS_HOME to a per-test-file tempdir
 // UNCONDITIONALLY, at module top-level (not inside `beforeAll`), so a test
 // file that forgets its own HARNESS_HOME isolation can never fall through
 // `resolveHarnessHome()` (verdict-signing.ts) to the host's real ~/.harness
 // (or ~/.claude fallback) and read/write the real signing key. This closed
-// exactly the leak the round-1 reviewer found in
+// exactly the leak found in
 // grounding-gate-mcp-roundtrip.test.ts (SOLUTION_VERDICT_DIR was isolated,
 // HARNESS_HOME was not, so `writeVerdict`'s unconditional signing touched
 // the real home).
 //
-// R2-M2 (round 2 finding): the original version only set HARNESS_HOME
+// Hardening: the original version only set HARNESS_HOME
 // inside `beforeAll` and only when it was UNSET at that point
 // (`if (!hadOwnHarnessHome)`). That was inert in exactly the case it exists
 // to cover: an AMBIENT HARNESS_HOME already set in the shell environment
@@ -30,7 +30,7 @@
 // the case this guard must override, not defer to. Note that the opt-out
 // deliberately reddens the guard's self-test
 // (harness-home-guard.self.test.ts): disabling the net is visible, never
-// silent (R3-L3).
+// silent.
 //
 // Deliberately a per-file DEFAULT, not a fight: this only sets HARNESS_HOME
 // once, at this setup file's own module-evaluation time (vitest re-evaluates
@@ -44,7 +44,7 @@
 // guard already put in place instead of `undefined` — including
 // verdict-signing.test.ts's "userHome tiers" tests, which intentionally
 // delete HARNESS_HOME mid-file to exercise `resolveHarnessHome`'s tiers
-// below the env override via its injectable `userHome` parameter (D-005).
+// below the env override via its injectable `userHome` parameter (grounding-mcp CHANGELOG 0.8.0).
 // Those tests keep working unchanged: their own outer beforeEach/afterEach
 // save/restore whatever HARNESS_HOME value this guard left in place (a
 // tempdir instead of undefined), not the real host home either way.

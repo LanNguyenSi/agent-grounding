@@ -118,8 +118,8 @@ export function defaultEvidenceFilePath(taskId: string, cwd = process.cwd()): st
       `task id '${taskId}' escapes the evidence directory (resolved to ${resolvedFull})`,
     );
   }
-  // Defense-in-depth backstop #2: symlink-aware containment (audit H1
-  // residual). `resolve()` above is purely lexical, it does NOT follow
+  // Defense-in-depth backstop #2: symlink-aware containment (a
+  // residual of the taskId traversal guard). `resolve()` above is purely lexical, it does NOT follow
   // symlinks. A PR author controls both the committed tree and the taskId
   // (it's wired to the branch name), so they could commit a symlink
   // *inside* the evidence dir that points outside it (e.g.

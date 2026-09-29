@@ -427,7 +427,7 @@ describe("handleStop: fast_confirm bullet routing", () => {
   });
 });
 
-describe("handleStop: never silent for a report-marker message (discovery C1)", () => {
+describe("handleStop: never silent for a report-marker message", () => {
   // The incident shape: a `## Understanding Report` marker (so REPORT_MARKER_RE
   // matches) with sections written as bold labels rather than `##` headings.
   const INCIDENT_MARKDOWN = `## Understanding Report

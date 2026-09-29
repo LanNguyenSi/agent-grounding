@@ -1,15 +1,15 @@
 // Producer-side signing mirror of harness' HMAC marker signing
 // (verdict-signing.ts). All tests isolate HARNESS_HOME to a tempdir so the
 // signing-key resolution + getOrCreate never touches the host's real
-// ~/.harness (or ~/.claude fallback) — see D-001 (independent mirror, no
-// package dependency) / D-002 (unconditional signing, no unsigned
-// fallback), grounding-mcp CHANGELOG 0.8.0.
+// ~/.harness (or ~/.claude fallback). The signer is an independent mirror
+// with no package dependency on harness, and signing is unconditional with
+// no unsigned fallback; see grounding-mcp CHANGELOG 0.8.0.
 //
 // The `resolveHarnessHome` precedence tiers beyond the HARNESS_HOME env
 // override (~/.harness-exists, ~/.claude-legacy, default-create) mirror
 // harness `resolveHomeDir` and are exercised below via `resolveHarnessHome`'s
-// injectable `userHome` parameter (D-005, same task/CHANGELOG anchor: review
-// found the deeper tiers only transitively tested). A
+// injectable `userHome` parameter (the deeper tiers were previously only
+// transitively tested; see grounding-mcp CHANGELOG 0.8.0). A
 // `vi.spyOn(os, 'homedir')` was tried FIRST and confirmed NOT to redirect
 // the call inside verdict-signing.ts under this package's ESM/vitest setup
 // (the resolved path came back as the REAL host home dir, which on this
@@ -27,7 +27,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-// F4b (review round 1): hoisted, test-armed mocks of `node:fs.readFileSync`
+// Hoisted, test-armed mocks of `node:fs.readFileSync`
 // / `node:fs.writeFileSync` used ONLY by the two "wx-write catch block"
 // tests below, to exercise BOTH branches of `getOrCreateSigningKey`'s
 // exclusive-create failure handling (verdict-signing.ts's wx-write catch
@@ -193,7 +193,7 @@ describe('resolveHarnessHome', () => {
     }
   });
 
-  describe('userHome tiers (D-005: HARNESS_HOME env unset, isolated via the injectable userHome override)', () => {
+  describe('userHome tiers (HARNESS_HOME env unset, isolated via the injectable userHome override)', () => {
     let userHome: string;
 
     beforeEach(() => {
@@ -409,7 +409,7 @@ describe('writeVerdict (solution-verdict.ts wiring)', () => {
   });
 });
 
-describe('writeVerdict fail-closed on a signing failure (F4a, D-002 pinned directly)', () => {
+describe('writeVerdict fail-closed on a signing failure (no unsigned fallback, pinned directly)', () => {
   it('a directory sitting at the key file path makes writeVerdict throw and writes NO marker file', () => {
     const verdictDirTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'verdict-signing-failclosed-'));
     const savedVerdictDir = process.env.SOLUTION_VERDICT_DIR;
@@ -425,7 +425,7 @@ describe('writeVerdict fail-closed on a signing failure (F4a, D-002 pinned direc
 
       const verdict = makeVerdict({ id: 'fail-closed-task' });
       expect(() => writeVerdict(verdict)).toThrow();
-      // D-002 fail-closed, pinned directly: no marker file at all — not a
+      // Fail-closed, pinned directly: no marker file at all, not a
       // partially-written or unsigned one.
       expect(fs.existsSync(verdictPath(verdict.id))).toBe(false);
     } finally {
@@ -436,7 +436,7 @@ describe('writeVerdict fail-closed on a signing failure (F4a, D-002 pinned direc
   });
 });
 
-describe('getOrCreateSigningKey exclusive-create (wx) failure handling (F4b)', () => {
+describe('getOrCreateSigningKey exclusive-create (wx) failure handling', () => {
   it('EEXIST create-race: a key concurrently created between the miss-read and the wx-write is read back, not clobbered — both converge on the SAME key', () => {
     const generatedDir = path.join(tmpHome, GENERATED_DIRNAME);
     const filePath = signingKeyPathFor(generatedDir);

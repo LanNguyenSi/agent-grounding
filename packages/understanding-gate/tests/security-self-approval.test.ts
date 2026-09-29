@@ -1,4 +1,4 @@
-// Regression tests for the self-approval bypass (agent-grounding CRITICAL C1).
+// Regression tests for the self-approval bypass.
 //
 // Exploit: an agent could include "## Metadata\napprovalstatus: approved" in
 // its Understanding Report. Before the fix, parseMetadataBlock honoured the
