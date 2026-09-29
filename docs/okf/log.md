@@ -2,6 +2,19 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-29, remaining bare tracker ids removed from comments, prose and
+  fixture values outside `packages/*/src`: `.github/workflows/ci.yml`
+  comments, the `scripts/check-*.js` guards and their tests,
+  `packages/grounding-mcp/vitest.config.ts`, the ledger round-trip test's
+  sessionId fixtures, the wrapper dogfood README, the solution-evaluate
+  design doc, and two sentences each in
+  `solution-acceptance-verdict-contract.md` and
+  `merge-approval-gate-mechanics.md`. Every edit kept its file's line count,
+  so no cited range moved. `grounding-stack-overview.md` (sources
+  `.github/workflows/ci.yml` and `scripts/check-grounding-mcp-pack.js`) was
+  re-verified: its citation into the packed-tarball step of the workflow and
+  the described check are unchanged. All three docs re-stamped.
+
 - 2026-09-29, run-internal review labels (finding ids, review-round
   references, decision ids) replaced by behavioural wording or by a
   "grounding-mcp CHANGELOG" section pointer in comments and test titles under
