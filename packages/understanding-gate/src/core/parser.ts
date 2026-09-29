@@ -484,7 +484,7 @@ const FENCE_RE = /^\s{0,3}(`{3,}|~{3,})/;
 // optional colon inside or outside the closing `**` and nothing else after
 // it. A line like `**Note:** some text` does NOT match because the trailing
 // content fails `\s*$`. Used so an agent that writes sections as bold labels
-// instead of `## Heading` still parses (discovery finding C1).
+// instead of `## Heading` still parses.
 const BOLD_LABEL_RE = /^\s{0,3}\*\*([^*]+?):?\*\*:?\s*$/;
 // All known section aliases (including the metadata block), lower-cased to
 // match normalizeTitle output. A bold-label line is promoted to a section

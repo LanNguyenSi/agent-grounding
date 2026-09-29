@@ -337,7 +337,7 @@ describe("parseReport: kind-mismatch diagnosis", () => {
     );
   });
 
-  it("bold-label section header (discovery C1, commit 42637c8) with a prose body still lands in missing AND malformedSections", () => {
+  it("bold-label section header (commit 42637c8) with a prose body still lands in missing AND malformedSections", () => {
     // Alias-promotion (bold **Label:** lines promoted to section headers)
     // and the kind-mismatch diagnosis are independent mechanisms; this
     // pins that they compose correctly -- a bold-label-headed section with
@@ -854,7 +854,7 @@ describe("parseReport: fast_confirm bullet parsing", () => {
   });
 });
 
-// Discovery finding C1: an agent ended a turn with a complete report whose
+// Regression: an agent ended a turn with a complete report whose
 // sections were bold labels (`**Derived Todos:**`) rather than `##` headings.
 // The parser must accept those as section headers so the report is saved
 // instead of dropped as "missing sections".
@@ -897,7 +897,7 @@ The parser returns a typed object validated against the schema.
 - searched npm and GitHub, found nothing equivalent, building new
 `;
 
-describe("parseReport: bold-label section headers (discovery C1)", () => {
+describe("parseReport: bold-label section headers", () => {
   it("accepts a full report whose sections are bold labels", () => {
     const r = parseReport(BOLD_LABEL_MARKDOWN, {
       taskId: "bold-1",

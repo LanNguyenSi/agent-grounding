@@ -169,7 +169,7 @@ export function deriveContextFromSession(
   // process check from a config or health check. A guardrail like
   // `no-token-claim-before-config-check` is therefore satisfied by any
   // completed runtime inspection. This is a deliberate coarse mapping, not
-  // an oversight (audit finding M2): a true per-check signal would require
+  // an oversight: a true per-check signal would require
   // splitting the runtime phase across grounding-wrapper + this SDK + the
   // grounding-mcp copy, tracked as a separate follow-up. Keep these three
   // lines in sync with grounding-mcp/src/derive-context.ts.

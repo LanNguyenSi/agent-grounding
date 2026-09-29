@@ -284,7 +284,7 @@ describe('interop: a real writeVerdict marker vs the vendored harness verifier',
 
   describe('the narrow "genuinely unsigned, not forged" carve-out (harness solution-acceptance-runtime.ts:528-547)', () => {
     it('a SIGNED marker with a blank required field is TAMPERING, not the carve-out', () => {
-      // Proves the review-R2 scoping: the carve-out below only ever applies
+      // Proves the scoping: the carve-out below only ever applies
       // when signature/alg are BOTH absent. A verdict that still carries
       // them but happens to hit the same "missing approvedAt" reason (here,
       // via a blanked timestamp) is a signed field reading blank — only

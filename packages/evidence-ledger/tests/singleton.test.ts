@@ -55,7 +55,7 @@ describe("getDb — parent-dir creation", () => {
   });
 });
 
-describe("getDb — WAL, permissions, open guard (M3/M4)", () => {
+describe("getDb: WAL, permissions, open guard", () => {
   it("opens file-backed DBs in WAL mode", () => {
     const path = join(mkTmp(), "wal.db");
     const db = getDb(path);

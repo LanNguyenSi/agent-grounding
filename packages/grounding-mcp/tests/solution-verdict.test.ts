@@ -270,7 +270,7 @@ describe('evaluateSolution (producer)', () => {
     expect(res.diagnostics?.issues).toContain('checks[0].acknowledged status is missing its reason in message');
   });
 
-  it('the MCP response verdict is pre-signing (no alg/signature); the written marker carries both (G4, R2-L1/L2)', async () => {
+  it('the MCP response verdict is pre-signing (no alg/signature); the written marker carries both', async () => {
     process.env.SOLUTION_PREFLIGHT_BIN = writeStub(
       'stub-ready-signed.sh',
       '#!/bin/sh\necho \'{"ready":true,"confidence":0.9,"blockers":[]}\'\n',
