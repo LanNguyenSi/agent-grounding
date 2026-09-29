@@ -122,7 +122,7 @@ marker: a second call for the same `id` starts a second, fully independent
 **Server / MCP transport** (`packages/grounding-mcp/src/server.ts`): the
 `solution_evaluate` tool registration is a plain
 `server.tool('solution_evaluate', description, schema, handler)` call (the
-SDK's legacy shorthand). Re-measured for round 5 (`gh pr view 212`, `git
+SDK's legacy shorthand). Re-measured for revision 5 (`gh pr view 212`, `git
 log --oneline -1 df9722d`): the handler's await of `evaluateSolution` is
 now wrapped, since PR #212 (master `df9722d`, merged 2026-09-05
 20:02:33Z), in `withProgressPings` (`packages/grounding-mcp/src/progress.ts`,
@@ -768,7 +768,7 @@ exist:
    Without this write, a lookup mid-run, before any terminal record
    exists, has nothing to read at all; this is the fix for a prior
    round's gap. The recorded PID is a diagnostic aid for a human reading
-   the log, NOT the liveness authority: since round 4, whether an attempt
+   the log, NOT the liveness authority: since revision 4, whether an attempt
    is still live is answered only by whether that id's lock can be
    acquired (section 7), never by probing the PID. The component
    responsible is the same module that owns
@@ -1373,7 +1373,7 @@ a silently-ignored one:
   (section 8), returns `running-unconfirmed` with a poll hint. Once the
   stale window elapses, the next acquisition reclaims the lock inside the
   library. This design does not shortcut that window by deleting a lock it
-  does not hold, which is exactly the hand-rolled reclamation round 4
+  does not hold, which is exactly the hand-rolled reclamation revision 4
   removed.
 
 `running-unconfirmed` is the outcome for an id whose lock cannot be
@@ -1579,7 +1579,7 @@ document. Their real labels, after this revision's changes:
    terms only because it had not yet been checked against the fact that
    grounding-mcp runs one process per client. That design gap is now
    closed by section 7's lock, so the label is re-confirmed here,
-   not merely carried forward. Round 4 shrinks this brief rather than
+   not merely carried forward. Revision 4 shrinks this brief rather than
    growing it: the hand-written lock protocol it was to implement is
    replaced by calls into `proper-lockfile`, and the tests for the
    takeover sequence go away with the sequence itself. Two open items
@@ -1588,7 +1588,7 @@ document. Their real labels, after this revision's changes:
    this brief ships against with a documented default (do not kill) and a
    bounded residual (the library's stale window); that item was already
    flagged, unresolved, before this round and stays unresolved, but bounded
-   rather than open-ended, after it. The second is new in round 4 and is
+   rather than open-ended, after it. The second is new in revision 4 and is
    an operator decision rather than a design gap: adding `proper-lockfile`
    as a runtime dependency of `@lannguyensi/grounding-mcp`. The brief
    states the fallback if that is refused (tolerate duplicates and detect
