@@ -89,8 +89,9 @@ force-override: adding that label sets `evidence_logged=true` regardless of
 whether a committed evidence file backs it up, the same as the other four
 label-driven prereqs (`tests_pass`, `review_checklist_complete`,
 `no_unresolved_review_comments`, `scope_matches_task`), which still have no
-CI-side check beyond the reviewer's own label tick. A follow-up task in
-the agent-tasks tracker carries the tracking history.
+CI-side check beyond the reviewer's own label tick. See the follow-up task
+in the agent-tasks tracker
+for tracking history.
 
 ## Making the check Required
 
