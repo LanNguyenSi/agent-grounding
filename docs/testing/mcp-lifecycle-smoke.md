@@ -22,7 +22,7 @@ End-to-end: `task_create` → `tasks_update` (branchName) → `task_start` →
 work (PR created, reviewed, fixes applied) → `task_finish` → PR merged.
 Every transition must return 2xx.
 
-**Evidence** — trace for the CI-hotfix task (PR #7) on
+**Evidence** -- trace for the CI-hotfix task (PR #7) on
 2026-04-22 05:08–05:10 UTC:
 
 1. `task_create` (MCP): task created, `status: "open"`, HTTP 200.
@@ -35,7 +35,7 @@ Every transition must return 2xx.
    atomic with merge, HTTP 200.
 
 Same flow also executed cleanly for four further tasks in the same
-session — five confirmations of the
+session -- five confirmations of the
 canonical path, zero 4xx.
 
 **Verdict: PASS.**
