@@ -151,7 +151,7 @@ every marker `writeVerdict` actually puts on disk carries both, unconditionally.
 Since 0.8.0, `writeVerdict` (`solution-verdict.ts:207#"return target;"`) no longer writes the 7 pinned
 fields alone: it calls `signVerdict(resolveGeneratedDir(), verdict)` (`solution-verdict.ts:204#"signVerdict(resolveGeneratedDir()"`, from the
 new `src/verdict-signing.ts`) BEFORE writing, and persists the signed copy. There is no
-unsigned fallback: signing is unconditional (D-002, grounding-mcp
+unsigned fallback: signing is unconditional (grounding-mcp
 CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly the
 "producer doesn't sign" universal-deny failure mode this feature exists to close.
 
