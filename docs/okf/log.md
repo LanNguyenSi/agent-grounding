@@ -2,6 +2,16 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-29T06:50:00Z, remaining run-internal labels removed from
+  `solution-acceptance-verdict-contract.md` and its cited source and test
+  files: four decision ids in the prose (the quotation-exemption paragraph now
+  points at the grounding-mcp 0.10.0 CHANGELOG entry instead of a round
+  label), plus the numbered fix labels in the `ow-run-completeness.ts`
+  docblock and the matching test titles. Every edit kept its file's line
+  count, so no cited range moved; the doc's citations into
+  `ow-run-completeness.ts` were re-verified against the committed source and
+  the doc was re-stamped.
+
 - 2026-09-29T06:29:32Z, remaining bare tracker ids removed from comments,
   prose and fixture values outside `packages/*/src`:
   `.github/workflows/ci.yml` comments, the `scripts/check-*.js` guards and
