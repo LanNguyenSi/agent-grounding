@@ -2,6 +2,22 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-09-29, run-internal review labels (finding ids, review-round
+  references, decision ids) replaced by behavioural wording or by a
+  "grounding-mcp CHANGELOG" section pointer in comments and test titles under
+  `packages/*/src` and `packages/*/tests`, including
+  `packages/grounding-mcp/src/solution-verdict.ts`,
+  `packages/grounding-mcp/src/verdict-signing.ts`,
+  `packages/grounding-mcp/src/ow-run-completeness.ts`,
+  `packages/grounding-mcp/tests/interop/harness-verifier.vendored.ts`,
+  `packages/grounding-mcp/tests/interop/verdict-signing-interop.test.ts` and
+  `packages/review-claim-gate/src/cli.ts`. Only comments and test title
+  strings changed and every edit kept its line count, so no cited line range
+  moved. `solution-acceptance-verdict-contract.md` and
+  `claim-gate-vs-review-claim-gate.md` were re-verified against the edited
+  files (every cited anchor still resolves at its cited range) and
+  re-stamped; neither needed re-pointing.
+
 - 2026-09-27, bare tracker-id references in public comments replaced by
   behavioural wording across `packages/grounding-mcp/src/solution-verdict.ts`,
   `packages/grounding-mcp/src/verdict-signing.ts`,
