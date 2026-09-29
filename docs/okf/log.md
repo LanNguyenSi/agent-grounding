@@ -2,7 +2,7 @@
 
 <!-- Add new entries at the top, newest first. -->
 
-- 2026-09-29T06:50:00Z, remaining run-internal labels removed from
+- 2026-09-29T06:57:07Z, remaining run-internal labels removed from
   `solution-acceptance-verdict-contract.md` and its cited source and test
   files: four decision ids in the prose (the quotation-exemption paragraph now
   points at the grounding-mcp 0.10.0 CHANGELOG entry instead of a round

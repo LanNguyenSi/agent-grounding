@@ -3,7 +3,7 @@ type: invariant
 title: Solution-acceptance verdict contract — why the marker lives outside the ledger
 description: A "done" verdict is derived from a real preflight+OW run, HEAD-pinned, and written to an XDG state marker outside the agent-writable evidence-ledger because ledger rows are forgeable via ledger_add.
 tags: [solution-acceptance, verdicts, anti-hacking, trust-boundary]
-timestamp: 2026-09-29T06:50:00Z
+timestamp: 2026-09-29T06:57:07Z
 sources:
   - packages/grounding-mcp/src/solution-verdict.ts
   - packages/grounding-mcp/src/solution-attempt-log.ts
@@ -406,8 +406,8 @@ OW run files under `<repoPath>/.ai/runs/`:
   failed, which must block rather than silently fall through to the legacy
   date heuristic.
 
-  **Quotation exemption (added in grounding-mcp 0.10.0, after an earlier
-  version also blocked quoted markers; the matching rules below were tightened).** A phrase occurrence that is
+  **Quotation exemption (added in grounding-mcp 0.10.0, together with the
+  phrase net it narrows; see that CHANGELOG entry).** A phrase occurrence that is
   entirely inside backtick-delimited inline code, or entirely inside a FENCED
   code block, reads as a QUOTATION of the marker syntax, not an attempted
   marker, and does not trip this check. This is a HEURISTIC, not a CommonMark
