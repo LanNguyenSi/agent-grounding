@@ -2,13 +2,12 @@
 
 Document date: 2026-09-05. Status: design, no code changed by this document.
 
-Revision: Revised after architectural review round 1 (cross-process lock,
+Revision 1: Revised after the first architectural review (cross-process lock,
 measured client capabilities, restart and retention semantics,
 result-retrieval authority).
 
-Revision (round 2 review response): Revised again after a second
-architectural review round that found new issues in the cross-process
-mechanisms round 1 introduced: the stale-lock reclaim was check-then-act
+Revision 2: Revised again after a second architectural review that
+found new issues in the cross-process mechanisms revision 1 introduced: the stale-lock reclaim was check-then-act
 across two processes (now an atomic takeover, section 7); the attempt
 log had no file layout or concurrent-write discipline (now specified,
 section 6); the cross-process result payload silently promised diagnostics
@@ -25,7 +24,7 @@ unstated (now explicit, section 7); and five documentation corrections
 number, an out-of-repo run artifact's first reference, and `markerPresent`'s
 exact meaning).
 
-Revision (round 4, after review round 3 and an advisor consult): the
+Revision 4 (after the third architectural review and an advisor consult): the
 cross-process half of section 7 no longer derives a lock protocol of its
 own. The advisor's recommendation, adopted as this round's decision, is to
 delegate mutual exclusion to the primitive this codebase already depends
@@ -38,8 +37,8 @@ hand-specified mtime heartbeat, the PID-liveness authority, and the
 hand-rolled host identifier. Acquisition, staleness, the heartbeat,
 compromise detection, and ownership-checked release are now the library's
 behavior, cited; this document states only the invariant, the join rule,
-the compromise rule, and where the lock lives. Round 3's remaining
-findings are closed in the same pass: the attempt log's reconciliation
+the compromise rule, and where the lock lives. The remaining findings of
+the third review are closed in the same pass: the attempt log's reconciliation
 append, its compaction, and its liveness check all run under the same id
 lock (section 6); persisted records are size-bounded and an unparseable
 line has a stated reader rule (section 6); a compacted `unknown` stays
@@ -53,9 +52,9 @@ bounds this design's complexity budget: `evaluateGate` fails closed on
 every duplicate-run outcome, so the lock buys wasted CPU and a single
 in-flight handle, never gate safety.
 
-Revision (round 5, bounded closing delta; the orchestrator has decided a
+Revision 5 (bounded closing delta; the orchestrator has decided a
 merge-hold after this round, leaving the dependency confirmation and the
-merge itself to the operator): the round-4 headline invariant and the
+merge itself to the operator): the revision 4 headline invariant and the
 "Release" bullet in section 7 overstated what `proper-lockfile` actually
 guarantees; the library's `unlock` consults only its own in-process
 registry, never the lock directory's on-disk identity, so a holder whose
@@ -223,7 +222,7 @@ notifications during `solution_evaluate`, mirroring the pattern already
 shipped in `agent-preflight/src/mcp.ts` (`withProgressPings`,
 `DEFAULT_PROGRESS_INTERVAL_MS = 10_000`): if the caller supplied
 `_meta.progressToken`, ping it periodically while the child process runs.
-Re-measured for round 5, 2026-09-05, with `gh pr view 212
+Re-measured for revision 5, 2026-09-05, with `gh pr view 212
 --json number,title,mergedAt,createdAt,mergeCommit` and `git log --oneline
 -1 df9722d`: that work has LANDED. PR #212, opened 2026-09-05 19:38:29Z
 from that task's feature branch (the same branch a prior
@@ -656,7 +655,7 @@ and never reasons about attempts.
   process's now-empty in-memory registry alone, would incorrectly appear
   unknown even if the underlying `preflight` process (or the on-disk lock
   and log entry describing it, section 6, section 7) is still live; this
-  is exactly the race H3 in the review round closed. A
+  is exactly the restart race a review finding closed. A
   `solution_evaluate_status`/`_result` lookup therefore always falls back
   to the on-disk lock and attempt log, not only the in-memory registry,
   before concluding `unknown`; it resolves to `unknown` only when the log
@@ -721,7 +720,7 @@ what happened to an `id` (section 7's lock only tells a caller that an
 attempt is currently live, not what any past attempt did), it must itself
 live on disk, shared the way `verdictDir()` already is.
 
-### Log file layout (closes review round 2 finding H3)
+### Log file layout (closes the second review's log-layout finding)
 
 One file per sanitized id, alongside that id's lock and verdict marker:
 `path.join(verdictDir(), \`${sanitizeVerdictId(id)}.attempts.jsonl\`)`.
@@ -887,14 +886,14 @@ DIFFERENT attempt's write; it does not mean literally two bytes on disk
 ever, since reconciliation and compaction both append additional,
 narrowly-scoped records under the rules above.
 
-### Reconciliation and read-path liveness (closes review round 2 finding M1)
+### Reconciliation and read-path liveness (closes the second review's startup-only reconciliation finding)
 
 The liveness check, in one sentence: try to acquire that id's lock with no
 retries (section 7). Success means no process holds it, so any log row for
 that id still reading `running` belongs to a holder that is gone. `ELOCKED`
 means a holder is alive, so there is nothing to reconcile. The acquisition
 IS the check; nothing else probes liveness, and in particular no PID is
-probed any more (round 4; a PID cannot be checked reliably across PID
+probed any more (since revision 4; a PID cannot be checked reliably across PID
 reuse, and the library's own stale window already covers a holder that
 died without releasing).
 
@@ -984,7 +983,7 @@ and returns the same `attemptId`, never starting a second process. This
 guarantee holds ONLY within one process's event loop; it is not, by
 itself, a cross-process guarantee (see below).
 
-### Cross-process concurrency (delegated to a lock library, revised in round 4)
+### Cross-process concurrency (delegated to a lock library, revised in revision 4)
 
 The invariant, and the whole of what this design promises across
 processes: AT MOST ONE LIVE `preflight` PROCESS PER SANITIZED ID PER HOST
@@ -1007,10 +1006,10 @@ instantiated in `main()`): every client registered against it (Claude
 Code, Codex, and, if wired, opencode) spawns its OWN, separate
 `grounding-mcp` OS process. Those processes share no memory, so an
 id-keyed in-memory lock in one process cannot see or coordinate with
-another process's in-memory lock for the same `id`. Round 1 of this
+another process's in-memory lock for the same `id`. Revision 1 of this
 document claimed the in-memory lock alone made two preflight processes for
 one id structurally impossible; that claim was unsound across processes
-and was corrected in round 2.
+and was corrected in revision 2.
 
 #### The primitive
 
@@ -1205,7 +1204,7 @@ process's own lock (`unlock`, `ENOTACQUIRED` / `ERELEASED`), so no rule
 about "never release someone else's lock" needs to be enforced by this
 design at all.
 
-#### What round 4 removed
+#### What revision 4 removed
 
 Named explicitly, so a future revision does not reintroduce them by
 accident: the `.lock.takeover` marker file and its five-step takeover
@@ -1268,7 +1267,7 @@ acquired or `ELOCKED`.
   unverified here, section 9 blocker 2), and its lock stops being
   refreshed, so the id becomes acquirable again after the stale window.
 
-#### Single-host assumption (closes review round 2 finding L2)
+#### Single-host assumption (closes the second review's unstated single-host finding)
 
 This design's invariant is stated PER HOST: it holds when every
 `grounding-mcp` process sharing a given `verdictDir()` (section 1,
@@ -1333,7 +1332,7 @@ is a separate capability this document does not design; it is listed as a
 dependency in the producer brief (section 10) for whoever wants true
 force-retry-while-running later.
 
-### Write order and crash windows (closes review round 2 finding M2)
+### Write order and crash windows (closes the second review's write-order finding)
 
 When an attempt reaches a terminal state, the writes involved happen
 in this fixed order, never interleaved or reordered:
@@ -1496,8 +1495,8 @@ blockers rather than papered over:
    section 7's lock: if the parent dies while its child preflight
    survives orphaned, the lock stops being refreshed and the next
    acquirer reclaims it once the library's stale window elapses, inside
-   the library (section 7, "The primitive"). CORRECTED from a prior round's
-   claim (finding M3, review round 2): since `evaluateSolution` calls
+   the library (section 7, "The primitive"). CORRECTED from a prior revision's
+   claim (second review, orphaned-child write finding): since `evaluateSolution` calls
    `writeVerdict` only inside the SAME process that spawned the child
    (section 1; section 7, "Residuals"), an orphaned child never
    itself produces a competing marker write for a later attempt's write to
@@ -1568,16 +1567,15 @@ blockers rather than papered over:
 | `solution_evaluate_result` for a superseded attempt | Response carries `isLatestForId: false` and omits `verdict`/`markerPath`; only status, outcome class, and summary are returned | Producer brief test asserting result-retrieval authority for a non-latest attempt; see brief 01 |
 
 Two narrow, independently reviewable implementation briefs follow this
-document. Their real labels, after this round's changes:
+document. Their real labels, after this revision's changes:
 
 1. `01-producer-attempt-lifecycle.md`: the attempt registry, the
    cross-process lock, join-in-flight logic, `attemptId` generation, the
    append-only attempt log, and the two new tools' server-side logic in
    `solution-verdict.ts` / `server.ts`. Status: **implementation-ready**.
    The brief's own label was already "implementation-ready" before the
-   first review round, but that assessment predated review round 1
-   catching its own finding H1 (the in-memory lock's cross-process
-   unsoundness); it was correct in its own
+   first review, but that assessment predated the first review
+   catching the in-memory lock's cross-process unsoundness; it was correct in its own
    terms only because it had not yet been checked against the fact that
    grounding-mcp runs one process per client. That design gap is now
    closed by section 7's lock, so the label is re-confirmed here,
