@@ -1138,7 +1138,7 @@ interface FindingsScan {
  * whether any row anywhere carries a real concrete severity (i.e. findings
  * were actually transferred).
  *
- * Location (Fix 1): the table is found by anchoring on its HEADER ROW — the
+ * Location: the table is found by anchoring on its HEADER ROW, the
  * first markdown table row whose cells include both `Severity` and `Decision`
  * (case-insensitive) — not by the `## Findings` heading text. A drifted heading
  * (`## Findings (summary)`) therefore cannot hide a real finding. The column
@@ -1153,7 +1153,7 @@ interface FindingsScan {
  * (where its non-concrete Severity cell causes it to be skipped, unchanged
  * from before this guard existed).
  *
- * Arming (Fix 2): whether a row is a real finding is decided by the SEVERITY
+ * Arming: whether a row is a real finding is decided by the SEVERITY
  * cell carrying a single concrete value — the slash-list legend row
  * (`low/medium/high/critical`), the separator, and the header are all skipped
  * this way. A concrete high/critical row then ARMS the gate UNLESS its Decision
