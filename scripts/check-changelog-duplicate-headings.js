@@ -74,8 +74,8 @@ const SEMVER_TOKEN_RE = /\d+\.\d+\.\d+/;
  * `{ file: repo-relative path, version: the dated heading's version token
  * as captured by DATED_HEADING_RE, kind: the exact trimmed ### heading
  * text, reason: string }`. Empty today: no known pre-existing duplicate
- * survives in this repo (verified when this check was introduced).
- *
+ * survives in this repo (verified when this check was introduced), so a
+ * new entry should be rare and carry a reason.
  */
 const ALLOWLIST = [];
 

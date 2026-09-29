@@ -8,8 +8,7 @@ verify two things end to end:
 2. A forced-failure scenario produces a `transport_error` breadcrumb under
    `.understanding-gate/parse-errors/`.
 
-Recorded 2026-08-17 under agent-tasks task
-[`f097e38e`](https://agent-tasks.opentriologue.ai/tasks/f097e38e-a250-4154-8a97-c5c90898e94e).
+Recorded 2026-08-17 under an agent-tasks dogfood task.
 
 ---
 

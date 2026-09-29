@@ -11,8 +11,8 @@ new project-level precondition is added.
 > The branch-precondition and claim-race semantics live in agent-tasks'
 > backend, not in grounding-mcp.
 
-Recorded: 2026-04-22 under agent-tasks task
-[`e795c327`](https://agent-tasks.opentriologue.ai/tasks/e795c327-5393-4bf4-aded-fcab244dcc6e).
+Recorded: 2026-04-22 under an agent-tasks smoke-test task in the
+agent-grounding project.
 
 ---
 
@@ -22,7 +22,7 @@ End-to-end: `task_create` → `tasks_update` (branchName) → `task_start` →
 work (PR created, reviewed, fixes applied) → `task_finish` → PR merged.
 Every transition must return 2xx.
 
-**Evidence** — trace for the CI-hotfix task `b56be05f` (PR #7) on
+**Evidence** — trace for the CI-hotfix task (PR #7) on
 2026-04-22 05:08–05:10 UTC:
 
 1. `task_create` (MCP): task created, `status: "open"`, HTTP 200.
@@ -34,8 +34,8 @@ Every transition must return 2xx.
 6. `pull_requests_merge` (MCP): `merged: true`, task `status: "done"`
    atomic with merge, HTTP 200.
 
-Same flow also executed cleanly for tasks `3ec17bd1`, `865d98cb`,
-`1c7b9107`, `8f36ee80` in the same session — five confirmations of the
+Same flow also executed cleanly for four further tasks in the same
+session — five confirmations of the
 canonical path, zero 4xx.
 
 **Verdict: PASS.**
@@ -51,7 +51,7 @@ not a silent 200.
 **MCP path — 2a**:
 
 ```text
-mcp__agent-tasks__task_start({ taskId: "a4464c48-…" })
+mcp__agent-tasks__task_start({ taskId: "<task-id>" })
 → HTTP 422
 {
   "error": "precondition_failed",
@@ -69,7 +69,7 @@ Clean 4xx, actionable guidance. **PASS.**
 **REST path — 2b** (same task, same state):
 
 ```text
-curl -X POST https://…/api/tasks/a4464c48-…/claim
+curl -X POST https://…/api/tasks/<task-id>/claim
   -H "Authorization: Bearer $AGENT_TASKS_TOKEN"
 → HTTP 200
 { "task": { "status": "in_progress", "branchName": null … } }
@@ -87,14 +87,12 @@ task_start → HTTP 200   # happy path
 ```
 
 **Verdict: PASS with caveat.** Divergence between MCP and REST paths
-is filed as agent-tasks follow-up
-[`610ca95d`](https://agent-tasks.opentriologue.ai/tasks/610ca95d-f757-4da2-af39-ead8adfc3d6f)
+is filed as an agent-tasks follow-up
 (MEDIUM, *REST /claim bypasses branchPresent*).
 
 A parallel finding surfaced during this smoke-test writeup:
 `task_finish` also enforces a `prPresent` precondition on the MCP path
-(`prUrl` must be set before transitioning to `review`). Follow-up
-[`610ca95d`](https://agent-tasks.opentriologue.ai/tasks/610ca95d-f757-4da2-af39-ead8adfc3d6f)
+(`prUrl` must be set before transitioning to `review`). The same follow-up
 is expected to cover it under the same shared-checker refactor.
 
 ---
@@ -110,10 +108,10 @@ winner (200) and one loser (409 / `conflict`).
 (curl … /claim &) ; (curl … /claim &) ; wait
 
 --- Response A ---  HTTP 200
-{ "task": { "status": "in_progress", "claimedByAgentId": "db8eb865-…",
+{ "task": { "status": "in_progress", "claimedByAgentId": "<agent-id>",
             "claimedAt": "…05:43:24.970Z" … } }
 --- Response B ---  HTTP 200
-{ "task": { "status": "in_progress", "claimedByAgentId": "db8eb865-…",
+{ "task": { "status": "in_progress", "claimedByAgentId": "<agent-id>",
             "claimedAt": "…05:43:24.970Z" … } }
 ```
 
@@ -141,8 +139,7 @@ That proves the exclusion mechanism exists; it just triggered off the
 contention" rule.
 
 **Verdict: INCOMPLETE** — reproducible cross-agent race requires a
-second credential. Filed follow-up
-[`eba3cd52`](https://agent-tasks.opentriologue.ai/tasks/eba3cd52-4ca5-4843-a9fe-5fea927bd392)
+second credential. Filed as an agent-tasks follow-up
 (LOW, *two-token test fixture*).
 
 ---
@@ -157,5 +154,4 @@ Minimal checklist:
   enough to clear the confidence gate (score ≥ 60).
 
 The full session transcript (including the throwaway task ids that
-were created and released) lives in the comments on task
-[`e795c327`](https://agent-tasks.opentriologue.ai/tasks/e795c327-5393-4bf4-aded-fcab244dcc6e).
+were created and released) lives in the comments on the smoke-test task in the tracker.

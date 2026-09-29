@@ -12,7 +12,7 @@
  * repo) but nothing in CI repeated it, a future change to `files`, `bin`,
  * the build layout, or a bundler step could silently break the relative
  * `../package.json` resolution and nothing would notice until a release.
- *
+ * That gap is what this check closes.
  *
  * This script repeats that manual verification as an automated check:
  *

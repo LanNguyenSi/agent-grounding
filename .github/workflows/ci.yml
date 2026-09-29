@@ -321,8 +321,8 @@ jobs:
         # needs to actually verify a package's checksum instead of silently
         # trusting whatever tarball the registry hands back. Catches a
         # regenerated-from-a-bad-source or hand-edited lockfile drifting
-        # back into the state an earlier lockfile regeneration found and fixed (304 of 603
-        # entries missing one or both fields as of 2026-07-27).
+        # back into the state an earlier lockfile regeneration found and
+        # fixed (304 of 603 entries missing one or both fields as of 2026-07-27).
         run: npm run check:lockfile-integrity
 
       - name: Lockfile integrity checker unit tests
@@ -356,9 +356,9 @@ jobs:
         # imported somewhere under that package's src/ — the phantom-dep
         # class check-pins.js is explicitly blind to (it only covers
         # internal @lannguyensi/* pins). Catches a re-added phantom
-        # dependency, or a revert of one already removed (see the
-        # dependency-check work: the glob and js-yaml phantom deps found in domain-router and
-        # readme-first-resolver during an earlier review).
+        # dependency, or a revert of one already removed (the glob and js-yaml
+        # phantom deps found in domain-router and readme-first-resolver during
+        # an earlier review).
         run: npm run check:deps
 
       - name: Dependency consistency checker unit tests

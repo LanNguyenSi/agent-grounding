@@ -26,7 +26,7 @@
  *
  * Only the `dependencies` field is checked, not `devDependencies`: an unused
  * *dev* dependency is not a shipped-artifact closure problem the way an
- * unused *runtime* dependency is (out of scope per the dependency check: devDeps
+ * unused *runtime* dependency is (out of scope for this check: devDeps
  * are a housekeeping concern, not a phantom-dep-class correctness bug).
  * `peerDependencies` / `optionalDependencies` are also not checked: no
  * package in this repo declares either today, and both have looser "must be
@@ -127,7 +127,7 @@ const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']
  *
  * Shape: { package: '@lannguyensi/x', dependency: 'some-lib', reason: '...' }
  *
- * Legitimate reasons this exists for (constraints):
+ * Legitimate reasons for an entry (constraints):
  *   - type-only: only ever referenced via `import type`, and the checker
  *     can't reliably distinguish that from a real dependency it can't yet
  *     see (not needed today — `import type` still matches the `from '...'`
