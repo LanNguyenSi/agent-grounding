@@ -485,7 +485,7 @@ describe('readOwRunCompleteness — fail-closed fallback', () => {
   });
 });
 
-describe('readOwRunCompleteness — findings table located by header row (Fix 1)', () => {
+describe('readOwRunCompleteness: findings table located by header row', () => {
   it('a critical/fix finding under a drifted `## Findings (summary)` heading STILL blocks', () => {
     const review = [
       '# Review Findings',
@@ -514,7 +514,7 @@ describe('readOwRunCompleteness — findings table located by header row (Fix 1)
   });
 });
 
-describe('readOwRunCompleteness — undecided high/critical arms the gate (Fix 2)', () => {
+describe('readOwRunCompleteness: undecided high/critical arms the gate', () => {
   it('a high finding with a BLANK decision and a critical finding with `open` both BLOCK', () => {
     makeRun('2026-06-22-run', {
       handoff: handoffMarker('accepted'),
@@ -555,7 +555,7 @@ describe('readOwRunCompleteness — undecided high/critical arms the gate (Fix 2
   });
 });
 
-describe('readOwRunCompleteness — active-run selection requires a date prefix (Fix 3)', () => {
+describe('readOwRunCompleteness: active-run selection requires a date prefix', () => {
   it('a non-date-prefixed sibling dir (`archive`) is ignored; the dated run wins', () => {
     // `archive` sorts AHEAD of the dated dir under a plain descending name sort
     // ('a' > '2'), so without the date filter it would hijack the active run.
@@ -1018,7 +1018,7 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
   // marker yet. Fixtures below reproduce the template's real text verbatim
   // (packages/orchestrator-workflow/assets/templates/05-review-findings.md).
 
-  it('a template-conformant run (marker + UNFILLED prose legend, no method-applied marker) still fails, named absent (P7: the legend is not a value)', () => {
+  it('a template-conformant run (marker + UNFILLED prose legend, no method-applied marker) still fails, named absent (the legend is not a value)', () => {
     // This is the literal shape of the real `agent-dx-external-prs` run under
     // kit 0.32.0: the template's own placeholder sentence, never filled in.
     makeRun('2026-06-22-run', {
@@ -1566,7 +1566,7 @@ describe('readOwRunCompleteness: review-method axis (declared vs. recorded metho
   });
 });
 
-describe('readOwRunCompleteness — CRLF fixtures (Fix 4)', () => {
+describe('readOwRunCompleteness: CRLF fixtures', () => {
   it('parses markers and the findings table when the files use \\r\\n line endings', () => {
     const handoff = [
       '# Operator Handoff',

@@ -3,7 +3,7 @@ type: invariant
 title: Solution-acceptance verdict contract — why the marker lives outside the ledger
 description: A "done" verdict is derived from a real preflight+OW run, HEAD-pinned, and written to an XDG state marker outside the agent-writable evidence-ledger because ledger rows are forgeable via ledger_add.
 tags: [solution-acceptance, verdicts, anti-hacking, trust-boundary]
-timestamp: 2026-09-29T06:02:13Z
+timestamp: 2026-09-29T06:57:07Z
 sources:
   - packages/grounding-mcp/src/solution-verdict.ts
   - packages/grounding-mcp/src/solution-attempt-log.ts
@@ -155,7 +155,7 @@ unsigned fallback: signing is unconditional (grounding-mcp
 CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly the
 "producer doesn't sign" universal-deny failure mode this feature exists to close.
 
-- **Same key file, same scheme, no package dependency (D-001).** `verdict-signing.ts`
+- **Same key file, same scheme, no package dependency.** `verdict-signing.ts`
   independently mirrors the harness CONSUMER's signing/verification implementation
   (`src/runtime/approval-signing.ts`, `src/policy-packs/builtin/solution-acceptance-runtime.ts`
   on harness branch `batch19/sign-verdict-marker`) field-for-field and byte-for-byte,
@@ -203,7 +203,7 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
   into the signed bytes is what makes a copy-and-relabel of a validly-signed marker
   onto a different id's lookup path fail signature verification.
 - **On a harness-less machine, this creates `~/.harness/harness.generated/` and the key
-  file as a side effect of the FIRST signed verdict** (D-002, documented, not a bug):
+  file as a side effect of the FIRST signed verdict** (documented, not a bug):
   the producer always signs, so `getOrCreateSigningKey` always runs, and its
   `fs.mkdirSync(path.dirname(filePath), { recursive: true })` creates the directory
   tree of whichever path is in effect (the mirrored `<generatedDir>` in the fallback
@@ -238,7 +238,7 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
   citations in its header) transcription of the harness consumer's verification logic,
   deliberately NOT derived from this package's own producer mirror (copying the
   producer to test itself would not catch a drift between the two independently
-  mirrored implementations; that drift is exactly the risk D-003 names).
+  mirrored implementations; that drift is exactly the risk this drift guard exists to catch).
   `verdict-signing-interop.test.ts` (15 tests) runs the REAL `writeVerdict` against a
   tempdir `HARNESS_HOME`, reads the marker back off disk, and feeds it to the vendored
   verifier: a positive round-trip, tamper negatives (`ready`/`head`/`confidence`/
@@ -406,8 +406,8 @@ OW run files under `<repoPath>/.ai/runs/`:
   failed, which must block rather than silently fall through to the legacy
   date heuristic.
 
-  **Quotation exemption (D-027, amends the round-1 fence choice above; round
-  3 tightened the matching rules below).** A phrase occurrence that is
+  **Quotation exemption (added in grounding-mcp 0.10.0, together with the
+  phrase net it narrows; see that CHANGELOG entry).** A phrase occurrence that is
   entirely inside backtick-delimited inline code, or entirely inside a FENCED
   code block, reads as a QUOTATION of the marker syntax, not an attempted
   marker, and does not trip this check. This is a HEURISTIC, not a CommonMark
