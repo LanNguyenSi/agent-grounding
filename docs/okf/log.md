@@ -2,6 +2,10 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-10-03T13:13:12Z, the same root `CHANGELOG.md` `[Unreleased]` CI line was extended to name
+  `publish-libs.yml` and `publish-npm.yml` (same line, no line shift).
+  Re-verified `grounding-stack-overview.md`: its CHANGELOG citations still resolve
+  and none of its claims concerns that entry. Re-stamped; no body text changed.
 - 2026-10-03T12:22:27Z, the root `CHANGELOG.md` gained one `[Unreleased]` CI line
   (release.yml passes step values through `env:`). Re-verified
   `grounding-stack-overview.md`: its CHANGELOG citations still resolve and none of its
