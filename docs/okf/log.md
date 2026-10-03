@@ -2,6 +2,10 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-10-03T12:22:27Z, the root `CHANGELOG.md` gained one `[Unreleased]` CI line
+  (release.yml passes step values through `env:`). Re-verified
+  `grounding-stack-overview.md`: its CHANGELOG citations still resolve and none of its
+  claims concerns that entry. Re-stamped; no body text changed.
 - 2026-09-29T06:57:07Z, remaining run-internal labels removed from
   `solution-acceptance-verdict-contract.md` and its cited source and test
   files: four decision ids in the prose (the quotation-exemption paragraph now
