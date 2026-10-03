@@ -37,6 +37,8 @@ The seven packages above (other than understanding-gate) each carry their own ve
 
 - Publish workflows now install npm with `npm install -g npm@^11.5.1` (the documented trusted-publishing floor) instead of the floating `npm@11`. CI only; no package code change.
 
+- `publish-libs.yml`: the tag-derived package name (`PKG`) is no longer spliced into the JavaScript source of the version-verify step; node now reads it from `process.env`, so a crafted tag cannot inject code. `publish-npm.yml` (matrix-derived `PACKAGE`, never tag-controlled) gets the same change for consistency. CI only; no package code change.
+
 - `claim-gate`: `readVersion()` now writes one `process.stderr` line naming
   the package and the failure (read error, parse error, or a missing,
   empty, or non-string `version` field) before returning the unchanged

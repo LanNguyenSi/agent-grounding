@@ -52,7 +52,7 @@ jobs:
           PKG: ${{ steps.parse.outputs.pkg }}
           VERSION: ${{ steps.parse.outputs.version }}
         run: |
-          pkg_version=$(node -p "require('./packages/${PKG}/package.json').version")
+          pkg_version=$(node -p "require('./packages/' + process.env.PKG + '/package.json').version")
           if [ "$pkg_version" != "$VERSION" ]; then
             echo "::error::Tag version (${VERSION}) does not match packages/${PKG}/package.json ($pkg_version)" >&2
             exit 1
