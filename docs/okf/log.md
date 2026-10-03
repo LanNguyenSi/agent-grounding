@@ -10,6 +10,22 @@
   (release.yml passes step values through `env:`). Re-verified
   `grounding-stack-overview.md`: its CHANGELOG citations still resolve and none of its
   claims concerns that entry. Re-stamped; no body text changed.
+- 2026-10-03T12:12:29Z, okf-staleness workflow re-synced from the okf-kit
+  workflow template (fleet convergence ticket fdc01728): the workflow header
+  now names the template as its source instead of calling the file a pattern
+  to keep in sync, the pin stays okf-kit@0.10.0, `--require-anchors` joined
+  the invocation, and the job stays warn-only. The pin is held at 0.10.0
+  because ci.yml pins the same version and `npm run check:okf-kit-pin`
+  requires every workflow to agree; the move to 0.16.0 needs ci.yml's pin moved
+  in the same change. Measured on the tree before the
+  change with `okf-kit check --json <bundle>`: at okf-kit@0.10.0, 0 errors, 8
+  warnings, 0 notices (exit 0) plain and 0 errors, 8 warnings, 0 notices (exit
+  0) with `--require-anchors`; at okf-kit@0.16.0, 0 errors, 8 warnings, 0
+  notices (exit 0) plain and 0 errors, 8 warnings, 0 notices (exit 0) with
+  `--require-anchors`. Of the anchored-run warnings, 0 are anchor-required
+  findings (full citations without an anchor); anchoring them is separate work
+  and none of them blocks anything.
+
 - 2026-09-29T06:57:07Z, remaining run-internal labels removed from
   `solution-acceptance-verdict-contract.md` and its cited source and test
   files: four decision ids in the prose (the quotation-exemption paragraph now
