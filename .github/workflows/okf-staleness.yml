@@ -1,5 +1,14 @@
 name: OKF staleness
 
+# GENERATED FROM THE OKF-KIT TEMPLATE `templates/okf-staleness.yml` of the
+# okf-kit package (LanNguyenSi/agent-dx, packages/okf-kit; the template
+# first ships in the okf-kit release after 0.16.0), pinned to okf-kit
+# 0.10.0 below (a deviation, see the install step). Do not hand-edit this
+# file outside the lines marked "REPO-SPECIFIC": re-sync it from the
+# template whenever the pin moves.
+# A repo that deviates documents the deviation in a comment block at the
+# deviating spot, next to the REPO-SPECIFIC marker.
+#
 # Warn-only drift watch for the docs/okf knowledge bundle: surfaces STALE
 # curated docs (source files that changed after the doc's verification
 # timestamp) on every PR without ever blocking a merge. Deliberately a
@@ -7,15 +16,13 @@ name: OKF staleness
 # blocking gate, this one never is. Never mark this check as required in
 # branch protection: a PR that removes or renames docs/okf goes red here
 # by design (tool-error posture, exit 2), and warn-only must stay
-# non-blocking. Canonical pattern shared by every repo that ships a
-# docs/okf bundle (find them by this workflow's file name); keep them
-# in sync.
+# non-blocking. The same file ships in every repo that carries a docs/okf
+# bundle (find them by this workflow's file name).
 
 on:
   pull_request:
-    # The one repo-specific line in the canonical pattern: set this to the
-    # target repo's default branch when porting; a wrong name here means
-    # the watch silently never runs.
+    # REPO-SPECIFIC (1 of 2): the target repo's default branch; a wrong
+    # name here means the watch silently never runs.
     branches: [master]
 
 permissions:
@@ -25,6 +32,11 @@ jobs:
   okf-staleness:
     name: OKF bundle staleness (warn-only)
     runs-on: ubuntu-latest
+
+    env:
+      # REPO-SPECIFIC (2 of 2): path of the knowledge bundle to check
+      # (`knowledge` in .ai/workflow/manifest.json; default docs/okf).
+      BUNDLE_PATH: docs/okf
 
     steps:
       - uses: actions/checkout@v5
@@ -39,21 +51,23 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          # 22 = active LTS, matching ci.yml.
+          # 22 = active LTS.
           node-version: 22
 
       - name: Install okf-kit (exact pin)
         # Exact pin: okf-kit@0.3.0 on npm is a deprecated silent no-op
         # (exit 0, no output). The output assertion below exists to catch
         # any regression of that failure mode: never assert on exit code
-        # alone here. 0.5.0 adds the citations-resolve rule, which
-        # replaces this repo's former scripts/okf-citations-resolve.mjs
-        # spike (see docs/okf/log.md, 2026-08-24): `check` below now
-        # covers both timestamp staleness (sources-fresh) and citation
-        # drift (citations-resolve) in one pass. Kept identical to
-        # ci.yml's own pin (asserted by `npm run check:okf-kit-pin`);
-        # 0.8.0 adds `--require-anchors`, which ci.yml's blocking
-        # okf-anchor-guard job opts into, this warn-only job does not.
+        # alone here. Move this pin deliberately, never as an automatic
+        # upgrade, and record each move in the bundle's log.md together with
+        # the old and the new version's measured verdict on this bundle.
+        #
+        # Deviation in this repo (agent-grounding): the pin stays at 0.10.0
+        # instead of the fleet pin 0.16.0, because ci.yml's blocking
+        # okf-anchor-guard job pins the same version and
+        # `npm run check:okf-kit-pin` (a ci.yml step) asserts every
+        # workflow pins one identical okf-kit version; moving the pin here
+        # alone turns that check red. Move both together, in one change.
         run: npm install -g okf-kit@0.10.0 --no-audit --no-fund
 
       - name: Assert CLI is alive (output, not exit code)
@@ -72,8 +86,15 @@ jobs:
           # findings: report them and stay green. Anything else means the
           # check itself broke and must fail red, a broken check never
           # looks green.
+          # --require-anchors: every full line citation must carry a
+          # #"anchor" (anchor-required), and a continuation must be lifted
+          # into a standalone anchored citation
+          # (anchor-required-continuation), so a bare `path:N` citation
+          # that would otherwise resolve cleanly still surfaces here as a
+          # warning, before it can drift silently on a future line shift.
+          # Still warn-only, same as every other rule this job runs.
           set +e
-          okf-kit check --json docs/okf > okf-report.json
+          okf-kit check --json --require-anchors "${BUNDLE_PATH}" > okf-report.json
           code=$?
           set -e
 
@@ -91,7 +112,7 @@ jobs:
           notices=$(jq '.summary.notices' okf-report.json)
 
           {
-            echo "## OKF bundle check (\`docs/okf\`), warn-only"
+            echo "## OKF bundle check (\`${BUNDLE_PATH}\`), warn-only"
             echo ""
             echo "errors: ${errors} · warnings: ${warnings} · notices: ${notices}"
             echo ""
@@ -121,7 +142,13 @@ jobs:
               echo "correct it (no timestamp bump needed for this rule alone)."
               echo "A citations-resolve notice (ambiguous target,"
               echo "unreadable-target) is informational only and never counts"
-              echo "toward --strict. This job never blocks either way."
+              echo "toward --strict. An anchor-required or"
+              echo "anchor-required-continuation warning (from --require-anchors,"
+              echo "above) means a citation resolves fine but carries no"
+              echo "#\"anchor\": lift it into the full \`path:N-M#\"anchor\"\` form"
+              echo "(a continuation cannot carry its own #anchor; fold it into a"
+              echo "standalone anchored citation instead). This job never blocks"
+              echo "either way."
             else
               echo "Clean, no findings."
             fi
@@ -133,7 +160,7 @@ jobs:
           jq -r '
             [.findings[] | select(.severity == "warning")]
             | group_by(.file)[]
-            | "\(.[0].file): \(length) warning(s) (stale sources and/or unresolved citations), full list in the job summary"
+            | "\(.[0].file): \(length) warning(s) (stale sources, unresolved citations and/or missing anchors), full list in the job summary"
           ' okf-report.json | while IFS= read -r line; do
             echo "::warning title=OKF bundle drift::${line}"
           done
