@@ -27,13 +27,15 @@ jobs:
 
       - name: Extract changelog for this version
         id: changelog
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          awk '/^## \[${{ steps.version.outputs.version }}\]/{found=1; next} /^## \[/{found=0} found' CHANGELOG.md > release_notes.md
+          awk '$0 ~ ("^## \\[" ENVIRON["VERSION"] "\\]") {found=1; next} /^## \[/{found=0} found' CHANGELOG.md > release_notes.md
           if [ ! -s release_notes.md ]; then
-            echo "::error::No CHANGELOG.md entry for v${{ steps.version.outputs.version }}. Add a `## [${{ steps.version.outputs.version }}] - YYYY-MM-DD` section before tagging." >&2
+            echo "::error::No CHANGELOG.md entry for v$VERSION. Add a `## [$VERSION] - YYYY-MM-DD` section before tagging." >&2
             exit 1
           fi
-          echo "Release notes extracted for v${{ steps.version.outputs.version }}"
+          echo "Release notes extracted for v$VERSION"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
