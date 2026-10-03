@@ -32,11 +32,13 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: Verify package version matches tag
+        env:
+          PACKAGE: ${{ matrix.package }}
         run: |
           tag_version="${GITHUB_REF_NAME#v}"
-          pkg_version=$(node -p "require('./packages/${{ matrix.package }}/package.json').version")
+          pkg_version=$(node -p "require('./packages/${PACKAGE}/package.json').version")
           if [ "$pkg_version" != "$tag_version" ]; then
-            echo "Tag version ($tag_version) does not match packages/${{ matrix.package }}/package.json ($pkg_version)" >&2
+            echo "Tag version ($tag_version) does not match packages/${PACKAGE}/package.json ($pkg_version)" >&2
             exit 1
           fi
 
@@ -52,7 +54,9 @@ jobs:
         run: npm run build:deps
 
       - name: Test the package being published
-        run: npm test --workspace=@lannguyensi/${{ matrix.package }}
+        env:
+          PACKAGE: ${{ matrix.package }}
+        run: npm test --workspace="@lannguyensi/${PACKAGE}"
 
       - name: Upgrade npm to v11
         # npm >= 11.5.1 required for OIDC-based publishing against each
@@ -62,4 +66,6 @@ jobs:
         run: npm install -g npm@^11.5.1 --no-audit --no-fund
 
       - name: Publish
-        run: npm publish --workspace=@lannguyensi/${{ matrix.package }} --access public --provenance
+        env:
+          PACKAGE: ${{ matrix.package }}
+        run: npm publish --workspace="@lannguyensi/${PACKAGE}" --access public --provenance
