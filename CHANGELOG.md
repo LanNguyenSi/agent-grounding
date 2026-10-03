@@ -35,6 +35,8 @@ The seven packages above (other than understanding-gate) each carry their own ve
 
 ### Changed
 
+- Publish workflows now install npm with `npm install -g npm@^11.5.1` (the documented trusted-publishing floor) instead of the floating `npm@11`. CI only; no package code change.
+
 - `claim-gate`: `readVersion()` now writes one `process.stderr` line naming
   the package and the failure (read error, parse error, or a missing,
   empty, or non-string `version` field) before returning the unchanged
