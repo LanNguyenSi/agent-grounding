@@ -70,6 +70,7 @@ The seven packages above (other than understanding-gate) each carry their own ve
   (a throwing `Error#message` getter or a throwing `String(err)` on a
   non-Error value), and the reason is collapsed to a single line before
   being written. (task f31ad37f)
+- CI: `release.yml`, `publish-libs.yml` and `publish-npm.yml` now pass step values into `run:` scripts through `env:` and shell variables instead of interpolating `${{ }}` expressions into the script text. No behavior change for normal tags and versions.
 
 ## [0.6.0] - 2026-07-18
 

@@ -48,10 +48,13 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: Verify package version matches tag
+        env:
+          PKG: ${{ steps.parse.outputs.pkg }}
+          VERSION: ${{ steps.parse.outputs.version }}
         run: |
-          pkg_version=$(node -p "require('./packages/${{ steps.parse.outputs.pkg }}/package.json').version")
-          if [ "$pkg_version" != "${{ steps.parse.outputs.version }}" ]; then
-            echo "::error::Tag version (${{ steps.parse.outputs.version }}) does not match packages/${{ steps.parse.outputs.pkg }}/package.json ($pkg_version)" >&2
+          pkg_version=$(node -p "require('./packages/${PKG}/package.json').version")
+          if [ "$pkg_version" != "$VERSION" ]; then
+            echo "::error::Tag version (${VERSION}) does not match packages/${PKG}/package.json ($pkg_version)" >&2
             exit 1
           fi
 
@@ -59,10 +62,14 @@ jobs:
         run: npm run build:deps
 
       - name: Build the package being published
-        run: npm run build --workspace=@lannguyensi/${{ steps.parse.outputs.pkg }}
+        env:
+          PKG: ${{ steps.parse.outputs.pkg }}
+        run: npm run build --workspace="@lannguyensi/${PKG}"
 
       - name: Test the package being published
-        run: npm test --workspace=@lannguyensi/${{ steps.parse.outputs.pkg }}
+        env:
+          PKG: ${{ steps.parse.outputs.pkg }}
+        run: npm test --workspace="@lannguyensi/${PKG}"
 
       # npm Trusted Publishing (OIDC) needs npm >= 11.5.1; node 22 bundles
       # npm 10, so upgrade right before the publish step (wave standard:
@@ -75,4 +82,6 @@ jobs:
         run: npm install -g npm@^11.5.1 --no-audit --no-fund
 
       - name: Publish (OIDC trusted publishing, tokenless)
-        run: npm publish --workspace=@lannguyensi/${{ steps.parse.outputs.pkg }} --access public --provenance
+        env:
+          PKG: ${{ steps.parse.outputs.pkg }}
+        run: npm publish --workspace="@lannguyensi/${PKG}" --access public --provenance
