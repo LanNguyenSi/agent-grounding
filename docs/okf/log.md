@@ -2,6 +2,12 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-10-03T18:48:30Z, the root `CHANGELOG.md` gained one `[Unreleased]` CI line
+  (the release.yml missing-changelog error keeps its guidance). The line was
+  inserted below the existing `[Unreleased]` CI entry, after the cited lines, so
+  no citation shifts. Re-verified `grounding-stack-overview.md`: its CHANGELOG
+  citations still resolve and none of its claims concerns that entry.
+  Re-stamped; no body text changed.
 - 2026-10-03T18:20:41Z, the root `CHANGELOG.md` gained one `[Unreleased]` CI line
   (the publish-libs.yml and publish-npm.yml version-verify steps read the
   package name from `process.env`). The line was inserted below the existing
