@@ -36,7 +36,7 @@ jobs:
           PACKAGE: ${{ matrix.package }}
         run: |
           tag_version="${GITHUB_REF_NAME#v}"
-          pkg_version=$(node -p "require('./packages/${PACKAGE}/package.json').version")
+          pkg_version=$(node -p "require('./packages/' + process.env.PACKAGE + '/package.json').version")
           if [ "$pkg_version" != "$tag_version" ]; then
             echo "Tag version ($tag_version) does not match packages/${PACKAGE}/package.json ($pkg_version)" >&2
             exit 1
