@@ -22,6 +22,7 @@ npm install -g @lannguyensi/evidence-ledger          # → ledger
 npm install -g @lannguyensi/grounding-wrapper        # → grounding-wrapper
 npm install -g @lannguyensi/readme-first-resolver    # → readme-first
 npm install -g @lannguyensi/review-claim-gate        # → review-claim-gate
+npm install -g @lannguyensi/runtime-reality-checker  # → runtime-reality-policy-pre-tool-use
 npm install -g @lannguyensi/understanding-gate       # → understanding-gate
 
 # MCP server (install globally or invoke via npx)
