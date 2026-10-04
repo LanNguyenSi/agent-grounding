@@ -2,6 +2,22 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-10-04T05:23:54Z, okf-kit pin moved from 0.10.0 to 0.16.0 in ci.yml and
+  okf-staleness.yml together (the pin-coupling check requires one identical
+  version across workflows). The okf-staleness workflow is now the okf-kit
+  workflow template verbatim apart from its two marked repo-specific lines
+  (default branch `master`, bundle path), so the pin-deviation comment is
+  removed. Measured on this bundle with `okf-kit check --require-anchors
+  --json docs/okf`: at okf-kit@0.10.0, 0 errors, 8 warnings, 0 notices (exit 0);
+  at okf-kit@0.16.0, 0 errors, 8 warnings, 0 notices (exit 0); the two JSON
+  reports are identical, and the 8 warnings are the same pre-existing
+  citations-resolve warnings against this reserved log. The okf-selectors
+  fixtures were regenerated with 0.16.0 and compared with the 0.10.0 output on
+  the same three fixture bundles: all three reports identical (clean 0/0/0,
+  drifted 0 errors 6 warnings 2 notices, error 1/0/0), so only the recorded
+  version and the renamed never-committed fixture source changed. No bundle doc
+  body or source citation changed, so no doc was re-stamped.
+
 - 2026-10-03T18:48:30Z, the root `CHANGELOG.md` gained one `[Unreleased]` CI line
   (the release.yml missing-changelog error keeps its guidance). The line was
   inserted below the existing `[Unreleased]` CI entry, after the cited lines, so

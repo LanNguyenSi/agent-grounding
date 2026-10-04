@@ -35,6 +35,8 @@ The seven packages above (other than understanding-gate) each carry their own ve
 
 ### Changed
 
+- CI: the okf-kit pin moves from 0.10.0 to 0.16.0 in `ci.yml` and `okf-staleness.yml` together, the okf-staleness workflow is re-synced to the okf-kit template (the pin-deviation comment is removed), and the okf-selectors fixtures are regenerated against 0.16.0 (report content unchanged). CI only; no package code change.
+
 - Publish workflows now install npm with `npm install -g npm@^11.5.1` (the documented trusted-publishing floor) instead of the floating `npm@11`. CI only; no package code change.
 
 - `publish-libs.yml`: the tag-derived package name (`PKG`) is no longer spliced into the JavaScript source of the version-verify step; node now reads it from `process.env`, so a crafted tag cannot inject code. `publish-npm.yml` (matrix-derived `PACKAGE`, never tag-controlled) gets the same change for consistency. CI only; no package code change.
