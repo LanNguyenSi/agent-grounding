@@ -1,7 +1,7 @@
 # `scripts/check-okf-selectors.js` fixtures
 
 `clean-report.json`, `drifted-report.json`, and `error-report.json` are
-all real `okf-kit@0.9.0` `check --require-anchors --json` output, not
+all real `okf-kit@0.16.0` `check --require-anchors --json` output, not
 hand-written JSON -- produced from the small synthetic OKF bundles
 checked in here (`bundle-clean/`, `bundle-drifted/`, `bundle-error/`,
 `src/`), so the fixture's field names and message shapes are exactly
@@ -25,8 +25,8 @@ must point at a `src/*` file that has never been committed to this
 repo, or the `sources-fresh` "untracked by git, staleness unknown"
 notice this fixture depends on cannot be reproduced (see below). Pick
 the next unused number under `src/fixture-source-<N>.ts` (the file
-currently in use, checked in below, is `fixture-source-2.ts`; the next
-bump uses `fixture-source-3.ts`), rename it, and update
+currently in use, checked in below, is `fixture-source-4.ts`; the next
+bump uses `fixture-source-5.ts`), rename it, and update
 `bundle-drifted/doc.md`'s `sources:` entry and its own citation into
 that file, all BEFORE you run `okf-kit` and BEFORE `git add`ing the
 renamed file.
@@ -74,7 +74,7 @@ renamed again, to `src/fixture-source-2.ts`, specifically so the notice
 could keep being reproduced honestly rather than left stale in the
 checked-in JSON -- and to make that failure mode impossible to repeat,
 the filename is now a plain sequence number instead of a claim
-("never-committed") that a future commit falsifies. `fixture-source-2.ts`
+("never-committed") that a future commit falsifies. `fixture-source-4.ts`
 is committed here as part of this fixture set (so the fixture directory
 is complete and self-contained), which means it is now git-tracked and,
 by the same mechanism, a literal re-run of the commands above will NOT
@@ -125,7 +125,7 @@ fixture the `errors` selector's contribution to the blocking verdict
 line) was never asserted at a real positive value.
 
 Which `okf-kit` version produced these: recorded in `fixture-version.json`
-(`0.9.0` as of this pin bump; matches the pin in
+(`0.16.0` as of this pin bump; matches the pin in
 `.github/workflows/ci.yml` and `okf-staleness.yml` at the same time --
 see `scripts/check-okf-kit-pin.js` for the check that keeps those two in
 sync going forward, and `scripts/check-okf-selectors.js` for the check
