@@ -33,6 +33,10 @@ The seven packages above (other than understanding-gate) each carry their own ve
 
 ## [Unreleased]
 
+### Security
+
+- Bump the dev-only `handlebars` 4.7.9 to 4.7.10 (GHSA-xw65-4hp5-5hc7, GHSA-p8wg-vrv2-v86f, GHSA-8r5x-fm3f-whwj).
+
 ### Changed
 
 - CI: the okf-kit pin moves from 0.10.0 to 0.16.0 in `ci.yml` and `okf-staleness.yml` together, the okf-staleness workflow is re-synced to the okf-kit template (the pin-deviation comment is removed), and the okf-selectors fixtures are regenerated against 0.16.0 (report content unchanged). CI only; no package code change.
