@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- The critical-drift deny hint no longer names `harness approve risk`, which harness removed; it now points at fixing the drift or setting `RUNTIME_REALITY_DISABLE=1` to switch the hook off (task 8bee316a).
+
 ## 0.3.2, 2026-08-19
 
 - Version-only re-release: 0.3.1 was never accepted by the registry (every
