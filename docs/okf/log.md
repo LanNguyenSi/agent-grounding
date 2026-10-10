@@ -2,6 +2,13 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-10-10T14:10:20Z, the runtime-reality-checker critical-drift deny hint now names
+  `RUNTIME_REALITY_DISABLE=1` instead of the removed `harness approve risk`
+  (task 8bee316a); docs/policy-runtime-reality.md follows. Re-verified
+  `runtime-reality-policy-pointer.md`: the edit changed one line in place, so
+  its `handle-pre-tool-use.ts` citations (26-35, 88, 113-116) still resolve and
+  none of its claims concerns the hint text. Re-stamped; no body text changed.
+
 - 2026-10-04T05:23:54Z, okf-kit pin moved from 0.10.0 to 0.16.0 in ci.yml and
   okf-staleness.yml together (the pin-coupling check requires one identical
   version across workflows). The okf-staleness workflow is now the okf-kit
