@@ -3,7 +3,7 @@ type: overview
 title: runtime-reality-checker as a policy — who owns the env toggles
 description: Pointer doc — docs/policy-runtime-reality.md is the authoritative spec; this entry adds the ownership fact agents get backwards, namely that this package interprets its own escalation env vars while harness only sets them.
 tags: [runtime-reality-checker, policy, env, ownership, pointer]
-timestamp: 2026-07-10T01:40:00.436303Z
+timestamp: 2026-10-10T14:10:20Z
 sources:
   - docs/policy-runtime-reality.md
   - packages/runtime-reality-checker/src/policy/handle-pre-tool-use.ts

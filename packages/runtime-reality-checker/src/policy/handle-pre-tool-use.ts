@@ -335,7 +335,7 @@ export function handlePolicyPreToolUse(
   });
   return {
     stdout: jsonEnvelope("deny", fullMessage),
-    stderr: `${fullMessage}\nFix drift before continuing, or 'harness approve risk --reason "..."' to override.\n`,
+    stderr: `${fullMessage}\nFix the drift before continuing, or set RUNTIME_REALITY_DISABLE=1 to switch this hook off.\n`,
     exitCode: 2,
     decision: { kind: "block", reason: fullMessage, drift: result.drift },
   };

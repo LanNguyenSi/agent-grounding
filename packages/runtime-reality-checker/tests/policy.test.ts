@@ -271,6 +271,8 @@ describe("handler decision matrix", () => {
     expect(r.stdout).toContain("permissionDecision");
     expect(r.stdout).toContain("deny");
     expect(r.stderr).toMatch(/fe.*NOT/);
+    expect(r.stderr).toContain("set RUNTIME_REALITY_DISABLE=1 to switch this hook off");
+    expect(r.stderr).not.toContain("harness approve");
   });
 
   it("CRITICAL_AS_WARN degrades a critical drift to warn", () => {

@@ -88,7 +88,7 @@ The library emits drift items with severity `critical | warning | info`. The pol
 | `critical`           | `deny` + stderr message with "fix drift before continuing" | `RUNTIME_REALITY_CRITICAL_AS_WARN=1` to degrade |
 | (probe failed)       | `allow` + stderr warning | `RUNTIME_REALITY_PROBE_FAIL_BLOCK=1` |
 
-The defaults are intentionally **fail-open**: the harness should never become a tarpit because a probe is misconfigured. The block-on-critical default exists because the cost of letting an agent operate against a wrong runtime model is usually higher than the cost of a false block (the false block can be lifted by `harness approve risk`; the false diagnosis cascades for hours).
+The defaults are intentionally **fail-open**: the harness should never become a tarpit because a probe is misconfigured. The block-on-critical default exists because the cost of letting an agent operate against a wrong runtime model is usually higher than the cost of a false block (a false block can be lifted by setting `RUNTIME_REALITY_DISABLE=1`, or degraded to a warning with `RUNTIME_REALITY_CRITICAL_AS_WARN=1`; the false diagnosis cascades for hours).
 
 ## Concrete example: VPS compose deploy
 
@@ -117,7 +117,7 @@ Drift:
 Decision: deny
 Stderr: "runtime-reality-checker: drift detected for keyword 'deploy-panel' before 'compose-mutation' tool call
   - [critical] Process 'panel-frontend' expected to be running but is NOT
-Fix drift before continuing, or `harness approve risk --reason '...'` to override."
+Fix the drift before continuing, or set RUNTIME_REALITY_DISABLE=1 to switch this hook off."
 ```
 
 The agent now has to deal with the missing frontend before issuing the restart. Without this check, the agent would restart `panel-api`, observe nothing broke, and report success while the panel is still half-down.
