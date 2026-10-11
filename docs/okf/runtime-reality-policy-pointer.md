@@ -1,7 +1,7 @@
 ---
 type: overview
 title: runtime-reality-checker as a policy — who owns the env toggles
-description: Pointer doc — docs/policy-runtime-reality.md is the authoritative spec; this entry adds the ownership fact agents get backwards, namely that this package interprets its own escalation env vars while harness only sets them.
+description: Pointer doc — docs/policy-runtime-reality.md is the authoritative spec; this entry adds the ownership fact agents get backwards, namely that this package interprets its own escalation env vars while harness sets them and itself reads only the probe command and RUNTIME_REALITY_DISABLE (before it denies a timed-out stdin read).
 tags: [runtime-reality-checker, policy, env, ownership, pointer]
 timestamp: 2026-10-11T16:02:09Z
 sources:
@@ -40,12 +40,16 @@ helper (`handle-pre-tool-use.ts:88#"function envOn"`) when it builds its options
 - `RUNTIME_REALITY_CRITICAL_AS_WARN`
 - `RUNTIME_REALITY_PROBE_FAIL_BLOCK`
 
-Harness's role is only to **set** these variables in the environment of the hook
-it runs; the meaning of each flag, and the escalation logic they select, live
-here. A doc or comment claiming harness interprets them is wrong. The one
-runtime-reality variable harness does interpret is the probe command, which
-this package never reads.
+Harness's role is to **set** these variables in the environment of the hook it
+runs; the meaning of each flag, and the escalation logic they select, live
+here. harness reads the probe command, which this package never reads, and it
+also checks `RUNTIME_REALITY_DISABLE` itself, with its own copy of the
+on-switch rule, before it denies a timed-out stdin read. The other three flags
+are interpreted only here; a doc or comment claiming harness interprets them is
+wrong.
 
-Practical consequence: to change what a toggle does, edit this package and
-release it (`@lannguyensi/runtime-reality-checker`, independently versioned);
-to change whether a toggle is set for a given install, edit the harness manifest.
+Practical consequence: to change what a toggle does in the handler, edit this
+package and release it (`@lannguyensi/runtime-reality-checker`, independently
+versioned); the timed-out stdin deny and its `RUNTIME_REALITY_DISABLE` check
+live in harness. To change whether a toggle is set for a given install, edit
+the harness manifest.

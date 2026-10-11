@@ -36,8 +36,9 @@ at them rather than copying them.
   phases advance on the caller's word, a phase without steps is marked skipped,
   and the two hand-kept context derivations count skipped as checked.
 - [understanding-gate trust model](understanding-gate-approval-trust-model.md),
-  approval as one CLI-flipped field on the latest report for the bound task id,
-  the inputs the write-tool hooks trust, and which outcomes are audited.
+  approval as one field on the latest report for the bound task id, trusted
+  whoever wrote it, the inputs the write-tool hooks trust, and which outcomes
+  are audited.
 
 ## Runbooks
 

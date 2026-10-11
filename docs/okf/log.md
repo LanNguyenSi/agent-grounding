@@ -12,8 +12,8 @@
   shows `runtime-inspection: skipped`, all three runtime flags true and a
   network claim allowed, while an `agent-tasks` session keeps them false.
   `understanding-gate-approval-trust-model.md` covers approval as the
-  `approvalStatus` field forced to `pending` by the parser and flipped only by
-  the CLI, the task-id binding shared by the persisting and enforcing hooks,
+  `approvalStatus` field forced to `pending` by the parser and written within
+  this package only by the approve and revoke CLI, the task-id binding shared by the persisting and enforcing hooks,
   the trusted inputs with their audit entries, and the adapter differences on
   degraded input. Both docs are listed in `index.md`. Verdict of `okf-kit check
   --require-anchors --json docs/okf` (0.16.0) on the committed tree: 0 errors

@@ -4,7 +4,7 @@ How `solution_evaluate` and `solution_gate` turn a real preflight run into a HEA
 
 Verifier-gated "done": completion is **earned from a real preflight run, not claimed**. `solution_evaluate` runs `preflight run <repoPath> --json` (the agent-preflight check battery: lint / typecheck / test / audit / secret) and records a verdict marker for an id, pinned to the git HEAD it was produced at. `solution_gate` then allows only when a ready verdict exists at the *current* HEAD.
 
-The sequence below shows the order in which `solution_evaluate` works and what `solution_gate` checks afterwards.
+The sequence below shows the order in which `solution_evaluate` works and what `solution_gate` checks afterwards. The prior same-id marker is removed only after preflight returns a valid result (or when HEAD resolution or preflight fails), so an earlier ready marker at the current HEAD still passes `solution_gate` while preflight runs.
 
 ```mermaid
 sequenceDiagram
@@ -19,10 +19,11 @@ sequenceDiagram
   alt lock held by a live attempt in another process
     S-->>A: status running, that attemptId
   else lock acquired
-    S->>M: remove prior marker for id
     S->>S: resolve git HEAD
     S->>P: preflight run repoPath --json
+    Note over S,M: the prior marker stays readable while preflight runs
     P-->>S: ready, confidence, blockers
+    S->>M: remove prior marker for id (an earlier error removes it too)
     S->>O: read .ai/run pointer or newest .ai/runs
     S->>M: sign with HMAC key, write marker at HEAD
     S-->>A: completed or failed, or status running after the wait bound

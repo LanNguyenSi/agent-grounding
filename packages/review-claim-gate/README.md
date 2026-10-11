@@ -49,7 +49,7 @@ drive the inputs from a signal only maintainers control.
 
 ```bash
 npm install @lannguyensi/review-claim-gate      # library
-npm install -g @lannguyensi/review-claim-gate   # CLI (or run it with npx review-claim-gate)
+npm install -g @lannguyensi/review-claim-gate   # CLI (or run it with npx @lannguyensi/review-claim-gate)
 ```
 
 ## CLI
