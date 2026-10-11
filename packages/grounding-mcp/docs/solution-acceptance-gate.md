@@ -1,10 +1,38 @@
 # Solution-acceptance gate
 
-How `solution_evaluate` and `solution_gate` turn a real preflight run into a HEAD-pinned, tamper-resistant verdict marker.
+How `solution_evaluate` and `solution_gate` turn a real preflight run into a HEAD-pinned, signed verdict marker.
 
 Verifier-gated "done": completion is **earned from a real preflight run, not claimed**. `solution_evaluate` runs `preflight run <repoPath> --json` (the agent-preflight check battery: lint / typecheck / test / audit / secret) and records a verdict marker for an id, pinned to the git HEAD it was produced at. `solution_gate` then allows only when a ready verdict exists at the *current* HEAD.
 
-The verdict marker is the contract a consumer (e.g. harness, gating task-finishing tools) reads:
+The sequence below shows the order in which `solution_evaluate` works and what `solution_gate` checks afterwards.
+
+```mermaid
+sequenceDiagram
+  participant A as Agent
+  participant S as grounding-mcp
+  participant L as Per-id lock
+  participant M as Verdict marker
+  participant P as preflight
+  participant O as OW run files
+  A->>S: solution_evaluate(id, repoPath)
+  S->>L: acquire lock, no retries
+  alt lock held by a live attempt in another process
+    S-->>A: status running, that attemptId
+  else lock acquired
+    S->>M: remove prior marker for id
+    S->>S: resolve git HEAD
+    S->>P: preflight run repoPath --json
+    P-->>S: ready, confidence, blockers
+    S->>O: read .ai/run pointer or newest .ai/runs
+    S->>M: sign with HMAC key, write marker at HEAD
+    S-->>A: completed or failed, or status running after the wait bound
+  end
+  A->>S: solution_gate(id)
+  S->>M: read id, head, ready (signature not checked)
+  S-->>A: allowed only if ready and head equals current HEAD
+```
+
+The verdict marker is the contract a consumer (for example a tool that gates task finishing) reads:
 
 ```json
 { "id": "task-42", "head": "<40-hex sha>", "ready": true, "confidence": 0.9, "blockers": [], "timestamp": "...", "source": "preflight", "alg": "hmac-sha256-v1", "signature": "<64-hex HMAC-SHA256>" }
@@ -31,9 +59,11 @@ The marker lives outside the agent-writable evidence-ledger on purpose (a ledger
 
 ## Verdict marker signing (0.8.0)
 
-Since 0.8.0, `writeVerdict` signs the marker unconditionally (HMAC-SHA256, no unsigned fallback) before writing it: `alg` is the versioned tag `hmac-sha256-v1`, and `signature` is computed over the marker's fields with the key at the path `SOLUTION_VERDICT_SIGNING_KEY` points to (projected by harness at apply time; primary since 0.8.0), else at `<harness-home>/harness.generated/.approval-signing.key` (see Storage above; the key is created on first use if absent, at whichever path is in effect). A signature-checking consumer (e.g. harness) rejects a naive hand-typed JSON file, one with no `alg`/`signature` at all or a wrong signature, as forged.
+Since 0.8.0, `writeVerdict` signs the marker unconditionally (HMAC-SHA256, no unsigned fallback) before writing it: `alg` is the versioned tag `hmac-sha256-v1`, and `signature` is computed over the marker's fields with the key at the path `SOLUTION_VERDICT_SIGNING_KEY` points to (projected by harness at apply time; primary since 0.8.0), else at `<harness-home>/harness.generated/.approval-signing.key` (see Storage above; the key is created on first use if absent, at whichever path is in effect). A signature-checking consumer rejects a naive hand-typed JSON file, one with no `alg`/`signature` at all or a wrong signature, as forged.
 
 This closes casual/accidental forgery, and it closes silent tampering: mutating any signed field after signing (intentionally or by a bug) invalidates the signature and is rejected. It does **not** close a shell-capable, same-UID forger: the signing key is read (and, on a fresh machine, first created) under the SAME UID that runs `grounding-mcp` and the same UID a shell-capable agent runs under, so such an agent could still read that key and compute a valid signature itself, exactly the same same-UID threat model the harness consumer's own signing already documents. This is pragmatic defense-in-depth, not a new authorization boundary. Composing additional ground-truth (CI, review, unresolved hypotheses from the session) into the verdict is the next layer.
+
+`solution_gate` itself does not verify `alg` or `signature`: `readVerdict` keeps only the seven pinned fields, so an unsigned or hand-written marker with `ready: true` at the current HEAD passes `solution_gate`. The forgery and tamper protection described above applies only to a consumer that verifies the signature.
 
 The verdict pins to the committed HEAD, so edits made after a green `solution_evaluate` do not shift HEAD: re-run it after any change. preflight's own clean-worktree check fails a dirty tree, so a fresh `solution_evaluate` on uncommitted work yields a not-ready verdict.
 
