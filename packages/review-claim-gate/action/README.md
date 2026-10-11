@@ -72,7 +72,7 @@ GitHub UI, even with an approving review.
 | Input                        | Required | Default                          | Description                                                          |
 | ---------------------------- | -------- | -------------------------------- | -------------------------------------------------------------------- |
 | `task-id`                    | yes      |                                  | agent-tasks task id / ledger session key                             |
-| `pr-number`                  | no       |                                  | PR number recorded in the JSON report (`pr`); omitted when empty. The Check-Run always attaches to the PR head SHA. |
+| `pr-number`                  | no       |                                  | PR number recorded in the JSON report (`pr`); omitted when empty. The Check-Run attaches to the PR head SHA from the event payload, not to this number. |
 | `evidence-ledger-path`       | no       | `.evidence-ledger/db.sqlite`     | Path to the evidence-ledger SQLite DB                                |
 | `fail-on-block`              | no       | `true`                           | When `true`, the step exits non-zero if the gate blocks              |
 | `tests-pass`                 | no       | `false`                          | Flip to `true` when the test suite is green                          |
@@ -120,6 +120,11 @@ git add .agent-grounding/evidence/feat/foo.jsonl
 git commit -m "evidence: attach ledger for merge_approval gate"
 git push
 ```
+
+`review-claim-gate export` reads `EVIDENCE_LEDGER_DB` when it is set, while
+the `ledger` CLI always writes to `~/.evidence-ledger/ledger.db`. Unset the
+variable, or pass `--ledger-db ~/.evidence-ledger/ledger.db` to `export`, so
+both use the same database.
 
 On the next workflow run, the action finds the file, counts entries, and the Check-Run summary shows `Evidence entries: N (file: <path>)` instead of `(ledger fallback)`. A committed evidence file is visible in git history in a way the `evidence-logged` input is not.
 
