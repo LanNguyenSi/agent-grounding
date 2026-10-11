@@ -51,7 +51,7 @@ flowchart TD
     wr -- "reads release notes" --> rcl["root CHANGELOG.md<br/>section [X.Y.Z] - YYYY-MM-DD"]
     wn -- "npm publish" --> locked["grounding-wrapper, evidence-ledger,<br/>claim-gate, hypothesis-tracker"]
     tp["tag package-vX.Y.Z"] --> wl["publish-libs.yml"]
-    wl -- "npm publish" --> indep["grounding-sdk, grounding-mcp, debug-playbook-engine,<br/>domain-router, readme-first-resolver,<br/>review-claim-gate, runtime-reality-checker"]
+    wl -- "npm publish<br/>(the tagged package only)" --> indep["grounding-sdk, grounding-mcp, debug-playbook-engine,<br/>domain-router, readme-first-resolver,<br/>review-claim-gate, runtime-reality-checker"]
     tu["tag understanding-gate-vX.Y.Z"] --> wu["publish-understanding-gate.yml"]
     wu -- "npm publish" --> ugp["understanding-gate"]
 ```

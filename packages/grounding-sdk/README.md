@@ -62,7 +62,7 @@ const result = validate({
   session,
   claim: "ship the fix — upstream confirmed",
   type: "root_cause",
-  ledgerSummary: summary,
+  ledgerSummary: { ...summary, session: session.id },
 });
 // result.derivedContext shows which prereqs were detected
 ```

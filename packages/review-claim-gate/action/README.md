@@ -72,7 +72,7 @@ GitHub UI, even with an approving review.
 | Input                        | Required | Default                          | Description                                                          |
 | ---------------------------- | -------- | -------------------------------- | -------------------------------------------------------------------- |
 | `task-id`                    | yes      |                                  | agent-tasks task id / ledger session key                             |
-| `pr-number`                  | no       |                                  | PR number recorded in the JSON report (`pr`); omitted when empty. The Check-Run attaches to the PR head SHA from the event payload, not to this number. |
+| `pr-number`                  | no       |                                  | PR number recorded in the JSON report (`pr`), which is `null` when the input is empty. The Check-Run attaches to the PR head SHA from the event payload, or to `github.sha` when the event has no `pull_request` payload, not to this number. |
 | `evidence-ledger-path`       | no       | `.evidence-ledger/db.sqlite`     | Path to the evidence-ledger SQLite DB                                |
 | `fail-on-block`              | no       | `true`                           | When `true`, the step exits non-zero if the gate blocks              |
 | `tests-pass`                 | no       | `false`                          | Flip to `true` when the test suite is green                          |
@@ -154,7 +154,8 @@ write checks; `act` with a PAT works.
    `$RUNNER_TEMP/merge-approval.json`.
 4. `actions/github-script@v8` reads the report and calls
    `github.rest.checks.create` to post the `merge-approval` Check-Run,
-   attached to the PR's head SHA.
+   attached to the PR's head SHA (or to `github.sha` when the event has no
+   `pull_request` payload).
 5. If `fail-on-block=true` and the gate blocked, the final step exits 1
    so the workflow fails alongside the Check-Run.
 

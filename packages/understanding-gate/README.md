@@ -54,7 +54,7 @@ Phase 2 works under `claude -p` as long as the harness ships `last_assistant_mes
 | `fast_confirm` (default) | low-risk, small tasks | 5-line summary, "please confirm" |
 | `grill_me` | ambiguous, risky, broad | 10-section report, "please grill me" |
 
-Escalation to `grill_me`: set `UNDERSTANDING_GATE_MODE=grill_me`, or include `grill me` / `/grill` in the prompt. On Claude Code both modes are persisted: the Stop hook maps the five fast_confirm bullets onto report sections and validates them against a relaxed schema, so a fast_confirm report can be approved like a grill_me report. On opencode, the persist-report plugin only picks up replies that start with an `# Understanding Report` heading, so use `/grill` there when Layer 2 needs a report to approve.
+Escalation to `grill_me`: set `UNDERSTANDING_GATE_MODE=grill_me`, or include `grill me` / `/grill` in the prompt. On Claude Code both modes are persisted: the Stop hook maps the five fast_confirm bullets onto report sections and validates them against a relaxed schema, so a fast_confirm report can be approved like a grill_me report. On opencode, the persist-report plugin only picks up replies that contain an `Understanding Report` heading line, so use `/grill` there when Layer 2 needs a report to approve.
 
 ### Approve / revoke the gate
 
@@ -77,7 +77,7 @@ The CLI flips the persisted report's `approvalStatus` field, which is the source
 
 `approve`, `revoke`, `status`, `report list` and `report show` accept `--dir <path>` to read reports from another directory. `--dir` overrides `UNDERSTANDING_GATE_REPORT_DIR`, which overrides the default `.understanding-gate/reports/`. `revoke` takes the same `--task-id` / `--report-id` selectors as `approve`. `report list --json` prints JSON instead of a table, and `status --task-id <id>` limits the output to one taskId.
 
-Debugging: `understanding-gate print --mode fast_confirm|grill_me|full` prints the prompt snippet the hook would inject.
+Debugging: `understanding-gate print --mode fast_confirm|grill_me` prints the snippet the `UserPromptSubmit` hook injects; `--mode full` prints the standalone full template, which no hook injects.
 
 ### Files and state
 
@@ -88,13 +88,14 @@ Debugging: `understanding-gate print --mode fast_confirm|grill_me|full` prints t
 | `parse-errors/`, `sync-errors/` | Breadcrumbs for failed parses and failed hypothesis syncs, next to the reports dir |
 | `hypotheses.json` | Assumptions and open questions registered as hypothesis-tracker entries, next to the reports dir |
 
-The PreToolUse hook checks the latest report for the active task id (`UNDERSTANDING_GATE_TASK_ID`, else the harness session id), so approving another session's report does not unblock this one. `approve` without flags works only when every report shares one taskId; otherwise pass `--task-id`.
+The PreToolUse hook checks the latest report for the active task id (`UNDERSTANDING_GATE_TASK_ID`, else the harness session id), so approving a report for another task id does not unblock this one (sessions that share `UNDERSTANDING_GATE_TASK_ID` share approval). `approve` without flags works only when every report shares one taskId; otherwise pass `--task-id`.
 
 ### Disable or force-bypass
 
 ```bash
 # Kill switch (gate is off and writes no audit entry of its own; the
-# PreToolUse hook still audits a payload it cannot read as degraded_allow):
+# PreToolUse hook still audits a payload that is empty, not a JSON object,
+# or has no tool_name as degraded_allow):
 UNDERSTANDING_GATE_DISABLE=1 claude
 
 # Bypass enforcement once with a recorded reason (>= 10 chars; logged):

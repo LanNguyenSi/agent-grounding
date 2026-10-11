@@ -1,7 +1,7 @@
 ---
 type: invariant
 title: "understanding-gate approval and enforcement: what the write-tool gate trusts"
-description: Approval is the approvalStatus field of the latest persisted report for the bound task id; within this package only the approve and revoke CLI write it, the hooks do not check who wrote it, and harness's understanding-gate pack (v0.64.0 and earlier) rewrites it too; the hooks trust their environment (kill switch first in the shared decision and unaudited, force-bypass audited), the unsigned pause sentinel, and the report directory, and the Claude Code and opencode adapters differ on degraded input.
+description: Approval is the approvalStatus field of the latest persisted report for the bound task id; within this package only the approve and revoke CLI change it on an existing report (the persisting hooks save new reports as pending), the hooks do not check who wrote it, and harness's understanding-gate pack (v0.8.0 through v0.64.0) rewrites it too; the hooks trust their environment (kill switch first in the shared decision and unaudited, force-bypass audited), the unsigned pause sentinel, and the report directory, and the Claude Code and opencode adapters differ on degraded input.
 tags: [understanding-gate, approval, enforcement, audit, trust-boundary]
 timestamp: 2026-10-11T16:29:28Z
 sources:
@@ -9,12 +9,14 @@ sources:
   - packages/understanding-gate/src/core/approval.ts
   - packages/understanding-gate/src/core/audit.ts
   - packages/understanding-gate/src/core/parser.ts
+  - packages/understanding-gate/src/core/persistence.ts
   - packages/understanding-gate/src/adapters/claude-code/handle-pre-tool-use.ts
   - packages/understanding-gate/src/adapters/claude-code/handle-stop.ts
   - packages/understanding-gate/src/adapters/claude-code/pause.ts
   - packages/understanding-gate/src/adapters/opencode/persist-report.ts
   - packages/understanding-gate/src/adapters/opencode/persist-report-plugin.ts
   - packages/understanding-gate/src/cli/approve.ts
+  - packages/understanding-gate/src/cli.ts
 ---
 
 # understanding-gate approval and enforcement trust model
@@ -36,15 +38,17 @@ task (`packages/understanding-gate/src/core/approval.ts:3#"approval.json marker 
 - Every report the agent emits is parsed with `approvalStatus` forced to
   `pending`, after all other fields are merged, so a `## Metadata` block cannot
   set it (`packages/understanding-gate/src/core/parser.ts:425-428#"approvalStatus:"`).
-- Within this package only `withApprovalStatus` writes the field, called by
-  `approve` and `revoke`. Its actor type is `cli` or `force`; `force` is
+- Within this package only `withApprovalStatus` changes the field on an
+  existing report, called by `approve` and `revoke`; the persisting hooks write
+  new reports only as `pending`. Its actor type is `cli` or `force`; `force` is
   reserved and no call site uses it
   (`packages/understanding-gate/src/core/approval.ts:13-16#"export type ApproveActor ="`).
 - The hooks check the field alone, not `approvedBy` or who wrote it
   (`packages/understanding-gate/src/core/approval.ts:32-33#"entry.approvalStatus ==="`).
-  harness releases that ship its understanding-gate pack (v0.64.0 and earlier)
-  also rewrite the field to `approved` in the same report files, from
-  `harness approve understanding` and from the pack's opt-in auto-approval;
+  harness releases that ship its understanding-gate pack (v0.8.0 through
+  v0.64.0; the opt-in auto-approval from v0.51.0) also rewrite the field to
+  `approved` in the same report files, from `harness approve understanding` and
+  from the pack's opt-in auto-approval;
   neither writes this package's `approve` audit line.
 - `understanding-gate approve` and `revoke` load a report, flip the field with
   actor `cli` and save a new snapshot; the previous file stays in the report
@@ -94,7 +98,7 @@ The truthy values come from `isTruthyEnv`
 (`packages/understanding-gate/src/core/enforcement.ts:138-141#"return v ==="`).
 Of the environment overrides, only the kill switch leaves no audit line. An
 approved allow is not logged either, so `audit.log` records approvals made
-through this package's CLI, not every approval. The pause sentinel is unsigned and only ever read by this package
+through this package's CLI, not every approval. The pause sentinel is unsigned; this package only reads it
 (`packages/understanding-gate/src/adapters/claude-code/pause.ts:66-108#"return expires > Date.now();"`).
 A persisted report carries no signature either, so approval is only as strong
 as write access to the report directory, just as a pause is only as strong as

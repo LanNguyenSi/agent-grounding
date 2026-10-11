@@ -4,7 +4,7 @@ Track competing hypotheses during debugging.
 
 ## Overview
 
-hypothesis-tracker prevents agents from silently replacing one wrong guess with another by recording, per hypothesis, its required checks, its evidence and its status. Each hypothesis carries its own required checks, evidence entries, and status (unverified, supported, or rejected), so a debugging session keeps a visible record of what was considered and why it was ruled in or out.
+hypothesis-tracker prevents agents from silently replacing one wrong guess with another: each hypothesis carries its own required checks, evidence entries and status (unverified, supported, or rejected), so a debugging session keeps a visible record of what was considered and why it was ruled in or out.
 
 The store is a plain in-memory object; persist it yourself with `exportStore`/`importStore`.
 

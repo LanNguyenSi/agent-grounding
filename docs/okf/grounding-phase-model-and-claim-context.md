@@ -1,11 +1,12 @@
 ---
 type: invariant
 title: "Grounding phase model and claim-context derivation: phase progress stands in for checks"
-description: grounding-wrapper's seven-phase machine is advanced on the caller's word, a phase with no steps is marked skipped, and both claim-context derivations (grounding-mcp and grounding-sdk, kept in sync by hand) count skipped as satisfied, so a session without runtime-reality-checker reports every runtime check as done.
+description: grounding-wrapper's seven-phase machine is advanced on the caller's word, a phase with no steps is marked skipped, and both claim-context derivations (grounding-mcp and grounding-sdk, kept in sync by hand) count skipped as satisfied, so a session without runtime-reality-checker reports every runtime check as done once advanced past playbook-loading.
 tags: [grounding-wrapper, grounding-mcp, grounding-sdk, claim-gate, phases, trust-boundary]
 timestamp: 2026-10-11T16:06:54Z
 sources:
   - packages/grounding-wrapper/src/lib.ts
+  - packages/grounding-wrapper/src/index.ts
   - packages/grounding-mcp/src/derive-context.ts
   - packages/grounding-mcp/src/server.ts
   - packages/grounding-mcp/src/grounding-assessment-policy.ts
@@ -88,11 +89,16 @@ session (new id, new sequence, phases reset) with `scope_changed: true`
 `no-token-claim-before-config-check` only for keywords containing `token`,
 `auth`, `config`, `monitor`, `dashboard` or `agent`
 (`packages/grounding-wrapper/src/lib.ts:101-123#"return [...new Set(rails)];"`).
-The only consumer is `isGuardrailActive`, a membership test
+The only check against them is `isGuardrailActive`, a membership test
 (`packages/grounding-wrapper/src/lib.ts:297-299#"return session.active_guardrails.includes(guardrail);"`),
-exposed as `grounding_guardrail_check`. Neither the phase machine nor the
-context derivation reads `active_guardrails`; a claim is judged by claim-gate's
-per-type prerequisites alone.
+exposed as `grounding_guardrail_check` and the wrapper CLI's `check-guardrail`
+(`packages/grounding-wrapper/src/index.ts:94#"const active = isGuardrailActive(session, opts.guardrail as GuardrailId);"`).
+Sessions echo the list (grounding-mcp's `grounding_start` and
+`grounding_advance` responses,
+`packages/grounding-mcp/src/server.ts:132#"activeGuardrails: s.active_guardrails,"`,
+and the wrapper CLI's `start`), and nothing gates on it. Neither the phase
+machine nor the context derivation reads `active_guardrails`; a claim is judged
+by claim-gate's per-type prerequisites alone.
 
 ## Context derivation: two hand-kept copies
 

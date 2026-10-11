@@ -125,4 +125,4 @@ Open question for Phase 3: `UNDERSTANDING_GATE_TASK_ID` (Phase 1, package-intern
 
 The Phase-0 gate is non-blocking. Hook never crashes Claude Code: malformed input, missing binary, runtime error all degrade to "exit 0, empty stdout". The cost of a false-negative classification (gate skipped when it should fire) is acceptable; the cost of crashing the harness is not.
 
-In Phase 2, blocking is enforced, but the kill switch and force-bypass remain available. A force-bypass is audit-logged as a `force_bypass` entry. The kill switch (`UNDERSTANDING_GATE_DISABLE`) turns the gate off and writes no audit entry of its own; the Claude Code `PreToolUse` hook still writes `degraded_allow` for a payload it cannot read.
+In Phase 2, blocking is enforced, but the kill switch and force-bypass remain available. A force-bypass is audit-logged as a `force_bypass` entry. The kill switch (`UNDERSTANDING_GATE_DISABLE`) turns the gate off and writes no audit entry of its own; the Claude Code `PreToolUse` hook still writes `degraded_allow` for a payload that is empty, not a JSON object, or has no `tool_name`.

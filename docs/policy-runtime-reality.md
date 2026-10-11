@@ -90,7 +90,7 @@ The library emits drift items with severity `critical | warning | info`. The pol
 | `critical`           | `deny` + stderr message with "fix drift before continuing" | `RUNTIME_REALITY_CRITICAL_AS_WARN=1` to degrade |
 | (probe failed)       | `allow` + stderr warning | `RUNTIME_REALITY_PROBE_FAIL_BLOCK=1` |
 
-The flowchart shows the handler's order of checks. Every step before the drift comparison allows the call, so only a probe that reports critical drift, or an escalation variable, can deny. The package bin never configures a probe. Variable names drop the `RUNTIME_REALITY_` prefix: `DISABLE` stands for `RUNTIME_REALITY_DISABLE`, and so on.
+The flowchart shows the handler's order of checks. Every step before the drift comparison allows the call by default, so only a probe that reports critical drift, or an escalation variable, can deny. The package bin never configures a probe. Variable names drop the `RUNTIME_REALITY_` prefix: `DISABLE` stands for `RUNTIME_REALITY_DISABLE`, and so on.
 
 ```mermaid
 flowchart TD
@@ -107,15 +107,15 @@ flowchart TD
     p -- yes --> x{"probe throws?"}
     x -- yes --> pf
     x -- no --> s{"worst drift<br/>severity"}
+    pf -- no --> pfa["allow,<br/>stderr warning"]
+    pf -- yes --> pfd["deny"]
     s -- "none or info" --> allow["allow"]
     s -- warning --> w{"WARN_AS_BLOCK<br/>set?"}
     s -- critical --> c{"CRITICAL_AS_WARN<br/>set?"}
-    pf -- no --> allow
-    pf -- yes --> deny["deny"]
-    w -- no --> allow
-    w -- yes --> deny
-    c -- yes --> allow
-    c -- no --> deny
+    w -- no --> wa["allow,<br/>stderr warning"]
+    w -- yes --> wd["deny"]
+    c -- yes --> ca["allow,<br/>stderr warning"]
+    c -- no --> cd["deny"]
 ```
 
 The defaults are intentionally **fail-open**: the harness should never become a tarpit because a probe is misconfigured. The block-on-critical default exists because the cost of letting an agent operate against a wrong runtime model is usually higher than the cost of a false block (a false block can be lifted by setting `RUNTIME_REALITY_DISABLE=1`, or degraded to a warning with `RUNTIME_REALITY_CRITICAL_AS_WARN=1`; the false diagnosis cascades for hours).
@@ -152,7 +152,7 @@ Fix the drift before continuing, or set RUNTIME_REALITY_DISABLE=1 to switch this
 
 The agent now has to deal with the missing frontend before issuing the restart. Without this check, the agent would restart `panel-api`, observe nothing broke, and report success while the panel is still half-down.
 
-## harness.yaml integration snippet
+## harness integration
 
 Declare the hook as a harness `hooks:` entry that runs `harness pack hook runtime-reality`, with `RUNTIME_REALITY_KEYWORD`, `RUNTIME_REALITY_EXPECTATIONS_DIR` and `RUNTIME_REALITY_PROBE_CMD` set in its command; see [harness: runtime-reality PreToolUse hook](https://github.com/LanNguyenSi/harness/blob/master/docs/runtime-reality-hook.md) for the entry and the probe install.
 
@@ -165,8 +165,8 @@ The harness hook passes only the expectations loader and the probe to the handle
 These are not decided yet:
 
 1. **Keyword from a session id.** The keyword comes only from `RUNTIME_REALITY_KEYWORD`. Deriving it from a `grounding-mcp` session id is an unimplemented option; it would make the hook depend on grounding-mcp being installed, and would need a decision on whether the hook degrades to allow when grounding-mcp is missing.
-2. **Probe failure observability.** Should probe failures be silent (current default) or surface in `friction-log`? Probably friction-log, but that adds a dep.
-3. **Multi-keyword sessions.** A session that touches both `deploy-panel` and `agent-relay` would need to merge two expectations files. Out of scope for the PoC, real follow-up.
+2. **Probe failure observability.** Should probe failures also surface in `friction-log`? Today they produce a stderr warning and, with this package's own bin, an audit line. Probably friction-log, but that adds a dep.
+3. **Multi-keyword sessions.** A session that touches both `deploy-panel` and `agent-relay` would need to merge two expectations files. Out of scope for now, real follow-up.
 4. **Probe caching.** A fresh `docker ps` on every Bash call is 50-200ms overhead. The probe contract should declare cache-TTL; the harness wrapper can honor it.
 
 ## Out of scope

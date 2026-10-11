@@ -13,11 +13,12 @@
 
 - 2026-10-11T16:29:28Z, corrections to two docs and a re-stamp pass.
   `understanding-gate-approval-trust-model.md`: within this package only
-  `withApprovalStatus` (via `approve` and `revoke`) writes `approvalStatus`,
-  the hooks check the field and not who wrote it, and harness releases that
-  ship its understanding-gate pack (v0.64.0 and earlier) rewrite it from
-  `harness approve understanding` and the pack's opt-in auto-approval without
-  this package's `approve` audit line, so `audit.log` records CLI approvals,
+  `withApprovalStatus` (via `approve` and `revoke`) changes `approvalStatus`
+  on an existing report, the hooks check the field and not who wrote it, and
+  harness releases that ship its understanding-gate pack (v0.8.0 through
+  v0.64.0) rewrite it from `harness approve understanding` and, from v0.51.0,
+  the pack's opt-in auto-approval without this package's `approve` audit
+  line, so `audit.log` records CLI approvals,
   not every approval; the kill switch is first only inside
   `decideEnforcement`, after the report listing and, in the Claude Code hook,
   after the malformed and tool-less payload paths. `index.md` follows.
@@ -45,8 +46,9 @@
   shows `runtime-inspection: skipped`, all three runtime flags true and a
   network claim allowed, while an `agent-tasks` session keeps them false.
   `understanding-gate-approval-trust-model.md` covers approval as the
-  `approvalStatus` field forced to `pending` by the parser and written within
-  this package only by the approve and revoke CLI, the task-id binding shared by the persisting and enforcing hooks,
+  `approvalStatus` field forced to `pending` by the parser and changed on an
+  existing report within this package only by the approve and revoke CLI,
+  the task-id binding shared by the persisting and enforcing hooks,
   the trusted inputs with their audit entries, and the adapter differences on
   degraded input. Both docs are listed in `index.md`. Verdict of `okf-kit check
   --require-anchors --json docs/okf` (0.16.0) on the committed tree: 0 errors
@@ -57,8 +59,9 @@
   the runtime imports), `docs/policy-runtime-reality.md`, `CONTRIBUTING.md`,
   the review-claim-gate, grounding-mcp and runtime-reality-checker READMEs and
   docs, one comment each in `packages/grounding-mcp/src/server.ts` and
-  `packages/runtime-reality-checker/src/policy/pre-tool-use.ts` (no line
-  shift). Re-verified and re-stamped seven docs:
+  `packages/runtime-reality-checker/src/policy/pre-tool-use.ts` (`server.ts`
+  keeps its line count; `pre-tool-use.ts` gains one comment line, and no
+  earlier citation pointed into it). Re-verified and re-stamped seven docs:
   `grounding-stack-overview.md` (release topology, versions and test runners
   still hold; the diagram citation moves to the new block, and "It is
   current" is dropped), `runtime-reality-policy-pointer.md` (status paragraph

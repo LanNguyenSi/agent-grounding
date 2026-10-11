@@ -41,7 +41,7 @@ flowchart TD
     oc --> ug
     cc --> mcp
     hn -- "pack hook runtime-reality<br/>(supplies the probe)" --> rrc
-    hn -- ledger_summary --> mcp
+    hn -- "ledger_summary, ledger_add" --> mcp
     ci -- action --> rcg
     ug --> ht
     mcp --> gw
