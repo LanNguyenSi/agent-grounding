@@ -32,7 +32,7 @@ const result = runRealityCheck(
 );
 
 console.log(result.ready_for_diagnosis); // false - frontend is down
-console.log(result.summary);             // "1 critical drift(s) found — fix before diagnosing"
+console.log(result.summary);             // human-readable text with an emoji prefix; branch on ready_for_diagnosis or hasCriticalDrift(result) instead
 
 if (hasCriticalDrift(result)) {
   console.log("Critical drift detected:", result.drift);
@@ -48,6 +48,8 @@ if (hasCriticalDrift(result)) {
 | `buildDriftItems(processResults)` | Generate drift items from process comparison |
 | `hasCriticalDrift(result)` | Check if any critical drift exists |
 | `getCriticalDrift(result)` | Get only critical drift items |
+| `verifyMemoryReference(ref, options?)` | Check that a memory-cited path, symbol, or CLI flag still exists; see [verify_memory_reference reference](docs/verify-memory-reference.md) |
+| `handlePolicyPreToolUse` (from `@lannguyensi/runtime-reality-checker/policy`) | PreToolUse policy handler, also shipped as the `runtime-reality-policy-pre-tool-use` bin; see [PreToolUse policy reference](docs/pretooluse-policy.md) |
 
 ### Types
 

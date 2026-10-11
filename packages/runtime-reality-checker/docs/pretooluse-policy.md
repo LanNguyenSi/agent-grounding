@@ -2,7 +2,7 @@
 
 A proof-of-concept `PreToolUse` policy hook that blocks a runtime-mutating tool call when critical drift is present.
 
-Beyond the library API, this package ships a PreToolUse policy hook that runs `runRealityCheck` before a defined class of runtime-mutating tool calls (compose / systemctl / kill / deploy script) and blocks when critical drift is present. The agent-grounding repo owns the policy and the spec at [`docs/policy-runtime-reality.md`](../../../docs/policy-runtime-reality.md), the harness side registers the hook (separate follow-up task).
+Beyond the library API, this package ships a PreToolUse policy hook that runs `runRealityCheck` before a defined class of runtime-mutating tool calls (compose / systemctl / kill / deploy script) and blocks when critical drift is present. The agent-grounding repo owns the policy and the spec at [`docs/policy-runtime-reality.md`](../../../docs/policy-runtime-reality.md), harness registers it as `harness pack hook runtime-reality` (see [harness: runtime-reality PreToolUse hook](https://github.com/LanNguyenSi/harness/blob/master/docs/runtime-reality-hook.md)).
 
 ```typescript
 import { handlePolicyPreToolUse, type Probe } from "@lannguyensi/runtime-reality-checker/policy";
@@ -22,7 +22,7 @@ process.stderr.write(result.stderr);
 if (result.exitCode !== 0) process.exit(result.exitCode);
 ```
 
-The package binary `runtime-reality-policy-pre-tool-use` is a thin wrapper that ships without a probe (degrades to allow, or blocks if `RUNTIME_REALITY_PROBE_FAIL_BLOCK=1`). The full integration plus probe lives in the harness-side follow-up. The planned probe-registration knob `RUNTIME_REALITY_PROBE_CMD` (referenced in source comments and the policy spec) is **not yet read by this package**; it is reserved for that harness-side wiring, so do not rely on it today.
+The package binary `runtime-reality-policy-pre-tool-use` is a thin wrapper that ships without a probe (degrades to allow, or blocks if `RUNTIME_REALITY_PROBE_FAIL_BLOCK=1`). This binary does not read `RUNTIME_REALITY_PROBE_CMD`. For a real probe, use harness's `harness pack hook runtime-reality`, which runs the command named in `RUNTIME_REALITY_PROBE_CMD` and passes its output to this package's handler. That verb passes only the expectations loader and the probe, so `RUNTIME_REALITY_TRIGGERS_FILE` and `RUNTIME_REALITY_AUDIT_LOG` take effect only with this package's own binary.
 
 Env knobs:
 
