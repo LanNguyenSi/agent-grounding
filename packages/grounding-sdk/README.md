@@ -13,7 +13,7 @@ library call the MCP server would make.
 Requires Node.js >= 20.
 
 ```bash
-npm install @lannguyensi/grounding-sdk
+npm install @lannguyensi/grounding-sdk @lannguyensi/grounding-wrapper @lannguyensi/evidence-ledger
 ```
 
 ## Quickstart
@@ -56,7 +56,8 @@ const vResult = verify(
 //    to the MCP claim_evaluate_from_session tool.
 let session = initSession({ keyword: "crash", problem: "500 on /health" });
 session = advancePhase(session); // …walk phases as your agent does its work
-const summary = getSummary(getDb(), "debug-session-1");
+addEntry(getDb(), { type: "fact", content: "upstream returns 503", session: session.id });
+const summary = getSummary(getDb(), session.id);
 const result = validate({
   session,
   claim: "ship the fix — upstream confirmed",
@@ -97,6 +98,15 @@ which prereqs the SDK detected.
 When `ledgerSummary` is omitted, `has_evidence` and
 `alternatives_considered` both default to `false`, the result is still
 well-defined, just based on fewer inputs.
+
+| `ClaimContext` field | Source |
+| --- | --- |
+| `readme_read` | `doc-reading` phase |
+| `process_checked`, `config_checked`, `health_checked` | `runtime-inspection` phase (one phase satisfies all three) |
+| `has_evidence` | at least one ledger `fact` |
+| `alternatives_considered` | at least one ledger `rejected` entry |
+
+A phase counts as satisfied when its status is `done` or `skipped`.
 
 ### Helpers
 

@@ -17,17 +17,23 @@ const session = initSession({ keyword, problem });
 //    plus one entry per active guardrail:
 //    grounding:guardrail:<sessionId>:<guardrailId>
 //
-// 3. A harness PreToolUse Policy then matches tool calls against the plan:
+// 3. A harness PreToolUse Policy then blocks a tool call until the
+//    clearance entry for the guardrail exists:
 //
-//    name: enforce-grounding-sequence
-//    triggers: [ tool == 'Bash' && command =~ /^gh pr merge/ ]
-//    requiresEval:
-//      tag: grounding:guardrail:${session}:no-step-skipping
-//      mustBe: cleared        # i.e. an explicit clearance entry exists
-//    onMiss:
-//      decision: block
-//      reason:  "grounding: step <n> not completed, see grounding:plan:* entries"
+//    policies:
+//      - name: enforce-grounding-sequence
+//        description: Block gh pr merge until the no-step-skipping clearance entry exists.
+//        trigger:
+//          event: PreToolUse
+//          match: "Bash"
+//          bash_match: "^gh pr merge"
+//        requires:
+//          ledger_tag: "<clearance tag the caller writes>"
+//        hook: <name of the hooks[] entry that runs the policy>
+//        enforcement: block
 ```
+
+A variable in `ledger_tag` must be a harness built-in (`${SESSION_ID}`, `${REPO}`, `${BRANCH}`, `${TOOL_NAME}`, `${CWD}`) or be declared under `trigger.extract`; see [Writing custom policies](https://github.com/LanNguyenSi/harness/blob/master/docs/writing-custom-policies.md) for the authoritative schema.
 
 The contract this package owes a downstream enforcer:
 

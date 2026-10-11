@@ -17,6 +17,33 @@ This package is intentionally a **pure planner**. It does **not**:
 
 **Enforcement is a separate concern.** A downstream Policy (typically wired via [harness](https://github.com/LanNguyenSi/harness)) is what blocks an agent's tool call when the sequence is violated or a guardrail is breached. The wrapper recommends; harness enforces. See [Public API for enforcement](docs/enforcement-contract.md) for the consumption contract.
 
+### Phases
+
+A session moves through seven phases in this order: `scope-resolution`, `doc-reading`, `playbook-loading`, `runtime-inspection`, `evidence-collection`, `claim-evaluation`, `complete`. `initSession` starts at `scope-resolution`, and each `advancePhase` call marks the current phase `done` and activates the next one.
+
+A phase with no mapped step is marked `skipped` when the session advances past it (runtime-inspection, for keywords without monitor, agent, service, server or gateway); grounding-mcp and grounding-sdk count `skipped` as satisfied. `advancePhase` is a no-op once `complete` is reached.
+
+The state diagram shows these transitions, including the skip of `runtime-inspection`.
+
+```mermaid
+stateDiagram-v2
+  state "scope-resolution" as scope_resolution
+  state "doc-reading" as doc_reading
+  state "playbook-loading" as playbook_loading
+  state "runtime-inspection" as runtime_inspection
+  state "evidence-collection" as evidence_collection
+  state "claim-evaluation" as claim_evaluation
+  [*] --> scope_resolution: initSession
+  scope_resolution --> doc_reading
+  doc_reading --> playbook_loading
+  playbook_loading --> runtime_inspection: service-type keyword
+  playbook_loading --> evidence_collection: other keyword, runtime-inspection skipped
+  runtime_inspection --> evidence_collection
+  evidence_collection --> claim_evaluation
+  claim_evaluation --> complete
+  complete --> complete: advancePhase is a no-op
+```
+
 ## Install
 
 ```bash
@@ -61,10 +88,10 @@ grounding-wrapper start -k clawd-monitor -p "agent not visible" --json
 
   Active Guardrails:
     🔒 No root-cause claim before README is read
+    🔒 Mandatory steps cannot be skipped
     🔒 No token/config claim before config source is verified
     🔒 No network claim before process state is verified
     🔒 No architecture claim before primary docs are read
-    🔒 Mandatory steps cannot be skipped
 
   ▶ Start now with:
     → domain-router: Resolve scope: identify primary repos, components, priority files
@@ -74,13 +101,13 @@ The output is advisory. Whether the agent actually invokes `domain-router` next 
 
 ### Guardrails
 
-| ID | Rule |
-|----|------|
-| `no-root-cause-before-readme` | No root-cause claim before README is read |
-| `no-token-claim-before-config-check` | No token/config claim before config source is verified |
-| `no-architecture-claim-before-docs` | No architecture claim before primary docs are read |
-| `no-network-claim-before-process-check` | No network claim before process state is verified |
-| `no-step-skipping` | Mandatory steps cannot be skipped |
+| ID | Rule | Active when |
+|----|------|-------------|
+| `no-root-cause-before-readme` | No root-cause claim before README is read | always |
+| `no-token-claim-before-config-check` | No token/config claim before config source is verified | keyword contains token, auth, config, monitor, dashboard or agent |
+| `no-architecture-claim-before-docs` | No architecture claim before primary docs are read | always |
+| `no-network-claim-before-process-check` | No network claim before process state is verified | always |
+| `no-step-skipping` | Mandatory steps cannot be skipped | always |
 
 ### Library API
 
