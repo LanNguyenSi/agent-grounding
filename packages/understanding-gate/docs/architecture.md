@@ -111,7 +111,7 @@ In Phase 0/0.5, these states are implicit (agent and user share a session). Phas
 | Surface | Phase | Purpose |
 |---|---|---|
 | ENV `UNDERSTANDING_GATE_MODE` | 0 | force `fast_confirm` or `grill_me` |
-| ENV `UNDERSTANDING_GATE_DISABLE` | 0 | kill-switch, hook returns immediately |
+| ENV `UNDERSTANDING_GATE_DISABLE` | 0 | kill switch: the Claude Code prompt hook injects nothing, no report is persisted, every tool is allowed (see [gate behavior](gate-behavior.md)) |
 | ENV `UNDERSTANDING_GATE_PAUSE_FILE` | 0 / 2 | path to a pause sentinel; while active, the `UserPromptSubmit` hook, the `PreToolUse` hook, and the opencode `tool.execute.before` enforcement hook all stay silent or allow (same shared, unsigned, read-only reader `isPaused` on all three paths -- see [Pause sentinel](pause-sentinel.md), including the both-hook-lines caveat for Claude Code and the `paused_allow` audit trace, which on opencode has no accompanying stderr diagnostic). Claude Code's two hooks each see the env var only on their own settings.json hook line; opencode has no such per-hook wiring, so the sentinel FILE is re-read on every gated tool call but the env var itself is only present when it was exported into the process that launched opencode -- today no consumer in this package does that projection, so opencode's pause coverage is conditional on external wiring, not automatic from a Claude Code pause. The `Stop` hook, which only persists reports, is unaffected by a pause. Optional. |
 | Prompt marker `grill me` / `/grill` | 0 / 0.5 | user-side mode escalation |
 | ENV `UNDERSTANDING_GATE_REPORT_DIR` | 1 | override report persistence path |
@@ -125,4 +125,4 @@ Open question for Phase 3: `UNDERSTANDING_GATE_TASK_ID` (Phase 1, package-intern
 
 The Phase-0 gate is non-blocking. Hook never crashes Claude Code: malformed input, missing binary, runtime error all degrade to "exit 0, empty stdout". The cost of a false-negative classification (gate skipped when it should fire) is acceptable; the cost of crashing the harness is not.
 
-In Phase 2, blocking is enforced, but the kill switch and force-bypass remain available. A force-bypass is audit-logged as a `force_bypass` entry. The kill switch (`UNDERSTANDING_GATE_DISABLE`) turns the gate off without writing any audit entry.
+In Phase 2, blocking is enforced, but the kill switch and force-bypass remain available. A force-bypass is audit-logged as a `force_bypass` entry. The kill switch (`UNDERSTANDING_GATE_DISABLE`) turns the gate off and writes no audit entry of its own; the Claude Code `PreToolUse` hook still writes `degraded_allow` for a payload it cannot read.

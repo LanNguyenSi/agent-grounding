@@ -31,7 +31,8 @@ assuming that hook is wired in any given install.
 ## The ownership fact agents get backwards
 
 The escalation environment variables are **read and interpreted inside this
-package**, not by harness. `handle-pre-tool-use.ts` declares them on its
+package**; of the four, harness itself reads only `RUNTIME_REALITY_DISABLE`
+(see below). `handle-pre-tool-use.ts` declares them on its
 `PolicyEnv` type (`handle-pre-tool-use.ts:26-35#"RUNTIME_REALITY_PROBE_FAIL_BLOCK?: string;"`) and resolves each through the local `envOn`
 helper (`handle-pre-tool-use.ts:88#"function envOn"`) when it builds its options (`handle-pre-tool-use.ts:113-116#"probe_fail_block: envOn(env.RUNTIME_REALITY_PROBE_FAIL_BLOCK)"`):
 

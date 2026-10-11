@@ -12,8 +12,8 @@ at them rather than copying them.
   (four version-locked packages under one root tag, eight independent ones).
 - [runtime-reality-checker as a policy](runtime-reality-policy-pointer.md),
   pointer to the authoritative spec, plus the ownership fact agents get
-  backwards: this package interprets its own escalation env vars, harness only
-  sets them.
+  backwards: this package interprets its own escalation env vars; harness sets
+  them, reads the probe command, and itself checks only `RUNTIME_REALITY_DISABLE`.
 
 ## Invariants
 

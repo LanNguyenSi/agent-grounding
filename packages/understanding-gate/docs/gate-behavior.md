@@ -6,7 +6,9 @@ The flowchart shows the order in which the Claude Code `PreToolUse` hook reaches
 
 ```mermaid
 flowchart TD
-  E[PreToolUse event] --> D{UNDERSTANDING_GATE_DISABLE set?}
+  E[PreToolUse event] --> V{payload parses and has tool_name?}
+  V -->|no| A0["allow: degraded_allow, audited, stderr line"]
+  V -->|yes| D{UNDERSTANDING_GATE_DISABLE set?}
   D -->|yes| A1["allow: disabled, no audit"]
   D -->|no| W{write tool?}
   W -->|no| A2["allow: read-only tool"]
@@ -30,3 +32,5 @@ flowchart TD
 **Non-cooperative or prompt-injected agent:** this is the case Layer 2 exists for. Every destructive tool call is denied as long as no approved report exists and no pause sentinel is active. The audit log is the trail you'll go back to in an incident review.
 
 Two routes through Layer 2 without an approved report: force-bypass with `UNDERSTANDING_GATE_FORCE=1` + a `UNDERSTANDING_GATE_FORCE_REASON` of at least 10 characters, or an active pause sentinel (see [Pause sentinel](pause-sentinel.md)). Both are audit-logged: force-bypass as a `force_bypass` entry, a pause overriding what would otherwise have been a block as a `paused_allow` entry. A force-bypass under an active pause keeps its own `force_bypass` audit entry. Any force attempt with a missing/short reason is also audit-logged, as a `block`.
+
+A hook input the gate cannot read is allowed before any of these checks: a payload that is empty or not a JSON object, or one without a `tool_name`, passes with a stderr line and a `degraded_allow` audit entry, also when `UNDERSTANDING_GATE_DISABLE` is set.

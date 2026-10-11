@@ -93,7 +93,8 @@ The PreToolUse hook checks the latest report for the active task id (`UNDERSTAND
 ### Disable or force-bypass
 
 ```bash
-# Kill switch (gate is off entirely; writes no audit entry):
+# Kill switch (gate is off and writes no audit entry of its own; the
+# PreToolUse hook still audits a payload it cannot read as degraded_allow):
 UNDERSTANDING_GATE_DISABLE=1 claude
 
 # Bypass enforcement once with a recorded reason (>= 10 chars; logged):
