@@ -17,11 +17,11 @@ Stop agents from acting on stale assumptions, making unsupported claims, or sile
 | understanding-gate | Asks agents to produce an Understanding Report before acting; PreToolUse blocking of destructive tools until it is approved | [packages/understanding-gate](packages/understanding-gate) |
 | runtime-reality-checker | Compares actual runtime state against documentation | [packages/runtime-reality-checker](packages/runtime-reality-checker) |
 | claim-gate | Blocks strong claims without verified evidence | [packages/claim-gate](packages/claim-gate) |
-| hypothesis-tracker | Tracks competing hypotheses, requires evidence to switch | [packages/hypothesis-tracker](packages/hypothesis-tracker) |
+| hypothesis-tracker | Tracks competing hypotheses with their required checks, evidence and status | [packages/hypothesis-tracker](packages/hypothesis-tracker) |
 | debug-playbook-engine | Guides agents through domain-specific diagnostic sequences | [packages/debug-playbook-engine](packages/debug-playbook-engine) |
 | evidence-ledger | Structured evidence tracking during debugging | [packages/evidence-ledger](packages/evidence-ledger) |
 | grounding-wrapper | Plans grounding sessions (tool sequence, guardrails, phases); pure planner, enforcement is external | [packages/grounding-wrapper](packages/grounding-wrapper) |
-| readme-first-resolver | Forces agents to read primary docs before any analysis | [packages/readme-first-resolver](packages/readme-first-resolver) |
+| readme-first-resolver | Checks that primary docs exist and were read before analysis; reports readiness, enforces nothing itself | [packages/readme-first-resolver](packages/readme-first-resolver) |
 | domain-router | Routes keywords to correct repos, components, and docs scope | [packages/domain-router](packages/domain-router) |
 | grounding-sdk | `verify`/`track`/`validate`, ergonomic in-process facade over the stack | [packages/grounding-sdk](packages/grounding-sdk) |
 | review-claim-gate | `merge_approval` gate for PR-review subagents, fails closed unless tests pass, the checklist is complete, and evidence-ledger has an entry | [packages/review-claim-gate](packages/review-claim-gate) |
@@ -59,7 +59,7 @@ $LEDGER show --session readme-demo
 
 The `readme-demo` session keeps demo entries out of your real sessions.
 
-`evidence-ledger` is the headline package: every fact carries a source, every hypothesis lives separately from facts, rejected hypotheses stay visible, unknowns are acknowledged. The CLI is one of three surfaces; there's also a typed library API (`@lannguyensi/evidence-ledger`) and a JSON-RPC server (`grounding-mcp`) that any MCP client can call. Entries land in `~/.evidence-ledger/ledger.db`; see [docs/installation.md](docs/installation.md) for sample output.
+`evidence-ledger` is the headline package: every fact can carry its source, every hypothesis lives separately from facts, rejected hypotheses stay visible, unknowns are acknowledged. The CLI is one of three surfaces; there's also a typed library API (`@lannguyensi/evidence-ledger`) and a JSON-RPC server (`grounding-mcp`) that any MCP client can call. Entries land in `~/.evidence-ledger/ledger.db`; see [docs/installation.md](docs/installation.md) for sample output.
 
 ## Documentation
 
