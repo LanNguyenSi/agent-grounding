@@ -1,12 +1,12 @@
 # readme-first-resolver
 
-Forces agents to read primary documentation before any analysis, and builds a system mental model from it.
+Checks that an agent's primary documentation exists and has been read before analysis, and builds a system summary from it.
 
 ## Overview
 
 Part of the agent-grounding stack. Agents often start with logs, processes, or guesses instead of the README, architecture docs, setup instructions, or `.env.example`. readme-first-resolver reads the primary documentation set for a repo and reports what was found, what is missing, and whether analysis is safe to start.
 
-**No root-cause claim is allowed without `ready_for_analysis: true`.**
+`ready_for_analysis` is true when `README.md` was found and read. It is a signal for the caller, for example a harness policy or claim-gate's `readme_read` flag; this package does not block anything itself. Treat `false` as a reason not to make a root-cause claim yet.
 
 ## Install
 
@@ -29,7 +29,11 @@ readme-first resolve -p /projects/clawd-monitor -f README.md docs/architecture.m
 readme-first resolve -p /projects/clawd-monitor --json
 ```
 
+Without `-f`, the resolver reads README.md, AGENT_ENTRYPOINT.yaml and .env.example from the repo. AGENT_ENTRYPOINT.yaml is only checked for existence; its content is not used. The summary fields are heuristics extracted from the README and `.env` files in the list. Readiness requires the list to contain `README.md` exactly.
+
 ### Example output
+
+Output of `readme-first resolve -p /projects/clawd-monitor -f README.md .env.example docs/architecture.md`:
 
 ```
 📖 README First Resolver

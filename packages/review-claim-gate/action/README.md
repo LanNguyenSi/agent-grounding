@@ -4,8 +4,9 @@ Composite GitHub Action that evaluates the `merge_approval` claim-gate
 (from [`review-claim-gate`](../)) and posts the verdict as a Check-Run
 on the pull request. When combined with branch-protection's **Required
 checks** setting, it turns the review checklist from a norm into a
-mechanical merge gate, a reviewer who skips a dimension cannot click
-merge.
+mechanical merge gate: a PR whose inputs do not all report true cannot be
+merged. See the [trust model](../README.md#trust-model) for what the gate
+does and does not prove.
 
 ## Usage
 
@@ -23,11 +24,12 @@ permissions:
 
 jobs:
   gate:
+    needs: [test]          # assumes a job named test in the same workflow
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: LanNguyenSi/agent-grounding/packages/review-claim-gate/action@master
+      - uses: LanNguyenSi/agent-grounding/packages/review-claim-gate/action@<commit-sha> # review-claim-gate-vX.Y.Z
         with:
           # Session key the reviewer has been logging evidence under.
           # Convention: the branch name or the agent-tasks task id.
@@ -48,8 +50,9 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-Pin to a tag for stability: `@v1` once a release is cut; `@master`
-tracks the latest until then.
+Pin the action to the commit of a `review-claim-gate-vX.Y.Z` release tag,
+with the tag as a comment. Avoid `@master`: it moves with every merge, and
+this step runs with a token that can write checks.
 
 ## Required branch protection
 
@@ -69,7 +72,7 @@ GitHub UI, even with an approving review.
 | Input                        | Required | Default                          | Description                                                          |
 | ---------------------------- | -------- | -------------------------------- | -------------------------------------------------------------------- |
 | `task-id`                    | yes      |                                  | agent-tasks task id / ledger session key                             |
-| `pr-number`                  | no       | (from event context)             | PR number for Check-Run context                                      |
+| `pr-number`                  | no       |                                  | PR number recorded in the JSON report (`pr`), which is `null` when the input is empty. The Check-Run attaches to the PR head SHA from the event payload, or to `github.sha` when the event has no `pull_request` payload, not to this number. |
 | `evidence-ledger-path`       | no       | `.evidence-ledger/db.sqlite`     | Path to the evidence-ledger SQLite DB                                |
 | `fail-on-block`              | no       | `true`                           | When `true`, the step exits non-zero if the gate blocks              |
 | `tests-pass`                 | no       | `false`                          | Flip to `true` when the test suite is green                          |
@@ -91,9 +94,13 @@ GitHub UI, even with an approving review.
 
 `evidence_logged` can come from three places, in this priority order:
 
-1. **`--evidence-logged` input is `'true'`**: forces the flag. Documented in the label table. Honor-system.
+1. **`evidence-logged` input is `'true'`**: forces the flag. See the Inputs table. Honor-system.
 2. **Committed evidence file** at `./.agent-grounding/evidence/<task-id>.jsonl` in the checked-out workspace. The CLI auto-detects this path relative to `$GITHUB_WORKSPACE` and counts valid JSON lines as the evidence count. This is the **high-integrity path**, reviewer exports their local ledger into the PR branch.
 3. **Local evidence-ledger DB** at `$EVIDENCE_LEDGER_PATH` (default `.evidence-ledger/db.sqlite`). On a fresh CI runner this is always empty; only useful for local `act` runs.
+
+The review-claim-gate README draws the full resolution order, including the
+error paths, under
+[Evidence source precedence](../README.md#evidence-source-precedence-used-by-check).
 
 ### Reviewer workflow for committed evidence
 
@@ -114,7 +121,12 @@ git commit -m "evidence: attach ledger for merge_approval gate"
 git push
 ```
 
-On the next workflow run, the action finds the file, counts entries, and the Check-Run summary shows `evidence entries: N (file: /path/to/…)` instead of `(ledger)` or `(none)`. A committed `evidence_logged` signal is tamper-evident in git history in a way a PR label is not.
+`review-claim-gate export` reads `EVIDENCE_LEDGER_DB` when it is set, while
+the `ledger` CLI always writes to `~/.evidence-ledger/ledger.db`. Unset the
+variable, or pass `--ledger-db ~/.evidence-ledger/ledger.db` to `export`, so
+both use the same database.
+
+On the next workflow run, the action finds the file, counts entries, and the Check-Run summary shows `Evidence entries: N (file: <path>)` instead of `(ledger fallback)`. A committed evidence file is visible in git history in a way the `evidence-logged` input is not.
 
 ## Local dry-run with `act`
 
@@ -125,7 +137,7 @@ act pull_request -W .github/workflows/merge-approval.yml \
 ```
 
 Expected behaviour:
-- All prereqs `true` + ≥1 evidence entry → `::group::`Run merge-approval gate` shows `allowed: true`, step succeeds, Check-Run `success`.
+- All prereqs `true` + ≥1 evidence entry → the 'Evaluate merge_approval gate' step log prints the JSON report with `"allowed": true`, the step succeeds, Check-Run `success`.
 - Any prereq `false` → step exits 1, Check-Run `failure`, summary body lists the missing prereq verbatim.
 
 Check-Run creation against a real repo requires a GitHub token that can
@@ -142,7 +154,8 @@ write checks; `act` with a PAT works.
    `$RUNNER_TEMP/merge-approval.json`.
 4. `actions/github-script@v8` reads the report and calls
    `github.rest.checks.create` to post the `merge-approval` Check-Run,
-   attached to the PR's head SHA.
+   attached to the PR's head SHA (or to `github.sha` when the event has no
+   `pull_request` payload).
 5. If `fail-on-block=true` and the gate blocked, the final step exits 1
    so the workflow fails alongside the Check-Run.
 

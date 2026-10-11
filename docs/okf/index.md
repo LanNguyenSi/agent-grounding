@@ -7,13 +7,13 @@ at them rather than copying them.
 
 ## Overview
 
-- [The grounding stack](grounding-stack-overview.md), pointer to the root
-  README's architecture diagram, plus the release topology it does not show
+- [The grounding stack](grounding-stack-overview.md), pointer to the stack
+  diagram in docs/architecture.md, plus the release topology it does not show
   (four version-locked packages under one root tag, eight independent ones).
 - [runtime-reality-checker as a policy](runtime-reality-policy-pointer.md),
   pointer to the authoritative spec, plus the ownership fact agents get
-  backwards: this package interprets its own escalation env vars, harness only
-  sets them.
+  backwards: this package interprets its own escalation env vars; harness sets
+  them, reads the probe command, and itself checks only `RUNTIME_REALITY_DISABLE`.
 
 ## Invariants
 
@@ -30,8 +30,15 @@ at them rather than copying them.
   portable documentary-assessment wire format, frozen policy digest, and
   boundary between a signature check and a task decision.
 - [Hypothesis state](hypothesis-tracker-persistence-split.md), one pure library,
-  two consumers, opposite persistence guarantees, and two promotion paths that
-  disagree about required_checks.
+  two persisting consumers (plus grounding-sdk, in memory only), two persistence
+  shapes, and two promotion paths that disagree about required_checks.
+- [Grounding phase model and claim context](grounding-phase-model-and-claim-context.md),
+  phases advance on the caller's word, a phase without steps is marked skipped,
+  and the two hand-kept context derivations count skipped as checked.
+- [understanding-gate trust model](understanding-gate-approval-trust-model.md),
+  approval as one field on the latest report for the bound task id, trusted
+  whoever wrote it, the inputs the write-tool hooks trust, and which outcomes
+  are audited.
 
 ## Runbooks
 

@@ -17,6 +17,8 @@ How ledger entries expire, are pruned, and can be exported for archival or audit
 }
 ```
 
+`ledger export` omits `policy_decision` entries; use `ledger handoff --json` to include them.
+
 ## Retention
 
 The ledger grows monotonically, `ledger fact` / `hypothesis` / `unknown` only ever append. Long-running dogfood machines will accumulate stale sessions that slow queries and dilute summaries. Use `prune` to bound the database by age:
@@ -30,7 +32,7 @@ ledger prune --older-than 30d
 
 # Machine-readable output for scheduled runs
 ledger prune --older-than 30d --json
-# -> {"deleted":42,"scanned":1337,"cutoff":"2026-03-24 09:07:00","dryRun":false}
+# -> {"deleted":42,"scanned":1337,"cutoff":"2026-03-24 09:07:00","dryRun":false,"exemptedPolicyDecisions":0}
 ```
 
 Accepted units for `--older-than`: `s`, `m`, `h`, `d`. Deletion runs inside an `IMMEDIATE` transaction so concurrent readers never observe a partial sweep. An entry is eligible only once it is *strictly* older than the cutoff, an entry exactly `--older-than` old right now is kept, not deleted.

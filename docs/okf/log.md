@@ -2,6 +2,117 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-10-11T17:13:28Z, corrections to two docs and a re-stamp pass.
+  `grounding-phase-model-and-claim-context.md`: the description limits the
+  runtime-check statement to sessions advanced past `playbook-loading`, and
+  the guardrails section names every place that reads or echoes
+  `active_guardrails` (`isGuardrailActive` behind `grounding_guardrail_check`
+  and the wrapper CLI's `check-guardrail`; grounding-mcp's session responses
+  and the CLI's `start` print the list); `packages/grounding-wrapper/src/index.ts`
+  added to sources. `understanding-gate-approval-trust-model.md`: within this
+  package only `withApprovalStatus` changes `approvalStatus` on an existing
+  report, and the persisting hooks write new reports as `pending`; the harness
+  version range is given per writer (v0.8.0 through v0.64.0, auto-approval
+  from v0.51.0); this package only reads the pause sentinel;
+  `packages/understanding-gate/src/core/persistence.ts` and
+  `packages/understanding-gate/src/cli.ts` added to sources. The two entries
+  below that describe the approval writer and the harness range follow, and
+  the 16:02:09Z entry states the line count of the `pre-tool-use.ts` comment
+  change. Sources that changed: `docs/architecture.md` (harness edge label),
+  `CONTRIBUTING.md` (release flowchart edge label) and
+  `docs/policy-runtime-reality.md` (flowchart terminals, intro sentence, one
+  heading and two open questions); no cited line moved. Re-verified and
+  re-stamped `grounding-stack-overview.md`, `merge-approval-gate-mechanics.md`
+  and `runtime-reality-policy-pointer.md` (claims unchanged), plus the two
+  corrected docs. Verdict of `okf-kit check --require-anchors --json docs/okf`
+  (0.16.0) on the committed tree: 0 errors and no finding outside this log.
+
+- 2026-10-11T16:47:14Z, one correction and a re-stamp.
+  `runtime-reality-policy-pointer.md`: the opening of its ownership section
+  no longer says harness never reads the escalation variables; of the four,
+  harness reads only `RUNTIME_REALITY_DISABLE`, as the rest of the doc
+  already said. `index.md` follows. Sources unchanged; the doc's citations
+  still resolve; re-stamped. Verdict of `okf-kit check --require-anchors
+  --json docs/okf` (0.16.0) on the committed tree: 0 errors and no finding
+  outside this log.
+
+- 2026-10-11T16:29:28Z, corrections to two docs and a re-stamp pass.
+  `understanding-gate-approval-trust-model.md`: within this package only
+  `withApprovalStatus` (via `approve` and `revoke`) changes `approvalStatus`
+  on an existing report, the hooks check the field and not who wrote it, and
+  harness releases that ship its understanding-gate pack (v0.8.0 through
+  v0.64.0) rewrite it from `harness approve understanding` and, from v0.51.0,
+  the pack's opt-in auto-approval without this package's `approve` audit
+  line, so `audit.log` records CLI approvals,
+  not every approval; the kill switch is first only inside
+  `decideEnforcement`, after the report listing and, in the Claude Code hook,
+  after the malformed and tool-less payload paths. `index.md` follows.
+  `runtime-reality-policy-pointer.md`: harness also checks
+  `RUNTIME_REALITY_DISABLE` itself (its own copy of the on-switch rule) before
+  it denies a timed-out stdin read; the other three flags are interpreted only
+  in this package. Sources that changed: `CONTRIBUTING.md` (version-locked
+  lockfile scope), `packages/grounding-mcp/docs/solution-acceptance-gate.md`
+  (evaluation order in the sequence diagram) and
+  `packages/review-claim-gate/README.md` (scoped `npx` name). Re-verified and
+  re-stamped `claim-gate-vs-review-claim-gate.md`,
+  `evidence-ledger-session-key-shapes.md`, `merge-approval-gate-mechanics.md`
+  and `solution-acceptance-verdict-contract.md` (claims unchanged; no cited
+  line moved), plus the two corrected docs. Verdict of `okf-kit check
+  --require-anchors --json docs/okf` (0.16.0) on the committed tree: 0 errors
+  and no finding outside this log.
+
+- 2026-10-11T16:06:54Z, two new invariant docs. `grounding-phase-model-and-claim-context.md`
+  covers grounding-wrapper's phase machine (only `runtime-inspection` can be
+  skipped, `advancePhase` checks nothing beyond the step list), guardrails as
+  labels, the context derivation duplicated in grounding-mcp's
+  `derive-context.ts` and grounding-sdk's `index.ts`, and the receipt
+  evaluator's frozen copy in `grounding-assessment-policy.ts`. Measured with the
+  built packages: after three `advancePhase` calls a `deploy-panel` session
+  shows `runtime-inspection: skipped`, all three runtime flags true and a
+  network claim allowed, while an `agent-tasks` session keeps them false.
+  `understanding-gate-approval-trust-model.md` covers approval as the
+  `approvalStatus` field forced to `pending` by the parser and changed on an
+  existing report within this package only by the approve and revoke CLI,
+  the task-id binding shared by the persisting and enforcing hooks,
+  the trusted inputs with their audit entries, and the adapter differences on
+  degraded input. Both docs are listed in `index.md`. Verdict of `okf-kit check
+  --require-anchors --json docs/okf` (0.16.0) on the committed tree: 0 errors
+  and no finding outside this log.
+
+- 2026-10-11T16:02:09Z, documentation drift audit across the root docs and the package
+  READMEs. Sources that changed: `docs/architecture.md` (diagram redrawn from
+  the runtime imports), `docs/policy-runtime-reality.md`, `CONTRIBUTING.md`,
+  the review-claim-gate, grounding-mcp and runtime-reality-checker READMEs and
+  docs, one comment each in `packages/grounding-mcp/src/server.ts` and
+  `packages/runtime-reality-checker/src/policy/pre-tool-use.ts` (`server.ts`
+  keeps its line count; `pre-tool-use.ts` gains one comment line, and no
+  earlier citation pointed into it). Re-verified and re-stamped seven docs:
+  `grounding-stack-overview.md` (release topology, versions and test runners
+  still hold; the diagram citation moves to the new block, and "It is
+  current" is dropped), `runtime-reality-policy-pointer.md` (status paragraph
+  now points at harness's `pack hook runtime-reality`; the four escalation
+  flags are still interpreted by this package; `pre-tool-use.ts` added to
+  sources), `solution-acceptance-verdict-contract.md` (`solution_gate` does
+  not verify `alg`/`signature`; the consumer note no longer names a single
+  harness action and records that harness's unreleased changes remove its
+  solution-acceptance pack), `hypothesis-tracker-persistence-split.md`
+  (grounding-sdk named as an in-memory consumer and added to sources; the
+  disk-parity citation now points at the grounding-mcp README sentence that
+  states it), `claim-gate-vs-review-claim-gate.md` (claim-gate `check --json`
+  exits 0), `evidence-ledger-session-key-shapes.md` (new paragraph: the
+  `ledger` CLI ignores `EVIDENCE_LEDGER_DB` while review-claim-gate and
+  grounding-mcp honor it; three sources added) and
+  `merge-approval-gate-mechanics.md` (README citations moved with their
+  content). `index.md` now points at docs/architecture.md and names the
+  grounding-sdk consumer. Verdict of `okf-kit check --require-anchors --json
+  docs/okf` (0.16.0) on the committed tree: 0 errors, no sources-fresh
+  finding, and no citations-resolve finding outside this log. Older entries
+  here that cite the removed "helpers --> el" diagram edge in
+  docs/architecture.md, or line 214 of the grounding-mcp README, stay as
+  written, as history. One older citation into
+  `claim-gate-vs-review-claim-gate.md` moved three lines with its content and
+  was re-pointed.
+
 - 2026-10-10T14:10:20Z, the runtime-reality-checker critical-drift deny hint now names
   `RUNTIME_REALITY_DISABLE=1` instead of the removed `harness approve risk`
   (task 8bee316a); docs/policy-runtime-reality.md follows. Re-verified
@@ -1810,7 +1921,7 @@
   `claim-gate-vs-review-claim-gate.md` was flagged STALE against
   `packages/review-claim-gate/package.json:3#"version": "0.1.6"` (bumped
   by PR #207, review-claim-gate 0.1.5 to 0.1.6); the doc's Publish status
-  section, `claim-gate-vs-review-claim-gate.md:132#"@lannguyensi/review-claim-gate"`,
+  section, `claim-gate-vs-review-claim-gate.md:135#"@lannguyensi/review-claim-gate"`,
   already names 0.1.6, so no content changed, only the stamp.
   `merge-approval-gate-mechanics.md` was flagged STALE against
   `.github/workflows/merge-approval.yml:47#"review-claim-gate-v0.1.6"` and

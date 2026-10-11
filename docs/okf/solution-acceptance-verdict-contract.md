@@ -3,7 +3,7 @@ type: invariant
 title: Solution-acceptance verdict contract — why the marker lives outside the ledger
 description: A "done" verdict is derived from a real preflight+OW run, HEAD-pinned, and written to an XDG state marker outside the agent-writable evidence-ledger because ledger rows are forgeable via ledger_add.
 tags: [solution-acceptance, verdicts, anti-hacking, trust-boundary]
-timestamp: 2026-09-29T06:57:07Z
+timestamp: 2026-10-11T16:29:28Z
 sources:
   - packages/grounding-mcp/src/solution-verdict.ts
   - packages/grounding-mcp/src/solution-attempt-log.ts
@@ -274,8 +274,11 @@ marker yet or the complete, final one, never a half-written one.
 - **`solution_gate`** (registered `server.ts:987#"'solution_gate'"`): read-only checker. Resolves current HEAD
   via `getHeadSha`, then `evaluateGate(id, head)`. Deny reasons are precise: no verdict /
   not ready + blockers / HEAD drift / unresolvable HEAD. Unchanged by the attempt
-  lifecycle: it reads the signed marker and nothing else, and never consults the
-  attempt log or the lock.
+  lifecycle: it reads the marker and nothing else, and never consults the attempt log
+  or the lock. It does not verify `alg` or `signature`: `readVerdict`
+  (`solution-verdict.ts:227#"export function readVerdict"`) keeps only the seven pinned
+  fields, so an unsigned or hand-written marker with `ready: true` at the current HEAD
+  passes `solution_gate`. Only a consumer that verifies the signature rejects it.
 - **`solution_evaluate_status`** and **`solution_evaluate_result`** (registered right
   after `solution_evaluate` in the same block) are read-only attempt lookups. Neither
   starts a preflight process, and neither is gate authority: an attempt reported
@@ -528,16 +531,18 @@ AND no `.ai/runs/` dir), the `on` knob names both channels in its blocker
 
 - **Hand-writing the marker, still not a closed hole under shared UID.** As of 0.8.0
   every marker is signed (see "Verdict marker signing" above), so a naive hand-typed
-  JSON file (no `alg`/`signature`, or a wrong signature) is rejected by the harness
-  consumer as forged. But this is explicitly pragmatic defense-in-depth, not a new
+  JSON file (no `alg`/`signature`, or a wrong signature) is rejected as forged by a
+  consumer that verifies the signature, such as the harness consumer. `solution_gate`
+  itself does not verify it (see the tool list above), so such a file passes
+  `solution_gate`. But this is explicitly pragmatic defense-in-depth, not a new
   authorization boundary: a shell-capable agent runs under the SAME UID that reads and
   first-creates `<harness-home>/harness.generated/.approval-signing.key`, so it could
   read that key and compute a valid signature too, same as the harness consumer's own
   documented threat model. The residual comment at `solution-verdict.ts:26#"wiring follow-up."` (unchanged
   since before 0.8.0) still names "signing... is the harness wiring follow-up" as the
-  next step for this specific residual; that step is what this task's producer-side
-  half delivers, paired with the harness CONSUMER wiring (a separate task, merge-held
-  pending the release sequencing in the grounding-mcp 0.8.0 CHANGELOG entry). The
+  next step for this specific residual; the producer-side signing above delivers that
+  step, and harness's solution-acceptance pack was the consumer that verified it (see
+  the boundary note below). The
   ledger-forge hole was closed earlier (marker moved outside the ledger); the
   shell-forge hole is now *harder* (a forger needs the shared key, not just a text
   editor), but still open under a same-UID threat model, by design.
@@ -559,8 +564,12 @@ AND no `.ai/runs/` dir), the `on` knob names both channels in its blocker
 
 ## Out-of-repo boundary note (harness consumer)
 
-A consumer (the harness ship-flow) reads the marker to gate an action such as `pr_merge`.
-This doc does not assert harness internals; the contract this repo guarantees is only the
+A consumer can read the marker to gate task-finishing actions. harness's opt-in
+solution-acceptance pack has been such a consumer: it gated the agent-tasks completion
+verbs (`task_finish`, `task_submit_pr`, `task_merge`, `pull_requests_merge`) and the
+`git push` / `gh pr merge` bash commands. harness's unreleased changes remove that pack,
+so check the harness CHANGELOG for the release you run; this contract does not depend
+on any one consumer. This doc does not assert harness internals; the contract this repo guarantees is only the
 marker's location (`verdictDir()`), its pinned 7-key shape plus (since 0.8.0) the two
 additive signing fields `alg`/`signature` and the exact HMAC scheme + key-file contract
 those are computed against ("Verdict marker signing" above), and the `solution_gate`

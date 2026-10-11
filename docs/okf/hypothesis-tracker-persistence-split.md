@@ -1,9 +1,9 @@
 ---
 type: invariant
-title: Hypothesis state — one library, two consumers, two persistence shapes
+title: "Hypothesis state: one library, two persisting consumers, two persistence shapes"
 description: hypothesis-tracker is a pure in-memory library; grounding-mcp keeps a disk-backed LRU cache under ~/.grounding-mcp/hypotheses/ (since PR #139) while understanding-gate persists to hypotheses.json, and inside the library addEvidence and supportHypothesis disagree on whether required_checks gate promotion.
 tags: [hypothesis-tracker, persistence, grounding-mcp, understanding-gate]
-timestamp: 2026-09-27T14:36:00Z
+timestamp: 2026-10-11T16:02:09Z
 sources:
   - packages/hypothesis-tracker/src/lib.ts
   - packages/grounding-mcp/src/hypothesis-store.ts
@@ -11,9 +11,10 @@ sources:
   - packages/understanding-gate/src/core/hypothesis-store-fs.ts
   - packages/understanding-gate/src/core/hypothesis-sync.ts
   - packages/understanding-gate/src/core/hypothesis-bridge.ts
+  - packages/grounding-sdk/src/index.ts
 ---
 
-# Hypothesis state: one library, two consumers, two persistence shapes
+# Hypothesis state: one library, two persisting consumers, two persistence shapes
 
 `@lannguyensi/hypothesis-tracker` is a **pure library with no persistence opinion**. It
 owns the data shape (`Hypothesis`, `HypothesisStore`) and the mutators; *where the JSON
@@ -21,6 +22,12 @@ lives is entirely the consumer's call*. Both consumers now persist to disk, but 
 shapes: grounding-mcp keeps a disk-backed LRU cache keyed by session id, understanding-gate
 keeps one file seeded from the Stop hook. A hypothesis survives a restart either way; the
 difference is where it lands and how it is evicted, not whether it survives.
+
+grounding-sdk also uses the library, in memory only: `track` calls `addHypothesis` and the SDK
+re-exports `createStore` (`packages/grounding-sdk/src/index.ts:15-20#"@lannguyensi/hypothesis-tracker"`,
+`packages/grounding-sdk/src/index.ts:34#"export { createStore };"`). It adds no persistence of its
+own (`packages/grounding-sdk/src/index.ts:5#"No new engine, no persistence"`), so its caller owns
+where the store lives. A library API change touches all three.
 
 ## Invariant 1 — the library never touches disk
 
@@ -86,7 +93,7 @@ server.ts's `hypothesis_*` verbs call after every successful mutation (`server.t
 `server.ts:1159#"saveStore(sessionId, store);"`, `server.ts:1189#"saveStore(sessionId, store);"`).
 **A grounding-mcp process restart no longer loses hypothesis state** — it
 now has disk backing at parity with the session store and the evidence ledger
-(`packages/grounding-mcp/README.md:118#"the root cause is the backend container's missing OPENAI_API_KEY env var"`).
+(`packages/grounding-mcp/README.md:137#"at parity with the grounding session and the evidence ledger"`).
 
 The in-process Map is LRU-bounded. `getMaxSessions()` (`hypothesis-store.ts:190-195#"return parsed;"`)
 reads `GROUNDING_HYPOTHESIS_MAX_SESSIONS` lazily per call. **Default is `200`**; unset, empty,
@@ -157,7 +164,7 @@ has no equivalent of.
 
 ## Bottom line for a reasoning agent
 
-Same library, opposite guarantees:
+Same library, two persistence shapes:
 
 | | Consumer A: grounding-mcp | Consumer B: understanding-gate |
 |---|---|---|

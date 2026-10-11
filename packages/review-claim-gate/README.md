@@ -11,9 +11,8 @@ review subagent must actually pass, not a checklist it can quietly skip.
 Today's PR-review subagent workflow relies on the orchestrating Claude
 session handing the reviewer a checklist in-prompt. Nothing enforces
 that the reviewer actually covered every dimension, a shallow review
-can return "APPROVE" after catching one obvious bug and missing four
-subtle ones (see `feedback_review_briefing.md` for the 2026-04-14
-Connect-Agent-Modal incident).
+can return "APPROVE" after catching one obvious bug and missing several
+subtle ones.
 
 `review-claim-gate` closes that gap by turning the checklist into a
 typed `merge_approval` policy with five prerequisites. The reviewer is
@@ -36,10 +35,21 @@ machine-parseable, so the parent session can refuse to proceed to
 All five must be true for `allowed: true`. Missing prereqs surface in
 `next_steps` so the reviewer sees exactly what's left.
 
+## Trust model
+
+Four of the five prerequisites are flags the caller sets; the gate records
+them but does not verify them. `evidence_logged` requires at least one entry
+in a store (a committed `.agent-grounding/evidence/<task-id>.jsonl` file or
+the local ledger) unless `--evidence-logged` forces it, and the reviewer can
+write to both stores. The gate makes skipped dimensions explicit and
+auditable; it does not prove they were done. Where merge authority matters,
+drive the inputs from a signal only maintainers control.
+
 ## Install
 
 ```bash
-npm install @lannguyensi/review-claim-gate
+npm install @lannguyensi/review-claim-gate      # library
+npm install -g @lannguyensi/review-claim-gate   # CLI (or run it with npx @lannguyensi/review-claim-gate)
 ```
 
 ## CLI
@@ -66,11 +76,42 @@ review-claim-gate describe            # print prereq keys + descriptions
 
 Exit code for `check`: `0` if `allowed:true`, `1` otherwise.
 
+The `ledger` CLI of evidence-ledger always writes to
+`~/.evidence-ledger/ledger.db` and ignores `EVIDENCE_LEDGER_DB`. If
+`EVIDENCE_LEDGER_DB` is set, entries written with the `ledger` CLI are not in
+the database `check` and `export` read; unset it or pass
+`--ledger-db ~/.evidence-ledger/ledger.db`.
+
 ### Evidence source precedence (used by `check`)
 
 1. `--evidence-logged` forces `evidence_logged=true` regardless of any other signal.
-2. **Committed evidence file.** If `--evidence-file <path>` is given (and exists), count non-empty JSON lines there. Otherwise auto-detect `./.agent-grounding/evidence/<task-id>.jsonl` relative to `process.cwd()`.
+2. **Committed evidence file.** If `--evidence-file <path>` is given (and exists), count the lines that parse as JSON (blank and malformed lines are skipped). Otherwise auto-detect `./.agent-grounding/evidence/<task-id>.jsonl` relative to `process.cwd()`.
 3. Local evidence-ledger DB (`session = <task-id>`) as fallback.
+
+The flowchart shows how `check` resolves `evidence_logged`, including the two
+error paths and the order in which the ledger database path is chosen.
+
+```mermaid
+flowchart TD
+    A["check --task-id"] --> B{"--evidence-logged?"}
+    B -- yes --> F["source: forced<br/>evidence_logged = true"]
+    B -- no --> C{"--evidence-file given?"}
+    C -- "yes, missing" --> X["error: file does not exist"]
+    C -- "yes, exists" --> G["count lines that parse as JSON<br/>source: file"]
+    C -- no --> D{".agent-grounding/evidence/#lt;task-id#gt;.jsonl<br/>exists under cwd?"}
+    D -- "invalid task id" --> Y["error: invalid task id"]
+    D -- yes --> G
+    D -- no --> L["ledger rows with session = task id<br/>DB: --ledger-db, else EVIDENCE_LEDGER_DB, else default<br/>source: ledger"]
+    G --> E["evidence_logged = entries > 0"]
+    L --> E
+    F --> M["evaluate all five prerequisites"]
+    E --> M
+    M --> R["exit 0 if allowed, 1 if blocked"]
+```
+
+A task id is invalid for the auto-detected path when it is empty, absolute,
+starts with a drive-letter prefix such as `C:`, contains a `..` segment, or resolves outside the
+evidence directory.
 
 When the reviewer used a grounding session id instead of the branch/task id,
 use `review-claim-gate export --task-id <branch-name> --from-session <gs-id>`
@@ -107,6 +148,8 @@ Explicit `--evidence-file <path>` with a non-existent path throws, silent fallba
 ```
 
 `evidenceSource` is one of `"file" | "ledger" | "forced" | "none"`. `evidenceFilePath` is set only when `evidenceSource === "file"`.
+`evidenceFilePath` is an absolute path when the file was auto-detected, and
+echoes `--evidence-file` as given otherwise.
 
 ## Programmatic
 
@@ -164,13 +207,12 @@ If you already started a dedicated grounding
 session (for example `gs-agent-grounding-...`), either keep `session = <TASK-ID>`
 as the default convention or export later via `review-claim-gate export --task-id <TASK-ID> --from-session <GROUNDING-SESSION-ID>`.
 
-When you finish the checklist, call:
+When you finish the checklist, add each flag only if it holds:
+`--tests-pass` (CI is green), `--review-checklist-complete` (you walked
+every dimension above), `--comments-resolved` (no open comments remain),
+`--scope-matches-task` (the diff stays inside the task). Then call:
 
-    review-claim-gate check --task-id <TASK-ID> --pr <PR-URL> --json \
-      --tests-pass                   # if CI is green
-      --review-checklist-complete    # only if you actually walked every dim above
-      --comments-resolved            # only if no open comments remain
-      --scope-matches-task           # only if the diff stays inside the task
+    review-claim-gate check --task-id <TASK-ID> --pr <PR-URL> --json <flags>
 
 Print the JSON verdict as the LAST line of your response. If `allowed:
 false`, your human-readable verdict MUST be REQUEST CHANGES regardless

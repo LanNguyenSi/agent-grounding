@@ -6,10 +6,11 @@
 // stdout, the policy never crashes the harness even if its own state
 // is broken.
 //
-// Probe wiring: this entrypoint ships WITHOUT a probe. The harness-side
-// follow-up registers a probe command via env (RUNTIME_REALITY_PROBE_CMD)
-// or links against a probe library. With no probe configured the policy
-// degrades to allow (or block, if RUNTIME_REALITY_PROBE_FAIL_BLOCK=1).
+// Probe wiring: this entrypoint ships WITHOUT a probe and does not read
+// RUNTIME_REALITY_PROBE_CMD. harness's `harness pack hook runtime-reality`
+// verb runs that command as a probe and calls handlePolicyPreToolUse
+// itself. With no probe configured this entrypoint degrades to allow (or
+// block, if RUNTIME_REALITY_PROBE_FAIL_BLOCK=1).
 
 import { handlePolicyPreToolUse } from "./handle-pre-tool-use.js";
 import { loadExpectations } from "./expectations.js";

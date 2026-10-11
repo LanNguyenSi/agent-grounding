@@ -10,13 +10,13 @@ Before an agent edits files, runs destructive commands, or opens PRs, this tool 
 
 The gate sits in front of your agent harness as **two layers**, intentionally separated so each does one job well:
 
-**Layer 1, the cooperative gate (Phase 0).** A `UserPromptSubmit` hook injects an instruction into every task-like prompt asking the agent to first produce a report covering: current understanding, intended outcome, derived todos, acceptance criteria, assumptions, open questions, out-of-scope, risks, verification plan. A cooperative agent reads this and pauses for human confirmation. This is where most of the value comes from in practice: the agent slows down on its own and surfaces its interpretation before doing anything irreversible.
+**Layer 1, the cooperative gate (Phase 0).** A `UserPromptSubmit` hook injects an instruction into every task-like prompt asking the agent to first produce a report covering: current understanding, intended outcome, derived todos, acceptance criteria, assumptions, open questions, out-of-scope, risks, verification plan, prior art (what was searched for an existing solution, the closest match found, and an adopt / extend / build-new judgment). A cooperative agent reads this and pauses for human confirmation. This is where most of the value comes from in practice: the agent slows down on its own and surfaces its interpretation before doing anything irreversible.
 
-**Layer 2, the enforced backstop (Phase 2).** A `PreToolUse` hook blocks destructive tools (`Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Bash` on Claude Code; `write`, `edit`, `bash` on opencode) until the latest persisted Understanding Report has `approvalStatus: "approved"`. Read-only tools (`Read`, `Grep`, `Glob`, `LS`, ...) stay open at all times. Every block, approve, revoke, and force-bypass lands in `.understanding-gate/audit.log`. This is what fires when an agent ignores Layer 1, whether because of an aggressive prompt ("don't ask, just do"), a prompt-injection attack, or a less-cooperative model.
+**Layer 2, the enforced backstop (Phase 2).** A `PreToolUse` hook blocks destructive tools (`Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Bash` on Claude Code; `write`, `edit`, `bash` on opencode) until the latest persisted Understanding Report for the active task has `approvalStatus: "approved"`. Read-only tools (`Read`, `Grep`, `Glob`, `LS`, ...) stay open at all times. Every block, approve, revoke, and force-bypass lands in `.understanding-gate/audit.log`. This is what fires when an agent ignores Layer 1, whether because of an aggressive prompt ("don't ask, just do"), a prompt-injection attack, or a less-cooperative model.
 
 ## Key features
 
-- Two modes for the cooperative layer: `fast_confirm` (default, 5-line summary) and `grill_me` (9-section report, persisted to disk)
+- Two modes for the cooperative layer: `fast_confirm` (default, 5-line summary) and `grill_me` (10-section report)
 - Enforced backstop that blocks write/execute tools until a report is approved, with an audited force-bypass and an optional pause sentinel
 - One-shot installers for Claude Code and opencode hooks
 - Every block, approve, revoke, and force-bypass decision is JSONL-audited
@@ -39,7 +39,7 @@ Writes three hook entries into `.claude/settings.json` (project scope) or `~/.cl
 npx @lannguyensi/understanding-gate init --target opencode
 ```
 
-opencode has no per-prompt hook before model inference, so v0.5 installs three files: `.opencode/rules/understanding-gate.md` (the static fast-confirm rule the agent always sees), `.opencode/command/grill.md` (the explicit `/grill` command), and `.opencode/plugins/understanding-gate-persist-report.ts` (a `message.updated` plugin shim that parses the agent's report and writes it to `.understanding-gate/reports/`; without this shim Phases 1 and 2 degrade silently). To remove the three files again, run `understanding-gate uninstall --target opencode`. See [opencode integration notes](docs/opencode-integration.md) for testing the plugin's failure path.
+opencode has no per-prompt hook before model inference, so v0.5 installs three files: `.opencode/rules/understanding-gate.md` (the static fast-confirm rule the agent always sees), `.opencode/command/grill.md` (the explicit `/grill` command), and `.opencode/plugins/understanding-gate-persist-report.ts` (a `message.updated` plugin shim that parses the agent's report and writes it to `.understanding-gate/reports/`; without this shim Phases 1 and 2 degrade silently). `--scope user` installs the three files under `~/.config/opencode/` instead of `.opencode/`. To remove the three files again, run `understanding-gate uninstall --target opencode`. See [opencode integration notes](docs/opencode-integration.md) for testing the plugin's failure path.
 
 ### Non-interactive sessions (`claude -p`)
 
@@ -52,15 +52,15 @@ Phase 2 works under `claude -p` as long as the harness ships `last_assistant_mes
 | Mode | When | Shape |
 |---|---|---|
 | `fast_confirm` (default) | low-risk, small tasks | 5-line summary, "please confirm" |
-| `grill_me` | ambiguous, risky, broad | 9-section report, "please grill me" |
+| `grill_me` | ambiguous, risky, broad | 10-section report, "please grill me" |
 
-Escalation to `grill_me`: set `UNDERSTANDING_GATE_MODE=grill_me`, or include `grill me` / `/grill` in the prompt. Only `grill_me` (and the equivalent `full` template) produces a parseable report that gets persisted to disk; `fast_confirm` stays in-conversation.
+Escalation to `grill_me`: set `UNDERSTANDING_GATE_MODE=grill_me`, or include `grill me` / `/grill` in the prompt. On Claude Code both modes are persisted: the Stop hook maps the five fast_confirm bullets onto report sections and validates them against a relaxed schema, so a fast_confirm report can be approved like a grill_me report. On opencode, the persist-report plugin only picks up replies that contain an `Understanding Report` heading line, so use `/grill` there when Layer 2 needs a report to approve.
 
 ### Approve / revoke the gate
 
 ```bash
 # After the agent emits a report you accept, in another terminal:
-understanding-gate approve            # picks the latest report in cwd
+understanding-gate approve            # the latest report, when all reports share one taskId
 understanding-gate approve --task-id <id>
 understanding-gate approve --report-id <taskId|filename|path>
 
@@ -73,12 +73,29 @@ understanding-gate report list         # all persisted reports
 understanding-gate report show <id>    # one report (taskId, filename, or path)
 ```
 
-The CLI flips the persisted report's `approvalStatus` field, which is the source of truth the `PreToolUse` hook reads. Each approve / revoke also drops a JSONL line in `.understanding-gate/audit.log` (block, approve, revoke, force_bypass).
+The CLI flips the persisted report's `approvalStatus` field, which is the source of truth the `PreToolUse` hook reads. Each approve / revoke also drops a JSONL line in `.understanding-gate/audit.log` (block, approve, revoke, force_bypass, paused_allow, degraded_allow).
+
+`approve`, `revoke`, `status`, `report list` and `report show` accept `--dir <path>` to read reports from another directory. `--dir` overrides `UNDERSTANDING_GATE_REPORT_DIR`, which overrides the default `.understanding-gate/reports/`. `revoke` takes the same `--task-id` / `--report-id` selectors as `approve`. `report list --json` prints JSON instead of a table, and `status --task-id <id>` limits the output to one taskId.
+
+Debugging: `understanding-gate print --mode fast_confirm|grill_me` prints the snippet the `UserPromptSubmit` hook injects; `--mode full` prints the standalone full template, which no hook injects.
+
+### Files and state
+
+| Path | Contents |
+|---|---|
+| `.understanding-gate/reports/` | Persisted reports; moved by `UNDERSTANDING_GATE_REPORT_DIR` |
+| `.understanding-gate/audit.log` | JSONL audit, always under the working directory |
+| `parse-errors/`, `sync-errors/` | Breadcrumbs for failed parses and failed hypothesis syncs, next to the reports dir |
+| `hypotheses.json` | Assumptions and open questions registered as hypothesis-tracker entries, next to the reports dir |
+
+The PreToolUse hook checks the latest report for the active task id (`UNDERSTANDING_GATE_TASK_ID`, else the harness session id), so approving a report for another task id does not unblock this one (sessions that share `UNDERSTANDING_GATE_TASK_ID` share approval). `approve` without flags works only when every report shares one taskId; otherwise pass `--task-id`.
 
 ### Disable or force-bypass
 
 ```bash
-# Kill switch (gate is off entirely):
+# Kill switch (gate is off and writes no audit entry of its own; the
+# PreToolUse hook still audits a payload that is empty, not a JSON object,
+# or has no tool_name as degraded_allow):
 UNDERSTANDING_GATE_DISABLE=1 claude
 
 # Bypass enforcement once with a recorded reason (>= 10 chars; logged):

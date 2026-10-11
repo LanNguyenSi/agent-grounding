@@ -13,22 +13,22 @@ The other packages in this repo are CLI-first. That works fine for scripted invo
 | `grounding_start` | `grounding-wrapper.initSession` | Open a new session for `(keyword, problem)`. Returns the session id, mandatory tool sequence, and active guardrails. Reads/writes the grounding session store, ordered by arrival at the transport relative to a concurrent/pipelined `grounding_advance`, `grounding_guardrail_check` or `claim_evaluate_from_session` for the same sessionId (not by request id value or invocation order), on its own separate 1024-request-cap queue; see `ledger_add`'s entry for the identical cap mechanism. |
 | `grounding_advance` | `grounding-wrapper.advancePhase` | Mark current phase done, move to next. Ordered by arrival at the transport relative to a concurrent/pipelined `grounding_start`, `grounding_guardrail_check` or `claim_evaluate_from_session` for the same sessionId, see `grounding_start`. |
 | `grounding_guardrail_check` | `grounding-wrapper.isGuardrailActive` | Is a specific guardrail active right now? Ordered by arrival at the transport relative to a concurrent/pipelined `grounding_start`, `grounding_advance` or `claim_evaluate_from_session` for the same sessionId, see `grounding_start`. |
-| `ledger_add` | `evidence-ledger.addEntry` | Append a fact / hypothesis / rejected / unknown to the session's ledger namespace. Only a `ledger_summary` call using this exact sessionId string sees it back (case-sensitive, no normalization); a concurrent or pipelined `ledger_add`/`ledger_summary`/`claim_evaluate_from_session`/`ledger_status` set is ordered by arrival at the transport (not by request id value or invocation order), so a summary that arrives after an add for the same sessionId sees it. The server keeps an arrival stamp for at most 1024 ledger requests in flight at once; past that, the oldest loses its stamp and runs after the other requests of its batch, with a line on stderr. The `grounding_*` session tools and the `hypothesis_*` tools are separate stores, each with their own identical arrival-ordering queue (not shared with this one); see `grounding_start` and `hypothesis_record`. |
-| `ledger_summary` | `evidence-ledger.getSummary` | Return all entries for a session, grouped by type, with counts. A zero count is not necessarily an error: causes include (not an exhaustive list) no entries yet, a sessionId that does not exactly match what `ledger_add` used, or a `contentPrefix` filter that excludes every matching row. `sinceIso` must be an ISO-8601 date (`"2026-05-01"`) or a datetime with a `T`/`t`/space separator, optional seconds and fraction digits, and an explicit `Z`/`z` or numeric offset (`"2026-05-01T08:00:00Z"`, `"2026-05-01T10:00:00+02:00"`, `"2026-05-01 08:00:00.123Z"`); rejected with a validation error naming the field, not silently treated as "matches nothing": an empty string, a relative shorthand (`"1h"`, `"24h"`, `"yesterday"`), an epoch number, `Date.toString()` output, or an out-of-range calendar value would make SQLite's `datetime()` return `NULL` and silently exclude every row, and a local datetime without a zone parses without error but would silently shift the filter window by the caller's wall-clock offset. Every accepted datetime is normalized to a UTC instant before the query, so any explicit offset (including one wider than SQLite's own `datetime()` can represent) filters correctly. Ordered by arrival at the transport, see `ledger_add`. |
+| `ledger_add` | `evidence-ledger.addEntry` | Append a fact / hypothesis / rejected / unknown entry, or a `policy_decision` audit row (kept in its own bucket), to the session's ledger namespace. Only a `ledger_summary` call using this exact sessionId string sees it back (case-sensitive, no normalization); a concurrent or pipelined `ledger_add`/`ledger_summary`/`claim_evaluate_from_session`/`ledger_status` set is ordered by arrival at the transport (not by request id value or invocation order), so a summary that arrives after an add for the same sessionId sees it. The server keeps an arrival stamp for at most 1024 ledger requests in flight at once; past that, the oldest loses its stamp and runs after the other requests of its batch, with a line on stderr. The `grounding_*` session tools and the `hypothesis_*` tools are separate stores, each with their own identical arrival-ordering queue (not shared with this one); see `grounding_start` and `hypothesis_record`. |
+| `ledger_summary` | `evidence-ledger.getSummary` | Return all entries for a session, grouped by type, with counts (including `policyDecisions`). A zero count is not necessarily an error: causes include (not an exhaustive list) no entries yet, a sessionId that does not exactly match what `ledger_add` used, or a `contentPrefix` filter that excludes every matching row. `sinceIso` must be an ISO-8601 date (`"2026-05-01"`) or a datetime with a `T`/`t`/space separator, optional seconds and fraction digits, and an explicit `Z`/`z` or numeric offset (`"2026-05-01T08:00:00Z"`, `"2026-05-01T10:00:00+02:00"`, `"2026-05-01 08:00:00.123Z"`); rejected with a validation error naming the field, not silently treated as "matches nothing": an empty string, a relative shorthand (`"1h"`, `"24h"`, `"yesterday"`), an epoch number, `Date.toString()` output, or an out-of-range calendar value would make SQLite's `datetime()` return `NULL` and silently exclude every row, and a local datetime without a zone parses without error but would silently shift the filter window by the caller's wall-clock offset. Every accepted datetime is normalized to a UTC instant before the query, so any explicit offset (including one wider than SQLite's own `datetime()` can represent) filters correctly. Ordered by arrival at the transport, see `ledger_add`. |
 | `ledger_status` | `ledger-bridge.ledgerStatus` | No-arg ledger reachability + stats probe (entry count, db path, last-write timestamp) for harness MCP health checks; no session required. Its entry count is ordered by arrival at the transport, see `ledger_add`. |
 | `claim_evaluate` | `claim-gate.evaluateClaim` | Run a claim through the gate with caller-supplied context. |
 | `claim_evaluate_from_session` | claim-gate + grounding-wrapper + evidence-ledger | Same, but auto-derive the context from the session's phase status + ledger entries. The default path. Both its session read and its ledger read are ordered by arrival at the transport, each relative to a concurrent/pipelined request against that same store for the same sessionId, see `grounding_start` and `ledger_add`. |
 | `solution_evaluate` | `solution-verdict` + `solution-attempt-log` + `preflight` CLI | Run preflight against a repo and record a HEAD-pinned solution-acceptance verdict for an id, derived from preflight's real results. Earn "done" instead of claiming it. Sends `notifications/progress` pings while it runs, if the request carries a progressToken. Waits up to an internal bound and then hands back `{status:"running", attemptId, pollAfterMs}` instead of blocking further. See below. |
-| `solution_gate` | `solution-verdict.evaluateGate` | Allowed only if a ready verdict exists at the current git HEAD; else a precise deny reason (no verdict / not ready / HEAD drift). |
+| `solution_gate` | `solution-verdict.evaluateGate` | Allowed only if the marker for the id parses, has `ready: true`, and was recorded at the current git HEAD; else a precise deny reason (no verdict / not ready / HEAD drift / unresolvable HEAD). It does not check the marker's `alg` or `signature`. |
 | `solution_evaluate_status` | `solution-attempt-log` | Read-only status of a `solution_evaluate` attempt for an id: `running`, `completed`, `failed`, `unknown`, `expired`, or `running-unconfirmed`. Never starts preflight, never blocks. Omit `attemptId` to ask about the latest attempt for that id. |
-| `solution_evaluate_result` | `solution-attempt-log` | Read-only outcome of an attempt once it is terminal, `{status:"running"}` while it is not. The process that ran the attempt answers with the full `solution_evaluate` payload, until its own in-memory record of that attempt ages out (the same retention window as the on-disk log); once pruned, even the owning process answers with the reduced, persisted payload, same as any other process. Not gate authority: `solution_gate` still reads only the signed marker. |
+| `solution_evaluate_result` | `solution-attempt-log` | Read-only outcome of an attempt once it is terminal, `{status:"running"}` while it is not. The process that ran the attempt answers with the full `solution_evaluate` payload, until its own in-memory record of that attempt ages out (the same retention window as the on-disk log); once pruned, even the owning process answers with the reduced, persisted payload, same as any other process. Not gate authority: `solution_gate` reads only the verdict marker, and it does not verify the marker's signature. |
 | `verify_memory_reference` | `runtime-reality-checker.verifyMemoryReference` | Check whether a memory-referenced path / symbol / flag still exists in the repo. Call before recommending anything from a memory that cites a concrete file, function, or flag. |
 | `hypothesis_record` | `hypothesis-tracker.addHypothesis` | Add a competing hypothesis with required checks. Use when you can name more than one possible cause. Ordered by arrival at the transport relative to a concurrent/pipelined `hypothesis_list` (or any other `hypothesis_*` verb) for the same sessionId, not by request id value or invocation order, on its own separate 1024-request-cap queue; see `ledger_add`'s entry for the identical cap mechanism. |
 | `hypothesis_list` | `hypothesis-tracker.getSummary` | List all hypotheses for a session plus summary counts. Use before claiming a root cause. Ordered by arrival at the transport relative to a concurrent/pipelined `hypothesis_record` (or any other `hypothesis_*` verb) for the same sessionId, see `hypothesis_record`. |
 | `hypothesis_evidence` | `hypothesis-tracker.addEvidence` | Attach evidence to a hypothesis (auto-promotes unverified to supported). Ordered by arrival at the transport relative to a concurrent/pipelined `hypothesis_list` (or any other `hypothesis_*` verb) for the same sessionId, see `hypothesis_record`. |
 | `hypothesis_check_done` | `hypothesis-tracker.completeCheck` | Mark a required check as done. Ordered by arrival at the transport relative to a concurrent/pipelined `hypothesis_list` (or any other `hypothesis_*` verb) for the same sessionId, see `hypothesis_record`. |
 | `hypothesis_reject` | `hypothesis-tracker.rejectHypothesis` | Reject a hypothesis with a reason, the rejection is appended as an audit entry rather than a silent delete. Ordered by arrival at the transport relative to a concurrent/pipelined `hypothesis_list` (or any other `hypothesis_*` verb) for the same sessionId, see `hypothesis_record`. |
-| `hypothesis_support` | `hypothesis-tracker.supportHypothesis` | Explicitly mark a hypothesis as supported. Usually `hypothesis_evidence` is enough. Ordered by arrival at the transport relative to a concurrent/pipelined `hypothesis_list` (or any other `hypothesis_*` verb) for the same sessionId, see `hypothesis_record`. |
+| `hypothesis_support` | `hypothesis-tracker.supportHypothesis` | Explicitly mark a hypothesis as supported. Refused with `hypothesis_not_found_rejected_or_checks_pending` while any of the hypothesis's required checks are pending. Usually `hypothesis_evidence` is enough. Ordered by arrival at the transport relative to a concurrent/pipelined `hypothesis_list` (or any other `hypothesis_*` verb) for the same sessionId, see `hypothesis_record`. |
 | `hypothesis_reset` | (store purge) | Purge all hypotheses for one session. Use before reusing a grounding sessionId for a new debug task so stale hypotheses do not leak in. Ordered by arrival at the transport relative to a concurrent/pipelined `hypothesis_list` (or any other `hypothesis_*` verb) for the same sessionId, see `hypothesis_record`. |
 
 ## Storage
@@ -36,6 +36,7 @@ The other packages in this repo are CLI-first. That works fine for scripted invo
 | What | Where | Override |
 |---|---|---|
 | Session JSON | `~/.grounding-mcp/sessions/<id>.json` | `GROUNDING_MCP_SESSIONS_DIR` |
+| Hypotheses | `~/.grounding-mcp/hypotheses/<sessionId>.json` | `GROUNDING_MCP_HYPOTHESES_DIR` |
 | Evidence ledger | `~/.evidence-ledger/ledger.db` (owned by `evidence-ledger`) | `EVIDENCE_LEDGER_DB` |
 | Solution verdicts | `~/.local/state/agent-grounding/solution-verdicts/<id>.json` (`$XDG_STATE_HOME` honored) | `SOLUTION_VERDICT_DIR` |
 | Attempt log | `<verdict dir>/<id>.attempts.jsonl`, one append-only JSONL file per sanitized id, mode `0600` | `SOLUTION_VERDICT_DIR` |
@@ -46,7 +47,7 @@ A phase that ends up with `'skipped'` status (because no steps mapped to it for 
 
 ## Solution-acceptance gate
 
-Verifier-gated "done": completion is earned from a real preflight run, not claimed. `solution_evaluate` runs preflight against a repo and records a HEAD-pinned, signed verdict marker for an id; `solution_gate` allows only when a ready verdict exists at the current HEAD. See [Solution-acceptance gate reference](docs/solution-acceptance-gate.md) for the full anti-hacking contract, verdict marker signing, progress notifications, attempt lifecycle, and the orchestrator-workflow process-completeness arm.
+Verifier-gated "done": completion is earned from a real preflight run, not claimed. `solution_evaluate` runs preflight against a repo and records a HEAD-pinned, signed verdict marker for an id; `solution_gate` allows only when a ready verdict exists at the current HEAD. `solution_gate` does not verify the marker's signature; that protection applies only to a consumer that checks it. See [Solution-acceptance gate reference](docs/solution-acceptance-gate.md) for the full anti-hacking contract, verdict marker signing, progress notifications, attempt lifecycle, and the orchestrator-workflow process-completeness arm.
 
 ## Install + register
 
@@ -56,7 +57,19 @@ Requires Node.js >= 20. `solution_evaluate` also requires the `preflight` binary
 npm install -g @lannguyensi/grounding-mcp
 ```
 
-Then add to your Claude Code `~/.claude/settings.json`:
+Then register it with Claude Code for every project:
+
+```bash
+claude mcp add --scope user grounding -- grounding-mcp
+```
+
+Without a global install, use `npx`:
+
+```bash
+claude mcp add --scope user grounding -- npx -y @lannguyensi/grounding-mcp
+```
+
+For a project-scoped setup, commit a `.mcp.json` at the project root containing one of the blocks below. Claude Code does not read `mcpServers` from `settings.json`.
 
 ```json
 {
@@ -67,8 +80,6 @@ Then add to your Claude Code `~/.claude/settings.json`:
   }
 }
 ```
-
-You can also invoke it without a global install via `npx`:
 
 ```json
 {
@@ -197,7 +208,7 @@ When changing tool descriptions, restart Claude Code, MCP tool catalogs are cach
 Two test files cover the verb surface and they catch different bugs, so a new verb usually needs an entry in both:
 
 - `tests/hypothesis.test.ts` (or sibling `*.test.ts`) drives the library + in-process store directly. Fast, covers happy paths and library invariants.
-- `tests/hypothesis-mcp-roundtrip.test.ts` drives the same verbs through a real `Client` + `InMemoryTransport` pair against `createServer()`. It is the only place that exercises representative wrapper-only error branches (`no_store_for_session`, `hypothesis_not_found`, `check_index_out_of_range`, `hypothesis_not_found_or_rejected`) and the zod schema bounds (`.min(1)`, `.max(4096)`) end-to-end. Wrapper branches that exist only in `server.ts` are invisible to a library-level test. Sibling permutations of the same error code across other verbs are intentionally not duplicated, the goal is one assertion per distinct branch, not full matrix coverage.
+- `tests/hypothesis-mcp-roundtrip.test.ts` drives the same verbs through a real `Client` + `InMemoryTransport` pair against `createServer()`. It is the only place that exercises representative wrapper-only error branches (`no_store_for_session`, `hypothesis_not_found`, `check_index_out_of_range`, `hypothesis_not_found_rejected_or_checks_pending`) and the zod schema bounds (`.min(1)`, `.max(4096)`) end-to-end. Wrapper branches that exist only in `server.ts` are invisible to a library-level test. Sibling permutations of the same error code across other verbs are intentionally not duplicated, the goal is one assertion per distinct branch, not full matrix coverage.
 
 If a new verb introduces a structured error payload that does not exist in the underlying library (most verbs that have one do), add a roundtrip case that asserts the exact `{ error: '<code>', ... }` shape, not just `isError`.
 

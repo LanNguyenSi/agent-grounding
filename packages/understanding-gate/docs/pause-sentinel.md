@@ -12,8 +12,9 @@ skips the Understanding Report injection, and the `PreToolUse` and
 exact same reader, so a given sentinel file reads the same way on every
 path). The `Stop` hook only persists reports and is unaffected by a
 pause. A `PreToolUse` or `tool.execute.before` pause that overrides what
-would otherwise have been a block or force-bypass is audit-logged as a
-`paused_allow` entry; a pause that changes nothing (a read-only tool, an
+would otherwise have been a block is audit-logged as a `paused_allow`
+entry. A force-bypass under an active pause keeps its own `force_bypass`
+audit entry. A pause that changes nothing (a read-only tool, an
 already-approved report) stays silent, same as without a pause. This
 package only ever reads the sentinel file; it never creates, writes, or
 deletes it, and never manages expiry. Unset (the default) means no pause

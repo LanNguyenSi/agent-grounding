@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // MCP server exposing the agent-grounding stack to long-running Claude Code
 // sessions. See README.md for the full tool catalog and the Claude Code
-// settings.json registration block.
+// registration commands.
 
 import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
