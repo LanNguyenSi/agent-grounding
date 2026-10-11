@@ -15,8 +15,12 @@
 ## Evidence ledger
 
 <!--
-Per the merge gate: log at least one evidence-ledger entry with
-sessionId = task UUID before requesting review.
+The merge-approval check reads evidence under the PR head branch name.
+Either commit .agent-grounding/evidence/<branch-name>.jsonl, written by
+`review-claim-gate export --task-id <branch-name> --out .agent-grounding/evidence/<branch-name>.jsonl`
+(add `--from-session <id>` when the entries were logged under another
+session), or have the reviewer apply the review:evidence-logged label.
+See docs/testing/merge-approval-rollout.md.
 -->
 
 ## Notes for reviewer
