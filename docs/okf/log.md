@@ -2,6 +2,15 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-10-11T16:47:14Z, one correction and a re-stamp.
+  `runtime-reality-policy-pointer.md`: the opening of its ownership section
+  no longer says harness never reads the escalation variables; of the four,
+  harness reads only `RUNTIME_REALITY_DISABLE`, as the rest of the doc
+  already said. `index.md` follows. Sources unchanged; the doc's citations
+  still resolve; re-stamped. Verdict of `okf-kit check --require-anchors
+  --json docs/okf` (0.16.0) on the committed tree: 0 errors and no finding
+  outside this log.
+
 - 2026-10-11T16:29:28Z, corrections to two docs and a re-stamp pass.
   `understanding-gate-approval-trust-model.md`: within this package only
   `withApprovalStatus` (via `approve` and `revoke`) writes `approvalStatus`,
