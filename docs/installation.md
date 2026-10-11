@@ -22,11 +22,12 @@ npm install -g @lannguyensi/evidence-ledger          # → ledger
 npm install -g @lannguyensi/grounding-wrapper        # → grounding-wrapper
 npm install -g @lannguyensi/readme-first-resolver    # → readme-first
 npm install -g @lannguyensi/review-claim-gate        # → review-claim-gate
-npm install -g @lannguyensi/runtime-reality-checker  # → runtime-reality-policy-pre-tool-use
-npm install -g @lannguyensi/understanding-gate       # → understanding-gate
+npm install -g @lannguyensi/runtime-reality-checker  # → runtime-reality-policy-pre-tool-use (hook entrypoint without a probe; see docs/policy-runtime-reality.md)
+npm install -g @lannguyensi/understanding-gate       # → understanding-gate, understanding-gate-claude-hook,
+                                                     #   understanding-gate-claude-stop, understanding-gate-claude-pre-tool-use
 
 # MCP server (install globally or invoke via npx)
-npm install -g @lannguyensi/grounding-mcp            # → grounding-mcp
+npm install -g @lannguyensi/grounding-mcp            # → grounding-mcp, grounding-assessment-mcp
 ```
 
 The `git clone` workflow in the root README is for hacking on the monorepo itself; downstream consumers install only what they need from npm.
