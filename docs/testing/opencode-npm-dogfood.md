@@ -16,7 +16,7 @@ Recorded 2026-08-17 under an agent-tasks dogfood task.
 
 | Component | Version |
 | --- | --- |
-| `opencode` | 1.18.18 (`/opt/homebrew/bin/opencode`) |
+| `opencode` | 1.18.18 |
 | Ollama daemon | 0.32.13 |
 | Model | `gemma4-q8-64k` (gemma4, 11.9B params, Q8_0 quant, 65536 ctx) |
 | `@lannguyensi/understanding-gate` | **0.4.10**, installed via `npm install --save-dev` from the real npm registry |
@@ -48,10 +48,9 @@ grill-me's template requires the user to type `/grill` or the bare marker
 
 ### Gotcha found during setup — global npm-link shadows npx
 
-This machine has a **global `npm link`** for local understanding-gate
-development: `/opt/homebrew/bin/understanding-gate ->
-.../pandora/agent-grounding/packages/understanding-gate` (unpublished dev
-version, reports as `0.4.11`). Running `npx @lannguyensi/understanding-gate`
+This machine has a **global `npm link`** of the workspace understanding-gate
+package for local development (unpublished dev version, reports as
+`0.4.11`). Running `npx @lannguyensi/understanding-gate`
 **unpinned** silently resolves to that linked dev binary instead of hitting
 the registry — it would have tested the *wrong* (unpublished) code without
 any error. Pinning the version (`npx @lannguyensi/understanding-gate@0.4.10`,
