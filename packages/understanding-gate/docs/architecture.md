@@ -1,39 +1,53 @@
 # understanding-gate Architecture
 
-Phase -1 produced this document. It anchors the implementation work in Phases 0 onward.
+Reference for the package layers, harness entry points, lifecycle states and configuration surfaces.
 
-Three-layer split: harness-agnostic Core, per-harness Adapters, the harnesses themselves. Core is pure. Adapters do I/O. Harnesses are external.
+Three-layer split: harness-agnostic Core, per-harness Adapters, the harnesses themselves. Core holds the decision logic and file-backed state helpers and has no harness dependency; Adapters translate harness payloads.
 
 > Note: The harness-specific names below (Claude Code's `UserPromptSubmit`, opencode's `tool.execute.before`, etc.) are the implementation-side translation of the neutral "prompt hook" / "pre-tool hook" concepts from two earlier, unpublished design documents. Those documents do not name specific harness APIs; this mapping was made during the conversation that produced this package plan.
 
 ## Layered view
 
+The flowchart shows every installed hook and plugin event, the Core modules each one calls through its adapter (`adapters/claude-code`, `adapters/opencode`), and the files they read or write.
+
+```mermaid
+flowchart TD
+  subgraph Harness["Harness entry points (external)"]
+    CC_UPS[Claude Code<br/>UserPromptSubmit]
+    CC_STOP[Claude Code<br/>Stop]
+    CC_PTU[Claude Code<br/>PreToolUse]
+    OC_PLUGIN[opencode<br/>plugin]
+  end
+  OC_RULES["opencode rules<br/>and /grill command"]
+  AGENT[opencode agent]
+  CLI[understanding-gate<br/>approve or revoke]
+  subgraph Core["Core (harness-agnostic)"]
+    CLASSIFY["classifier, mode,<br/>prompts"]
+    PARSE[parser and<br/>persistence]
+    SYNC[hypothesis sync]
+    ENF[enforcement and<br/>approval]
+  end
+  subgraph State["State files"]
+    HYP[(hypotheses.json)]
+    REPORTS[(".understanding-gate/reports")]
+    AUDIT[(".understanding-gate/audit.log")]
+  end
+  CC_UPS --> CLASSIFY
+  CC_STOP --> PARSE
+  OC_PLUGIN -->|message.updated| PARSE
+  OC_RULES -.->|static text| AGENT
+  PARSE --> REPORTS
+  PARSE --> SYNC
+  SYNC --> HYP
+  CC_PTU --> ENF
+  OC_PLUGIN -->|tool.execute.before| ENF
+  ENF -->|reads approvalStatus| REPORTS
+  ENF --> AUDIT
+  CLI --> REPORTS
+  CLI --> AUDIT
 ```
-┌────────────────────────────────────────────────────────┐
-│ Harness (external)                                     │
-│  Claude Code            opencode                       │
-│  UserPromptSubmit       rules + custom command (v0.5)  │
-│  PreToolUse (Phase 2)   tool.execute.before (Phase 2)  │
-└────────────┬──────────────────────────┬────────────────┘
-             │ stdin/stdout JSON        │ in-process JS
-             ▼                          ▼
-┌────────────────────────────────────────────────────────┐
-│ Adapter                                                │
-│  adapters/claude-code   adapters/opencode              │
-│  binary, exit codes     module, throw, output mutation │
-└────────────┬───────────────────────────────────────────┘
-             │ pure-function calls
-             ▼
-┌────────────────────────────────────────────────────────┐
-│ Core (harness-agnostic, no I/O)                        │
-│  classifier (isTaskLike)                               │
-│  mode picker (fast_confirm | grill_me)                 │
-│  prompt snippets (3 modes, bundled at build)           │
-│  report schema (JSON Schema + TS types)                │
-│  parser (Phase 1)                                      │
-│  persistence (Phase 1, fs only)                        │
-└────────────────────────────────────────────────────────┘
-```
+
+Claude Code adapters run as binaries that read JSON on stdin and answer with stdout and exit codes; the opencode plugin runs in-process and blocks by throwing. Core reads and writes only the report, audit and hypothesis files shown above.
 
 ## Why this split
 
@@ -54,7 +68,7 @@ The asymmetry is the reason for the v0 / v0.5 split. Claude Code gets per-prompt
 
 ## Composition with sibling packages
 
-`understanding-gate` is the front-of-pipeline gate in the agent-grounding stack. Composition order at runtime, once Phase 1+ ships:
+`understanding-gate` is the front-of-pipeline gate in the agent-grounding stack. Intended composition order (not enforced by any package):
 
 ```
 understanding-gate     ← agent must show interpretation before acting
@@ -72,7 +86,7 @@ review-claim-gate      ← merge gate, fails closed unless tests + checklist + e
 
 Ordering rationale: the report comes first because hypotheses are extracted from its `assumptions` and `openQuestions` fields. `readme-first-resolver` runs after the agent has named what it is doing, so the forced primary-doc read is targeted rather than blanket. Claims, evidence, and the review gate then build on the established context.
 
-`grounding-wrapper` orchestrates this chain. A future Phase-3 PR will register `understanding-gate` with the wrapper so the chain enforces the order.
+Today the only implemented link is understanding-gate to hypothesis-tracker: each saved report's assumptions and open questions are registered in `hypotheses.json` next to the reports directory. `grounding-wrapper` plans a debug sequence that does not include `understanding-gate` or `review-claim-gate`, and it invokes none of the tools it lists. A Phase 3 change would add `understanding-gate` to that sequence; enforcing the order stays with an external policy.
 
 ## Lifecycle states (relevant for Phase 3)
 
@@ -103,7 +117,7 @@ In Phase 0/0.5, these states are implicit (agent and user share a session). Phas
 | ENV `UNDERSTANDING_GATE_REPORT_DIR` | 1 | override report persistence path |
 | ENV `UNDERSTANDING_GATE_TASK_ID` | 1 | bind reports to a logical task identifier |
 | ENV `UNDERSTANDING_GATE_FORCE` + `_FORCE_REASON` | 2 | bypass enforcement, requires reason ≥ 10 chars, audit-logged |
-| ENV `AGENT_TASKS_TASK_ID` | 3 | sync reports to `agent-tasks` backend |
+| ENV `AGENT_TASKS_TASK_ID` | 3 | (planned for Phase 3, not read yet) sync reports to `agent-tasks` backend |
 
 Open question for Phase 3: `UNDERSTANDING_GATE_TASK_ID` (Phase 1, package-internal) and `AGENT_TASKS_TASK_ID` (Phase 3, cross-package) describe the same logical concept. Phase 3 will need to reconcile them, either by collapsing into one variable or by documenting precedence.
 
@@ -111,4 +125,4 @@ Open question for Phase 3: `UNDERSTANDING_GATE_TASK_ID` (Phase 1, package-intern
 
 The Phase-0 gate is non-blocking. Hook never crashes Claude Code: malformed input, missing binary, runtime error all degrade to "exit 0, empty stdout". The cost of a false-negative classification (gate skipped when it should fire) is acceptable; the cost of crashing the harness is not.
 
-In Phase 2, blocking is enforced, but the kill-switch and force-bypass remain available. Both are audit-logged.
+In Phase 2, blocking is enforced, but the kill switch and force-bypass remain available. A force-bypass is audit-logged as a `force_bypass` entry. The kill switch (`UNDERSTANDING_GATE_DISABLE`) turns the gate off without writing any audit entry.
