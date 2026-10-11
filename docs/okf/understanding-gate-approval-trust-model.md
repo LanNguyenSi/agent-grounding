@@ -3,7 +3,7 @@ type: invariant
 title: "understanding-gate approval and enforcement: what the write-tool gate trusts"
 description: Approval is the approvalStatus field of the latest persisted report for the bound task id; within this package only the approve and revoke CLI write it, the hooks do not check who wrote it, and harness's understanding-gate pack (v0.64.0 and earlier) rewrites it too; the hooks trust their environment (kill switch first in the shared decision and unaudited, force-bypass audited), the unsigned pause sentinel, and the report directory, and the Claude Code and opencode adapters differ on degraded input.
 tags: [understanding-gate, approval, enforcement, audit, trust-boundary]
-timestamp: 2026-10-11T16:06:54Z
+timestamp: 2026-10-11T16:29:28Z
 sources:
   - packages/understanding-gate/src/core/enforcement.ts
   - packages/understanding-gate/src/core/approval.ts
@@ -41,7 +41,7 @@ task (`packages/understanding-gate/src/core/approval.ts:3#"approval.json marker 
   reserved and no call site uses it
   (`packages/understanding-gate/src/core/approval.ts:13-16#"export type ApproveActor ="`).
 - The hooks check the field alone, not `approvedBy` or who wrote it
-  (`packages/understanding-gate/src/core/approval.ts:32-34#"export function isApproved"`).
+  (`packages/understanding-gate/src/core/approval.ts:32-33#"entry.approvalStatus ==="`).
   harness releases that ship its understanding-gate pack (v0.64.0 and earlier)
   also rewrite the field to `approved` in the same report files, from
   `harness approve understanding` and from the pack's opt-in auto-approval;

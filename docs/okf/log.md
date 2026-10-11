@@ -2,6 +2,30 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-10-11T16:29:28Z, corrections to two docs and a re-stamp pass.
+  `understanding-gate-approval-trust-model.md`: within this package only
+  `withApprovalStatus` (via `approve` and `revoke`) writes `approvalStatus`,
+  the hooks check the field and not who wrote it, and harness releases that
+  ship its understanding-gate pack (v0.64.0 and earlier) rewrite it from
+  `harness approve understanding` and the pack's opt-in auto-approval without
+  this package's `approve` audit line, so `audit.log` records CLI approvals,
+  not every approval; the kill switch is first only inside
+  `decideEnforcement`, after the report listing and, in the Claude Code hook,
+  after the malformed and tool-less payload paths. `index.md` follows.
+  `runtime-reality-policy-pointer.md`: harness also checks
+  `RUNTIME_REALITY_DISABLE` itself (its own copy of the on-switch rule) before
+  it denies a timed-out stdin read; the other three flags are interpreted only
+  in this package. Sources that changed: `CONTRIBUTING.md` (version-locked
+  lockfile scope), `packages/grounding-mcp/docs/solution-acceptance-gate.md`
+  (evaluation order in the sequence diagram) and
+  `packages/review-claim-gate/README.md` (scoped `npx` name). Re-verified and
+  re-stamped `claim-gate-vs-review-claim-gate.md`,
+  `evidence-ledger-session-key-shapes.md`, `merge-approval-gate-mechanics.md`
+  and `solution-acceptance-verdict-contract.md` (claims unchanged; no cited
+  line moved), plus the two corrected docs. Verdict of `okf-kit check
+  --require-anchors --json docs/okf` (0.16.0) on the committed tree: 0 errors
+  and no finding outside this log.
+
 - 2026-10-11T16:06:54Z, two new invariant docs. `grounding-phase-model-and-claim-context.md`
   covers grounding-wrapper's phase machine (only `runtime-inspection` can be
   skipped, `advancePhase` checks nothing beyond the step list), guardrails as
