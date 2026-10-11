@@ -56,9 +56,12 @@ review-claim-gate's non-`evidence_logged` flags are verified — defeats the gat
   .json` deps: only `chalk`, `commander`). There is no store to consult; the
   flag is the fact.
 - CLI: `claim-gate check <claim> [--readme --process --config --health
-  --evidence --alternatives --type <t> --json]`. On a blocked claim it prints
-  missing prerequisites and **exits 1** (`packages/claim-gate/src/cli.ts:121#"process.exit(1)"`,
-  `if (!result.allowed) process.exit(1);`); `policies` lists all policies.
+  --evidence --alternatives --type <t> --json]`. In text mode, a blocked claim
+  prints the missing prerequisites and **exits 1** (`packages/claim-gate/src/cli.ts:121#"process.exit(1)"`,
+  `if (!result.allowed) process.exit(1);`). With `--json` it prints the verdict and
+  returns before that line, so it exits 0 whether or not the claim is allowed
+  (`packages/claim-gate/src/cli.ts:101-103#"return;"`); read the `allowed` field.
+  `policies` lists all policies.
 - **Every input is agent-writable and therefore forgeable.** An agent can pass
   `--evidence` (or any flag) with no underlying work. That is by design: this is
   a discipline aid, not an authority. Do not wire it into a merge decision.

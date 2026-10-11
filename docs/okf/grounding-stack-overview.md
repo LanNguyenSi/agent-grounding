@@ -22,7 +22,8 @@ sources:
 ## Read this first
 
 [../architecture.md](../architecture.md) contains a mermaid diagram of the whole
-stack (`docs/architecture.md:5-41#"helpers --> el"`) and, in the root README, a runnable evidence-ledger CLI demo. It is current and
+stack (`docs/architecture.md:7-54#"rcg --> el"`), and the root README has a
+runnable evidence-ledger CLI demo. The diagram is
 deliberately NOT duplicated here: one copy, no drift. Per-package READMEs cover
 each package's own surface.
 

@@ -22,7 +22,7 @@ that reads five `review:*` PR labels, converts each to a boolean, and hands them
 to the `review-claim-gate` composite action. The action evaluates the
 `merge_approval` policy and posts a **`merge-approval` Check-Run** with a
 0–100 score and an `allowed: true|false` verdict. All five prerequisites must be
-true for `allowed: true` / score 100 (`README.md:36#"Missing prereqs surface in"`, `README.md:132#"result.allowed === true, result.score === 100"`).
+true for `allowed: true` / score 100 (`README.md:35#"Missing prereqs surface in"`, `README.md:175#"result.allowed === true, result.score === 100"`).
 
 The action is pinned by SHA, not a floating tag:
 
@@ -243,7 +243,7 @@ evidence lookup, read **branch name**.
 ## Evidence-source precedence (used by `check`)
 
 When the action evaluates `evidence_logged`, it resolves evidence from one of
-three sources, highest precedence first (`README.md:69-80#"silent fallback would be misleading"`):
+three sources, highest precedence first (`README.md:85-121#"silent fallback would be misleading"`):
 
 1. **Forced** — `--evidence-logged` (the `evidence-logged: true` input) forces
    `evidence_logged=true` regardless of any other signal.
@@ -251,12 +251,12 @@ three sources, highest precedence first (`README.md:69-80#"silent fallback would
    otherwise auto-detect `./.agent-grounding/evidence/<task-id>.jsonl` relative
    to `process.cwd()`, counting valid JSON lines. (`<task-id>` = branch name.)
    An explicit `--evidence-file` pointing at a non-existent path **throws** rather
-   than silently falling back (`README.md:80#"silent fallback would be misleading"`).
+   than silently falling back (`README.md:121#"silent fallback would be misleading"`).
 3. **Ledger fallback** — local evidence-ledger DB keyed by `session = <task-id>`
    (again, branch name).
 
 `evidenceSource` in the JSON verdict is one of `"forced" | "file" | "ledger" |
-"none"` (`README.md:109#"is set only when"`). The workflow wires the `review:evidence-logged`
+"none"` (`README.md:150#"is set only when"`). The workflow wires the `review:evidence-logged`
 label to the `evidence-logged` input, but that label is optional: absent it,
 the action falls through to the committed-file auto-detect above, so a
 committed `.agent-grounding/evidence/<task-id>.jsonl` in the PR branch,
@@ -268,7 +268,7 @@ a tracker follow-up task tracks history).
 
 The Check-Run is **only** a hard merge gate when `merge-approval` is listed in
 an applicable branch-protection rule or ruleset's **required status checks**
-(`merge-approval-rollout.md:6-8#"until the gate returns"`, `README.md:180-185#"the verdict as a Check-Run lives in"`). There are two states:
+(`merge-approval-rollout.md:6-8#"until the gate returns"`, `README.md:224-227#"the verdict as a Check-Run lives in"`). There are two states:
 
 - **Hard gate (end state the rollout doc describes).** `merge-approval` is a
   required check on `master`; a red / `allowed: false` verdict blocks the Merge
@@ -327,8 +327,8 @@ committed `.agent-grounding/evidence/<branch>.jsonl`, no ledger rows for
 gate is broken.** Because the key is the branch name, evidence logged under a
 grounding-session id (e.g. `gs-agent-grounding-…`) will not be found; use
 `review-claim-gate export --task-id <branch-name> --from-session <gs-id>` to
-rewrite it under the branch key without re-logging (`README.md:75-78#"having to re-log the findings."`). Missing
-prereqs are also listed in the verdict's `next_steps` (`README.md:36#"Missing prereqs surface in"`).
+rewrite it under the branch key without re-logging (`README.md:116-119#"having to re-log the findings."`). Missing
+prereqs are also listed in the verdict's `next_steps` (`README.md:35#"Missing prereqs surface in"`).
 
 ## How to re-trigger after backfilling
 

@@ -7,6 +7,7 @@ timestamp: 2026-10-10T14:10:20Z
 sources:
   - docs/policy-runtime-reality.md
   - packages/runtime-reality-checker/src/policy/handle-pre-tool-use.ts
+  - packages/runtime-reality-checker/src/policy/pre-tool-use.ts
 ---
 
 # runtime-reality-checker as a PreToolUse policy — pointer
@@ -17,13 +18,15 @@ sources:
 spec: trigger set, drift severities, block/allow semantics, operator overrides
 via `RUNTIME_REALITY_TRIGGERS_FILE`. It is not duplicated here.
 
-Note what that spec says about status (its own opening): the checker is
-**library-only**; nothing in a live Claude Code session calls `runRealityCheck`
-automatically. The PoC policy code lives in
-`packages/runtime-reality-checker/src/policy/`; the harness-side hook
-registration is tracked as a follow-up in the harness project. Read the spec as
-a design, and check the harness manifest before assuming the hook is live in
-any given install.
+Note what that spec says about status (its own opening): the policy code lives
+in `packages/runtime-reality-checker/src/policy/`, and the package's own
+`runtime-reality-policy-pre-tool-use` bin ships without a probe
+(`packages/runtime-reality-checker/src/policy/pre-tool-use.ts:40-42#"probe: null,"`),
+so on its own it never blocks on drift. The live integration is harness's
+`harness pack hook runtime-reality`, which runs the host's probe command
+(`RUNTIME_REALITY_PROBE_CMD`, read by harness, not by this package) and passes
+the result to this package's handler. Check the harness manifest before
+assuming that hook is wired in any given install.
 
 ## The ownership fact agents get backwards
 
@@ -38,8 +41,10 @@ helper (`handle-pre-tool-use.ts:88#"function envOn"`) when it builds its options
 - `RUNTIME_REALITY_PROBE_FAIL_BLOCK`
 
 Harness's role is only to **set** these variables in the environment of the hook
-process it spawns; the meaning of each flag, and the escalation logic they
-select, live here. A doc or comment claiming harness interprets them is wrong.
+it runs; the meaning of each flag, and the escalation logic they select, live
+here. A doc or comment claiming harness interprets them is wrong. The one
+runtime-reality variable harness does interpret is the probe command, which
+this package never reads.
 
 Practical consequence: to change what a toggle does, edit this package and
 release it (`@lannguyensi/runtime-reality-checker`, independently versioned);
