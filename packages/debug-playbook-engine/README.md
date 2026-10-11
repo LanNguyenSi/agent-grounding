@@ -17,15 +17,17 @@ Requires Node.js >= 20.
 ## Usage
 
 ```bash
-# Start a diagnostic playbook
+# Print the playbook for a domain
 debug-playbook run -d clawd-monitor -p "agent not visible in monitor"
 
-# Show next required step
+# Print the first step and the number of mandatory steps (the CLI keeps no state between calls)
 debug-playbook next -d clawd-monitor -p "agent not visible"
 
 # JSON output
 debug-playbook run -d clawd-monitor -p "agent not visible" --json
 ```
+
+Recording step results and gating claims is library-only; see [API](#api).
 
 ### Example output
 
@@ -55,9 +57,11 @@ debug-playbook run -d clawd-monitor -p "agent not visible" --json
 
 | Domain | Playbook |
 |--------|----------|
-| `clawd-monitor` | Basic connectivity: process → start mode → config → network → verify-fix |
-| `github` | API connectivity: token → rate limit → repo access → permissions → verify-fix |
-| `generic` | Read docs → check process → verify config → deps → logs → verify-fix |
+| `clawd-monitor` | Basic connectivity: repo model → process → start mode → config → network (optional) → verify-fix |
+| `github` | API connectivity: token → rate limit → repo access → permissions (optional) → verify-fix |
+| `generic` | Read docs → check process → verify config → deps (optional) → logs (optional) → verify-fix |
+
+The `-d` value is lowercased and runs of `-`, `_` and whitespace become `-`. An exact name wins; otherwise the first built-in name that contains the value, or is contained in it, is used (so `-d git` resolves to `github` and `-d monitor` to `clawd-monitor`); anything else falls back to `generic`.
 
 ### API
 
@@ -87,13 +91,16 @@ const allowed = canMakeClaim(state, 'config');
 // allowed.allowed === true
 ```
 
-Caveat: `canMakeClaim`'s requirements for `root-cause` and
-`architecture` mix step IDs from different built-in playbooks
-(`check-repo-model` lives in `clawd-monitor` / `github`, while
-`read-docs` and `check-process` live in `generic`), so no single
-built-in playbook can satisfy either claim type on its own. To gate
-those claims today, extend a domain playbook with the missing step
-IDs, or compose facts from multiple playbook runs before the call.
+`canMakeClaim` checks step IDs, and the built-in playbooks cover them unevenly:
+
+| Claim type | Required step IDs | Built-in playbooks that can satisfy it |
+|------------|-------------------|----------------------------------------|
+| `root-cause` | check-repo-model, read-docs, check-process | none |
+| `architecture` | check-repo-model, read-docs | none |
+| `config` | check-config | clawd-monitor, generic |
+| `network` | check-process, check-config | generic |
+
+The github playbook satisfies no claim type, and clawd-monitor's check-network step does not count toward a network claim. To gate the other claims, extend a domain playbook with the missing step IDs.
 
 ## Part of the grounding stack
 
