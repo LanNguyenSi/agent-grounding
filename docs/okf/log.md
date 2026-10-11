@@ -2,6 +2,31 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-10-11T17:13:28Z, corrections to two docs and a re-stamp pass.
+  `grounding-phase-model-and-claim-context.md`: the description limits the
+  runtime-check statement to sessions advanced past `playbook-loading`, and
+  the guardrails section names every place that reads or echoes
+  `active_guardrails` (`isGuardrailActive` behind `grounding_guardrail_check`
+  and the wrapper CLI's `check-guardrail`; grounding-mcp's session responses
+  and the CLI's `start` print the list); `packages/grounding-wrapper/src/index.ts`
+  added to sources. `understanding-gate-approval-trust-model.md`: within this
+  package only `withApprovalStatus` changes `approvalStatus` on an existing
+  report, and the persisting hooks write new reports as `pending`; the harness
+  version range is given per writer (v0.8.0 through v0.64.0, auto-approval
+  from v0.51.0); this package only reads the pause sentinel;
+  `packages/understanding-gate/src/core/persistence.ts` and
+  `packages/understanding-gate/src/cli.ts` added to sources. The two entries
+  below that describe the approval writer and the harness range follow, and
+  the 16:02:09Z entry states the line count of the `pre-tool-use.ts` comment
+  change. Sources that changed: `docs/architecture.md` (harness edge label),
+  `CONTRIBUTING.md` (release flowchart edge label) and
+  `docs/policy-runtime-reality.md` (flowchart terminals, intro sentence, one
+  heading and two open questions); no cited line moved. Re-verified and
+  re-stamped `grounding-stack-overview.md`, `merge-approval-gate-mechanics.md`
+  and `runtime-reality-policy-pointer.md` (claims unchanged), plus the two
+  corrected docs. Verdict of `okf-kit check --require-anchors --json docs/okf`
+  (0.16.0) on the committed tree: 0 errors and no finding outside this log.
+
 - 2026-10-11T16:47:14Z, one correction and a re-stamp.
   `runtime-reality-policy-pointer.md`: the opening of its ownership section
   no longer says harness never reads the escalation variables; of the four,
