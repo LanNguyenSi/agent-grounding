@@ -2,6 +2,23 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-10-11T16:06:54Z, two new invariant docs. `grounding-phase-model-and-claim-context.md`
+  covers grounding-wrapper's phase machine (only `runtime-inspection` can be
+  skipped, `advancePhase` checks nothing beyond the step list), guardrails as
+  labels, the context derivation duplicated in grounding-mcp's
+  `derive-context.ts` and grounding-sdk's `index.ts`, and the receipt
+  evaluator's frozen copy in `grounding-assessment-policy.ts`. Measured with the
+  built packages: after three `advancePhase` calls a `deploy-panel` session
+  shows `runtime-inspection: skipped`, all three runtime flags true and a
+  network claim allowed, while an `agent-tasks` session keeps them false.
+  `understanding-gate-approval-trust-model.md` covers approval as the
+  `approvalStatus` field forced to `pending` by the parser and flipped only by
+  the CLI, the task-id binding shared by the persisting and enforcing hooks,
+  the trusted inputs with their audit entries, and the adapter differences on
+  degraded input. Both docs are listed in `index.md`. Verdict of `okf-kit check
+  --require-anchors --json docs/okf` (0.16.0) on the committed tree: 0 errors
+  and no finding outside this log.
+
 - 2026-10-11T16:02:09Z, documentation drift audit across the root docs and the package
   READMEs. Sources that changed: `docs/architecture.md` (diagram redrawn from
   the runtime imports), `docs/policy-runtime-reality.md`, `CONTRIBUTING.md`,

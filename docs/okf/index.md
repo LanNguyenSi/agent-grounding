@@ -32,6 +32,12 @@ at them rather than copying them.
 - [Hypothesis state](hypothesis-tracker-persistence-split.md), one pure library,
   two persisting consumers (plus grounding-sdk, in memory only), two persistence
   shapes, and two promotion paths that disagree about required_checks.
+- [Grounding phase model and claim context](grounding-phase-model-and-claim-context.md),
+  phases advance on the caller's word, a phase without steps is marked skipped,
+  and the two hand-kept context derivations count skipped as checked.
+- [understanding-gate trust model](understanding-gate-approval-trust-model.md),
+  approval as one CLI-flipped field on the latest report for the bound task id,
+  the inputs the write-tool hooks trust, and which outcomes are audited.
 
 ## Runbooks
 
