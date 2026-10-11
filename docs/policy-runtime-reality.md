@@ -1,8 +1,8 @@
 # runtime-reality-checker as a harness PreToolUse policy
 
-This doc specifies the design for wiring `@lannguyensi/runtime-reality-checker` as a harness `PreToolUse` policy. It is the spec half of Phase 1 Schritt 3 of the agent-grounding plan; the PoC code lives in `packages/runtime-reality-checker/src/policy/` and the actual harness-side hook registration is a follow-up task in the `harness` project.
+This doc specifies the design for wiring `@lannguyensi/runtime-reality-checker` as a harness `PreToolUse` policy. The policy code lives in `packages/runtime-reality-checker/src/policy/`. The package's own bin `runtime-reality-policy-pre-tool-use` ships without a probe, so on its own it never blocks on drift; the harness integration `harness pack hook runtime-reality` supplies the probe.
 
-The point: today the checker is library-only. Nothing in a live Claude Code session ever calls `runRealityCheck` automatically. As a result, an agent can confidently issue a `docker-compose down` command on a host where half the expected services are already missing, then "diagnose" against a runtime state that no longer matches the documentation. This policy fixes that by running a drift check before destructive runtime commands, and blocking when critical drift exists.
+The point: without a PreToolUse hook that supplies a probe, nothing in a live session calls `runRealityCheck`. As a result, an agent can confidently issue a `docker-compose down` command on a host where half the expected services are already missing, then "diagnose" against a runtime state that no longer matches the documentation. This policy fixes that by running a drift check before destructive runtime commands, and blocking when critical drift exists.
 
 ## Trigger set
 
@@ -38,7 +38,7 @@ Each `commandPattern` is compiled to a `RegExp` and tested synchronously against
 | compose-mutation   | `tool_name=Bash` AND command matches a docker / docker-compose invocation with an `up`, `down`, `restart`, `stop`, `kill`, or `rm` action (flags allowed in between) | Compose-driven services are the canonical multi-process runtime in this repo family. A drifted compose-state turns "restart" into "rebuild from wrong starting point". |
 | systemctl-mutation | `tool_name=Bash` AND command matches `/systemctl(\s+--[\w=-]+)*\s+(restart|stop|disable|enable|start)\b/`                                                   | systemd-managed services on the VPS. Restarting against a wrong expected-startup-mode silently swaps `manual` for `systemd`.             |
 | process-kill       | `tool_name=Bash` AND command matches `/\bkill\s+(-\d+\s+|-[A-Z]+\s+)?\d+\b/` or `pkill`                                                                     | Killing a PID that doesn't match the documented expectation usually means an out-of-band copy got started.                              |
-| deploy-script      | `tool_name=Bash` AND command starts with `./deploy-` or matches `/bash\s+[^\s]*deploy[^\s]*\.sh\b/`                                                         | Repo-local deploy wrappers always touch the production process set.                                                                      |
+| deploy-script      | `tool_name=Bash` AND command contains `./deploy-` or `./deploy_` (at the start or after whitespace), or matches `/bash\s+[^\s]*deploy[^\s]*\.sh\b/`                | Repo-local deploy wrappers always touch the production process set.                                                                      |
 
 Tool calls that don't match any trigger are passed through silently (no check, no log).
 
@@ -59,7 +59,7 @@ Each domain (keyword) has a JSON file describing what processes are expected. De
 
 The shape matches `ExpectedProcess[]` from `@lannguyensi/runtime-reality-checker`. No new types.
 
-The keyword comes from `RUNTIME_REALITY_KEYWORD` (set by the harness wrapper) or the `grounding-mcp` session keyword if a session id is in the payload. If neither is present, the policy degrades to allow (the check has no expected baseline to compare against).
+The keyword comes only from `RUNTIME_REALITY_KEYWORD`. If it is unset, the policy degrades to allow (there is no expected baseline to compare against). A lookup by `grounding-mcp` session id is not implemented.
 
 ## Actuals probe
 
@@ -69,10 +69,12 @@ The check needs an `ActualProcessState[]`. Computing it is host-specific:
 - For systemd hosts: `systemctl list-units --type=service --state=running`
 - For local dev: `ps -ef | grep <name>` per expected process
 
-The PoC ships a **probe interface**, not a default probe implementation, because the right probe depends on where the policy runs. The harness-side follow-up task ships:
-- A Docker probe binary that the policy calls via subprocess
-- A `RUNTIME_REALITY_PROBE_CMD` env var pointing at it
-- A no-probe degradation: if no probe is configured, log a warning to stderr and allow
+This package ships a **probe interface**, not a probe implementation, because the right probe depends on where the policy runs:
+
+- This package does not read `RUNTIME_REALITY_PROBE_CMD`. Its bin passes no probe to the handler.
+- The harness hook (`harness pack hook runtime-reality`) reads `RUNTIME_REALITY_PROBE_CMD`, runs that command, and passes the parsed `ActualProcessState[]` to this package's handler.
+- harness ships a Docker probe script; see [harness: runtime-reality PreToolUse hook](https://github.com/LanNguyenSi/harness/blob/master/docs/runtime-reality-hook.md), section 3.
+- With no probe, the handler writes a warning to stderr and allows, or denies when `RUNTIME_REALITY_PROBE_FAIL_BLOCK=1`.
 
 This keeps the agent-grounding repo free of host-coupling.
 
@@ -87,6 +89,34 @@ The library emits drift items with severity `critical | warning | info`. The pol
 | `warning`            | `allow` + stderr warning that names the drift items | `RUNTIME_REALITY_WARN_AS_BLOCK=1` to escalate |
 | `critical`           | `deny` + stderr message with "fix drift before continuing" | `RUNTIME_REALITY_CRITICAL_AS_WARN=1` to degrade |
 | (probe failed)       | `allow` + stderr warning | `RUNTIME_REALITY_PROBE_FAIL_BLOCK=1` |
+
+The flowchart shows the handler's order of checks. Every step before the drift comparison allows the call, so only a probe that reports critical drift, or an escalation variable, can deny. The package bin never configures a probe. Variable names drop the `RUNTIME_REALITY_` prefix: `DISABLE` stands for `RUNTIME_REALITY_DISABLE`, and so on.
+
+```mermaid
+flowchart TD
+    ev["PreToolUse event"] --> d{"DISABLE set?"}
+    d -- yes --> skip["allow"]
+    d -- no --> t{"payload parses and<br/>a trigger matches?"}
+    t -- no --> skip
+    t -- yes --> k{"KEYWORD set?"}
+    k -- no --> skip
+    k -- yes --> e{"expectations<br/>file loads?"}
+    e -- no --> skip
+    e -- yes --> p{"probe configured?<br/>package bin: never"}
+    p -- no --> pf{"PROBE_FAIL_BLOCK<br/>set?"}
+    p -- yes --> x{"probe throws?"}
+    x -- yes --> pf
+    x -- no --> s{"worst drift<br/>severity"}
+    s -- "none or info" --> allow["allow"]
+    s -- warning --> w{"WARN_AS_BLOCK<br/>set?"}
+    s -- critical --> c{"CRITICAL_AS_WARN<br/>set?"}
+    pf -- no --> allow
+    pf -- yes --> deny["deny"]
+    w -- no --> allow
+    w -- yes --> deny
+    c -- yes --> allow
+    c -- no --> deny
+```
 
 The defaults are intentionally **fail-open**: the harness should never become a tarpit because a probe is misconfigured. The block-on-critical default exists because the cost of letting an agent operate against a wrong runtime model is usually higher than the cost of a false block (a false block can be lifted by setting `RUNTIME_REALITY_DISABLE=1`, or degraded to a warning with `RUNTIME_REALITY_CRITICAL_AS_WARN=1`; the false diagnosis cascades for hours).
 
@@ -124,33 +154,17 @@ The agent now has to deal with the missing frontend before issuing the restart. 
 
 ## harness.yaml integration snippet
 
-The follow-up task in the harness project should add the policy under `policies.pre_tool_use`. Suggested shape, matching how `understanding-gate` is wired:
+Declare the hook as a harness `hooks:` entry that runs `harness pack hook runtime-reality`, with `RUNTIME_REALITY_KEYWORD`, `RUNTIME_REALITY_EXPECTATIONS_DIR` and `RUNTIME_REALITY_PROBE_CMD` set in its command; see [harness: runtime-reality PreToolUse hook](https://github.com/LanNguyenSi/harness/blob/master/docs/runtime-reality-hook.md) for the entry and the probe install.
 
-```yaml
-policies:
-  pre_tool_use:
-    - name: runtime-reality-checker
-      command: runtime-reality-policy-pre-tool-use
-      tools:
-        - Bash
-      env:
-        RUNTIME_REALITY_EXPECTATIONS_DIR: ${env.HOME}/.runtime-reality/expectations
-        RUNTIME_REALITY_PROBE_CMD: ${env.HOME}/.runtime-reality/probes/docker-probe.sh
-        # Optional: structured audit trail (JSONL, one line per decision).
-        # Defaults to ~/.runtime-reality/audit.log.
-        # RUNTIME_REALITY_AUDIT_LOG: ${env.HOME}/.runtime-reality/audit.log
-        # Optional overrides
-        # RUNTIME_REALITY_CRITICAL_AS_WARN: "1"
-        # RUNTIME_REALITY_WARN_AS_BLOCK: "1"
-```
+This package also ships its own `runtime-reality-policy-pre-tool-use` bin (`packages/runtime-reality-checker/src/policy/pre-tool-use.ts`, compiled to `dist/policy/pre-tool-use.js`). The bin alone has no probe, so it never blocks on drift: a triggered call that reaches the probe step is allowed, or denied when `RUNTIME_REALITY_PROBE_FAIL_BLOCK=1`.
 
-The `command` resolves to the binary shipped by this package's PoC (`packages/runtime-reality-checker/src/policy/pre-tool-use.ts`, compiled to `dist/policy/pre-tool-use.js`, exposed as the `runtime-reality-policy-pre-tool-use` bin in package.json).
+The harness hook passes only the expectations loader and the probe to the handler, so `RUNTIME_REALITY_TRIGGERS_FILE` and `RUNTIME_REALITY_AUDIT_LOG` take effect only with this package's own bin. The full env table is in [pretooluse-policy.md](../packages/runtime-reality-checker/docs/pretooluse-policy.md).
 
 ## Open questions
 
-These are intentionally NOT decided in the PoC, they belong to the harness-side follow-up:
+These are not decided yet:
 
-1. **Where does the keyword come from?** Today the spec says "env or session id". The session id route needs a grounding-mcp lookup, which means the hook depends on grounding-mcp being installed. Decide whether the hook degrades to allow when grounding-mcp is missing, or requires it.
+1. **Keyword from a session id.** The keyword comes only from `RUNTIME_REALITY_KEYWORD`. Deriving it from a `grounding-mcp` session id is an unimplemented option; it would make the hook depend on grounding-mcp being installed, and would need a decision on whether the hook degrades to allow when grounding-mcp is missing.
 2. **Probe failure observability.** Should probe failures be silent (current default) or surface in `friction-log`? Probably friction-log, but that adds a dep.
 3. **Multi-keyword sessions.** A session that touches both `deploy-panel` and `agent-relay` would need to merge two expectations files. Out of scope for the PoC, real follow-up.
 4. **Probe caching.** A fresh `docker ps` on every Bash call is 50-200ms overhead. The probe contract should declare cache-TTL; the harness wrapper can honor it.
@@ -160,10 +174,8 @@ These are intentionally NOT decided in the PoC, they belong to the harness-side 
 - Automatic discovery of `expected state` from running containers (would mean drift can never be detected because "expected" is whatever is running)
 - Multi-host reality checks (the probe is local-host only)
 - Editing the runtime-reality-checker library API itself (the policy wraps the existing surface)
-- Implementing the harness-side hook registration (separate task in the `harness` project)
+- The harness-side hook registration and the probe script, which live in the `harness` project
 
-## Memory hooks
+## Related code
 
-- Plan: [[project_agent_grounding_phase_plan_2026_05_25]] Phase 1 Schritt 3
-- Cross-repo bind: [[feedback_cross_repo_pr_rejected]]
-- Hook pattern reference: see `packages/understanding-gate/src/adapters/claude-code/pre-tool-use.ts` (fail-open, thin entrypoint, pure handler)
+- Hook pattern reference: `packages/understanding-gate/src/adapters/claude-code/pre-tool-use.ts` (fail-open, thin entrypoint, pure handler)
