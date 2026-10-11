@@ -4,9 +4,9 @@ Structured evidence tracking for agent debugging sessions.
 
 ## Overview
 
-Stop mixing facts, guesses, and rejected ideas during debugging. Evidence Ledger forces you to be explicit about what you *know*, what you *suspect*, and what you have *ruled out*. Agents (and humans) frequently state a guess as fact ("the database is probably down", based on nothing); Evidence Ledger enforces a discipline instead:
+Stop mixing facts, guesses, and rejected ideas during debugging. Evidence Ledger forces you to be explicit about what you *know*, what you *suspect*, and what you have *ruled out*. Agents (and humans) frequently state a guess as fact ("the database is probably down", based on nothing); Evidence Ledger structures a discipline instead:
 
-- **Facts** require a source
+- **Facts** record their source (`--source`; the CLI accepts a fact without one, so supplying it is up to you)
 - **Hypotheses** are tracked separately from facts
 - **Rejected hypotheses stay visible**: so you don't re-investigate dead ends
 - **Unknowns are acknowledged**: not quietly assumed away
@@ -15,7 +15,7 @@ Stop mixing facts, guesses, and rejected ideas during debugging. Evidence Ledger
 
 - Facts, hypotheses, rejections, and unknowns tracked as distinct entry types with sources and confidence
 - Named sessions, so concurrent debugging tasks do not mix entries
-- JSON export for handoff to another agent or human
+- JSON export, and a Markdown or JSON handoff document for another agent or human
 - Age-based pruning with a dry-run mode, for long-running dogfood machines
 - `policy_decision` entries for an orchestrator/gate audit trail, exempt from pruning by default
 
@@ -45,6 +45,12 @@ ledger reject 2 --reason "memory usage was normal, checked /proc/meminfo"
 # Show current session summary
 ledger show
 
+# List entries of one session, optionally filtered by type
+ledger list --session "nginx-debug" --type hypothesis
+
+# Handoff document for the next agent (Markdown; --json for JSON)
+ledger handoff --session "nginx-debug"
+
 # Export as JSON (for handoff to another agent or human)
 ledger export
 
@@ -58,6 +64,8 @@ ledger sessions
 # Clear a session when done
 ledger clear --session "nginx-debug-2026-04-02"
 ```
+
+`hyp` is an alias for `hypothesis`; `-s`, `-c` and `-r` are short for `--source`, `--confidence` and `--reason`. Default confidence is high for `fact` and medium for `hypothesis`; `unknown` is always low. Every command that takes `--session` defaults to the session `default`, `list` included.
 
 ### Example output
 
@@ -109,6 +117,8 @@ const summary = getSummary(db, 'debug-session');
 console.log(summary.facts, summary.hypotheses);
 ```
 
+The `ledger` CLI has no database-path option and ignores EVIDENCE_LEDGER_DB; it always uses ~/.evidence-ledger/ledger.db. grounding-mcp and review-claim-gate read EVIDENCE_LEDGER_DB, so if you set it for them, entries written with `ledger` land in a different database than the one they read. The default directory is created with mode 0700 and the database file is kept at 0600.
+
 ## Retention
 
 The ledger grows monotonically: `ledger fact` / `hypothesis` / `unknown` only ever append. Long-running dogfood machines will accumulate stale sessions that slow queries and dilute summaries. Use `prune` to bound the database by age. See [Retention and export reference](docs/retention-and-export.md) for the full `prune` flag reference, entry-type table, and JSON export shape.
@@ -117,7 +127,7 @@ The ledger grows monotonically: `ledger fact` / `hypothesis` / `unknown` only ev
 
 - Every strong claim needs at least one source
 - Root causes only when: direct evidence exists AND counter-hypotheses have been checked
-- Rejected hypotheses remain visible, never deleted
+- Rejecting a hypothesis keeps it in the ledger as a `rejected` entry; only `ledger clear` and age-based `ledger prune` remove it
 
 ## Documentation
 
