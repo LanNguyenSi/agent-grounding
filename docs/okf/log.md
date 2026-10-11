@@ -2,6 +2,39 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-10-11T16:02:09Z, documentation drift audit across the root docs and the package
+  READMEs. Sources that changed: `docs/architecture.md` (diagram redrawn from
+  the runtime imports), `docs/policy-runtime-reality.md`, `CONTRIBUTING.md`,
+  the review-claim-gate, grounding-mcp and runtime-reality-checker READMEs and
+  docs, one comment each in `packages/grounding-mcp/src/server.ts` and
+  `packages/runtime-reality-checker/src/policy/pre-tool-use.ts` (no line
+  shift). Re-verified and re-stamped seven docs:
+  `grounding-stack-overview.md` (release topology, versions and test runners
+  still hold; the diagram citation moves to the new block, and "It is
+  current" is dropped), `runtime-reality-policy-pointer.md` (status paragraph
+  now points at harness's `pack hook runtime-reality`; the four escalation
+  flags are still interpreted by this package; `pre-tool-use.ts` added to
+  sources), `solution-acceptance-verdict-contract.md` (`solution_gate` does
+  not verify `alg`/`signature`; the consumer note no longer names a single
+  harness action and records that harness's unreleased changes remove its
+  solution-acceptance pack), `hypothesis-tracker-persistence-split.md`
+  (grounding-sdk named as an in-memory consumer and added to sources; the
+  disk-parity citation now points at the grounding-mcp README sentence that
+  states it), `claim-gate-vs-review-claim-gate.md` (claim-gate `check --json`
+  exits 0), `evidence-ledger-session-key-shapes.md` (new paragraph: the
+  `ledger` CLI ignores `EVIDENCE_LEDGER_DB` while review-claim-gate and
+  grounding-mcp honor it; three sources added) and
+  `merge-approval-gate-mechanics.md` (README citations moved with their
+  content). `index.md` now points at docs/architecture.md and names the
+  grounding-sdk consumer. Verdict of `okf-kit check --require-anchors --json
+  docs/okf` (0.16.0) on the committed tree: 0 errors, no sources-fresh
+  finding, and no citations-resolve finding outside this log. Older entries
+  here that cite the removed "helpers --> el" diagram edge in
+  docs/architecture.md, or line 214 of the grounding-mcp README, stay as
+  written, as history. One older citation into
+  `claim-gate-vs-review-claim-gate.md` moved three lines with its content and
+  was re-pointed.
+
 - 2026-10-10T14:10:20Z, the runtime-reality-checker critical-drift deny hint now names
   `RUNTIME_REALITY_DISABLE=1` instead of the removed `harness approve risk`
   (task 8bee316a); docs/policy-runtime-reality.md follows. Re-verified
@@ -1810,7 +1843,7 @@
   `claim-gate-vs-review-claim-gate.md` was flagged STALE against
   `packages/review-claim-gate/package.json:3#"version": "0.1.6"` (bumped
   by PR #207, review-claim-gate 0.1.5 to 0.1.6); the doc's Publish status
-  section, `claim-gate-vs-review-claim-gate.md:132#"@lannguyensi/review-claim-gate"`,
+  section, `claim-gate-vs-review-claim-gate.md:135#"@lannguyensi/review-claim-gate"`,
   already names 0.1.6, so no content changed, only the stamp.
   `merge-approval-gate-mechanics.md` was flagged STALE against
   `.github/workflows/merge-approval.yml:47#"review-claim-gate-v0.1.6"` and
