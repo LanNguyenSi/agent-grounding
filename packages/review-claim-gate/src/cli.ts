@@ -229,9 +229,7 @@ function formatText(report: CheckReport): string {
       ? ` (file: ${evidenceFilePath})`
       : evidenceSource === "ledger"
         ? " (ledger)"
-        : evidenceSource === "forced"
-          ? " (forced via --evidence-logged)"
-          : " (none)";
+        : " (forced via --evidence-logged)";
   lines.push(`  evidence entries: ${evidenceEntries}${sourceLabel}`);
   lines.push("  prerequisites:");
   for (const key of MERGE_APPROVAL_PREREQS) {

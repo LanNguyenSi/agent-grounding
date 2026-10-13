@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- The `CheckReport.evidenceSource` type and the README narrow to `"file" | "ledger" | "forced"`: `"none"` was documented but `runCheck` never produced it. The text formatter loses its unreachable `(none)` fallback. Report output is unchanged.
+- The action's `pr-number` input description no longer claims a default; the value is passed to `check --pr` and recorded in the JSON report, and the Check-Run attaches to the PR head SHA. (task 782327c3)
+
 ## [0.1.6] - 2026-09-05
 
 ### Changed

@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- The npm package description no longer says the package "forces" agents to read docs; it now matches the README tagline. Metadata only. (task 782327c3)
+
 ## 0.1.2, 2026-07-27
 
 ### Security
