@@ -3,7 +3,7 @@ type: invariant
 title: claim-gate vs review-claim-gate — same word, opposite trust models
 description: Two sibling packages both gate on "evidence" but claim-gate trusts a caller-supplied boolean (self-discipline) while review-claim-gate reads a store (CI gate) — never treat them as interchangeable.
 tags: [claim-gate, review-claim-gate, evidence, trust-boundary]
-timestamp: 2026-10-11T16:29:28Z
+timestamp: 2026-10-13T15:24:48Z
 sources:
   - packages/claim-gate/src/lib.ts
   - packages/claim-gate/src/cli.ts
@@ -75,10 +75,10 @@ review-claim-gate's non-`evidence_logged` flags are verified — defeats the gat
   `allowed` (`packages/review-claim-gate/src/lib.ts:82#"const allowed = missing.length === 0;"`).
 - **`evidence_logged` is the one prerequisite backed by a store, not a bare
   flag.** `runCheck` resolves an evidence *source* with this precedence
-  (`packages/review-claim-gate/src/cli.ts:248-290#"deriveEvidenceLogged(opts.taskId, opts.ledgerDb)"`; README "Evidence source
+  (`packages/review-claim-gate/src/cli.ts:246-288#"deriveEvidenceLogged(opts.taskId, opts.ledgerDb)"`; README "Evidence source
   precedence"):
   1. **forced** — `--evidence-logged` sets `evidence_logged=true` unconditionally,
-     bypassing any lookup (`runCheck`, `packages/review-claim-gate/src/cli.ts:260#"opts.evidenceLogged === true"`; `buildContext` then
+     bypassing any lookup (`runCheck`, `packages/review-claim-gate/src/cli.ts:258#"opts.evidenceLogged === true"`; `buildContext` then
    applies it at `packages/review-claim-gate/src/cli.ts:209-219#"opts.evidenceLogged === true ? true : evidenceEntries > 0"`).
   2. **committed file** — an explicit `--evidence-file <path>` (must exist, else
      throws) or the auto-detected convention path
@@ -98,7 +98,7 @@ review-claim-gate's non-`evidence_logged` flags are verified — defeats the gat
   (`realpathSync`) containment check, so a committed symlink inside the evidence
   dir cannot smuggle a read outside it
   (`packages/review-claim-gate/src/cli.ts:76-159#"return full;"`).
-- CLI: `check` exits `0`/`1` on the verdict (`src/cli.ts:396#"report.result.allowed ? 0 : 1"`); `export` dumps
+- CLI: `check` exits `0`/`1` on the verdict (`src/cli.ts:394#"report.result.allowed ? 0 : 1"`); `export` dumps
   ledger entries for a session to JSONL for committing; `describe` lists prereqs.
 - **Still partly forgeable — know the residual trust.** The other four prereqs
   (`tests_pass` etc.) are plain caller flags, and `--evidence-logged` force-bypasses

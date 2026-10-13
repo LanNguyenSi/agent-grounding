@@ -3,7 +3,7 @@ type: runbook
 title: Merge-approval gate — labels, keys, and when it actually blocks
 description: How the merge-approval Check-Run maps five review:* PR labels (OR'd with a data-driven pure-release exception) to merge_approval booleans, keys evidence by the PR HEAD BRANCH NAME, and blocks only when required by an applicable branch-protection rule or ruleset.
 tags: [merge-approval, review-claim-gate, ci, runbook, labels]
-timestamp: 2026-10-11T17:13:28Z
+timestamp: 2026-10-13T15:24:48Z
 sources:
   - .github/workflows/merge-approval.yml
   - scripts/release-exception.js
@@ -255,8 +255,8 @@ three sources, highest precedence first (`README.md:85-121#"silent fallback woul
 3. **Ledger fallback** — local evidence-ledger DB keyed by `session = <task-id>`
    (again, branch name).
 
-`evidenceSource` in the JSON verdict is one of `"forced" | "file" | "ledger" |
-"none"` (`README.md:150#"is set only when"`). The workflow wires the `review:evidence-logged`
+`evidenceSource` in the JSON verdict is one of `"forced" | "file" | "ledger"`
+(`README.md:150#"is set only when"`). The workflow wires the `review:evidence-logged`
 label to the `evidence-logged` input, but that label is optional: absent it,
 the action falls through to the committed-file auto-detect above, so a
 committed `.agent-grounding/evidence/<task-id>.jsonl` in the PR branch,
@@ -302,7 +302,7 @@ the existing `ci`) to the required checks per
 ## How to make it pass legitimately
 
 Do the review, then add each label only when its dimension is genuinely met
-(reviewer cheat sheet, `merge-approval-rollout.md:126-138#"evidence-ledger entry under"`):
+(reviewer cheat sheet, `merge-approval-rollout.md:126-140#"only the exported file or the label counts"`):
 
 1. CI green → `review:tests-pass`.
 2. Walk the full checklist (correctness, security/scope, permissions, minimal
