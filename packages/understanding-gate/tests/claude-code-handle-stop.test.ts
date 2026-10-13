@@ -389,7 +389,7 @@ describe("handleStop: fast_confirm bullet routing", () => {
     ).mock.calls[0];
     // Env mode overrides the default "fast_confirm"; the parser will
     // then run the strict schema against the 5 bullets and (correctly)
-    // reject as the bullets do not satisfy the strict 9-section shape.
+    // reject as the bullets do not satisfy the strict 10-section shape.
     expect(defaults.mode).toBe("grill_me");
   });
 

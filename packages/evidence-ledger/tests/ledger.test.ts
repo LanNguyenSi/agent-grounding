@@ -168,6 +168,11 @@ describe("getSummary", () => {
     addEntry(db, { type: "fact", content: "different session", session: "other" });
   });
 
+  it("reports the session it summarised", () => {
+    expect(getSummary(db, "debug").session).toBe("debug");
+    expect(getSummary(db).session).toBe("default");
+  });
+
   it("groups entries by type for a session", () => {
     const summary = getSummary(db, "debug");
     expect(summary.facts).toHaveLength(1);

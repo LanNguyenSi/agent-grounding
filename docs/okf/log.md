@@ -7,7 +7,7 @@
   Re-pointed, anchors unchanged: `claim-gate-vs-review-claim-gate.md` (the
   `runCheck` range and the forced-source line in `packages/review-claim-gate/src/cli.ts`,
   the exit-code line), `evidence-ledger-session-key-shapes.md` (`getSummary`
-  now ends at line 370, the two `--ledger-db` lines in the review-claim-gate CLI),
+  now ends at line 372, the two `--ledger-db` lines in the review-claim-gate CLI),
   `merge-approval-gate-mechanics.md` (the reviewer cheat sheet range, whose step 5
   now says CI reads the workspace ledger DB so only the exported file or the label
   counts; the `evidenceSource` list drops `"none"`, which `runCheck` never produced and
