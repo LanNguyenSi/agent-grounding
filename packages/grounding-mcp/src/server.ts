@@ -1165,7 +1165,7 @@ export function createServer(
 
   server.tool(
     'hypothesis_support',
-    'Explicitly mark a hypothesis as supported. Usually not needed: hypothesis_evidence auto-promotes on first evidence. Use this when promotion happens out-of-band (e.g. evidence is in the ledger but not yet attached). Ordered by arrival at the transport relative to a concurrent/pipelined hypothesis_list (or any other hypothesis_* verb) for the same sessionId, see the hypothesis_record description.',
+    'Explicitly mark a hypothesis as supported. Refuses with error hypothesis_not_found_rejected_or_checks_pending while the hypothesis still has pending required checks (or does not exist, or was rejected). Usually not needed: hypothesis_evidence auto-promotes on first evidence. Use this when promotion happens out-of-band (e.g. evidence is in the ledger but not yet attached). Ordered by arrival at the transport relative to a concurrent/pipelined hypothesis_list (or any other hypothesis_* verb) for the same sessionId, see the hypothesis_record description.',
     {
       sessionId: hypothesisSessionIdSchema,
       hypothesisId: hypothesisIdSchema,

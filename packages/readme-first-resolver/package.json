@@ -1,7 +1,7 @@
 {
   "name": "@lannguyensi/readme-first-resolver",
   "version": "0.1.2",
-  "description": "Forces agents to read primary docs before any analysis",
+  "description": "Checks that an agent's primary documentation exists and has been read before analysis, and builds a system summary from it",
   "license": "MIT",
   "engines": {
     "node": ">=20"

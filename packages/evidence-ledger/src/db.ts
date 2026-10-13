@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import type { LedgerEntry, EntryType, ConfidenceLevel } from "./types.js";
+import type { LedgerEntry, EntryType, ConfidenceLevel, LedgerSummary } from "./types.js";
 
 // The ledger can capture debug evidence, paths, and command output, so on
 // a shared host it must not be world-readable. Create the dir 0700 and the
@@ -359,15 +359,10 @@ export function getSummary(
   db: Database.Database,
   session = "default",
   filters: GetSummaryFilters = {},
-): {
-  facts: LedgerEntry[];
-  hypotheses: LedgerEntry[];
-  rejected: LedgerEntry[];
-  unknowns: LedgerEntry[];
-  policyDecisions: LedgerEntry[];
-} {
+): LedgerSummary {
   const all = listEntries(db, { session, ...filters });
   return {
+    session,
     facts: all.filter((e) => e.type === "fact"),
     hypotheses: all.filter((e) => e.type === "hypothesis"),
     rejected: all.filter((e) => e.type === "rejected"),

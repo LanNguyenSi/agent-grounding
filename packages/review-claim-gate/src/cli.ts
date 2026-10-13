@@ -48,8 +48,8 @@ interface CheckReport {
   taskId: string;
   pr: string | null;
   evidenceEntries: number;
-  /** Which source produced evidenceEntries. "none" when neither path was usable. */
-  evidenceSource: "file" | "ledger" | "forced" | "none";
+  /** Which source produced evidenceEntries. */
+  evidenceSource: "file" | "ledger" | "forced";
   /** Resolved file path used, when evidenceSource === "file". */
   evidenceFilePath?: string;
   result: MergeApprovalResult;
@@ -254,7 +254,7 @@ export function runCheck(opts: CheckOptions): CheckReport {
   // forces true regardless; otherwise a committed evidence file wins
   // over the local ledger; otherwise fall back to the ledger DB.
   let evidenceEntries = 0;
-  let evidenceSource: CheckReport["evidenceSource"] = "none";
+  let evidenceSource: CheckReport["evidenceSource"];
   let evidenceFilePath: string | undefined;
 
   if (opts.evidenceLogged === true) {

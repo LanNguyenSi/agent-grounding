@@ -182,7 +182,7 @@ function getValidator(mode: UnderstandingGateMode | undefined): ValidateFunction
 
 // Fast-confirm bullet → section mapping. The
 // fast_confirm prompt emits 5 single-line bullets with no
-// `# Understanding Report` heading or 9-section structure. Map prefixes
+// `# Understanding Report` heading or 10-section structure. Map prefixes
 // to the corresponding canonical section so the existing collector +
 // validator pipeline (with the fast_confirm-relaxed schema) can persist
 // a parseable Report end-to-end.
@@ -285,7 +285,7 @@ export function parseReport(
   const malformedSections: string[] = [];
 
   // Fast-confirm fallback: when the markdown has no `# Understanding Report`
-  // heading or 9-section structure AND the mode is fast_confirm, attempt
+  // heading or 10-section structure AND the mode is fast_confirm, attempt
   // to parse the 5-bullet shape the fast_confirm prompt emits. The
   // existing section-walk below still runs for the canonical sections;
   // this just pre-seeds `collected` so an unstructured fast_confirm

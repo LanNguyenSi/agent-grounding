@@ -147,7 +147,7 @@ Explicit `--evidence-file <path>` with a non-existent path throws, silent fallba
 }
 ```
 
-`evidenceSource` is one of `"file" | "ledger" | "forced" | "none"`. `evidenceFilePath` is set only when `evidenceSource === "file"`.
+`evidenceSource` is one of `"file" | "ledger" | "forced"`. `evidenceFilePath` is set only when `evidenceSource === "file"`.
 `evidenceFilePath` is an absolute path when the file was auto-detected, and
 echoes `--evidence-file` as given otherwise.
 

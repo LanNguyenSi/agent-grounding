@@ -7,7 +7,7 @@
 //   - hypothesis_evidence       → `no_store_for_session`
 //   - hypothesis_reject         → `hypothesis_not_found`
 //   - hypothesis_check_done     → `check_index_out_of_range`
-//   - hypothesis_support        → `hypothesis_not_found_or_rejected`
+//   - hypothesis_support        → `hypothesis_not_found_rejected_or_checks_pending`
 //
 // It also exercises the zod schema bounds end-to-end (sessionId `.min(1)`,
 // text `.max(4096)`) — those bounds only matter once a client speaks to

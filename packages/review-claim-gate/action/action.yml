@@ -9,7 +9,7 @@ inputs:
     description: agent-tasks task id (used as the evidence-ledger session key)
     required: true
   pr-number:
-    description: PR number for Check-Run context (defaults to the triggering PR)
+    description: PR number passed to check --pr and recorded in the JSON report (no default; the Check-Run attaches to the PR head SHA regardless)
     required: false
   evidence-ledger-path:
     description: Path to the evidence-ledger SQLite DB inside the workspace
