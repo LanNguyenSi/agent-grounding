@@ -6,10 +6,10 @@
 // understanding-gate: every failure path degrades to allow, never block,
 // so a broken policy can't tarpit the harness.
 //
-// Override-knobs are env-only, so the spec doc and the harness.yaml
-// snippet are the only place an operator has to read to understand
-// the behavior; nothing is buried in a config file the agent might
-// silently ship.
+// Override-knobs are env-only, so the spec doc and the "harness
+// integration" section of docs/policy-runtime-reality.md are the only
+// place an operator has to read to understand the behavior; nothing is
+// buried in a config file the agent might silently ship.
 
 import type { ActualProcessState, DriftItem, ExpectedProcess } from "../lib.js";
 import { runRealityCheck } from "../lib.js";

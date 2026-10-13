@@ -134,10 +134,10 @@ alongside it.)
 4. Confirm the diff stays inside the task scope → `review:scope-matches-task`.
 5. Satisfy `evidence_logged` one of two ways: commit
    `.agent-grounding/evidence/<branch-name>.jsonl` via `review-claim-gate
-   export` (with at least one valid JSONL entry, no label needed), or log
-   ≥1 evidence-ledger entry under `session = <branch-name>` (e.g. `ledger
-   fact "…" --session feat/foo`) and add `review:evidence-logged` to force
-   it.
+   export` (with at least one valid JSONL entry, no label needed), or add
+   `review:evidence-logged` to force it. In CI the action reads the
+   workspace ledger DB, so an evidence-ledger entry logged on your own
+   machine does not reach it; only the exported file or the label counts.
 
 The Check-Run flips to `ALLOWED` once all five prereqs are satisfied
 (labels, or a committed evidence file for `evidence_logged`). Merge.

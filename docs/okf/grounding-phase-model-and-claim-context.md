@@ -3,7 +3,7 @@ type: invariant
 title: "Grounding phase model and claim-context derivation: phase progress stands in for checks"
 description: grounding-wrapper's seven-phase machine is advanced on the caller's word, a phase with no steps is marked skipped, and both claim-context derivations (grounding-mcp and grounding-sdk, kept in sync by hand) count skipped as satisfied, so a session without runtime-reality-checker reports every runtime check as done once advanced past playbook-loading.
 tags: [grounding-wrapper, grounding-mcp, grounding-sdk, claim-gate, phases, trust-boundary]
-timestamp: 2026-10-11T17:13:28Z
+timestamp: 2026-10-13T15:24:48Z
 sources:
   - packages/grounding-wrapper/src/lib.ts
   - packages/grounding-wrapper/src/index.ts

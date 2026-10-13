@@ -59,7 +59,8 @@ export type AuditEvent =
     }
   | {
       // The pause sentinel was active AND the underlying decision would
-      // otherwise have blocked (or force-bypassed) the tool call. Logged
+      // otherwise have blocked the tool call (a force-bypass keeps its own
+      // force_bypass audit kind). Logged
       // so a paused allow still leaves a trace, the same standard every
       // other allow-that-would-have-blocked path (force_bypass) already
       // meets; a pause that overrides a would-have-been-allow (a

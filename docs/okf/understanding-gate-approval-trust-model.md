@@ -3,7 +3,7 @@ type: invariant
 title: "understanding-gate approval and enforcement: what the write-tool gate trusts"
 description: Approval is the approvalStatus field of the latest persisted report for the bound task id; within this package only the approve and revoke CLI change it on an existing report (the persisting hooks save new reports as pending), the hooks do not check who wrote it, and harness's understanding-gate pack (v0.8.0 through v0.64.0) rewrites it too; the hooks trust their environment (kill switch first in the shared decision and unaudited, force-bypass audited), the unsigned pause sentinel, and the report directory, and the Claude Code and opencode adapters differ on degraded input.
 tags: [understanding-gate, approval, enforcement, audit, trust-boundary]
-timestamp: 2026-10-11T17:13:28Z
+timestamp: 2026-10-13T15:24:48Z
 sources:
   - packages/understanding-gate/src/core/enforcement.ts
   - packages/understanding-gate/src/core/approval.ts
@@ -131,7 +131,7 @@ the opencode path is
 ## The audit log
 
 Entries are JSONL lines in `<cwd>/.understanding-gate/audit.log`
-(`packages/understanding-gate/src/core/audit.ts:106-107#"return resolve(cwd,"`),
+(`packages/understanding-gate/src/core/audit.ts:107-108#"return resolve(cwd,"`),
 with the kinds `block`, `approve`, `revoke`, `force_bypass`, `paused_allow` and
 `degraded_allow` (`packages/understanding-gate/src/core/audit.ts:28#"export type AuditEvent ="`).
 The cwd differs by writer: the Claude Code hook uses the payload's `cwd`

@@ -2,6 +2,54 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-10-13T15:25:35Z, citation re-point after the runtime-string, type and comment fixes
+  (task 782327c3), plus a correction entry for nine historical citations.
+  Re-pointed, anchors unchanged: `claim-gate-vs-review-claim-gate.md` (the
+  `runCheck` range and the forced-source line in `packages/review-claim-gate/src/cli.ts`,
+  the exit-code line), `evidence-ledger-session-key-shapes.md` (`getSummary`
+  now ends at line 372, the two `--ledger-db` lines in the review-claim-gate CLI),
+  `merge-approval-gate-mechanics.md` (the reviewer cheat sheet range, whose step 5
+  now says CI reads the workspace ledger DB so only the exported file or the label
+  counts; the `evidenceSource` list drops `"none"`, which `runCheck` never produced and
+  the type and README no longer name) and `understanding-gate-approval-trust-model.md`
+  (the audit-log path helper moved one line). Re-verified and re-stamped the
+  five docs whose sources changed without a cited line moving
+  (`grounding-phase-model-and-claim-context.md`, `grounding-stack-overview.md`,
+  `hypothesis-tracker-persistence-split.md`, `runtime-reality-policy-pointer.md`,
+  `solution-acceptance-verdict-contract.md`): the changes in those sources are
+  tool-description text, comments and a changelog entry, and no claim in the docs changes.
+
+  Correction of nine earlier citations that no longer resolve under
+  `--require-anchors` (the entries that carry them are left as written; the
+  old cites are given here without citation syntax so this entry adds no new
+  unresolved ones). Old to current:
+  - ci.yml lines 430-455, anchor "npm run check:grounding-mcp-pack" (entry of
+    2026-09-07T11:06:07Z, also a mention in a later entry): the step
+    "grounding-mcp packed-tarball --version check" is now
+    `.github/workflows/ci.yml:463-479#"npm run check:grounding-mcp-pack"`.
+  - ci.yml lines 457-478, anchor "npm run test:check-grounding-mcp-pack": the
+    step "grounding-mcp packed-tarball --version checker unit tests" is now
+    `.github/workflows/ci.yml:481-501#"npm run test:check-grounding-mcp-pack"`.
+  - solution-verdict.ts lines 746-803, anchor "const markerPath = writeVerdict(verdict);"
+    (cited twice, once as `packages/grounding-mcp/src/solution-verdict.ts` in full): the
+    `preWriteGuard` block and the marker write are now
+    `packages/grounding-mcp/src/solution-verdict.ts:810-822#"const markerPath = writeVerdict(verdict);"`.
+  - merge-approval.yml line 47, anchor "review-claim-gate-v0.1.6": the action pin
+    is now `.github/workflows/merge-approval.yml:195#"review-claim-gate-v0.1.6"`.
+  - merge-approval-gate-mechanics.md line 28, anchor "uses: LanNguyenSi/agent-grounding/...@cd3971866e...":
+    the pin in the doc's code fence is now line 30, `docs/okf/merge-approval-gate-mechanics.md:30#"review-claim-gate-v0.1.6"`.
+  - grounding-mcp README.md line 214, anchor "the root cause is the backend container's missing
+    OPENAI_API_KEY env var" (cited twice): the example claim is now
+    `packages/grounding-mcp/README.md:129#"the root cause is the backend container's missing OPENAI_API_KEY env var"`.
+  - docs/architecture.md lines 5-41, anchor "helpers --> el": that text no longer exists.
+    The diagram was redrawn and has no `helpers` node; the ledger edges are now
+    `mcp --> el` and `rcg --> el`, the last of which is
+    `docs/architecture.md:7-54#"rcg --> el"`.
+  Verdict of `okf-kit check --require-anchors --json docs/okf` (0.16.0) on the
+  committed tree: 0 errors and no finding outside this log. The nine
+  findings against the older entries remain, because earlier entries are not
+  edited; CI excludes log.md from the blocking selectors.
+
 - 2026-10-11T17:13:28Z, corrections to two docs and a re-stamp pass.
   `grounding-phase-model-and-claim-context.md`: the description limits the
   runtime-check statement to sessions advanced past `playbook-loading`, and

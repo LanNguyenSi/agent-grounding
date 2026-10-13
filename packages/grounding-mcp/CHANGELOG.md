@@ -6,6 +6,11 @@
 
 - **`@modelcontextprotocol/sdk` 1.32.1** (GHSA-6qxp-vccf-f47h, task aff72e2b): the lockfile resolves 1.32.1 and the dependency range is now `^1.32.1`, so consumers cannot resolve an affected version. Since 1.30.1 the SDK's HTTP server transports apply a 4 MiB default request-body limit and a 100-message batch cap.
 
+### Changed
+
+- The `hypothesis_support` tool description now says it refuses with `hypothesis_not_found_rejected_or_checks_pending` while required checks are pending. Description text only; no behavior change. (task 782327c3)
+- Once the evidence-ledger pin moves to the release where `getSummary` returns `LedgerSummary`, the `entries` object of the `ledger_summary` response also carries `session`. (task 782327c3)
+
 ## 0.14.0, 2026-09-28
 
 ### Fixed

@@ -797,7 +797,7 @@ describe("parseReport: fast_confirm bullet parsing", () => {
   it("strict-mode parse of the same fast_confirm bullets fails (back-compat guard)", () => {
     // Without `mode: fast_confirm` in defaults, the parser runs the
     // strict schema. The 5 bullets do not satisfy the strict required
-    // set (no 9 sections, no derivedTodos / acceptanceCriteria), so
+    // set (no 10 sections, no derivedTodos / acceptanceCriteria), so
     // the parse must fail. This pins backwards compatibility: existing
     // callers that do not opt in to fast_confirm see no behaviour change.
     const r = parseReport(FAST_CONFIRM_BULLETS, {
@@ -809,10 +809,10 @@ describe("parseReport: fast_confirm bullet parsing", () => {
   });
 
   it("ignores a fast_confirm fallback when canonical sections are present", () => {
-    // If the agent emits a full 9-section report under fast_confirm mode,
+    // If the agent emits a full 10-section report under fast_confirm mode,
     // the section walk wins; bullet preprocessing only kicks in when the
     // section split returned zero matches. Verify by parsing FULL_MARKDOWN
-    // with mode: fast_confirm should succeed and preserve all 9 sections.
+    // with mode: fast_confirm should succeed and preserve all 10 sections.
     const r = parseReport(FULL_MARKDOWN, {
       taskId: "fc-test-4",
       mode: "fast_confirm",

@@ -9,7 +9,7 @@
 // `.understanding-gate/reports/`, so `understanding-gate approve` had
 // nothing to flip and Phase 2's enforcement chain couldn't close.
 //
-// Fix: prescribe the same 9 headings as `FULL_PROMPT`, but keep the
+// Fix: prescribe the same 10 headings as `FULL_PROMPT`, but keep the
 // "be critical / grill me" framing in the section preamble and trailing
 // instruction. The agent now produces a parseable report by default.
 export const GRILL_ME_PROMPT = `# Grill-Me Mode

@@ -39,6 +39,8 @@ The seven packages above (other than understanding-gate) each carry their own ve
 
 ### Changed
 
+- `evidence-ledger`: `getSummary` now returns `LedgerSummary`, which adds the `session` field (the session id) to the returned object. Additive: existing fields are unchanged, and `getSummary` output can be passed straight to `grounding-sdk`'s `validate` as `ledgerSummary` without a spread workaround. (task 782327c3)
+
 - CI: the okf-kit pin moves from 0.10.0 to 0.16.0 in `ci.yml` and `okf-staleness.yml` together, the okf-staleness workflow is re-synced to the okf-kit template (the pin-deviation comment is removed), and the okf-selectors fixtures are regenerated against 0.16.0 (report content unchanged). CI only; no package code change.
 
 - Publish workflows now install npm with `npm install -g npm@^11.5.1` (the documented trusted-publishing floor) instead of the floating `npm@11`. CI only; no package code change.
