@@ -2,6 +2,14 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-10-22T08:20:34Z, vitest 4.1.11 -> 4.1.12 exact pins (CVE sweep 2026-10-22): the `devDependencies`
+  values of `vitest` and `@vitest/coverage-v8` changed in the workspace `package.json`
+  files, no line moved and no version, script or `files` field changed.
+  `claim-gate-vs-review-claim-gate.md` and `grounding-stack-overview.md` re-verified
+  against `packages/claim-gate/package.json`, `packages/review-claim-gate/package.json`
+  and `packages/grounding-mcp/package.json` (package versions and cited lines
+  unchanged) and re-stamped; no claim in the docs changes.
+
 - 2026-10-13T15:25:35Z, citation re-point after the runtime-string, type and comment fixes
   (task 782327c3), plus a correction entry for nine historical citations.
   Re-pointed, anchors unchanged: `claim-gate-vs-review-claim-gate.md` (the
