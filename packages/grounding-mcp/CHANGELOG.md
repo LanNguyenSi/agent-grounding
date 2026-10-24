@@ -4,7 +4,7 @@
 
 ### Security
 
-- **zod 4.6.7** (GHSA-mrhx-c7xc-m3w5): the dependency moved from `^3.23.8` to `^4.6.7` and the tool schemas were migrated to the zod 4 native API (`z.guid()` keeps the v3 uuid accept set at the assessment MCP boundary), closing the memory-exhaustion advisory, which is fixed only in the v4 core. The published `tools/list` JSON Schema changes are converter artifacts only (inline schemas replacing `$ref`, faithful `pattern`/`maximum` keys; `additionalProperties: false` no longer claimed for strip objects); validation behavior is unchanged.
+- **zod 4.6.7** (GHSA-mrhx-c7xc-m3w5): the dependency moved from `^3.23.8` to `^4.6.7` and the tool schemas were migrated to the zod 4 native API (`z.guid()` keeps the v3 uuid accept set at the assessment MCP boundary), closing the memory-exhaustion advisory, which is fixed only in the v4 core. The published `tools/list` JSON Schema changes are converter artifacts only (inline schemas replacing `$ref`, faithful `pattern`/`maximum` keys; `additionalProperties: false` no longer claimed for strip objects); accept/reject sets are unchanged except that integer fields now reject values above `Number.MAX_SAFE_INTEGER`, and zod's default validation message text differs (for example `Invalid input: expected string, received undefined` instead of `Required`).
 - **`@modelcontextprotocol/sdk` 1.32.1** (GHSA-6qxp-vccf-f47h, task aff72e2b): the lockfile resolves 1.32.1 and the dependency range is now `^1.32.1`, so consumers cannot resolve an affected version. Since 1.30.1 the SDK's HTTP server transports apply a 4 MiB default request-body limit and a 100-message batch cap.
 
 ### Changed
