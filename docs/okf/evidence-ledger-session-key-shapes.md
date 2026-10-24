@@ -3,7 +3,7 @@ type: invariant
 title: Evidence-ledger session keys — one opaque column, two conventions
 description: The ledger `session` is a single opaque TEXT column; grounding-mcp keys it by a generated `gs-*` id while the merge-approval CI Action keys it by the PR head branch name, so evidence written under one key is invisible to a reader expecting the other.
 tags: [evidence-ledger, sessions, keys, ci, mcp]
-timestamp: 2026-10-13T15:24:48Z
+timestamp: 2026-10-24T07:24:18Z
 sources:
   - packages/evidence-ledger/src/types.ts
   - packages/evidence-ledger/src/db.ts
@@ -67,7 +67,7 @@ JSON store, not the evidence-ledger `session` column. The store must already be
 initialized; ordinary use never recreates missing state. Creation binds audience,
 project, task, and subject (`packages/grounding-mcp/src/grounding-assessment-store.ts:325#"return { result: session, changed: true };"`).
 The restricted dossier tools read and mutate that store
-(`packages/grounding-mcp/src/assessment-server.ts:45-48#"dossierProjection"`);
+(`packages/grounding-mcp/src/assessment-server.ts:49-52#"dossierProjection"`);
 they do not import `gs-*` sessions, ledger rows, or the CI branch namespace.
 A transported receipt is a signed documentary snapshot. Consumer issuer and
 attempt checks remain separate from either legacy ledger convention.
