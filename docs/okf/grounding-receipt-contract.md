@@ -3,7 +3,7 @@ type: invariant
 title: Grounding receipt and assessment contract
 description: Portable documentary assessments, authoritative producer snapshots, immutable attempts, and the boundary between signature verification and issuer or task authority.
 tags: [grounding-mcp, receipt, contract, trust-boundary]
-timestamp: 2026-09-27T20:53:15Z
+timestamp: 2026-10-24T07:24:18Z
 sources:
   - packages/grounding-mcp/src/grounding-receipt.ts
   - packages/grounding-mcp/contracts/grounding-receipt-v1/README.md
@@ -145,7 +145,7 @@ the assessment store.
 - Capped single-handle reads and fatal UTF-8 decoding:
   `packages/grounding-mcp/src/grounding-issuer.ts:44#"fatal: true"`.
 - Strict seven-tool registration and exact receipt transport:
-  `packages/grounding-mcp/src/assessment-server.ts:58#"catch (cause)"`.
+  `packages/grounding-mcp/src/assessment-server.ts:62#"catch (cause)"`.
 
 - Exclusive operator initialization and failure retention:
   `packages/grounding-mcp/src/grounding-assessment-store.ts:118#"export async function initializeAssessmentState"`.

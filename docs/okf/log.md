@@ -2,6 +2,15 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-10-24T07:24:18Z, zod 3 -> 4 in grounding-mcp (GHSA-mrhx-c7xc-m3w5): the `zod` range in
+  `packages/grounding-mcp/package.json` changed on its own line (no cited line moved), and
+  `packages/grounding-mcp/src/assessment-server.ts` gained a four-line comment above the
+  `uuid` schema, shifting later lines by +4. Re-pointed `grounding-stack-overview.md`
+  (`] as const);` to 36-39), `evidence-ledger-session-key-shapes.md` (`dossierProjection`
+  to 49-52) and `grounding-receipt-contract.md` (`catch (cause)` to 62); each claim
+  re-verified at the new lines (seven tool names, dossier tools read the store, strict
+  tool registration with the error guard) and the three docs re-stamped. No claim changes.
+
 - 2026-10-22T08:20:34Z, vitest 4.1.11 -> 4.1.12 exact pins (CVE sweep 2026-10-22): the `devDependencies`
   values of `vitest` and `@vitest/coverage-v8` changed in the workspace `package.json`
   files, no line moved and no version, script or `files` field changed.

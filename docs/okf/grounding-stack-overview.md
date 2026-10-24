@@ -3,7 +3,7 @@ type: overview
 title: The grounding stack — where to read, and how releases are split
 description: "Pointer doc: docs/architecture.md diagrams the whole stack (moved out of the root README in the README refresh); this entry adds the release topology (four version-locked packages under one root tag, eight independently-versioned ones) that the diagram does not show."
 tags: [overview, monorepo, releases, versioning, pointer]
-timestamp: 2026-10-22T08:20:34Z
+timestamp: 2026-10-24T07:24:18Z
 sources:
   - docs/architecture.md
   - CHANGELOG.md
@@ -107,7 +107,7 @@ The separate operator entrypoint initializes only a new state directory
 (`packages/grounding-mcp/src/assessment-init.ts:11#"await initializeAssessmentState"`);
 ordinary startup and the transport cannot initialize it.
 That server registers the seven assessment lifecycle operations
-(`packages/grounding-mcp/src/assessment-server.ts:32-35#"] as const);"`).
+(`packages/grounding-mcp/src/assessment-server.ts:36-39#"] as const);"`).
 It uses the producer-owned assessment store, with no generic runtime, ledger,
 or solution-verdict tools. It is part of the same package and release lane,
 with separate startup configuration and deployment qualification. The package

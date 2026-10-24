@@ -225,6 +225,31 @@ describe('hypothesis_* MCP roundtrip — schema validation', () => {
     expectValidationError(raw, 'hypothesis_record', 'sessionId');
   });
 
+  // requiredChecks carries `.default([])`, kept as `.default` (not
+  // `.prefault`) through the zod 3 -> 4 migration: in zod 4 the default
+  // short-circuits the inner schema, but the default value `[]` passes the
+  // inner schema anyway, so both versions produce the same output. The
+  // winning input for the choice is the omitted key: the default must fire
+  // and store []. A present wrong-typed value must still be rejected (the
+  // default applies only to the omitted key, never to a bad input).
+
+  it('creates required_checks = [] when requiredChecks is omitted (schema default)', async () => {
+    const raw = await client.callTool({
+      name: 'hypothesis_record',
+      arguments: { sessionId: 'gs-default-pin', text: 'omitted checks default' },
+    });
+    const { hypothesis } = parseToolResult(raw) as { hypothesis: { required_checks: unknown } };
+    expect(hypothesis.required_checks).toEqual([]);
+  });
+
+  it('rejects requiredChecks = "x" instead of swallowing it into the default', async () => {
+    const raw = await client.callTool({
+      name: 'hypothesis_record',
+      arguments: { sessionId: 'gs-default-pin', text: 'wrong type', requiredChecks: 'x' },
+    });
+    expectValidationError(raw, 'hypothesis_record', 'requiredChecks');
+  });
+
   // Before hypothesisSessionIdSchema grew a charset regex + refine, '.' and
   // '..' passed this schema (min(1)/max(256) don't exclude them) and only
   // failed later inside the handler, when hypothesis-store.ts's

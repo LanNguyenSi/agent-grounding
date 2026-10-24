@@ -6,7 +6,11 @@ import { AssessmentStoreError, GroundingAssessmentStore } from './grounding-asse
 import { ASSESSMENT_PACKAGE_VERSION } from './grounding-issuer.js';
 
 const token = z.string().min(1).max(128).regex(/^[A-Za-z0-9._:-]{1,128}$/);
-const uuid = z.string().uuid();
+// z.guid() keeps the zod 3 z.string().uuid() accept set (any 8-4-4-4-12 hex,
+// case-insensitive). The zod 4 z.uuid() enforces RFC 9562 version/variant
+// bits and would newly reject nil/v0/v9 and variant-c forms that callers may
+// already send; pins live in tests/assessment-uuid-acceptance.test.ts.
+const uuid = z.guid();
 const integer = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
 const digest = z.string().length(64).regex(/^[0-9a-f]{64}$/);
 const challenge = z.object({
