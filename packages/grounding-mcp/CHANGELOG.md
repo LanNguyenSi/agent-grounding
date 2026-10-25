@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## 0.15.0, 2026-10-25
+
 ### Security
 
 - **zod 4.6.7** (GHSA-mrhx-c7xc-m3w5): the dependency moved from `^3.23.8` to `^4.6.7` and the tool schemas were migrated to the zod 4 native API (`z.guid()` keeps the v3 uuid accept set at the assessment MCP boundary), closing the memory-exhaustion advisory, which is fixed only in the v4 core. The published `tools/list` JSON Schema changes are converter artifacts only (inline schemas replacing `$ref`, faithful `pattern`/`maximum` keys; `additionalProperties: false` no longer claimed for strip objects); accept/reject sets are unchanged except that integer fields now reject values above `Number.MAX_SAFE_INTEGER`, and zod's default validation message text differs (for example `Invalid input: expected string, received undefined` instead of `Required`).
@@ -10,7 +12,8 @@
 ### Changed
 
 - The `hypothesis_support` tool description now says it refuses with `hypothesis_not_found_rejected_or_checks_pending` while required checks are pending. Description text only; no behavior change. (task 782327c3)
-- Once the evidence-ledger pin moves to the release where `getSummary` returns `LedgerSummary`, the `entries` object of the `ledger_summary` response also carries `session`. (task 782327c3)
+- The `entries` object of the `ledger_summary` response now also carries `session` (evidence-ledger 0.6.1 `getSummary` returns `LedgerSummary`).
+- The exact pins on the version-locked packages move from 0.6.0 to 0.6.1.
 
 ## 0.14.0, 2026-09-28
 

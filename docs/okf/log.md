@@ -2,6 +2,18 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-10-25T08:10:02Z, v0.6.1 release notes completed after review: the root `## [0.6.1]` section gained three
+  bullets and one bullet was reworded, all below the cited `CHANGELOG.md:9-30` range (no cited
+  line moved). The release topology claims in `grounding-stack-overview.md` do not depend on the
+  section body; re-verified and re-stamped. No claim changes.
+- 2026-10-25T07:58:01Z, release v0.6.1 train: the `[Unreleased]` sections of the root and five package
+  CHANGELOGs move under dated headings below the cited `CHANGELOG.md:9-30` range (no cited line
+  moved), and the package.json versions change on their own lines. Updated the version claims
+  in `grounding-stack-overview.md` (lockstep 0.6.1, grounding-mcp 0.15.0, review-claim-gate
+  0.1.7, and runtime-reality-checker 0.3.3, which matches its package.json and was already
+  stale) and `claim-gate-vs-review-claim-gate.md` (claim-gate 0.6.1, review-claim-gate 0.1.7
+  with exact pins on 0.6.1); each re-verified against the package.json files and both docs
+  re-stamped. No other claim changes.
 - 2026-10-24T07:24:18Z, zod 3 -> 4 in grounding-mcp (GHSA-mrhx-c7xc-m3w5): the `zod` range in
   `packages/grounding-mcp/package.json` changed on its own line (no cited line moved), and
   `packages/grounding-mcp/src/assessment-server.ts` gained a four-line comment above the

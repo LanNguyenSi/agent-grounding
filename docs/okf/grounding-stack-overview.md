@@ -3,7 +3,7 @@ type: overview
 title: The grounding stack — where to read, and how releases are split
 description: "Pointer doc: docs/architecture.md diagrams the whole stack (moved out of the root README in the README refresh); this entry adds the release topology (four version-locked packages under one root tag, eight independently-versioned ones) that the diagram does not show."
 tags: [overview, monorepo, releases, versioning, pointer]
-timestamp: 2026-10-24T07:24:18Z
+timestamp: 2026-10-25T08:10:02Z
 sources:
   - docs/architecture.md
   - CHANGELOG.md
@@ -37,7 +37,7 @@ READMEs; they have no bundle doc by design.
 anyone who assumes one monorepo means one version:
 
 **Version-locked, released together under a single root tag `vX.Y.Z`** (all at
-`0.6.0` as of this verification):
+`0.6.1` as of this verification):
 
 - `@lannguyensi/grounding-wrapper`
 - `@lannguyensi/evidence-ledger`
@@ -49,9 +49,9 @@ anyone who assumes one monorepo means one version:
 - `@lannguyensi/understanding-gate` (tags `understanding-gate-vX.Y.Z`, published
   by `publish-understanding-gate.yml`, so its cadence never bumps the four
   locked packages)
-- `@lannguyensi/grounding-mcp` (`0.14.0`)
-- `@lannguyensi/runtime-reality-checker` (`0.3.2`)
-- `@lannguyensi/review-claim-gate` (`0.1.6`)
+- `@lannguyensi/grounding-mcp` (`0.15.0`)
+- `@lannguyensi/runtime-reality-checker` (`0.3.3`)
+- `@lannguyensi/review-claim-gate` (`0.1.7`)
 - `@lannguyensi/grounding-sdk`, `@lannguyensi/debug-playbook-engine`,
   `@lannguyensi/domain-router`, `@lannguyensi/readme-first-resolver`
 
@@ -60,8 +60,8 @@ Consequences an agent gets wrong without this:
 - Bumping one of the four locked packages means bumping all four; a PR that
   bumps only `claim-gate` breaks the lock invariant.
 - A grounding-mcp change does NOT require a root-tag release, and vice versa.
-- Version numbers across packages carry no relationship: `grounding-mcp@0.14.0`
-  is not "newer than" `evidence-ledger@0.6.0` in any meaningful sense.
+- Version numbers across packages carry no relationship: `grounding-mcp@0.15.0`
+  is not "newer than" `evidence-ledger@0.6.1` in any meaningful sense.
 
 The root `package.json` is private (`agent-grounding`, workspaces `packages/*`);
 `npm run build`/`test`/`typecheck` run `--workspaces`, with a `build:deps` order

@@ -33,6 +33,8 @@ The seven packages above (other than understanding-gate) each carry their own ve
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-25
+
 ### Security
 
 - Bump the dev-only `handlebars` 4.7.9 to 4.7.10 (GHSA-xw65-4hp5-5hc7, GHSA-p8wg-vrv2-v86f, GHSA-8r5x-fm3f-whwj).
@@ -41,7 +43,13 @@ The seven packages above (other than understanding-gate) each carry their own ve
 
 - `evidence-ledger`: `getSummary` now returns `LedgerSummary`, which adds the `session` field (the session id) to the returned object. Additive: existing fields are unchanged, and `getSummary` output can be passed straight to `grounding-sdk`'s `validate` as `ledgerSummary` without a spread workaround. (task 782327c3)
 
-- CI: the okf-kit pin moves from 0.10.0 to 0.16.0 in `ci.yml` and `okf-staleness.yml` together, the okf-staleness workflow is re-synced to the okf-kit template (the pin-deviation comment is removed), and the okf-selectors fixtures are regenerated against 0.16.0 (report content unchanged). CI only; no package code change.
+- The published tarballs of all four packages now include the MIT `LICENSE`.
+
+- `evidence-ledger`: `ledger summary` on an empty session now suggests `ledger fact "<content>" --session <id>` instead of the non-existent `ledger add`.
+
+- The package READMEs are restructured; reference material moved to each package's `docs/` in the repository.
+
+- CI: the okf-kit pin moves from 0.10.0 to 0.18.0 (through 0.16.0) in `ci.yml` and `okf-staleness.yml` together, the okf-staleness workflow is re-synced to the okf-kit template (the pin-deviation comment is removed), and the okf-selectors fixtures are regenerated against 0.16.0 (report content unchanged). CI only; no package code change.
 
 - Publish workflows now install npm with `npm install -g npm@^11.5.1` (the documented trusted-publishing floor) instead of the floating `npm@11`. CI only; no package code change.
 
