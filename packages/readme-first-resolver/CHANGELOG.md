@@ -7,6 +7,7 @@
 ### Changed
 
 - The npm package description no longer says the package "forces" agents to read docs; it now matches the README tagline. Metadata only. (task 782327c3)
+- The published tarball now ships the MIT `LICENSE`; the README is restructured, with reference material moved to `docs/` in the repository.
 
 ## 0.1.2, 2026-07-27
 

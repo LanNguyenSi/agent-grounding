@@ -12,8 +12,8 @@
 ### Changed
 
 - The `hypothesis_support` tool description now says it refuses with `hypothesis_not_found_rejected_or_checks_pending` while required checks are pending. Description text only; no behavior change. (task 782327c3)
-- Once the evidence-ledger pin moves to the release where `getSummary` returns `LedgerSummary`, the `entries` object of the `ledger_summary` response also carries `session`. (task 782327c3)
-- The exact pins on the version-locked packages move from 0.6.0 to 0.6.1, which is the evidence-ledger release the bullet above refers to.
+- The `entries` object of the `ledger_summary` response now also carries `session` (evidence-ledger 0.6.1 `getSummary` returns `LedgerSummary`).
+- The exact pins on the version-locked packages move from 0.6.0 to 0.6.1.
 
 ## 0.14.0, 2026-09-28
 
