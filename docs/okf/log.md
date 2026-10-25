@@ -2,6 +2,10 @@
 
 <!-- Add new entries at the top, newest first. -->
 
+- 2026-10-25T08:10:02Z, v0.6.1 release notes completed after review: the root `## [0.6.1]` section gained three
+  bullets and one bullet was reworded, all below the cited `CHANGELOG.md:9-30` range (no cited
+  line moved). The release topology claims in `grounding-stack-overview.md` do not depend on the
+  section body; re-verified and re-stamped. No claim changes.
 - 2026-10-25T07:58:01Z, release v0.6.1 train: the `[Unreleased]` sections of the root and five package
   CHANGELOGs move under dated headings below the cited `CHANGELOG.md:9-30` range (no cited line
   moved), and the package.json versions change on their own lines. Updated the version claims
