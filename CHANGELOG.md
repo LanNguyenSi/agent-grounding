@@ -33,6 +33,8 @@ The seven packages above (other than understanding-gate) each carry their own ve
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-25
+
 ### Security
 
 - Bump the dev-only `handlebars` 4.7.9 to 4.7.10 (GHSA-xw65-4hp5-5hc7, GHSA-p8wg-vrv2-v86f, GHSA-8r5x-fm3f-whwj).

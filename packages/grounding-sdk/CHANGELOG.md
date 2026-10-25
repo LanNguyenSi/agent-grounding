@@ -2,9 +2,12 @@
 
 ## [Unreleased]
 
+## 0.1.6, 2026-10-25
+
 ### Changed
 
 - README: the `validate` example passes the `getSummary` result as `ledgerSummary` directly, since `getSummary` now returns `LedgerSummary` including `session`. Documentation only. The example compiles once an evidence-ledger release that adds `session` to `getSummary` ships and this package's evidence-ledger pin moves to it. (task 782327c3)
+- The exact pins on the version-locked packages move from 0.6.0 to 0.6.1. The README `validate` example now compiles against the pinned evidence-ledger.
 
 ## 0.1.5, 2026-07-18
 

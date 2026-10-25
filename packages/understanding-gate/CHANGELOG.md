@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-25
+
+### Changed
+
+- The published tarball now ships the MIT `LICENSE`.
+- The README is restructured; reference material moved to `docs/` in the repository (gate behaviour, pause sentinel, architecture).
+- Source comments no longer carry internal tracker ids; no behaviour change.
+- The exact pin on `@lannguyensi/hypothesis-tracker` moves from 0.6.0 to 0.6.1.
+
 ## [0.7.0] - 2026-08-26
 
 ### Fixed
