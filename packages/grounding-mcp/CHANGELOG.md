@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Docs only: the OKF verdict-contract note, this package's README, the solution-acceptance gate reference, and the interop vendored-verifier header now describe harness as a former consumer of the verdict marker: harness 1.0.0 removed the solution-acceptance pack, so no shipped consumer verifies the marker today. The marker contract itself (location, 7-key shape, alg/signature, HMAC/key-file contract, `solution_gate` semantics) is unchanged; no behavior change.
+
 ## 0.15.0, 2026-10-25
 
 ### Security

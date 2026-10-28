@@ -137,9 +137,10 @@ must be sanitised before reaching the filesystem.
 `Verdict` (`solution-verdict.ts:87#"signature?: string;"`): the 7 pinned keys `{ id, head, ready, confidence, blockers,
 timestamp, source }` (`solution-verdict.ts:75#"source: string;"`), plus, since 0.8.0, two additive OPTIONAL fields
 `alg?` (`solution-verdict.ts:85#"alg?: string;"`) and `signature?` (`solution-verdict.ts:87#"signature?: string;"`). `head` is a 40-hex sha; `ready` is derived;
-`source` is `'preflight'`. The 7-key shape is pinned by the harness consumer; see the
+`source` is `'preflight'`. The 7-key shape is pinned by this contract; harness's
+solution-acceptance pack, removed in harness 1.0.0, was a consumer that pinned it; see the
 `writeVerdict` docblock at `packages/grounding-mcp/src/solution-verdict.ts:189-200#"write-or-throw behavior."` ("`alg` + `signature` in addition to the 7
-pinned fields", mirroring the consumer). The comments at `solution-verdict.ts:654#"OW state flows entirely through the"` and `solution-verdict.ts:780#"(Signing, which DOES add"`
+pinned fields", mirroring that consumer). The comments at `solution-verdict.ts:654#"OW state flows entirely through the"` and `solution-verdict.ts:780#"(Signing, which DOES add"`
 scope the OW arms: they fold into `ready`/`blockers` only and do NOT add fields. `alg`/`signature` are the one addition
 to that pinning rule, and deliberately additive-only (see "Verdict marker signing"
 below): they are optional on the TypeScript type only because a hand-constructed
@@ -156,8 +157,9 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
 "producer doesn't sign" universal-deny failure mode this feature exists to close.
 
 - **Same key file, same scheme, no package dependency.** `verdict-signing.ts`
-  independently mirrors the harness CONSUMER's signing/verification implementation
-  (`src/runtime/approval-signing.ts`, `src/policy-packs/builtin/solution-acceptance-runtime.ts`
+  independently mirrors the signing/verification implementation of the harness
+  CONSUMER (harness's solution-acceptance pack, removed in harness 1.0.0;
+  `src/runtime/approval-signing.ts`, `src/policy-packs/builtin/solution-acceptance-runtime.ts`
   on harness branch `batch19/sign-verdict-marker`) field-for-field and byte-for-byte,
   the same independent-mirroring convention `verdictDir()`/`sanitizeVerdictId()` above
   already use, with no runtime dependency between the two repos' packages.
@@ -209,7 +211,7 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
   tree of whichever path is in effect (the mirrored `<generatedDir>` in the fallback
   case, `dirname($SOLUTION_VERDICT_SIGNING_KEY)` under the env projection) if
   nothing else on that machine already has.
-- **Threat model, unchanged from harness' own posture:** this is pragmatic
+- **Threat model, unchanged from the posture harness documented for its solution-acceptance pack (removed in harness 1.0.0):** this is pragmatic
   defense-in-depth, not a new authorization boundary: the key is read under the SAME
   UID `grounding-mcp` and a shell-capable forger both run under, so signing does not
   stop a shell-capable agent from reading (or first-creating) the key and computing a
@@ -219,7 +221,8 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
   See "What breaks it" below.
 - **The "genuinely unsigned, not forged" carve-out is narrower than it may sound (T-002
   finding, corrected from an earlier plan paraphrase).** The harness consumer's
-  `evaluateGate` classifies a marker `forged: false` ("treating as unsigned, not
+  `evaluateGate` (harness's solution-acceptance pack, removed in harness 1.0.0)
+  classified a marker `forged: false` ("treating as unsigned, not
   forged") ONLY when a required signed field reads blank (`verdict.timestamp` or
   `verdict.source` mapping to an empty `approvedAt`/`approvedBy`) AND `alg` and
   `signature` are BOTH absent from the marker. A realistic legacy marker, one written
@@ -232,10 +235,12 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
   forged:true, not the carve-out", which matches harness' own golden-fixture assertion
   for its 0.3.2/0.5.0 markers from before the consumer wiring. This is the exact mechanism behind the
   CHANGELOG 0.8.0 release-sequencing warning: releasing the harness consumer before
-  every producer is on 0.8.0 denies the completion gate universally, not selectively.
+  every producer was on 0.8.0 would deny the completion gate universally, not selectively
+  (that consumer is the pack harness removed in 1.0.0).
 - **Drift guard: the interop suite (`packages/grounding-mcp/tests/interop/`).**
   `harness-verifier.vendored.ts` is a TEST-ONLY, source-stamped (branch + file + line
-  citations in its header) transcription of the harness consumer's verification logic,
+  citations in its header) transcription of the verification logic of the harness
+  consumer (harness's solution-acceptance pack, removed in harness 1.0.0),
   deliberately NOT derived from this package's own producer mirror (copying the
   producer to test itself would not catch a drift between the two independently
   mirrored implementations; that drift is exactly the risk this drift guard exists to catch).
@@ -245,8 +250,9 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
   `blockers`/one signature byte each independently flipped), cross-id replay at both
   the signature-binding layer and the belt-and-braces `verdict.id !== id` layer, `alg`
   negatives, and the carve-out-vs-generic-forged distinction above. Any drift between
-  this producer and the harness consumer that would silently break verification is
-  meant to surface here first.
+  this producer and the signature scheme the harness consumer verified until harness
+  1.0.0 removed that pack is meant to surface here first; the vendored verifier stays
+  as that scheme's frozen reference.
 
 ### The four MCP tools (server.ts, version read from package.json at `server.ts:104#"const PACKAGE_VERSION = readPackageVersion();"`)
 
@@ -532,17 +538,18 @@ AND no `.ai/runs/` dir), the `on` knob names both channels in its blocker
 - **Hand-writing the marker, still not a closed hole under shared UID.** As of 0.8.0
   every marker is signed (see "Verdict marker signing" above), so a naive hand-typed
   JSON file (no `alg`/`signature`, or a wrong signature) is rejected as forged by a
-  consumer that verifies the signature, such as the harness consumer. `solution_gate`
+  consumer that verifies the signature, such as harness's solution-acceptance pack,
+  a consumer removed in harness 1.0.0. `solution_gate`
   itself does not verify it (see the tool list above), so such a file passes
   `solution_gate`. But this is explicitly pragmatic defense-in-depth, not a new
   authorization boundary: a shell-capable agent runs under the SAME UID that reads and
   first-creates `<harness-home>/harness.generated/.approval-signing.key`, so it could
-  read that key and compute a valid signature too, same as the harness consumer's own
-  documented threat model. The residual comment at `solution-verdict.ts:26#"wiring follow-up."` (unchanged
+  read that key and compute a valid signature too, same as the threat model the pack
+  harness removed in 1.0.0 had documented for its own signing. The residual comment at `solution-verdict.ts:26#"wiring follow-up."` (unchanged
   since before 0.8.0) still names "signing... is the harness wiring follow-up" as the
   next step for this specific residual; the producer-side signing above delivers that
-  step, and harness's solution-acceptance pack was the consumer that verified it (see
-  the boundary note below). The
+  step, and harness's solution-acceptance pack was the consumer that verified it until
+  harness 1.0.0 removed it (see the boundary note below). The
   ledger-forge hole was closed earlier (marker moved outside the ledger); the
   shell-forge hole is now *harder* (a forger needs the shared key, not just a text
   editor), but still open under a same-UID threat model, by design.
@@ -565,18 +572,20 @@ AND no `.ai/runs/` dir), the `on` knob names both channels in its blocker
 ## Out-of-repo boundary note (harness consumer)
 
 A consumer can read the marker to gate task-finishing actions. harness's opt-in
-solution-acceptance pack has been such a consumer: it gated the agent-tasks completion
+solution-acceptance pack was such a consumer: it gated the agent-tasks completion
 verbs (`task_finish`, `task_submit_pr`, `task_merge`, `pull_requests_merge`) and the
-`git push` / `gh pr merge` bash commands. harness's unreleased changes remove that pack,
-so check the harness CHANGELOG for the release you run; this contract does not depend
-on any one consumer. This doc does not assert harness internals; the contract this repo guarantees is only the
+`git push` / `gh pr merge` bash commands. harness 1.0.0 (released 2026-10-25) removed
+that pack and its hook verbs (`harness pack hook solution-acceptance`,
+`solution-acceptance-writeguard`), so harness no longer reads or verifies the marker;
+this contract does not depend on any one consumer. This doc does not assert harness internals; the contract this repo guarantees is only the
 marker's location (`verdictDir()`), its pinned 7-key shape plus (since 0.8.0) the two
 additive signing fields `alg`/`signature` and the exact HMAC scheme + key-file contract
 those are computed against ("Verdict marker signing" above), and the `solution_gate`
-allow/deny semantics. How the harness wires those into a gate, including its
-`forged`-classification carve-out logic, lives out of this repo; this doc's account of
-that carve-out is a read of the harness source at a stamped commit (see the interop
-suite's vendored-verifier header), measured via the interop suite, not assumed.
+allow/deny semantics. How harness wired those into a gate, including its
+`forged`-classification carve-out logic, lived out of this repo, in the pack harness
+removed in 1.0.0; this doc's account of that carve-out is a read of the harness source
+at a stamped commit (see the interop suite's vendored-verifier header), measured via
+the interop suite, not assumed.
 
 ## Where the `run-base` marker comes from
 
