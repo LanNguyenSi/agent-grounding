@@ -16,6 +16,13 @@
 // CI (grounding-mcp CHANGELOG 0.8.0): that drift is exactly the risk
 // this interop suite exists to catch.
 //
+// STATUS (harness 1.0.0): harness removed the solution-acceptance pack and
+// its hook verbs in harness 1.0.0, so this is now a FROZEN transcription of a
+// removed consumer: no harness code reads or verifies the verdict marker any
+// more. It is kept as-is because it still proves, in this repo's CI, that the
+// marker `writeVerdict` produces matches the signature scheme harness verified
+// while that pack shipped. The source stamp below stays as the historical pin.
+//
 // SOURCE STAMP — transcribed verbatim (constants, control flow, literal
 // reason strings) from:
 //   repo:   github.com/LanNguyenSi/harness

@@ -1,6 +1,14 @@
 # Log
 
 <!-- Add new entries at the top, newest first. -->
+- 2026-10-28T07:53:14Z, harness as a former consumer of the verdict marker (task e865814a): harness 1.0.0
+  removed the solution-acceptance pack and the `SOLUTION_VERDICT_SIGNING_KEY` projection, so
+  `solution-acceptance-verdict-contract.md` now describes harness in the past tense, says the
+  operator sets the signing-key variable, and keeps the contract (marker location, 7-key shape,
+  `alg`/`signature`, HMAC and key-file contract, `solution_gate` semantics) unchanged. Re-verified
+  against the new sources (README.md, docs/solution-acceptance-gate.md, the vendored interop
+  verifier header) and against server.ts, whose only change since the last stamp (#277) is the
+  `hypothesis_support` description, which this doc does not cite. Re-stamped.
 
 - 2026-10-25T08:10:02Z, v0.6.1 release notes completed after review: the root `## [0.6.1]` section gained three
   bullets and one bullet was reworded, all below the cited `CHANGELOG.md:9-30` range (no cited
