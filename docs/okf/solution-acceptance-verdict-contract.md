@@ -170,11 +170,11 @@ CHANGELOG 0.8.0): an unsigned-when-no-key escape hatch would reproduce exactly t
   `<harness-home>/harness.generated/.approval-signing.key`.
 - **Env projection (primary since 0.8.0)**: when
   `$SOLUTION_VERDICT_SIGNING_KEY` is set (an absolute path to the key FILE,
-  projected by harness at apply time following its `EVIDENCE_LEDGER_DB`
-  pattern; slice H1 of the Option-2 design),
+  set by the operator in the server env; harness projected it at apply time
+  until harness 1.0.0 removed that projection),
   `resolveSigningKeyPath()` (`SIGNING_KEY_ENV`, end of verdict-signing.ts)
-  returns it verbatim and the mirrored resolution below is the FALLBACK for
-  non-harness-managed setups. `getOrCreateSigningKey` (`verdict-signing.ts:156-189#"fs.readFileSync(filePath), filePath, created: false"`)
+  returns it verbatim and the mirrored resolution below is the FALLBACK when
+  the variable is unset. `getOrCreateSigningKey` (`verdict-signing.ts:156-189#"fs.readFileSync(filePath), filePath, created: false"`)
   resolves through it, so `getOrCreate` semantics apply at the projected
   path too.
 - **`<harness-home>` resolution**: `resolveHarnessHome()` (`verdict-signing.ts:100-109#"  return newPath;"`),
