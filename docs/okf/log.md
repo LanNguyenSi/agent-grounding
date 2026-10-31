@@ -1,6 +1,10 @@
 # Log
 
 <!-- Add new entries at the top, newest first. -->
+- 2026-10-31T06:10:16Z, CVE sweep 2026-10-31: `CHANGELOG.md` gains an `[Unreleased]` Security
+  bullet (`@hono/node-server` 2.1.5, lockfile only) at line 38. `grounding-stack-overview.md`
+  re-verified: its citation `CHANGELOG.md:9-30#"readme-first-resolver"` is above the edit and
+  unchanged (anchor on line 30), the release-topology claims are unaffected. Re-stamped.
 - 2026-10-28T07:53:14Z, harness as a former consumer of the verdict marker (task e865814a): harness 1.0.0
   removed the solution-acceptance pack and the `SOLUTION_VERDICT_SIGNING_KEY` projection, so
   `solution-acceptance-verdict-contract.md` now describes harness in the past tense, says the
