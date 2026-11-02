@@ -1,6 +1,7 @@
 # Log
 
 <!-- Add new entries at the top, newest first. -->
+- 2026-11-02T08:26:57Z, `CHANGELOG.md` gains an `[Unreleased]` Changed bullet (Renovate preset adoption). `grounding-stack-overview.md` re-verified: no claim depends on the new entry. Its line-anchored citation `CHANGELOG.md:9-30` is above the edit and unchanged.
 - 2026-10-31T06:10:16Z, CVE sweep 2026-10-31: `CHANGELOG.md` gains an `[Unreleased]` Security
   bullet (`@hono/node-server` 2.1.5, lockfile only) at line 38. `grounding-stack-overview.md`
   re-verified: its citation `CHANGELOG.md:9-30#"readme-first-resolver"` is above the edit and
