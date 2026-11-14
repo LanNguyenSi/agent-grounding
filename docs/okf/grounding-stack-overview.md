@@ -3,7 +3,7 @@ type: overview
 title: The grounding stack — where to read, and how releases are split
 description: "Pointer doc: docs/architecture.md diagrams the whole stack (moved out of the root README in the README refresh); this entry adds the release topology (four version-locked packages under one root tag, eight independently-versioned ones) that the diagram does not show."
 tags: [overview, monorepo, releases, versioning, pointer]
-timestamp: 2026-11-14T06:41:19Z
+timestamp: 2026-11-14T12:06:16Z
 sources:
   - docs/architecture.md
   - CHANGELOG.md
