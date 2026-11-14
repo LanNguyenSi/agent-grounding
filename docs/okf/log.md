@@ -1,6 +1,12 @@
 # Log
 
 <!-- Add new entries at the top, newest first. -->
+- 2026-11-14T12:06:16Z, jest 30.5 minimatch fix (#291): `CHANGELOG.md` gains an `[Unreleased]` Security bullet
+  (`minimatch` 11.0.8, dev dependencies and lockfile only) and root `package.json` moves the
+  `overrides` `minimatch` range to `^11.0.1`. `grounding-stack-overview.md` re-verified: its
+  citations `CHANGELOG.md:9-30#"readme-first-resolver"` (anchor on line 30) and
+  `package.json:30#"test:check-grounding-mcp-pack"` (line 30) still resolve, and the claims about the
+  private root package, workspaces and release topology are unaffected. Re-stamped.
 - 2026-11-14T06:41:19Z, CVE sweep 2026-11-14 (#289): `CHANGELOG.md` gains an `[Unreleased]` Security
   bullet (`hono` 4.13.18, lockfile only) under the existing Security heading. `grounding-stack-overview.md`
   re-verified: its citation `CHANGELOG.md:9-30#"readme-first-resolver"` is above the edit and
