@@ -44,6 +44,6 @@
     "test-exclude": "^8.0.0"
   },
   "devDependencies": {
-    "semver": "^6.3.1"
+    "semver": "^6.3.2"
   }
 }
