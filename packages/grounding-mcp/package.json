@@ -43,16 +43,16 @@
     "@lannguyensi/grounding-wrapper": "0.6.1",
     "@lannguyensi/hypothesis-tracker": "0.6.1",
     "@lannguyensi/runtime-reality-checker": "^0.3.0",
-    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "proper-lockfile": "^4.1.2",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/node": "^20.11.5",
+    "@types/node": "^20.19.43",
     "@types/proper-lockfile": "^4.1.4",
     "@vitest/coverage-v8": "4.1.12",
-    "tsx": "^4.22.4",
-    "typescript": "^5.3.3",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
     "vitest": "4.1.12"
   }
 }

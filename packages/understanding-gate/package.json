@@ -39,14 +39,14 @@
   },
   "dependencies": {
     "@lannguyensi/hypothesis-tracker": "0.6.1",
-    "ajv": "^8.12.0",
+    "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
-    "commander": "^12.0.0"
+    "commander": "^12.1.0"
   },
   "devDependencies": {
-    "@types/node": "^20.11.5",
-    "tsx": "^4.22.4",
-    "typescript": "^5.3.3",
+    "@types/node": "^20.19.43",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
     "vitest": "4.1.12"
   }
 }
